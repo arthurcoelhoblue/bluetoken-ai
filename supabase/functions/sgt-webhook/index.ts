@@ -154,37 +154,28 @@ function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
   };
 }
 
-// Validação HMAC
-async function validateSignature(body: string, signature: string, timestamp: string): Promise<boolean> {
+// Validação Bearer Token (simplificado)
+function validateBearerToken(authHeader: string | null): boolean {
   const secret = Deno.env.get('SGT_WEBHOOK_SECRET');
   if (!secret) {
     console.error('[SGT Webhook] SGT_WEBHOOK_SECRET não configurado');
     return false;
   }
 
-  const eventTime = parseInt(timestamp, 10);
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - eventTime) > 300) {
-    console.error('[SGT Webhook] Timestamp expirado');
+  if (!authHeader) {
+    console.error('[SGT Webhook] Header Authorization ausente');
     return false;
   }
 
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    'raw',
-    encoder.encode(secret),
-    { name: 'HMAC', hash: 'SHA-256' },
-    false,
-    ['sign']
-  );
-  
-  const signaturePayload = `${timestamp}.${body}`;
-  const signatureBytes = await crypto.subtle.sign('HMAC', key, encoder.encode(signaturePayload));
-  const expectedSignature = Array.from(new Uint8Array(signatureBytes))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('');
+  // Extrai o token do formato "Bearer <token>"
+  const match = authHeader.match(/^Bearer\s+(.+)$/i);
+  if (!match) {
+    console.error('[SGT Webhook] Formato de Authorization inválido');
+    return false;
+  }
 
-  return signature === expectedSignature;
+  const token = match[1];
+  return token === secret;
 }
 
 // Validação do payload
@@ -602,31 +593,25 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Obtém headers de assinatura
-    const signature = req.headers.get('x-sgt-signature') || '';
-    const timestamp = req.headers.get('x-sgt-timestamp') || '';
+    // Obtém header de autorização
+    const authHeader = req.headers.get('authorization');
     
     // Lê o body
     const bodyText = await req.text();
     
     console.log('[SGT Webhook] Requisição recebida:', {
-      hasSignature: !!signature,
-      hasTimestamp: !!timestamp,
+      hasAuth: !!authHeader,
       bodyLength: bodyText.length,
     });
 
-    // Valida assinatura HMAC (quando presente)
-    if (signature && timestamp) {
-      const isValidSignature = await validateSignature(bodyText, signature, timestamp);
-      if (!isValidSignature) {
-        console.error('[SGT Webhook] Assinatura inválida');
-        return new Response(
-          JSON.stringify({ error: 'Assinatura inválida' }),
-          { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-    } else {
-      console.warn('[SGT Webhook] Requisição sem assinatura - aceito apenas em dev');
+    // Valida Bearer Token
+    const isValidToken = validateBearerToken(authHeader);
+    if (!isValidToken) {
+      console.error('[SGT Webhook] Token inválido ou ausente');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Parse do payload
