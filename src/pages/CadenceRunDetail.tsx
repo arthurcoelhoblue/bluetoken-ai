@@ -10,6 +10,7 @@ import {
   useCadenceEvents,
   useUpdateCadenceRunStatus,
 } from '@/hooks/useCadences';
+import { useRunMessages } from '@/hooks/useLeadMessages';
 import {
   EMPRESA_LABELS,
   CANAL_LABELS,
@@ -19,6 +20,7 @@ import {
   getEventIcon,
   getCanalIcon,
 } from '@/types/cadence';
+import { MessageHistory } from '@/components/messages/MessageHistory';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -54,6 +56,10 @@ function CadenceRunDetailContent() {
 
   const { data: run, isLoading, error } = useCadenceRunDetail(runId);
   const { data: events } = useCadenceEvents(runId);
+  const { data: messages = [], isLoading: messagesLoading } = useRunMessages({
+    runId: runId || '',
+    enabled: !!runId,
+  });
   const updateStatus = useUpdateCadenceRunStatus();
 
   const canManage = hasRole('ADMIN') || hasRole('CLOSER');
@@ -146,6 +152,14 @@ function CadenceRunDetailContent() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Message History */}
+          <MessageHistory
+            messages={messages}
+            isLoading={messagesLoading}
+            maxHeight="300px"
+            emptyMessage="Nenhuma mensagem enviada nesta cadência."
+          />
 
           {/* Timeline */}
           <Card>
