@@ -10,6 +10,7 @@ import Auth from "./pages/Auth";
 import Me from "./pages/Me";
 import Unauthorized from "./pages/Unauthorized";
 import NotFound from "./pages/NotFound";
+import MonitorSgtEvents from "./pages/MonitorSgtEvents";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,13 @@ const App = () => (
             <Route path="/me" element={
               <ProtectedRoute>
                 <Me />
+              </ProtectedRoute>
+            } />
+            
+            {/* Admin/Auditor routes */}
+            <Route path="/monitor/sgt-events" element={
+              <ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}>
+                <MonitorSgtEvents />
               </ProtectedRoute>
             } />
             
