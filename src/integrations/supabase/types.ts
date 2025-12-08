@@ -53,6 +53,77 @@ export type Database = {
         }
         Relationships: []
       }
+      sgt_event_logs: {
+        Row: {
+          created_at: string
+          erro_stack: string | null
+          event_id: string
+          id: string
+          mensagem: string | null
+          status: Database["public"]["Enums"]["sgt_event_status"]
+        }
+        Insert: {
+          created_at?: string
+          erro_stack?: string | null
+          event_id: string
+          id?: string
+          mensagem?: string | null
+          status: Database["public"]["Enums"]["sgt_event_status"]
+        }
+        Update: {
+          created_at?: string
+          erro_stack?: string | null
+          event_id?: string
+          id?: string
+          mensagem?: string | null
+          status?: Database["public"]["Enums"]["sgt_event_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgt_event_logs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "sgt_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sgt_events: {
+        Row: {
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          evento: Database["public"]["Enums"]["sgt_evento_tipo"]
+          id: string
+          idempotency_key: string
+          lead_id: string
+          payload: Json
+          processado_em: string | null
+          recebido_em: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          evento: Database["public"]["Enums"]["sgt_evento_tipo"]
+          id?: string
+          idempotency_key: string
+          lead_id: string
+          payload: Json
+          processado_em?: string | null
+          recebido_em?: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          evento?: Database["public"]["Enums"]["sgt_evento_tipo"]
+          id?: string
+          idempotency_key?: string
+          lead_id?: string
+          payload?: Json
+          processado_em?: string | null
+          recebido_em?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -100,6 +171,16 @@ export type Database = {
       }
     }
     Enums: {
+      empresa_tipo: "TOKENIZA" | "BLUE"
+      sgt_event_status: "RECEBIDO" | "PROCESSADO" | "ERRO"
+      sgt_evento_tipo:
+        | "LEAD_NOVO"
+        | "ATUALIZACAO"
+        | "CARRINHO_ABANDONADO"
+        | "MQL"
+        | "SCORE_ATUALIZADO"
+        | "CLIQUE_OFERTA"
+        | "FUNIL_ATUALIZADO"
       user_role:
         | "ADMIN"
         | "CLOSER"
@@ -234,6 +315,17 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      empresa_tipo: ["TOKENIZA", "BLUE"],
+      sgt_event_status: ["RECEBIDO", "PROCESSADO", "ERRO"],
+      sgt_evento_tipo: [
+        "LEAD_NOVO",
+        "ATUALIZACAO",
+        "CARRINHO_ABANDONADO",
+        "MQL",
+        "SCORE_ATUALIZADO",
+        "CLIQUE_OFERTA",
+        "FUNIL_ATUALIZADO",
+      ],
       user_role: [
         "ADMIN",
         "CLOSER",

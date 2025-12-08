@@ -1,1 +1,4 @@
 project_id = "xdjvlcelauvibznnbrzb"
+
+[functions.sgt-webhook]
+verify_jwt = false
