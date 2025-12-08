@@ -206,6 +206,9 @@ export type Database = {
           icp: Database["public"]["Enums"]["icp_tipo"]
           id: string
           lead_id: string
+          origem: Database["public"]["Enums"]["classificacao_origem"]
+          override_motivo: string | null
+          override_por_user_id: string | null
           persona: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade: number
           score_interno: number | null
@@ -222,6 +225,9 @@ export type Database = {
           icp: Database["public"]["Enums"]["icp_tipo"]
           id?: string
           lead_id: string
+          origem?: Database["public"]["Enums"]["classificacao_origem"]
+          override_motivo?: string | null
+          override_por_user_id?: string | null
           persona?: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade: number
           score_interno?: number | null
@@ -238,6 +244,9 @@ export type Database = {
           icp?: Database["public"]["Enums"]["icp_tipo"]
           id?: string
           lead_id?: string
+          origem?: Database["public"]["Enums"]["classificacao_origem"]
+          override_motivo?: string | null
+          override_por_user_id?: string | null
           persona?: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade?: number
           score_interno?: number | null
@@ -493,6 +502,7 @@ export type Database = {
         | "RESPOSTA_DETECTADA"
       cadence_run_status: "ATIVA" | "CONCLUIDA" | "CANCELADA" | "PAUSADA"
       canal_tipo: "WHATSAPP" | "EMAIL" | "SMS"
+      classificacao_origem: "AUTOMATICA" | "MANUAL"
       empresa_tipo: "TOKENIZA" | "BLUE"
       icp_tipo:
         | "TOKENIZA_SERIAL"
@@ -663,6 +673,7 @@ export const Constants = {
       ],
       cadence_run_status: ["ATIVA", "CONCLUIDA", "CANCELADA", "PAUSADA"],
       canal_tipo: ["WHATSAPP", "EMAIL", "SMS"],
+      classificacao_origem: ["AUTOMATICA", "MANUAL"],
       empresa_tipo: ["TOKENIZA", "BLUE"],
       icp_tipo: [
         "TOKENIZA_SERIAL",
