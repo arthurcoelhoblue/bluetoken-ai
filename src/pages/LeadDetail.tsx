@@ -1,0 +1,362 @@
+import { useState } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { useAuth } from '@/contexts/AuthContext';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { useLeadDetail } from '@/hooks/useLeadDetail';
+import {
+  ICP_LABELS,
+  PERSONA_LABELS,
+  TEMPERATURA_LABELS,
+  PRIORIDADE_LABELS,
+  ORIGEM_LABELS,
+} from '@/types/classification';
+import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
+import { ExternalLinks } from '@/components/leads/ExternalLinks';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import {
+  Bot,
+  Calendar,
+  ChevronLeft,
+  Edit,
+  Mail,
+  Phone,
+  Target,
+  Thermometer,
+  User,
+  Zap,
+  Clock,
+  AlertCircle,
+} from 'lucide-react';
+import { format } from 'date-fns';
+import { ptBR } from 'date-fns/locale';
+import type { Temperatura } from '@/types/classification';
+import type { EmpresaTipo } from '@/types/sgt';
+
+function TemperatureBadge({ temperatura }: { temperatura: Temperatura }) {
+  const colorMap: Record<Temperatura, string> = {
+    QUENTE: 'bg-destructive text-destructive-foreground',
+    MORNO: 'bg-warning text-warning-foreground',
+    FRIO: 'bg-primary text-primary-foreground',
+  };
+
+  return (
+    <Badge className={colorMap[temperatura]} variant="default">
+      {TEMPERATURA_LABELS[temperatura]}
+    </Badge>
+  );
+}
+
+function LeadDetailContent() {
+  const { leadId, empresa } = useParams<{ leadId: string; empresa: string }>();
+  const navigate = useNavigate();
+  const { hasRole } = useAuth();
+  const [editModalOpen, setEditModalOpen] = useState(false);
+
+  const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
+    useLeadDetail(leadId || '', empresa as EmpresaTipo);
+
+  const canEdit = hasRole('ADMIN') || hasRole('CLOSER');
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Bot className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (error || !contact) {
+    return (
+      <div className="min-h-screen bg-background">
+        <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+          <div className="container mx-auto px-4 py-4 flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/leads')}>
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <h1 className="font-bold text-lg">Lead não encontrado</h1>
+          </div>
+        </header>
+        <main className="container mx-auto px-4 py-12 text-center">
+          <AlertCircle className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
+          <h2 className="text-xl font-semibold mb-2">Lead não encontrado</h2>
+          <p className="text-muted-foreground mb-6">
+            O lead "{leadId}" não foi encontrado para a empresa {empresa}.
+          </p>
+          <Button onClick={() => navigate('/leads')}>Voltar para lista</Button>
+        </main>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-background">
+      {/* Header */}
+      <header className="border-b bg-card/50 backdrop-blur-sm sticky top-0 z-10">
+        <div className="container mx-auto px-4 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => navigate('/leads')}>
+              <ChevronLeft className="h-5 w-5" />
+            </Button>
+            <div>
+              <h1 className="font-bold text-lg">
+                {contact.nome || contact.primeiro_nome || 'Lead sem nome'}
+              </h1>
+              <div className="flex items-center gap-2">
+                <Badge variant={contact.empresa === 'TOKENIZA' ? 'default' : 'secondary'}>
+                  {contact.empresa}
+                </Badge>
+                <span className="text-xs text-muted-foreground">ID: {contact.lead_id}</span>
+              </div>
+            </div>
+          </div>
+          {canEdit && classification && (
+            <Button variant="outline" onClick={() => setEditModalOpen(true)}>
+              <Edit className="h-4 w-4 mr-2" />
+              Editar Classificação
+            </Button>
+          )}
+        </div>
+      </header>
+
+      <main className="container mx-auto px-4 py-6">
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Sidebar */}
+          <div className="space-y-6">
+            {/* Contact Info */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <User className="h-5 w-5" />
+                  Contato
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {contact.nome && (
+                  <div>
+                    <p className="text-sm text-muted-foreground">Nome</p>
+                    <p className="font-medium">{contact.nome}</p>
+                  </div>
+                )}
+                {contact.email && (
+                  <div className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    <span>{contact.email}</span>
+                  </div>
+                )}
+                {contact.telefone && (
+                  <div className="flex items-center gap-2">
+                    <Phone className="h-4 w-4 text-muted-foreground" />
+                    <span>{contact.telefone}</span>
+                  </div>
+                )}
+                <Separator />
+                <ExternalLinks contact={contact} />
+              </CardContent>
+            </Card>
+
+            {/* Classification */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Target className="h-5 w-5" />
+                  Classificação
+                  {classification?.origem === 'MANUAL' && (
+                    <Badge variant="outline" className="ml-auto text-xs">
+                      Manual
+                    </Badge>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {classification ? (
+                  <>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Temperatura</p>
+                        <TemperatureBadge temperatura={classification.temperatura} />
+                      </div>
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Prioridade</p>
+                        <Badge variant="outline">
+                          P{classification.prioridade} -{' '}
+                          {PRIORIDADE_LABELS[classification.prioridade]}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm text-muted-foreground mb-1">ICP</p>
+                      <p className="font-medium">{ICP_LABELS[classification.icp]}</p>
+                    </div>
+                    {classification.persona && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Persona</p>
+                        <p className="font-medium">
+                          {PERSONA_LABELS[classification.persona]}
+                        </p>
+                      </div>
+                    )}
+                    {classification.score_interno && (
+                      <div>
+                        <p className="text-sm text-muted-foreground mb-1">Score Interno</p>
+                        <p className="font-medium">{classification.score_interno}/100</p>
+                      </div>
+                    )}
+                    <Separator />
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <p>Origem: {ORIGEM_LABELS[classification.origem]}</p>
+                      <p>
+                        Atualizado em:{' '}
+                        {format(new Date(classification.updated_at), "dd/MM/yyyy 'às' HH:mm", {
+                          locale: ptBR,
+                        })}
+                      </p>
+                      {classification.override_motivo && (
+                        <div className="mt-2 p-2 bg-muted rounded">
+                          <p className="font-medium">Motivo do ajuste:</p>
+                          <p>{classification.override_motivo}</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">Sem classificação ainda.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-6">
+            {/* Cadence Status */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Zap className="h-5 w-5" />
+                  Cadência Ativa
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {cadenceRun ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="font-medium">Cadência em andamento</p>
+                        <p className="text-sm text-muted-foreground">
+                          Status: {cadenceRun.status}
+                        </p>
+                      </div>
+                      <Badge
+                        variant={cadenceRun.status === 'ATIVA' ? 'default' : 'secondary'}
+                      >
+                        {cadenceRun.status}
+                      </Badge>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Último passo</p>
+                        <p className="font-medium">
+                          Passo {cadenceRun.last_step_ordem || 0}
+                        </p>
+                      </div>
+                      {cadenceRun.next_run_at && (
+                        <div>
+                          <p className="text-muted-foreground">Próxima execução</p>
+                          <p className="font-medium">
+                            {format(new Date(cadenceRun.next_run_at), "dd/MM 'às' HH:mm", {
+                              locale: ptBR,
+                            })}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">
+                    Nenhuma cadência ativa para este lead.
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* SGT Events History */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Histórico de Eventos SGT
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {sgtEvents && sgtEvents.length > 0 ? (
+                  <div className="space-y-3">
+                    {sgtEvents.slice(0, 10).map((event) => (
+                      <div
+                        key={event.id}
+                        className="flex items-start gap-3 p-3 bg-muted/50 rounded-lg"
+                      >
+                        <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                          <Clock className="h-4 w-4 text-primary" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Badge variant="outline">{event.evento}</Badge>
+                            <span className="text-xs text-muted-foreground">
+                              {format(
+                                new Date(event.recebido_em),
+                                "dd/MM/yyyy 'às' HH:mm",
+                                { locale: ptBR }
+                              )}
+                            </span>
+                          </div>
+                          {event.processado_em && (
+                            <p className="text-xs text-muted-foreground">
+                              Processado em:{' '}
+                              {format(new Date(event.processado_em), 'HH:mm:ss', {
+                                locale: ptBR,
+                              })}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                    {sgtEvents.length > 10 && (
+                      <p className="text-sm text-muted-foreground text-center pt-2">
+                        +{sgtEvents.length - 10} eventos anteriores
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">Nenhum evento SGT registrado.</p>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </main>
+
+      {/* Edit Classification Modal */}
+      {classification && (
+        <EditClassificationModal
+          open={editModalOpen}
+          onOpenChange={setEditModalOpen}
+          classification={classification}
+          onSuccess={() => {
+            refetch();
+            setEditModalOpen(false);
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+export default function LeadDetail() {
+  return (
+    <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER', 'MARKETING']}>
+      <LeadDetailContent />
+    </ProtectedRoute>
+  );
+}
