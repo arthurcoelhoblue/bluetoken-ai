@@ -704,6 +704,20 @@ serve(async (req) => {
     const leadNormalizado = normalizeSGTEvent(payload);
     console.log('[SGT Webhook] Lead normalizado:', leadNormalizado);
 
+    // PATCH 5A: Upsert em lead_contacts para garantir dados de contato
+    const primeiroNome = leadNormalizado.nome.split(' ')[0] || leadNormalizado.nome;
+    await supabase.from('lead_contacts').upsert({
+      lead_id: payload.lead_id,
+      empresa: payload.empresa,
+      nome: leadNormalizado.nome,
+      email: leadNormalizado.email,
+      telefone: leadNormalizado.telefone,
+      primeiro_nome: primeiroNome,
+    }, {
+      onConflict: 'lead_id,empresa',
+    });
+    console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id);
+
     // Variáveis para resposta
     let classification: LeadClassificationResult | null = null;
     let cadenceResult: { cadenceCodigo: string | null; runId?: string; skipped?: boolean } = { cadenceCodigo: null };

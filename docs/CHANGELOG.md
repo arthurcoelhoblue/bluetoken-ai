@@ -6,6 +6,29 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [5.0.0] - 2025-12-08
+
+### 🎯 PATCH 5A - Infraestrutura de Mensagens
+
+#### Adicionado
+- Tabela `message_templates` para templates de mensagens por empresa/canal
+- Tabela `lead_contacts` para cache de contatos dos leads
+- Edge function `cadence-runner` para executar cadências vencidas
+- Tipos TypeScript (`src/types/messaging.ts`)
+- 10 templates seed (5 Tokeniza + 5 Blue)
+- Sistema de lock otimista para evitar duplicação de disparos
+- Resolução de placeholders: `{{nome}}`, `{{primeiro_nome}}`, `{{email}}`, `{{empresa}}`
+- Tratamento de erros com retry automático (15-30min)
+
+#### Alterado
+- `sgt-webhook` agora faz upsert em `lead_contacts` ao receber eventos
+
+#### Técnico
+- Disparo mockado (preparado para integração real no PATCH 5B)
+- Lotes de até 50 runs por execução
+
+---
+
 ## [4.0.0] - 2025-12-08
 
 ### 🎯 PATCH 4 - Motor de Cadências
