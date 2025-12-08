@@ -311,6 +311,77 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_messages: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          conteudo: string
+          created_at: string
+          direcao: string
+          email_message_id: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entregue_em: string | null
+          enviado_em: string | null
+          erro_detalhe: string | null
+          estado: string
+          id: string
+          lead_id: string
+          lido_em: string | null
+          run_id: string | null
+          step_ordem: number | null
+          template_codigo: string | null
+          updated_at: string
+          whatsapp_message_id: string | null
+        }
+        Insert: {
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          conteudo: string
+          created_at?: string
+          direcao: string
+          email_message_id?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entregue_em?: string | null
+          enviado_em?: string | null
+          erro_detalhe?: string | null
+          estado?: string
+          id?: string
+          lead_id: string
+          lido_em?: string | null
+          run_id?: string | null
+          step_ordem?: number | null
+          template_codigo?: string | null
+          updated_at?: string
+          whatsapp_message_id?: string | null
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          conteudo?: string
+          created_at?: string
+          direcao?: string
+          email_message_id?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          entregue_em?: string | null
+          enviado_em?: string | null
+          erro_detalhe?: string | null
+          estado?: string
+          id?: string
+          lead_id?: string
+          lido_em?: string | null
+          run_id?: string | null
+          step_ordem?: number | null
+          template_codigo?: string | null
+          updated_at?: string
+          whatsapp_message_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_messages_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "lead_cadence_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           ativo: boolean
