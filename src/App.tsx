@@ -19,6 +19,7 @@ import CadenceRunsList from "./pages/CadenceRunsList";
 import CadenceRunDetail from "./pages/CadenceRunDetail";
 import CadenceNextActions from "./pages/CadenceNextActions";
 import CadenceEditor from "./pages/CadenceEditor";
+import TokenizaOffers from "./pages/TokenizaOffers";
 
 const queryClient = new QueryClient();
 
@@ -71,6 +72,9 @@ const App = () => (
             <Route path="/cadences/next-actions" element={<CadenceNextActions />} />
             <Route path="/cadences/:cadenceId" element={<CadenceDetail />} />
             <Route path="/cadences" element={<CadencesList />} />
+            
+            {/* Tokeniza routes */}
+            <Route path="/tokeniza/offers" element={<TokenizaOffers />} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
