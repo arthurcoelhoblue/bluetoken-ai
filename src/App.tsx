@@ -13,6 +13,11 @@ import NotFound from "./pages/NotFound";
 import MonitorSgtEvents from "./pages/MonitorSgtEvents";
 import LeadsList from "./pages/LeadsList";
 import LeadDetail from "./pages/LeadDetail";
+import CadencesList from "./pages/CadencesList";
+import CadenceDetail from "./pages/CadenceDetail";
+import CadenceRunsList from "./pages/CadenceRunsList";
+import CadenceRunDetail from "./pages/CadenceRunDetail";
+import CadenceNextActions from "./pages/CadenceNextActions";
 
 const queryClient = new QueryClient();
 
@@ -45,9 +50,16 @@ const App = () => (
               </ProtectedRoute>
             } />
             
-            {/* Leads routes - PATCH 3.1 & 3.2 */}
+            {/* Leads routes */}
             <Route path="/leads" element={<LeadsList />} />
             <Route path="/leads/:leadId/:empresa" element={<LeadDetail />} />
+            
+            {/* Cadences routes - ÉPICO 4 */}
+            <Route path="/cadences/runs/:runId" element={<CadenceRunDetail />} />
+            <Route path="/cadences/runs" element={<CadenceRunsList />} />
+            <Route path="/cadences/next-actions" element={<CadenceNextActions />} />
+            <Route path="/cadences/:cadenceId" element={<CadenceDetail />} />
+            <Route path="/cadences" element={<CadencesList />} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
