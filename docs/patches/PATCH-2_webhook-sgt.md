@@ -28,6 +28,45 @@ Permitir que o SDR IA seja acionado automaticamente pelo SGT (Sistema de Gestão
 
 ---
 
+## 🔐 Autenticação
+
+A autenticação é feita via **Bearer Token** simples, enviado no header `Authorization`:
+
+```http
+Authorization: Bearer SEU_TOKEN_AQUI
+```
+
+O valor `SEU_TOKEN_AQUI` deve ser o mesmo configurado na secret:
+
+```
+SGT_WEBHOOK_SECRET=seu_token_secreto_aqui
+```
+
+### Respostas de Autenticação
+
+| Cenário | Status | Resposta |
+|---------|--------|----------|
+| Token ausente | 401 | `{"error": "Unauthorized"}` |
+| Token inválido | 401 | `{"error": "Unauthorized"}` |
+| Token válido | 200 | Processamento normal |
+
+---
+
+## 📡 Endpoint
+
+```http
+POST /functions/v1/sgt-webhook
+```
+
+### Headers Obrigatórios
+
+| Header | Valor | Descrição |
+|--------|-------|-----------|
+| `Content-Type` | `application/json` | Tipo do payload |
+| `Authorization` | `Bearer <token>` | Token de autenticação |
+
+---
+
 ## 🗄️ Alterações no Banco de Dados
 
 ### Enums Criados
@@ -145,13 +184,21 @@ CREATE INDEX idx_sgt_event_logs_status ON public.sgt_event_logs(status);
 }
 ```
 
+### Campos Obrigatórios Mínimos
+
+- `lead_id`
+- `evento`
+- `empresa`
+- `timestamp`
+- `dados_lead.email` OU `dados_lead.telefone`
+
 ---
 
 ## ⚙️ Funcionalidades Implementadas
 
 ### PATCH 2.1 - Endpoint /sgt/webhook
 1. ✅ Endpoint POST `/functions/v1/sgt-webhook`
-2. ✅ Validação de assinatura HMAC SHA-256
+2. ✅ Validação de Bearer Token
 3. ✅ Validação de payload (campos obrigatórios)
 4. ✅ Idempotência (evento não processado duas vezes)
 5. ✅ Registro de evento bruto no banco
@@ -163,36 +210,32 @@ CREATE INDEX idx_sgt_event_logs_status ON public.sgt_event_logs(status);
 9. ✅ Separação de dados por empresa
 
 ### PATCH 2.3 - Pipeline de Classificação
-10. ✅ Stub para `classificarLead(lead_id, dados_normalizados)`
-11. ⏳ Implementação completa (Épico 3/4)
+10. ✅ Integração com classificador comercial (Épico 3)
+11. ✅ Motor de cadências chamado após classificação (Épico 4)
 
 ### PATCH 2.4 - Logs e Auditoria
 12. ✅ Tabela `sgt_event_logs`
 13. ✅ Status: RECEBIDO, PROCESSADO, ERRO
 14. ✅ Captura de stack trace em erros
 
----
-
-## 🧪 Testes
-
-| # | Teste | Cenário | Resultado Esperado | Status |
-|---|-------|---------|-------------------|--------|
-| 1 | SGT envia LEAD_NOVO | POST com payload válido | Endpoint aceita e registra evento | ✅ Passou |
-| 2 | Payload inválido | POST sem lead_id | Rejeitar com 400 | ✅ Passou |
-| 3 | Assinatura incorreta | Header x-sgt-signature errado | Rejeitar com 401 | ✅ Passou |
-| 4 | Evento duplicado | Mesmo lead_id + evento + timestamp | Ignorar (idempotência) | ✅ Passou |
-| 5 | Pipeline de classificação | Evento válido processado | Registro criado em logs | ✅ Passou |
-| 6 | Dados TOKENIZA | Payload com dados_tokeniza | Normalizador extrai corretamente | ✅ Passou |
-| 7 | Dados BLUE | Payload com dados_blue | Normalizador extrai corretamente | ✅ Passou |
-| 8 | Payload parcial | Campos opcionais ausentes | Campos tratados com defaults | ✅ Passou |
+### PATCH 2.5 - Upsert de Contatos
+15. ✅ Tabela `lead_contacts`
+16. ✅ Upsert automático de dados de contato
 
 ---
 
-## 🔧 Configurações Necessárias
+## 🔄 Fluxo Interno (Resumo)
 
-- [x] Secret `SGT_WEBHOOK_SECRET` configurado
-- [x] Edge function com `verify_jwt = false`
-- [ ] SGT configurado para enviar webhooks
+1. **Autenticação**: valida `Authorization: Bearer ...` com `SGT_WEBHOOK_SECRET`
+2. **Validação**: checa campos obrigatórios do payload
+3. **Idempotência**: evita processar o mesmo evento `lead_id + evento + timestamp` mais de uma vez
+4. **Persistência**:
+   - `sgt_events` recebe o evento bruto
+   - `sgt_event_logs` registra status (RECEBIDO, PROCESSADO, ERRO)
+   - `lead_contacts` recebe/atualiza dados de contato
+5. **Classificação**: chama o classificador comercial (Épico 3)
+6. **Cadência**: chama o motor de cadências (Épico 4) para iniciar/atualizar cadência adequada
+7. **Retorno**: responde 200 OK ao SGT com JSON contendo status
 
 ---
 
@@ -204,12 +247,13 @@ sequenceDiagram
     participant WH as sgt-webhook
     participant DB as Database
     participant CL as Classificador
+    participant CD as Cadências
 
     SGT->>WH: POST /sgt-webhook
-    Note right of SGT: Headers: x-sgt-signature, x-sgt-timestamp
+    Note right of SGT: Header: Authorization: Bearer <token>
     
-    WH->>WH: Valida assinatura HMAC
-    alt Assinatura inválida
+    WH->>WH: Valida Bearer Token
+    alt Token inválido/ausente
         WH-->>SGT: 401 Unauthorized
     end
     
@@ -225,9 +269,11 @@ sequenceDiagram
     
     WH->>DB: INSERT sgt_events
     WH->>DB: INSERT sgt_event_logs (RECEBIDO)
+    WH->>DB: UPSERT lead_contacts
     
     WH->>WH: normalizeSGTEvent()
     WH->>CL: classificarLead()
+    WH->>CD: motor de cadências
     
     alt Sucesso
         WH->>DB: UPDATE processado_em
@@ -241,55 +287,54 @@ sequenceDiagram
 
 ---
 
-## 🔐 Segurança
+## 🔧 Configuração no SGT
 
-### Validação de Assinatura HMAC
+Na tela de **"Novo Destino de Webhook"** do SGT, configure:
 
-O SGT deve enviar:
-- Header `x-sgt-signature`: HMAC SHA-256 do payload
-- Header `x-sgt-timestamp`: Unix timestamp em segundos
+| Campo | Valor |
+|-------|-------|
+| **Nome** | SDR IA – Produção |
+| **URL do Webhook** | `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/sgt-webhook` |
+| **Empresa** | Todas as empresas (ou conforme necessidade) |
+| **Headers (JSON)** | Ver abaixo |
 
-Formato da assinatura:
-```
-HMAC-SHA256(secret, "${timestamp}.${body}")
-```
+### Headers JSON
 
-Validações:
-- Timestamp não pode ter mais de 5 minutos de diferença
-- Assinatura deve corresponder ao cálculo
-
-### Exemplo de Geração (Node.js)
-
-```javascript
-const crypto = require('crypto');
-
-function generateSignature(payload, secret) {
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const body = JSON.stringify(payload);
-  const signaturePayload = `${timestamp}.${body}`;
-  
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(signaturePayload)
-    .digest('hex');
-  
-  return { signature, timestamp };
+```json
+{
+  "Authorization": "Bearer SEU_TOKEN_AQUI",
+  "Content-Type": "application/json"
 }
-
-// Uso
-const { signature, timestamp } = generateSignature(payload, 'seu-secret');
-// Headers: x-sgt-signature: signature, x-sgt-timestamp: timestamp
 ```
+
+> ⚠️ **Importante**: Mantenha `SEU_TOKEN_AQUI` sincronizado com a secret `SGT_WEBHOOK_SECRET`.
+
+---
+
+## 🧪 Testes
+
+| # | Teste | Cenário | Resultado Esperado | Status |
+|---|-------|---------|-------------------|--------|
+| 1 | Token ausente | POST sem header Authorization | Rejeitar com 401 | ✅ Passou |
+| 2 | Token inválido | Bearer diferente do SGT_WEBHOOK_SECRET | Rejeitar com 401 | ✅ Passou |
+| 3 | SGT envia LEAD_NOVO | POST com payload válido | Endpoint aceita e registra evento | ✅ Passou |
+| 4 | Payload inválido | POST sem lead_id | Rejeitar com 400 | ✅ Passou |
+| 5 | Evento duplicado | Mesmo lead_id + evento + timestamp | Ignorar (idempotência) | ✅ Passou |
+| 6 | Pipeline completo | Evento válido processado | Classificação + cadência executados | ✅ Passou |
+| 7 | Dados TOKENIZA | Payload com dados_tokeniza | Normalizador extrai corretamente | ✅ Passou |
+| 8 | Dados BLUE | Payload com dados_blue | Normalizador extrai corretamente | ✅ Passou |
+| 9 | Payload parcial | Campos opcionais ausentes | Campos tratados com defaults | ✅ Passou |
 
 ---
 
 ## 📝 Como Testar
 
-### Teste Local (sem assinatura)
+### Com Bearer Token (Produção)
 
 ```bash
 curl -X POST https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/sgt-webhook \
   -H "Content-Type: application/json" \
+  -H "Authorization: Bearer SEU_TOKEN_AQUI" \
   -d '{
     "lead_id": "lead_123",
     "evento": "LEAD_NOVO",
@@ -310,7 +355,7 @@ curl -X POST https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/sgt-webhook \
   }'
 ```
 
-### Resposta Esperada
+### Resposta Esperada (Sucesso)
 
 ```json
 {
@@ -318,12 +363,54 @@ curl -X POST https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/sgt-webhook \
   "event_id": "uuid-do-evento",
   "lead_id": "lead_123",
   "evento": "LEAD_NOVO",
-  "empresa": "TOKENIZA"
+  "empresa": "TOKENIZA",
+  "classification": {
+    "icp": "TOKENIZA_SERIAL",
+    "persona": "CONSTRUTOR_PATRIMONIO",
+    "temperatura": "QUENTE",
+    "prioridade": 90
+  },
+  "cadence": {
+    "started": true,
+    "cadence_code": "TKZ_WHATSAPP_QUENTE"
+  }
+}
+```
+
+### Resposta Esperada (Token Inválido)
+
+```json
+{
+  "error": "Unauthorized"
 }
 ```
 
 ---
 
+## ✅ Checklist de Aderência
+
+- [x] Função exige header Authorization com Bearer válido
+- [x] Payload é validado (campos mínimos)
+- [x] Idempotência implementada
+- [x] Eventos são salvos em `sgt_events`
+- [x] Logs são salvos em `sgt_event_logs`
+- [x] `lead_contacts` é atualizado
+- [x] Classificador é chamado
+- [x] Motor de cadências é chamado quando aplicável
+- [x] Respostas de erro são informativas (401, 400, etc.)
+
+---
+
+## 🔧 Configurações Necessárias
+
+- [x] Secret `SGT_WEBHOOK_SECRET` configurado
+- [x] Edge function com `verify_jwt = false`
+- [ ] SGT configurado para enviar webhooks
+
+---
+
 ## 🔗 Dependências
 
-- **PATCH 1** - Autenticação Google + RBAC (para visualização de eventos no dashboard)
+- **PATCH 1** - Autenticação + RBAC (para visualização de eventos no dashboard)
+- **PATCH 3** - Classificador Comercial (chamado automaticamente)
+- **PATCH 4** - Motor de Cadências (chamado automaticamente)
