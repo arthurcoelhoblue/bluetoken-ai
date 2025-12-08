@@ -265,36 +265,48 @@ export type Database = {
       }
       lead_contacts: {
         Row: {
+          blue_client_id: string | null
           created_at: string
           email: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           lead_id: string
           nome: string | null
+          pipedrive_deal_id: string | null
+          pipedrive_person_id: string | null
           primeiro_nome: string | null
           telefone: string | null
+          tokeniza_investor_id: string | null
           updated_at: string
         }
         Insert: {
+          blue_client_id?: string | null
           created_at?: string
           email?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id: string
           nome?: string | null
+          pipedrive_deal_id?: string | null
+          pipedrive_person_id?: string | null
           primeiro_nome?: string | null
           telefone?: string | null
+          tokeniza_investor_id?: string | null
           updated_at?: string
         }
         Update: {
+          blue_client_id?: string | null
           created_at?: string
           email?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id?: string
           nome?: string | null
+          pipedrive_deal_id?: string | null
+          pipedrive_person_id?: string | null
           primeiro_nome?: string | null
           telefone?: string | null
+          tokeniza_investor_id?: string | null
           updated_at?: string
         }
         Relationships: []

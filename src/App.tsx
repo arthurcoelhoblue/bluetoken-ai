@@ -11,6 +11,8 @@ import Me from "./pages/Me";
 import Unauthorized from "./pages/Unauthorized";
 import NotFound from "./pages/NotFound";
 import MonitorSgtEvents from "./pages/MonitorSgtEvents";
+import LeadsList from "./pages/LeadsList";
+import LeadDetail from "./pages/LeadDetail";
 
 const queryClient = new QueryClient();
 
@@ -42,6 +44,10 @@ const App = () => (
                 <MonitorSgtEvents />
               </ProtectedRoute>
             } />
+            
+            {/* Leads routes - PATCH 3.1 & 3.2 */}
+            <Route path="/leads" element={<LeadsList />} />
+            <Route path="/leads/:leadId/:empresa" element={<LeadDetail />} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
