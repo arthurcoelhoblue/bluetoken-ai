@@ -14,6 +14,187 @@ export type Database = {
   }
   public: {
     Tables: {
+      cadence_steps: {
+        Row: {
+          cadence_id: string
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          created_at: string
+          id: string
+          offset_minutos: number
+          ordem: number
+          parar_se_responder: boolean
+          template_codigo: string
+          updated_at: string
+        }
+        Insert: {
+          cadence_id: string
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          id?: string
+          offset_minutos?: number
+          ordem: number
+          parar_se_responder?: boolean
+          template_codigo: string
+          updated_at?: string
+        }
+        Update: {
+          cadence_id?: string
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          id?: string
+          offset_minutos?: number
+          ordem?: number
+          parar_se_responder?: boolean
+          template_codigo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cadence_steps_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cadences: {
+        Row: {
+          ativo: boolean
+          canal_principal: Database["public"]["Enums"]["canal_tipo"]
+          codigo: string
+          created_at: string
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          canal_principal?: Database["public"]["Enums"]["canal_tipo"]
+          codigo: string
+          created_at?: string
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          canal_principal?: Database["public"]["Enums"]["canal_tipo"]
+          codigo?: string
+          created_at?: string
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      lead_cadence_events: {
+        Row: {
+          created_at: string
+          detalhes: Json | null
+          id: string
+          lead_cadence_run_id: string
+          step_ordem: number
+          template_codigo: string
+          tipo_evento: Database["public"]["Enums"]["cadence_event_tipo"]
+        }
+        Insert: {
+          created_at?: string
+          detalhes?: Json | null
+          id?: string
+          lead_cadence_run_id: string
+          step_ordem: number
+          template_codigo: string
+          tipo_evento: Database["public"]["Enums"]["cadence_event_tipo"]
+        }
+        Update: {
+          created_at?: string
+          detalhes?: Json | null
+          id?: string
+          lead_cadence_run_id?: string
+          step_ordem?: number
+          template_codigo?: string
+          tipo_evento?: Database["public"]["Enums"]["cadence_event_tipo"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_cadence_events_lead_cadence_run_id_fkey"
+            columns: ["lead_cadence_run_id"]
+            isOneToOne: false
+            referencedRelation: "lead_cadence_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_cadence_runs: {
+        Row: {
+          cadence_id: string
+          classification_snapshot: Json | null
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id: string | null
+          id: string
+          last_step_ordem: number
+          lead_id: string
+          next_run_at: string | null
+          next_step_ordem: number | null
+          started_at: string
+          status: Database["public"]["Enums"]["cadence_run_status"]
+          updated_at: string
+        }
+        Insert: {
+          cadence_id: string
+          classification_snapshot?: Json | null
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id?: string | null
+          id?: string
+          last_step_ordem?: number
+          lead_id: string
+          next_run_at?: string | null
+          next_step_ordem?: number | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["cadence_run_status"]
+          updated_at?: string
+        }
+        Update: {
+          cadence_id?: string
+          classification_snapshot?: Json | null
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id?: string | null
+          id?: string
+          last_step_ordem?: number
+          lead_id?: string
+          next_run_at?: string | null
+          next_step_ordem?: number | null
+          started_at?: string
+          status?: Database["public"]["Enums"]["cadence_run_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_cadence_runs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_cadence_runs_fonte_evento_id_fkey"
+            columns: ["fonte_evento_id"]
+            isOneToOne: false
+            referencedRelation: "sgt_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_classifications: {
         Row: {
           classificado_em: string
@@ -230,6 +411,13 @@ export type Database = {
       }
     }
     Enums: {
+      cadence_event_tipo:
+        | "AGENDADO"
+        | "DISPARADO"
+        | "ERRO"
+        | "RESPOSTA_DETECTADA"
+      cadence_run_status: "ATIVA" | "CONCLUIDA" | "CANCELADA" | "PAUSADA"
+      canal_tipo: "WHATSAPP" | "EMAIL" | "SMS"
       empresa_tipo: "TOKENIZA" | "BLUE"
       icp_tipo:
         | "TOKENIZA_SERIAL"
@@ -392,6 +580,14 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      cadence_event_tipo: [
+        "AGENDADO",
+        "DISPARADO",
+        "ERRO",
+        "RESPOSTA_DETECTADA",
+      ],
+      cadence_run_status: ["ATIVA", "CONCLUIDA", "CANCELADA", "PAUSADA"],
+      canal_tipo: ["WHATSAPP", "EMAIL", "SMS"],
       empresa_tipo: ["TOKENIZA", "BLUE"],
       icp_tipo: [
         "TOKENIZA_SERIAL",
