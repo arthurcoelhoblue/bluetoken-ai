@@ -6,6 +6,22 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [4.0.0] - 2025-12-08
+
+### 🎯 PATCH 4 - Motor de Cadências
+
+#### Adicionado
+- Tabelas: `cadences`, `cadence_steps`, `lead_cadence_runs`, `lead_cadence_events`
+- Enums: `cadence_run_status`, `cadence_event_tipo`, `canal_tipo`
+- Tipos TypeScript (`src/types/cadence.ts`)
+- 4 cadências seed: TOKENIZA_INBOUND_LEAD_NOVO, TOKENIZA_MQL_QUENTE, BLUE_INBOUND_LEAD_NOVO, BLUE_IR_URGENTE
+- Função `decidirCadenciaParaLead()` e `iniciarCadenciaParaLead()`
+- Integração: classificação → cadência automática no webhook
+- Logs de eventos de cadência (AGENDADO)
+- Máximo 1 run ativa por lead+empresa
+
+---
+
 ## [3.0.0] - 2025-12-08
 
 ### 🎯 PATCH 3 - Pipeline de Classificação Comercial
