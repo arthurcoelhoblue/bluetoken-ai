@@ -254,6 +254,81 @@ export type Database = {
           },
         ]
       }
+      lead_contacts: {
+        Row: {
+          created_at: string
+          email: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          lead_id: string
+          nome: string | null
+          primeiro_nome: string | null
+          telefone: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          email?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          lead_id: string
+          nome?: string | null
+          primeiro_nome?: string | null
+          telefone?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          email?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          lead_id?: string
+          nome?: string | null
+          primeiro_nome?: string | null
+          telefone?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      message_templates: {
+        Row: {
+          ativo: boolean
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          codigo: string
+          conteudo: string
+          created_at: string
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          codigo: string
+          conteudo: string
+          created_at?: string
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          codigo?: string
+          conteudo?: string
+          created_at?: string
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
