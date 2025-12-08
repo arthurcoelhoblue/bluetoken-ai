@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.cadence-runner]
 verify_jwt = false
+
+[functions.tokeniza-offers]
+verify_jwt = false

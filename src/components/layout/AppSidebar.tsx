@@ -13,6 +13,7 @@ import {
   LogOut,
   ChevronRight,
   PlusCircle,
+  Coins,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -67,6 +68,12 @@ const navGroups: NavGroup[] = [
       { title: 'Eventos SGT', url: '/monitor/sgt-events', icon: Activity, roles: ['ADMIN', 'AUDITOR'] },
     ],
     roles: ['ADMIN', 'AUDITOR'],
+  },
+  {
+    label: 'Tokeniza',
+    items: [
+      { title: 'Ofertas', url: '/tokeniza/offers', icon: Coins },
+    ],
   },
 ];
 
