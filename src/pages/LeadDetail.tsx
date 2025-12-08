@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';
+import { useLeadMessages } from '@/hooks/useLeadMessages';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -12,6 +13,7 @@ import {
 } from '@/types/classification';
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
+import { MessageHistory } from '@/components/messages/MessageHistory';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -55,6 +57,12 @@ function LeadDetailContent() {
 
   const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
     useLeadDetail(leadId || '', empresa as EmpresaTipo);
+
+  const { data: messages = [], isLoading: messagesLoading } = useLeadMessages({
+    leadId: leadId || '',
+    empresa: empresa as EmpresaTipo,
+    enabled: !!leadId && !!empresa,
+  });
 
   const canEdit = hasRole('ADMIN') || hasRole('CLOSER');
 
@@ -260,6 +268,15 @@ function LeadDetailContent() {
               )}
             </CardContent>
           </Card>
+
+          {/* Message History */}
+          <MessageHistory
+            messages={messages}
+            isLoading={messagesLoading}
+            showCadenceName
+            maxHeight="350px"
+            emptyMessage="Nenhuma mensagem enviada para este lead."
+          />
 
           {/* SGT Events History */}
           <Card>
