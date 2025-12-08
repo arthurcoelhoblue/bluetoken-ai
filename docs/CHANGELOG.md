@@ -6,6 +6,29 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [3.0.0] - 2025-12-08
+
+### 🎯 PATCH 3 - Pipeline de Classificação Comercial
+
+#### Adicionado
+- Tabela `lead_classifications` para armazenar classificações
+- Enums: `temperatura_tipo`, `icp_tipo`, `persona_tipo`
+- Tipos TypeScript para classificação (`src/types/classification.ts`)
+- Lógica completa de classificação na edge function `sgt-webhook`
+- Regras de ICP para Tokeniza (Serial, Médio Prazo, Emergente, Alto Volume Digital)
+- Regras de ICP para Blue (Alto Ticket IR, Recorrente, Perdido Recuperável)
+- Personas por empresa e ICP
+- Cálculo de temperatura por evento e stage
+- Cálculo de prioridade (1, 2, 3)
+- Score interno consolidado (0-100)
+- Upsert por (lead_id, empresa) para evitar duplicatas
+
+#### Segurança
+- RLS policies para Admins, Marketing e SDR_IA
+- Service role para operações de insert/update
+
+---
+
 ## [2.0.0] - 2025-12-08
 
 ### 🎯 PATCH 2 - Webhook SGT

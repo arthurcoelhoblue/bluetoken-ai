@@ -14,6 +14,65 @@ export type Database = {
   }
   public: {
     Tables: {
+      lead_classifications: {
+        Row: {
+          classificado_em: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id: string | null
+          fonte_evento_tipo:
+            | Database["public"]["Enums"]["sgt_evento_tipo"]
+            | null
+          icp: Database["public"]["Enums"]["icp_tipo"]
+          id: string
+          lead_id: string
+          persona: Database["public"]["Enums"]["persona_tipo"] | null
+          prioridade: number
+          score_interno: number | null
+          temperatura: Database["public"]["Enums"]["temperatura_tipo"]
+          updated_at: string
+        }
+        Insert: {
+          classificado_em?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id?: string | null
+          fonte_evento_tipo?:
+            | Database["public"]["Enums"]["sgt_evento_tipo"]
+            | null
+          icp: Database["public"]["Enums"]["icp_tipo"]
+          id?: string
+          lead_id: string
+          persona?: Database["public"]["Enums"]["persona_tipo"] | null
+          prioridade: number
+          score_interno?: number | null
+          temperatura?: Database["public"]["Enums"]["temperatura_tipo"]
+          updated_at?: string
+        }
+        Update: {
+          classificado_em?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          fonte_evento_id?: string | null
+          fonte_evento_tipo?:
+            | Database["public"]["Enums"]["sgt_evento_tipo"]
+            | null
+          icp?: Database["public"]["Enums"]["icp_tipo"]
+          id?: string
+          lead_id?: string
+          persona?: Database["public"]["Enums"]["persona_tipo"] | null
+          prioridade?: number
+          score_interno?: number | null
+          temperatura?: Database["public"]["Enums"]["temperatura_tipo"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_classifications_fonte_evento_id_fkey"
+            columns: ["fonte_evento_id"]
+            isOneToOne: false
+            referencedRelation: "sgt_events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -172,6 +231,23 @@ export type Database = {
     }
     Enums: {
       empresa_tipo: "TOKENIZA" | "BLUE"
+      icp_tipo:
+        | "TOKENIZA_SERIAL"
+        | "TOKENIZA_MEDIO_PRAZO"
+        | "TOKENIZA_EMERGENTE"
+        | "TOKENIZA_ALTO_VOLUME_DIGITAL"
+        | "TOKENIZA_NAO_CLASSIFICADO"
+        | "BLUE_ALTO_TICKET_IR"
+        | "BLUE_RECURRENTE"
+        | "BLUE_PERDIDO_RECUPERAVEL"
+        | "BLUE_NAO_CLASSIFICADO"
+      persona_tipo:
+        | "CONSTRUTOR_PATRIMONIO"
+        | "COLECIONADOR_DIGITAL"
+        | "INICIANTE_CAUTELOSO"
+        | "CRIPTO_CONTRIBUINTE_URGENTE"
+        | "CLIENTE_FIEL_RENOVADOR"
+        | "LEAD_PERDIDO_RECUPERAVEL"
       sgt_event_status: "RECEBIDO" | "PROCESSADO" | "ERRO"
       sgt_evento_tipo:
         | "LEAD_NOVO"
@@ -181,6 +257,7 @@ export type Database = {
         | "SCORE_ATUALIZADO"
         | "CLIQUE_OFERTA"
         | "FUNIL_ATUALIZADO"
+      temperatura_tipo: "FRIO" | "MORNO" | "QUENTE"
       user_role:
         | "ADMIN"
         | "CLOSER"
@@ -316,6 +393,25 @@ export const Constants = {
   public: {
     Enums: {
       empresa_tipo: ["TOKENIZA", "BLUE"],
+      icp_tipo: [
+        "TOKENIZA_SERIAL",
+        "TOKENIZA_MEDIO_PRAZO",
+        "TOKENIZA_EMERGENTE",
+        "TOKENIZA_ALTO_VOLUME_DIGITAL",
+        "TOKENIZA_NAO_CLASSIFICADO",
+        "BLUE_ALTO_TICKET_IR",
+        "BLUE_RECURRENTE",
+        "BLUE_PERDIDO_RECUPERAVEL",
+        "BLUE_NAO_CLASSIFICADO",
+      ],
+      persona_tipo: [
+        "CONSTRUTOR_PATRIMONIO",
+        "COLECIONADOR_DIGITAL",
+        "INICIANTE_CAUTELOSO",
+        "CRIPTO_CONTRIBUINTE_URGENTE",
+        "CLIENTE_FIEL_RENOVADOR",
+        "LEAD_PERDIDO_RECUPERAVEL",
+      ],
       sgt_event_status: ["RECEBIDO", "PROCESSADO", "ERRO"],
       sgt_evento_tipo: [
         "LEAD_NOVO",
@@ -326,6 +422,7 @@ export const Constants = {
         "CLIQUE_OFERTA",
         "FUNIL_ATUALIZADO",
       ],
+      temperatura_tipo: ["FRIO", "MORNO", "QUENTE"],
       user_role: [
         "ADMIN",
         "CLOSER",
