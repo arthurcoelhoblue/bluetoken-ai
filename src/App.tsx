@@ -18,6 +18,7 @@ import CadenceDetail from "./pages/CadenceDetail";
 import CadenceRunsList from "./pages/CadenceRunsList";
 import CadenceRunDetail from "./pages/CadenceRunDetail";
 import CadenceNextActions from "./pages/CadenceNextActions";
+import CadenceEditor from "./pages/CadenceEditor";
 
 const queryClient = new QueryClient();
 
@@ -55,6 +56,16 @@ const App = () => (
             <Route path="/leads/:leadId/:empresa" element={<LeadDetail />} />
             
             {/* Cadences routes - ÉPICO 4 */}
+            <Route path="/cadences/new" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <CadenceEditor />
+              </ProtectedRoute>
+            } />
+            <Route path="/cadences/:cadenceId/edit" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <CadenceEditor />
+              </ProtectedRoute>
+            } />
             <Route path="/cadences/runs/:runId" element={<CadenceRunDetail />} />
             <Route path="/cadences/runs" element={<CadenceRunsList />} />
             <Route path="/cadences/next-actions" element={<CadenceNextActions />} />
