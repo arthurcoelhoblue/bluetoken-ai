@@ -55,7 +55,7 @@ export function useTokenizaOffer(offerId: string | undefined) {
 export function useActiveTokenizaOffers() {
   const query = useTokenizaOffers();
   
-  const activeOffers = query.data?.ofertas.filter(o => o.status === 'open') || [];
+  const activeOffers = query.data?.ofertas.filter(o => o.status === 'active') || [];
   
   return {
     ...query,
