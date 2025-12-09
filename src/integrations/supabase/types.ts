@@ -357,8 +357,9 @@ export type Database = {
           erro_detalhe: string | null
           estado: string
           id: string
-          lead_id: string
+          lead_id: string | null
           lido_em: string | null
+          recebido_em: string | null
           run_id: string | null
           step_ordem: number | null
           template_codigo: string | null
@@ -377,8 +378,9 @@ export type Database = {
           erro_detalhe?: string | null
           estado?: string
           id?: string
-          lead_id: string
+          lead_id?: string | null
           lido_em?: string | null
+          recebido_em?: string | null
           run_id?: string | null
           step_ordem?: number | null
           template_codigo?: string | null
@@ -397,8 +399,9 @@ export type Database = {
           erro_detalhe?: string | null
           estado?: string
           id?: string
-          lead_id?: string
+          lead_id?: string | null
           lido_em?: string | null
+          recebido_em?: string | null
           run_id?: string | null
           step_ordem?: number | null
           template_codigo?: string | null
