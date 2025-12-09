@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.sdr-ia-interpret]
 verify_jwt = false
+
+[functions.pipedrive-sync]
+verify_jwt = false

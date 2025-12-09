@@ -36,6 +36,7 @@ export interface DadosLead {
   utm_term?: string;
   score?: number;
   stage?: LeadStage;
+  pipedrive_deal_id?: string;
 }
 
 // Dados específicos da Tokeniza
