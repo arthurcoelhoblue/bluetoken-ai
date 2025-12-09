@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';
 import { useLeadMessages } from '@/hooks/useLeadMessages';
+import { useLeadIntents } from '@/hooks/useLeadIntents';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -14,6 +15,7 @@ import {
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { MessageHistory } from '@/components/messages/MessageHistory';
+import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -62,6 +64,13 @@ function LeadDetailContent() {
   const { data: messages = [], isLoading: messagesLoading } = useLeadMessages({
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
+    enabled: !!leadId && !!empresa,
+  });
+
+  const { data: intents = [], isLoading: intentsLoading } = useLeadIntents({
+    leadId: leadId || '',
+    empresa: empresa as EmpresaTipo,
+    limit: 5,
     enabled: !!leadId && !!empresa,
   });
 
@@ -285,6 +294,14 @@ function LeadDetailContent() {
             showCadenceName
             maxHeight="350px"
             emptyMessage="Nenhuma mensagem enviada para este lead."
+          />
+
+          {/* Intent History - PATCH 5G */}
+          <IntentHistoryCard
+            intents={intents}
+            isLoading={intentsLoading}
+            maxItems={5}
+            title="Interpretações IA do Lead"
           />
 
           {/* SGT Events History */}

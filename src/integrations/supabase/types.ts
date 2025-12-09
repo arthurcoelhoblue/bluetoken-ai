@@ -344,6 +344,75 @@ export type Database = {
         }
         Relationships: []
       }
+      lead_message_intents: {
+        Row: {
+          acao_aplicada: boolean
+          acao_detalhes: Json | null
+          acao_recomendada: Database["public"]["Enums"]["sdr_acao_tipo"]
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          intent: Database["public"]["Enums"]["lead_intent_tipo"]
+          intent_confidence: number
+          intent_summary: string | null
+          lead_id: string | null
+          message_id: string
+          modelo_ia: string | null
+          run_id: string | null
+          tempo_processamento_ms: number | null
+          tokens_usados: number | null
+        }
+        Insert: {
+          acao_aplicada?: boolean
+          acao_detalhes?: Json | null
+          acao_recomendada?: Database["public"]["Enums"]["sdr_acao_tipo"]
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          intent: Database["public"]["Enums"]["lead_intent_tipo"]
+          intent_confidence: number
+          intent_summary?: string | null
+          lead_id?: string | null
+          message_id: string
+          modelo_ia?: string | null
+          run_id?: string | null
+          tempo_processamento_ms?: number | null
+          tokens_usados?: number | null
+        }
+        Update: {
+          acao_aplicada?: boolean
+          acao_detalhes?: Json | null
+          acao_recomendada?: Database["public"]["Enums"]["sdr_acao_tipo"]
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          intent?: Database["public"]["Enums"]["lead_intent_tipo"]
+          intent_confidence?: number
+          intent_summary?: string | null
+          lead_id?: string | null
+          message_id?: string
+          modelo_ia?: string | null
+          run_id?: string | null
+          tempo_processamento_ms?: number | null
+          tokens_usados?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_message_intents_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "lead_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_message_intents_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "lead_cadence_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_messages: {
         Row: {
           canal: Database["public"]["Enums"]["canal_tipo"]
@@ -633,6 +702,19 @@ export type Database = {
         | "BLUE_RECURRENTE"
         | "BLUE_PERDIDO_RECUPERAVEL"
         | "BLUE_NAO_CLASSIFICADO"
+      lead_intent_tipo:
+        | "INTERESSE_COMPRA"
+        | "DUVIDA_PRODUTO"
+        | "DUVIDA_PRECO"
+        | "SOLICITACAO_CONTATO"
+        | "AGENDAMENTO_REUNIAO"
+        | "RECLAMACAO"
+        | "OPT_OUT"
+        | "NAO_ENTENDI"
+        | "CUMPRIMENTO"
+        | "AGRADECIMENTO"
+        | "FORA_CONTEXTO"
+        | "OUTRO"
       persona_tipo:
         | "CONSTRUTOR_PATRIMONIO"
         | "COLECIONADOR_DIGITAL"
@@ -640,6 +722,15 @@ export type Database = {
         | "CRIPTO_CONTRIBUINTE_URGENTE"
         | "CLIENTE_FIEL_RENOVADOR"
         | "LEAD_PERDIDO_RECUPERAVEL"
+      sdr_acao_tipo:
+        | "PAUSAR_CADENCIA"
+        | "CANCELAR_CADENCIA"
+        | "RETOMAR_CADENCIA"
+        | "AJUSTAR_TEMPERATURA"
+        | "CRIAR_TAREFA_CLOSER"
+        | "MARCAR_OPT_OUT"
+        | "NENHUMA"
+        | "ESCALAR_HUMANO"
       sgt_event_status: "RECEBIDO" | "PROCESSADO" | "ERRO"
       sgt_evento_tipo:
         | "LEAD_NOVO"
@@ -805,6 +896,20 @@ export const Constants = {
         "BLUE_PERDIDO_RECUPERAVEL",
         "BLUE_NAO_CLASSIFICADO",
       ],
+      lead_intent_tipo: [
+        "INTERESSE_COMPRA",
+        "DUVIDA_PRODUTO",
+        "DUVIDA_PRECO",
+        "SOLICITACAO_CONTATO",
+        "AGENDAMENTO_REUNIAO",
+        "RECLAMACAO",
+        "OPT_OUT",
+        "NAO_ENTENDI",
+        "CUMPRIMENTO",
+        "AGRADECIMENTO",
+        "FORA_CONTEXTO",
+        "OUTRO",
+      ],
       persona_tipo: [
         "CONSTRUTOR_PATRIMONIO",
         "COLECIONADOR_DIGITAL",
@@ -812,6 +917,16 @@ export const Constants = {
         "CRIPTO_CONTRIBUINTE_URGENTE",
         "CLIENTE_FIEL_RENOVADOR",
         "LEAD_PERDIDO_RECUPERAVEL",
+      ],
+      sdr_acao_tipo: [
+        "PAUSAR_CADENCIA",
+        "CANCELAR_CADENCIA",
+        "RETOMAR_CADENCIA",
+        "AJUSTAR_TEMPERATURA",
+        "CRIAR_TAREFA_CLOSER",
+        "MARCAR_OPT_OUT",
+        "NENHUMA",
+        "ESCALAR_HUMANO",
       ],
       sgt_event_status: ["RECEBIDO", "PROCESSADO", "ERRO"],
       sgt_evento_tipo: [

@@ -326,7 +326,30 @@ serve(async (req) => {
     // 3. Salvar mensagem
     const result = await saveInboundMessage(supabase, payload, leadContact, activeRun);
     
-    // TODO PATCH 5G: Disparar interpretação IA
+    // 4. Disparar interpretação IA (PATCH 5G)
+    if (result.success && result.messageId && result.status === 'MATCHED') {
+      try {
+        const supabaseFunctionsUrl = Deno.env.get('SUPABASE_URL')!;
+        const response = await fetch(`${supabaseFunctionsUrl}/functions/v1/sdr-ia-interpret`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+          },
+          body: JSON.stringify({ messageId: result.messageId }),
+        });
+        
+        if (response.ok) {
+          const iaResult = await response.json();
+          console.log('[Inbound] Interpretação IA:', iaResult);
+          (result as any).iaInterpretation = iaResult;
+        } else {
+          console.error('[Inbound] Erro ao chamar SDR IA:', response.status);
+        }
+      } catch (iaError) {
+        console.error('[Inbound] Erro ao disparar interpretação:', iaError);
+      }
+    }
     
     return new Response(
       JSON.stringify(result),
