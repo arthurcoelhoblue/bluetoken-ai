@@ -74,7 +74,7 @@ serve(async (req) => {
         lead_id: leadId,
         empresa: empresa,
         canal: 'WHATSAPP',
-        direcao: 'SAIDA',
+        direcao: 'OUTBOUND',
         conteudo: mensagem,
         estado: 'PENDENTE',
         run_id: runId || null,
