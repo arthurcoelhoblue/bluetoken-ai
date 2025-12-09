@@ -179,13 +179,48 @@ function validateBearerToken(authHeader: string | null): boolean {
   return token === secret;
 }
 
+// Normaliza payload para aceitar formato flat (para testes) ou nested (produção)
+function normalizePayloadFormat(payload: Record<string, unknown>): Record<string, unknown> {
+  // Se já tem dados_lead, retorna como está
+  if (payload.dados_lead && typeof payload.dados_lead === 'object') {
+    return payload;
+  }
+
+  // Modo flat: campos no nível raiz → converte para nested
+  const flatFields = ['nome', 'email', 'telefone', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'score', 'stage', 'pipedrive_deal_id'];
+  const hasFlatFields = flatFields.some(f => f in payload);
+  
+  if (hasFlatFields) {
+    console.log('[SGT Webhook] Payload em formato flat detectado, convertendo...');
+    const dadosLead: Record<string, unknown> = {};
+    flatFields.forEach(field => {
+      if (payload[field] !== undefined) {
+        dadosLead[field] = payload[field];
+      }
+    });
+    
+    // Garantir timestamp se não existir
+    if (!payload.timestamp) {
+      payload.timestamp = new Date().toISOString();
+    }
+    
+    return {
+      ...payload,
+      dados_lead: dadosLead,
+    };
+  }
+
+  return payload;
+}
+
 // Validação do payload
-function validatePayload(payload: unknown): { valid: boolean; error?: string } {
+function validatePayload(payload: unknown): { valid: boolean; error?: string; normalized?: Record<string, unknown> } {
   if (!payload || typeof payload !== 'object') {
     return { valid: false, error: 'Payload inválido' };
   }
 
-  const p = payload as Record<string, unknown>;
+  // Normaliza para aceitar formato flat
+  const p = normalizePayloadFormat(payload as Record<string, unknown>);
 
   if (!p.lead_id || typeof p.lead_id !== 'string') {
     return { valid: false, error: 'lead_id é obrigatório' };
@@ -204,15 +239,15 @@ function validatePayload(payload: unknown): { valid: boolean; error?: string } {
   }
 
   if (!p.dados_lead || typeof p.dados_lead !== 'object') {
-    return { valid: false, error: 'dados_lead é obrigatório' };
+    return { valid: false, error: 'dados_lead é obrigatório (ou forneça nome/email/telefone no nível raiz)' };
   }
 
   const dadosLead = p.dados_lead as Record<string, unknown>;
   if (!dadosLead.email || typeof dadosLead.email !== 'string') {
-    return { valid: false, error: 'dados_lead.email é obrigatório' };
+    return { valid: false, error: 'email é obrigatório (dados_lead.email ou email)' };
   }
 
-  return { valid: true };
+  return { valid: true, normalized: p };
 }
 
 // Gera chave de idempotência
@@ -618,20 +653,20 @@ serve(async (req) => {
     // Parse do payload
     let payload: SGTPayload;
     try {
-      payload = JSON.parse(bodyText);
+      const rawPayload = JSON.parse(bodyText);
+      // Valida estrutura do payload (com normalização de formato)
+      const validation = validatePayload(rawPayload);
+      if (!validation.valid) {
+        console.error('[SGT Webhook] Payload inválido:', validation.error);
+        return new Response(
+          JSON.stringify({ error: validation.error }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      payload = validation.normalized as unknown as SGTPayload;
     } catch {
       return new Response(
         JSON.stringify({ error: 'JSON inválido' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Valida estrutura do payload
-    const validation = validatePayload(payload);
-    if (!validation.valid) {
-      console.error('[SGT Webhook] Payload inválido:', validation.error);
-      return new Response(
-        JSON.stringify({ error: validation.error }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
