@@ -3,6 +3,7 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 
 // ========================================
 // SGT Webhook - Patches 2, 3 e 4
+// Atualizado conforme documentação oficial SGT v1.0
 // ========================================
 
 const corsHeaders = {
@@ -11,11 +12,12 @@ const corsHeaders = {
 };
 
 // ========================================
-// TIPOS
+// TIPOS - Alinhados com documentação SGT
 // ========================================
 type SGTEventoTipo = 'LEAD_NOVO' | 'ATUALIZACAO' | 'CARRINHO_ABANDONADO' | 'MQL' | 'SCORE_ATUALIZADO' | 'CLIQUE_OFERTA' | 'FUNIL_ATUALIZADO';
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
-type LeadStage = 'Contato Iniciado' | 'Negociação' | 'Perdido' | 'Cliente';
+type LeadStage = 'Lead' | 'Contato Iniciado' | 'Negociação' | 'Perdido' | 'Cliente';
+type OrigemTipo = 'INBOUND' | 'OUTBOUND' | 'REFERRAL' | 'PARTNER';
 type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
 type Prioridade = 1 | 2 | 3;
 
@@ -29,17 +31,43 @@ type Persona = PersonaTokeniza | PersonaBlue | null;
 
 type CadenceCodigo = 'TOKENIZA_INBOUND_LEAD_NOVO' | 'TOKENIZA_MQL_QUENTE' | 'BLUE_INBOUND_LEAD_NOVO' | 'BLUE_IR_URGENTE';
 
+// ========================================
+// INTERFACES - Estrutura completa do payload SGT
+// ========================================
 interface DadosLead {
   nome: string;
   email: string;
   telefone?: string;
+  
+  // UTM parameters
   utm_source?: string;
   utm_medium?: string;
   utm_campaign?: string;
   utm_term?: string;
+  utm_content?: string;
+  
+  // Score e stage
   score?: number;
-  stage?: LeadStage;
+  stage?: LeadStage | string;
+  
+  // Pipedrive
   pipedrive_deal_id?: string;
+  url_pipedrive?: string;
+  
+  // Organização e origem
+  organizacao?: string;
+  origem_tipo?: OrigemTipo;
+  lead_pago?: boolean;
+  
+  // Datas importantes
+  data_criacao?: string;
+  data_mql?: string;
+  data_levantou_mao?: string;
+  data_reuniao?: string;
+  data_venda?: string;
+  
+  // Valor
+  valor_venda?: number;
 }
 
 interface DadosTokeniza {
@@ -47,6 +75,9 @@ interface DadosTokeniza {
   qtd_investimentos?: number;
   qtd_projetos?: number;
   ultimo_investimento_em?: string | null;
+  projetos?: string[];
+  carrinho_abandonado?: boolean;
+  valor_carrinho?: number;
 }
 
 interface DadosBlue {
@@ -54,6 +85,34 @@ interface DadosBlue {
   ticket_medio?: number;
   score_mautic?: number;
   plano_atual?: string | null;
+  cliente_status?: string;
+}
+
+interface DadosMautic {
+  contact_id?: number;
+  score?: number;
+  page_hits?: number;
+  email_opens?: number;
+  email_clicks?: number;
+  last_active?: string;
+  tags?: string[];
+  segments?: string[];
+}
+
+interface DadosChatwoot {
+  contact_id?: number;
+  mensagens_total?: number;
+  ultima_mensagem_em?: string;
+  status_conversa?: string;
+  canal?: string;
+}
+
+interface DadosNotion {
+  page_id?: string;
+  cliente_status?: string;
+  conta_ativa?: boolean;
+  ultimo_servico?: string;
+  notas?: string;
 }
 
 interface EventMetadata {
@@ -61,6 +120,9 @@ interface EventMetadata {
   valor_simulado?: number;
   pagina_visitada?: string;
   tipo_compra?: string;
+  referrer?: string;
+  device?: string;
+  ip_address?: string;
 }
 
 interface SGTPayload {
@@ -71,6 +133,9 @@ interface SGTPayload {
   dados_lead: DadosLead;
   dados_tokeniza?: DadosTokeniza;
   dados_blue?: DadosBlue;
+  dados_mautic?: DadosMautic;
+  dados_chatwoot?: DadosChatwoot;
+  dados_notion?: DadosNotion;
   event_metadata?: EventMetadata;
 }
 
@@ -82,14 +147,38 @@ interface LeadNormalizado {
   nome: string;
   email: string;
   telefone: string | null;
+  organizacao: string | null;
+  
+  // UTM
   utm_source: string | null;
   utm_medium: string | null;
   utm_campaign: string | null;
   utm_term: string | null;
+  utm_content: string | null;
+  
+  // Score e stage
   score: number;
   stage: LeadStage | null;
+  
+  // Origem
+  origem_tipo: OrigemTipo | null;
+  lead_pago: boolean;
+  
+  // Datas e valores
+  data_mql: Date | null;
+  data_venda: Date | null;
+  valor_venda: number | null;
+  
+  // Dados específicos
   dados_empresa: DadosTokeniza | DadosBlue | null;
+  dados_mautic: DadosMautic | null;
+  dados_chatwoot: DadosChatwoot | null;
+  dados_notion: DadosNotion | null;
   metadata: EventMetadata | null;
+  
+  // Pipedrive
+  pipedrive_deal_id: string | null;
+  url_pipedrive: string | null;
 }
 
 interface LeadClassificationResult {
@@ -102,7 +191,9 @@ interface LeadClassificationResult {
   scoreInterno: number;
 }
 
-// Validação de eventos permitidos
+// ========================================
+// CONSTANTES
+// ========================================
 const EVENTOS_VALIDOS: SGTEventoTipo[] = [
   'LEAD_NOVO', 'ATUALIZACAO', 'CARRINHO_ABANDONADO', 
   'MQL', 'SCORE_ATUALIZADO', 'CLIQUE_OFERTA', 'FUNIL_ATUALIZADO'
@@ -110,15 +201,43 @@ const EVENTOS_VALIDOS: SGTEventoTipo[] = [
 
 const EMPRESAS_VALIDAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
 
+const LEAD_STAGES_VALIDOS: string[] = ['Lead', 'Contato Iniciado', 'Negociação', 'Perdido', 'Cliente'];
+
 // Eventos que indicam alta intenção (temperatura QUENTE)
 const EVENTOS_QUENTES: SGTEventoTipo[] = ['MQL', 'CARRINHO_ABANDONADO', 'CLIQUE_OFERTA'];
 
 // ========================================
-// PATCH 2.2 - Normalizador de Dados
+// NORMALIZAÇÃO - Aceita payload completo SGT
 // ========================================
-function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
-  const { lead_id, evento, empresa, timestamp, dados_lead, dados_tokeniza, dados_blue, event_metadata } = payload;
+function normalizeStage(stage: string | undefined): LeadStage | null {
+  if (!stage) return null;
+  const trimmed = stage.trim();
   
+  // Mapeia variações comuns
+  const stageMap: Record<string, LeadStage> = {
+    'lead': 'Lead',
+    'contato iniciado': 'Contato Iniciado',
+    'negociação': 'Negociação',
+    'negociacao': 'Negociação',
+    'perdido': 'Perdido',
+    'cliente': 'Cliente',
+  };
+  
+  const normalized = stageMap[trimmed.toLowerCase()];
+  if (normalized) return normalized;
+  
+  // Verifica se é um stage válido
+  if (LEAD_STAGES_VALIDOS.includes(trimmed)) {
+    return trimmed as LeadStage;
+  }
+  
+  return null;
+}
+
+function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
+  const { lead_id, evento, empresa, timestamp, dados_lead, dados_tokeniza, dados_blue, dados_mautic, dados_chatwoot, dados_notion, event_metadata } = payload;
+  
+  // Normaliza dados específicos da empresa
   let dadosEmpresa: DadosTokeniza | DadosBlue | null = null;
   if (empresa === 'TOKENIZA' && dados_tokeniza) {
     dadosEmpresa = {
@@ -126,15 +245,56 @@ function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
       qtd_investimentos: dados_tokeniza.qtd_investimentos ?? 0,
       qtd_projetos: dados_tokeniza.qtd_projetos ?? 0,
       ultimo_investimento_em: dados_tokeniza.ultimo_investimento_em ?? null,
+      projetos: dados_tokeniza.projetos ?? [],
+      carrinho_abandonado: dados_tokeniza.carrinho_abandonado ?? false,
+      valor_carrinho: dados_tokeniza.valor_carrinho ?? 0,
     };
   } else if (empresa === 'BLUE' && dados_blue) {
     dadosEmpresa = {
       qtd_compras_ir: dados_blue.qtd_compras_ir ?? 0,
       ticket_medio: dados_blue.ticket_medio ?? 0,
       score_mautic: dados_blue.score_mautic ?? 0,
-      plano_atual: dados_blue.plano_atual ?? null,
+      plano_atual: dados_blue.plano_atual ?? undefined,
+      cliente_status: dados_blue.cliente_status ?? undefined,
     };
   }
+
+  // Normaliza dados do Mautic
+  const dadosMauticNormalized: DadosMautic | null = dados_mautic ? {
+    contact_id: dados_mautic.contact_id,
+    score: dados_mautic.score ?? 0,
+    page_hits: dados_mautic.page_hits ?? 0,
+    email_opens: dados_mautic.email_opens ?? 0,
+    email_clicks: dados_mautic.email_clicks ?? 0,
+    last_active: dados_mautic.last_active ?? undefined,
+    tags: dados_mautic.tags ?? [],
+    segments: dados_mautic.segments ?? [],
+  } : null;
+
+  // Normaliza dados do Chatwoot
+  const dadosChatwootNormalized: DadosChatwoot | null = dados_chatwoot ? {
+    contact_id: dados_chatwoot.contact_id,
+    mensagens_total: dados_chatwoot.mensagens_total ?? 0,
+    ultima_mensagem_em: dados_chatwoot.ultima_mensagem_em ?? undefined,
+    status_conversa: dados_chatwoot.status_conversa ?? undefined,
+    canal: dados_chatwoot.canal ?? undefined,
+  } : null;
+
+  // Normaliza dados do Notion
+  const dadosNotionNormalized: DadosNotion | null = dados_notion ? {
+    page_id: dados_notion.page_id ?? undefined,
+    cliente_status: dados_notion.cliente_status ?? undefined,
+    conta_ativa: dados_notion.conta_ativa ?? false,
+    ultimo_servico: dados_notion.ultimo_servico ?? undefined,
+    notas: dados_notion.notas ?? undefined,
+  } : null;
+
+  // Parse de datas
+  const parseDateSafe = (dateStr: string | undefined): Date | null => {
+    if (!dateStr) return null;
+    const date = new Date(dateStr);
+    return isNaN(date.getTime()) ? null : date;
+  };
 
   return {
     lead_id,
@@ -144,18 +304,44 @@ function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
     nome: dados_lead.nome?.trim() || 'Sem nome',
     email: dados_lead.email?.trim().toLowerCase() || '',
     telefone: dados_lead.telefone?.replace(/\D/g, '') || null,
+    organizacao: dados_lead.organizacao?.trim() || null,
+    
+    // UTM completo
     utm_source: dados_lead.utm_source || null,
     utm_medium: dados_lead.utm_medium || null,
     utm_campaign: dados_lead.utm_campaign || null,
     utm_term: dados_lead.utm_term || null,
+    utm_content: dados_lead.utm_content || null,
+    
+    // Score e stage
     score: dados_lead.score ?? 0,
-    stage: dados_lead.stage || null,
+    stage: normalizeStage(dados_lead.stage as string),
+    
+    // Origem
+    origem_tipo: dados_lead.origem_tipo || null,
+    lead_pago: dados_lead.lead_pago ?? false,
+    
+    // Datas e valores
+    data_mql: parseDateSafe(dados_lead.data_mql),
+    data_venda: parseDateSafe(dados_lead.data_venda),
+    valor_venda: dados_lead.valor_venda ?? null,
+    
+    // Dados específicos
     dados_empresa: dadosEmpresa,
+    dados_mautic: dadosMauticNormalized,
+    dados_chatwoot: dadosChatwootNormalized,
+    dados_notion: dadosNotionNormalized,
     metadata: event_metadata || null,
+    
+    // Pipedrive
+    pipedrive_deal_id: dados_lead.pipedrive_deal_id || null,
+    url_pipedrive: dados_lead.url_pipedrive || null,
   };
 }
 
-// Validação Bearer Token (simplificado)
+// ========================================
+// AUTENTICAÇÃO
+// ========================================
 function validateBearerToken(authHeader: string | null): boolean {
   const secret = Deno.env.get('SGT_WEBHOOK_SECRET');
   if (!secret) {
@@ -168,18 +354,18 @@ function validateBearerToken(authHeader: string | null): boolean {
     return false;
   }
 
-  // Extrai o token do formato "Bearer <token>"
   const match = authHeader.match(/^Bearer\s+(.+)$/i);
   if (!match) {
     console.error('[SGT Webhook] Formato de Authorization inválido');
     return false;
   }
 
-  const token = match[1];
-  return token === secret;
+  return match[1] === secret;
 }
 
-// Normaliza payload para aceitar formato flat (para testes) ou nested (produção)
+// ========================================
+// VALIDAÇÃO DE PAYLOAD
+// ========================================
 function normalizePayloadFormat(payload: Record<string, unknown>): Record<string, unknown> {
   // Se já tem dados_lead, retorna como está
   if (payload.dados_lead && typeof payload.dados_lead === 'object') {
@@ -187,7 +373,7 @@ function normalizePayloadFormat(payload: Record<string, unknown>): Record<string
   }
 
   // Modo flat: campos no nível raiz → converte para nested
-  const flatFields = ['nome', 'email', 'telefone', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'score', 'stage', 'pipedrive_deal_id'];
+  const flatFields = ['nome', 'email', 'telefone', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'score', 'stage', 'pipedrive_deal_id', 'url_pipedrive', 'organizacao', 'origem_tipo', 'lead_pago'];
   const hasFlatFields = flatFields.some(f => f in payload);
   
   if (hasFlatFields) {
@@ -199,7 +385,6 @@ function normalizePayloadFormat(payload: Record<string, unknown>): Record<string
       }
     });
     
-    // Garantir timestamp se não existir
     if (!payload.timestamp) {
       payload.timestamp = new Date().toISOString();
     }
@@ -213,13 +398,11 @@ function normalizePayloadFormat(payload: Record<string, unknown>): Record<string
   return payload;
 }
 
-// Validação do payload
 function validatePayload(payload: unknown): { valid: boolean; error?: string; normalized?: Record<string, unknown> } {
   if (!payload || typeof payload !== 'object') {
     return { valid: false, error: 'Payload inválido' };
   }
 
-  // Normaliza para aceitar formato flat
   const p = normalizePayloadFormat(payload as Record<string, unknown>);
 
   if (!p.lead_id || typeof p.lead_id !== 'string') {
@@ -250,19 +433,25 @@ function validatePayload(payload: unknown): { valid: boolean; error?: string; no
   return { valid: true, normalized: p };
 }
 
-// Gera chave de idempotência
 function generateIdempotencyKey(payload: SGTPayload): string {
   return `${payload.lead_id}_${payload.evento}_${payload.timestamp}`;
 }
 
 // ========================================
-// PATCH 3 - Classificação de Leads
+// CLASSIFICAÇÃO - Usa dados enriquecidos
 // ========================================
 function classificarTokeniza(lead: LeadNormalizado): { icp: IcpTokeniza; persona: PersonaTokeniza | null } {
   const dados = lead.dados_empresa as DadosTokeniza | null;
   const valorInvestido = dados?.valor_investido ?? 0;
   const qtdInvestimentos = dados?.qtd_investimentos ?? 0;
   const qtdProjetos = dados?.qtd_projetos ?? 0;
+  const carrinhoAbandonado = dados?.carrinho_abandonado ?? false;
+  const valorCarrinho = dados?.valor_carrinho ?? 0;
+
+  // Carrinho abandonado com valor alto → Prioridade máxima
+  if (carrinhoAbandonado && valorCarrinho >= 5000) {
+    return { icp: 'TOKENIZA_SERIAL', persona: 'CONSTRUTOR_PATRIMONIO' };
+  }
 
   // TOKENIZA_SERIAL
   if (valorInvestido >= 100000 || qtdInvestimentos >= 40 || qtdProjetos >= 20) {
@@ -282,7 +471,8 @@ function classificarTokeniza(lead: LeadNormalizado): { icp: IcpTokeniza; persona
 
   // TOKENIZA_EMERGENTE
   if ((valorInvestido >= 5000 && valorInvestido < 20000) || 
-      (qtdInvestimentos >= 5 && qtdInvestimentos < 15)) {
+      (qtdInvestimentos >= 5 && qtdInvestimentos < 15) ||
+      carrinhoAbandonado) {
     return { icp: 'TOKENIZA_EMERGENTE', persona: 'INICIANTE_CAUTELOSO' };
   }
 
@@ -295,10 +485,16 @@ function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: Person
   const scoreMautic = dados?.score_mautic ?? 0;
   const qtdComprasIr = dados?.qtd_compras_ir ?? 0;
   const stage = lead.stage;
+  
+  // Usa dados do Mautic para enriquecer classificação
+  const mauticScore = lead.dados_mautic?.score ?? scoreMautic;
+  const pageHits = lead.dados_mautic?.page_hits ?? 0;
+  const emailClicks = lead.dados_mautic?.email_clicks ?? 0;
 
-  // BLUE_ALTO_TICKET_IR
+  // BLUE_ALTO_TICKET_IR - Considera engajamento do Mautic
   if (ticketMedio >= 4000 || 
-      (scoreMautic >= 30 && (stage === 'Negociação' || stage === 'Cliente'))) {
+      (mauticScore >= 30 && (stage === 'Negociação' || stage === 'Cliente')) ||
+      (pageHits >= 20 && emailClicks >= 5)) {
     return { icp: 'BLUE_ALTO_TICKET_IR', persona: 'CRIPTO_CONTRIBUINTE_URGENTE' };
   }
 
@@ -307,8 +503,8 @@ function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: Person
     return { icp: 'BLUE_RECURRENTE', persona: 'CLIENTE_FIEL_RENOVADOR' };
   }
 
-  // BLUE_PERDIDO_RECUPERAVEL
-  if (stage === 'Perdido' && scoreMautic >= 20) {
+  // BLUE_PERDIDO_RECUPERAVEL - Considera engajamento recente
+  if (stage === 'Perdido' && (mauticScore >= 20 || pageHits >= 5)) {
     return { icp: 'BLUE_PERDIDO_RECUPERAVEL', persona: 'LEAD_PERDIDO_RECUPERAVEL' };
   }
 
@@ -318,6 +514,13 @@ function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: Person
 function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
   const evento = lead.evento;
   const stage = lead.stage;
+  const pageHits = lead.dados_mautic?.page_hits ?? 0;
+  const carrinhoAbandonado = (lead.dados_empresa as DadosTokeniza)?.carrinho_abandonado ?? false;
+
+  // Carrinho abandonado = QUENTE
+  if (carrinhoAbandonado) {
+    return 'QUENTE';
+  }
 
   // Eventos quentes sempre aumentam temperatura
   if (EVENTOS_QUENTES.includes(evento)) {
@@ -326,6 +529,11 @@ function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
 
   // Stage de negociação/cliente indica alta intenção
   if (stage === 'Negociação' || stage === 'Cliente') {
+    return 'QUENTE';
+  }
+
+  // Alto engajamento no Mautic
+  if (pageHits >= 15) {
     return 'QUENTE';
   }
 
@@ -344,6 +552,11 @@ function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
     return 'MORNO';
   }
 
+  // Engajamento moderado no Mautic
+  if (pageHits >= 5) {
+    return 'MORNO';
+  }
+
   // Default para leads novos ou emergentes
   if (evento === 'LEAD_NOVO' || evento === 'ATUALIZACAO') {
     return icp.includes('NAO_CLASSIFICADO') ? 'FRIO' : 'MORNO';
@@ -353,19 +566,16 @@ function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
 }
 
 function calcularPrioridade(icp: ICP, temperatura: Temperatura): Prioridade {
-  // Prioridade 1: ICPs de alto valor + temperatura quente
   if (temperatura === 'QUENTE' && 
       (icp === 'TOKENIZA_SERIAL' || icp === 'TOKENIZA_ALTO_VOLUME_DIGITAL' || icp === 'BLUE_ALTO_TICKET_IR')) {
     return 1;
   }
 
-  // Prioridade 2: ICPs médios ou temperatura morna com bom ICP
   if ((icp === 'TOKENIZA_MEDIO_PRAZO' || icp === 'BLUE_RECURRENTE') ||
       (temperatura === 'QUENTE' && !icp.includes('NAO_CLASSIFICADO'))) {
     return 2;
   }
 
-  // Prioridade 3: Emergentes, perdidos recuperáveis, não classificados
   return 3;
 }
 
@@ -389,6 +599,23 @@ function calcularScoreInterno(lead: LeadNormalizado, icp: ICP, temperatura: Temp
   // Bonus por score externo
   score += Math.min(lead.score * 0.1, 10);
 
+  // Bonus por engajamento Mautic
+  const pageHits = lead.dados_mautic?.page_hits ?? 0;
+  const emailClicks = lead.dados_mautic?.email_clicks ?? 0;
+  score += Math.min(pageHits * 0.5, 10);
+  score += Math.min(emailClicks * 1, 5);
+
+  // Bonus por conversas Chatwoot
+  const mensagensTotal = lead.dados_chatwoot?.mensagens_total ?? 0;
+  score += Math.min(mensagensTotal * 0.5, 5);
+
+  // Bonus por carrinho abandonado
+  const carrinhoAbandonado = (lead.dados_empresa as DadosTokeniza)?.carrinho_abandonado ?? false;
+  if (carrinhoAbandonado) score += 15;
+
+  // Bonus por lead pago
+  if (lead.lead_pago) score += 5;
+
   // Ajuste por prioridade (inverso)
   score += (4 - prioridade) * 5;
 
@@ -406,7 +633,6 @@ async function classificarLead(
     evento: lead.evento,
   });
 
-  // Classificar por empresa
   let icp: ICP;
   let persona: Persona;
 
@@ -420,7 +646,6 @@ async function classificarLead(
     persona = result.persona;
   }
 
-  // Calcular temperatura e prioridade
   const temperatura = calcularTemperatura(lead, icp);
   const prioridade = calcularPrioridade(icp, temperatura);
   const scoreInterno = calcularScoreInterno(lead, icp, temperatura, prioridade);
@@ -437,7 +662,6 @@ async function classificarLead(
 
   console.log('[Classificação] Resultado:', classification);
 
-  // Upsert na tabela lead_classifications
   const { error: upsertError } = await supabase
     .from('lead_classifications')
     .upsert({
@@ -460,7 +684,6 @@ async function classificarLead(
     throw upsertError;
   }
 
-  // Log de sucesso
   await supabase.from('sgt_event_logs').insert({
     event_id: eventId,
     status: 'PROCESSADO',
@@ -471,7 +694,7 @@ async function classificarLead(
 }
 
 // ========================================
-// PATCH 4 - Motor de Cadências
+// MOTOR DE CADÊNCIAS
 // ========================================
 function decidirCadenciaParaLead(
   classification: LeadClassificationResult,
@@ -482,29 +705,24 @@ function decidirCadenciaParaLead(
   console.log('[Cadência] Decidindo cadência:', { empresa, icp, temperatura, evento });
 
   if (empresa === 'TOKENIZA') {
-    // MQL ou Carrinho Abandonado + Quente → Cadência urgente
     if ((evento === 'MQL' || evento === 'CARRINHO_ABANDONADO') && temperatura === 'QUENTE') {
       return 'TOKENIZA_MQL_QUENTE';
     }
-    // Lead novo → Cadência inbound padrão
     if (evento === 'LEAD_NOVO') {
       return 'TOKENIZA_INBOUND_LEAD_NOVO';
     }
   }
 
   if (empresa === 'BLUE') {
-    // Alto ticket IR ou recorrente com MQL → Cadência urgente IR
     if (icp === 'BLUE_ALTO_TICKET_IR' || 
         (icp === 'BLUE_RECURRENTE' && evento === 'MQL')) {
       return 'BLUE_IR_URGENTE';
     }
-    // Lead novo → Cadência inbound padrão
     if (evento === 'LEAD_NOVO') {
       return 'BLUE_INBOUND_LEAD_NOVO';
     }
   }
 
-  // Sem cadência para outros eventos
   console.log('[Cadência] Nenhuma cadência aplicável para este evento');
   return null;
 }
@@ -519,7 +737,6 @@ async function iniciarCadenciaParaLead(
 ): Promise<{ success: boolean; runId?: string; skipped?: boolean; reason?: string }> {
   console.log('[Cadência] Iniciando cadência:', { leadId, empresa, cadenceCodigo });
 
-  // 1. Buscar cadência pelo código
   const { data: cadence, error: cadenceError } = await supabase
     .from('cadences')
     .select('id, codigo, nome')
@@ -532,7 +749,6 @@ async function iniciarCadenciaParaLead(
     return { success: false, reason: `Cadência ${cadenceCodigo} não encontrada ou inativa` };
   }
 
-  // 2. Verificar se já existe run ativa para este lead+empresa
   const { data: existingRun } = await supabase
     .from('lead_cadence_runs')
     .select('id, status')
@@ -546,7 +762,6 @@ async function iniciarCadenciaParaLead(
     return { success: true, skipped: true, reason: 'Lead já possui cadência ativa', runId: existingRun.id };
   }
 
-  // 3. Buscar primeiro step da cadência
   const { data: firstStep, error: stepError } = await supabase
     .from('cadence_steps')
     .select('ordem, offset_minutos, template_codigo')
@@ -560,11 +775,9 @@ async function iniciarCadenciaParaLead(
     return { success: false, reason: 'Nenhum step configurado para esta cadência' };
   }
 
-  // 4. Calcular next_run_at
   const now = new Date();
   const nextRunAt = new Date(now.getTime() + firstStep.offset_minutos * 60 * 1000);
 
-  // 5. Criar run
   const { data: newRun, error: runError } = await supabase
     .from('lead_cadence_runs')
     .insert({
@@ -589,7 +802,6 @@ async function iniciarCadenciaParaLead(
 
   console.log('[Cadência] Run criado:', newRun.id);
 
-  // 6. Criar evento de agendamento
   await supabase.from('lead_cadence_events').insert({
     lead_cadence_run_id: newRun.id,
     step_ordem: firstStep.ordem,
@@ -608,15 +820,13 @@ async function iniciarCadenciaParaLead(
 }
 
 // ========================================
-// Handler Principal
+// HANDLER PRINCIPAL
 // ========================================
 serve(async (req) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Apenas POST
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Método não permitido' }),
@@ -629,10 +839,7 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    // Obtém header de autorização
     const authHeader = req.headers.get('authorization');
-    
-    // Lê o body
     const bodyText = await req.text();
     
     console.log('[SGT Webhook] Requisição recebida:', {
@@ -640,7 +847,6 @@ serve(async (req) => {
       bodyLength: bodyText.length,
     });
 
-    // Valida Bearer Token
     const isValidToken = validateBearerToken(authHeader);
     if (!isValidToken) {
       console.error('[SGT Webhook] Token inválido ou ausente');
@@ -650,11 +856,9 @@ serve(async (req) => {
       );
     }
 
-    // Parse do payload
     let payload: SGTPayload;
     try {
       const rawPayload = JSON.parse(bodyText);
-      // Valida estrutura do payload (com normalização de formato)
       const validation = validatePayload(rawPayload);
       if (!validation.valid) {
         console.error('[SGT Webhook] Payload inválido:', validation.error);
@@ -671,10 +875,8 @@ serve(async (req) => {
       );
     }
 
-    // Gera chave de idempotência
     const idempotencyKey = generateIdempotencyKey(payload);
     
-    // Verifica idempotência
     const { data: existingEvent } = await supabase
       .from('sgt_events')
       .select('id')
@@ -694,7 +896,6 @@ serve(async (req) => {
       );
     }
 
-    // Insere evento
     const { data: newEvent, error: insertError } = await supabase
       .from('sgt_events')
       .insert({
@@ -714,21 +915,17 @@ serve(async (req) => {
 
     console.log('[SGT Webhook] Evento inserido:', newEvent.id);
 
-    // Registra log de recebimento
     await supabase.from('sgt_event_logs').insert({
       event_id: newEvent.id,
       status: 'RECEBIDO',
       mensagem: `Evento ${payload.evento} recebido para lead ${payload.lead_id}`,
     } as Record<string, unknown>);
 
-    // Normaliza dados
     const leadNormalizado = normalizeSGTEvent(payload);
     console.log('[SGT Webhook] Lead normalizado:', leadNormalizado);
 
-    // PATCH 5A + Pipedrive: Upsert em lead_contacts para garantir dados de contato
+    // Upsert em lead_contacts
     const primeiroNome = leadNormalizado.nome.split(' ')[0] || leadNormalizado.nome;
-    
-    // Extrai pipedrive_deal_id do payload (root ou dentro de dados_lead)
     const payloadAny = payload as unknown as Record<string, unknown>;
     const pipedriveDealeId = 
       payload.dados_lead?.pipedrive_deal_id || 
@@ -748,16 +945,12 @@ serve(async (req) => {
     });
     console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id, 'pipedrive_deal_id:', pipedriveDealeId);
 
-    // Variáveis para resposta
     let classification: LeadClassificationResult | null = null;
     let cadenceResult: { cadenceCodigo: string | null; runId?: string; skipped?: boolean } = { cadenceCodigo: null };
 
-    // Pipeline: Classificação + Cadência
     try {
-      // PATCH 3: Classificar lead
       classification = await classificarLead(supabase, newEvent.id, leadNormalizado);
       
-      // PATCH 4: Decidir e iniciar cadência
       const cadenceCodigo = decidirCadenciaParaLead(classification, payload.evento);
       cadenceResult.cadenceCodigo = cadenceCodigo;
 
@@ -778,7 +971,6 @@ serve(async (req) => {
         }
       }
 
-      // Atualiza evento como processado
       await supabase
         .from('sgt_events')
         .update({ processado_em: new Date().toISOString() })
@@ -787,7 +979,6 @@ serve(async (req) => {
     } catch (pipelineError) {
       console.error('[SGT Webhook] Erro no pipeline:', pipelineError);
       
-      // Registra erro
       await supabase.from('sgt_event_logs').insert({
         event_id: newEvent.id,
         status: 'ERRO',
