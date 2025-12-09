@@ -358,6 +358,8 @@ export type Database = {
           lead_id: string | null
           message_id: string
           modelo_ia: string | null
+          resposta_automatica_texto: string | null
+          resposta_enviada_em: string | null
           run_id: string | null
           tempo_processamento_ms: number | null
           tokens_usados: number | null
@@ -375,6 +377,8 @@ export type Database = {
           lead_id?: string | null
           message_id: string
           modelo_ia?: string | null
+          resposta_automatica_texto?: string | null
+          resposta_enviada_em?: string | null
           run_id?: string | null
           tempo_processamento_ms?: number | null
           tokens_usados?: number | null
@@ -392,6 +396,8 @@ export type Database = {
           lead_id?: string | null
           message_id?: string
           modelo_ia?: string | null
+          resposta_automatica_texto?: string | null
+          resposta_enviada_em?: string | null
           run_id?: string | null
           tempo_processamento_ms?: number | null
           tokens_usados?: number | null
@@ -715,6 +721,11 @@ export type Database = {
         | "AGRADECIMENTO"
         | "FORA_CONTEXTO"
         | "OUTRO"
+        | "INTERESSE_IR"
+        | "OBJECAO_PRECO"
+        | "OBJECAO_RISCO"
+        | "SEM_INTERESSE"
+        | "DUVIDA_TECNICA"
       persona_tipo:
         | "CONSTRUTOR_PATRIMONIO"
         | "COLECIONADOR_DIGITAL"
@@ -731,6 +742,7 @@ export type Database = {
         | "MARCAR_OPT_OUT"
         | "NENHUMA"
         | "ESCALAR_HUMANO"
+        | "ENVIAR_RESPOSTA_AUTOMATICA"
       sgt_event_status: "RECEBIDO" | "PROCESSADO" | "ERRO"
       sgt_evento_tipo:
         | "LEAD_NOVO"
@@ -909,6 +921,11 @@ export const Constants = {
         "AGRADECIMENTO",
         "FORA_CONTEXTO",
         "OUTRO",
+        "INTERESSE_IR",
+        "OBJECAO_PRECO",
+        "OBJECAO_RISCO",
+        "SEM_INTERESSE",
+        "DUVIDA_TECNICA",
       ],
       persona_tipo: [
         "CONSTRUTOR_PATRIMONIO",
@@ -927,6 +944,7 @@ export const Constants = {
         "MARCAR_OPT_OUT",
         "NENHUMA",
         "ESCALAR_HUMANO",
+        "ENVIAR_RESPOSTA_AUTOMATICA",
       ],
       sgt_event_status: ["RECEBIDO", "PROCESSADO", "ERRO"],
       sgt_evento_tipo: [
