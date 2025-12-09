@@ -6,7 +6,6 @@ import {
   MessageSquare, 
   Zap,
   Target,
-  TrendingUp,
   Play,
   Clock,
   CheckCircle2,
@@ -14,10 +13,17 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useSdrIaStats } from '@/hooks/useSdrIaStats';
+import { SdrIaMetricsCard } from './SdrIaMetricsCard';
+import { IntentChartCard } from './IntentChartCard';
+import { MessagesChartCard } from './MessagesChartCard';
+import { CadenceStatusCard } from './CadenceStatusCard';
+import { ActionsBreakdownCard } from './ActionsBreakdownCard';
 
 export function DashboardContent() {
   const { profile, roles } = useAuth();
   const navigate = useNavigate();
+  const { data: sdrStats, isLoading: sdrStatsLoading } = useSdrIaStats();
 
   // Fetch real stats
   const { data: stats } = useQuery({
@@ -159,38 +165,21 @@ export function DashboardContent() {
         </div>
       </div>
 
-      {/* SDR IA Status Card */}
-      <Card className="bg-gradient-hero text-primary-foreground animate-slide-up animation-delay-300">
-        <CardHeader>
-          <div className="flex items-center gap-3">
-            <div className="h-12 w-12 rounded-xl bg-primary-foreground/10 flex items-center justify-center">
-              <Target className="h-6 w-6" />
-            </div>
-            <div>
-              <CardTitle className="text-primary-foreground">SDR IA Ativo</CardTitle>
-              <CardDescription className="text-primary-foreground/70">
-                Processando leads automaticamente
-              </CardDescription>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <div className="bg-primary-foreground/10 rounded-lg p-3">
-              <p className="text-2xl font-bold">{stats?.eventsToday ?? '-'}</p>
-              <p className="text-sm text-primary-foreground/70">Eventos hoje</p>
-            </div>
-            <div className="bg-primary-foreground/10 rounded-lg p-3">
-              <p className="text-2xl font-bold">{stats?.activeRuns ?? '-'}</p>
-              <p className="text-sm text-primary-foreground/70">Cadências ativas</p>
-            </div>
-            <div className="bg-primary-foreground/10 rounded-lg p-3">
-              <p className="text-2xl font-bold">{stats?.runsToday ?? '-'}</p>
-              <p className="text-sm text-primary-foreground/70">Iniciadas hoje</p>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+      {/* SDR IA Metrics */}
+      <div className="animate-slide-up animation-delay-300">
+        <SdrIaMetricsCard stats={sdrStats} isLoading={sdrStatsLoading} />
+      </div>
+
+      {/* Charts Grid */}
+      <div className="grid lg:grid-cols-2 gap-6 animate-slide-up animation-delay-400">
+        <IntentChartCard data={sdrStats?.intentBreakdown} isLoading={sdrStatsLoading} />
+        <CadenceStatusCard stats={sdrStats} isLoading={sdrStatsLoading} />
+      </div>
+
+      <div className="grid lg:grid-cols-2 gap-6 animate-slide-up animation-delay-500">
+        <MessagesChartCard data={sdrStats?.mensagensPorDia} isLoading={sdrStatsLoading} />
+        <ActionsBreakdownCard data={sdrStats?.acaoBreakdown} isLoading={sdrStatsLoading} />
+      </div>
     </div>
   );
 }
