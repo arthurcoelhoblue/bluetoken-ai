@@ -728,16 +728,10 @@ serve(async (req) => {
     // PATCH 5A + Pipedrive: Upsert em lead_contacts para garantir dados de contato
     const primeiroNome = leadNormalizado.nome.split(' ')[0] || leadNormalizado.nome;
     
-    // Extrai pipedrive_deal_id de múltiplos formatos possíveis
-    // 1. dados_lead.pipedrive_deal_id (flat)
-    // 2. pipeDrive.deal.id (nested - formato do SGT)
-    // 3. payload raiz (flat normalizado)
+    // Extrai pipedrive_deal_id do payload (root ou dentro de dados_lead)
     const payloadAny = payload as unknown as Record<string, unknown>;
-    const pipedrivePayload = payloadAny.pipeDrive as Record<string, unknown> | undefined;
-    const pipedriveDealNested = pipedrivePayload?.deal as Record<string, unknown> | undefined;
     const pipedriveDealeId = 
       payload.dados_lead?.pipedrive_deal_id || 
-      pipedriveDealNested?.id ||
       payloadAny.pipedrive_deal_id ||
       null;
     
