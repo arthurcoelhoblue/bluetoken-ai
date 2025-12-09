@@ -305,6 +305,9 @@ export type Database = {
           id: string
           lead_id: string
           nome: string | null
+          opt_out: boolean
+          opt_out_em: string | null
+          opt_out_motivo: string | null
           pipedrive_deal_id: string | null
           pipedrive_person_id: string | null
           primeiro_nome: string | null
@@ -320,6 +323,9 @@ export type Database = {
           id?: string
           lead_id: string
           nome?: string | null
+          opt_out?: boolean
+          opt_out_em?: string | null
+          opt_out_motivo?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
@@ -335,6 +341,9 @@ export type Database = {
           id?: string
           lead_id?: string
           nome?: string | null
+          opt_out?: boolean
+          opt_out_em?: string | null
+          opt_out_motivo?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null

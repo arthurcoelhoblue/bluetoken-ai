@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
-// PATCH 5G-B - SDR IA Engine Evoluído
-// Interpretação + Resposta Automática + Compliance
+// PATCH 5G-C - SDR IA Engine Evoluído
+// Interpretação + Resposta Automática + Compliance + Opt-Out
 // ========================================
 
 const corsHeaders = {
@@ -17,6 +17,14 @@ const corsHeaders = {
 
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
+type ICPTipo = 
+  | 'TOKENIZA_SERIAL' | 'TOKENIZA_MEDIO_PRAZO' | 'TOKENIZA_EMERGENTE' 
+  | 'TOKENIZA_ALTO_VOLUME_DIGITAL' | 'TOKENIZA_NAO_CLASSIFICADO'
+  | 'BLUE_ALTO_TICKET_IR' | 'BLUE_RECURRENTE' | 'BLUE_PERDIDO_RECUPERAVEL' 
+  | 'BLUE_NAO_CLASSIFICADO';
+type PersonaTipo = 
+  | 'CONSTRUTOR_PATRIMONIO' | 'COLECIONADOR_DIGITAL' | 'INICIANTE_CAUTELOSO'
+  | 'CRIPTO_CONTRIBUINTE_URGENTE' | 'CLIENTE_FIEL_RENOVADOR' | 'LEAD_PERDIDO_RECUPERAVEL';
 
 type LeadIntentTipo =
   | 'INTERESSE_COMPRA'
@@ -58,6 +66,32 @@ interface LeadMessage {
   created_at: string;
 }
 
+interface LeadClassification {
+  icp: ICPTipo;
+  persona: PersonaTipo | null;
+  temperatura: TemperaturaTipo;
+  prioridade: number;
+}
+
+interface LeadContact {
+  nome: string | null;
+  primeiro_nome: string | null;
+  telefone: string | null;
+  opt_out: boolean;
+  opt_out_em: string | null;
+  opt_out_motivo: string | null;
+}
+
+interface MessageContext {
+  message: LeadMessage;
+  historico: LeadMessage[];
+  leadNome?: string;
+  cadenciaNome?: string;
+  telefone?: string;
+  optOut: boolean;
+  classificacao?: LeadClassification;
+}
+
 interface InterpretRequest {
   messageId: string;
 }
@@ -70,6 +104,7 @@ interface InterpretResult {
   acao?: SdrAcaoTipo;
   acaoAplicada?: boolean;
   respostaEnviada?: boolean;
+  optOutBlocked?: boolean;
   error?: string;
 }
 
@@ -84,7 +119,7 @@ interface AIResponse {
 }
 
 // ========================================
-// PROMPT DO SDR IA COM COMPLIANCE
+// PROMPT DO SDR IA COM COMPLIANCE + CONTEXTO
 // ========================================
 
 const SYSTEM_PROMPT = `Você é um SDR (Sales Development Representative) de IA especializado.
@@ -101,6 +136,32 @@ Sua função é interpretar mensagens de leads, identificar intenções, recomen
 - Serviços de declaração de imposto de renda para criptomoedas
 - Tom: Profissional, confiável, técnico quando necessário
 - Foco: Conformidade fiscal, elisão legal, economia tributária
+
+## PERFIS ICP (Use para contextualizar resposta)
+
+### TOKENIZA ICPs:
+- TOKENIZA_SERIAL: Investidor experiente, quer diversificar em tokens
+- TOKENIZA_MEDIO_PRAZO: Busca rentabilidade 6-12 meses
+- TOKENIZA_EMERGENTE: Primeiro investimento, educação importante
+- TOKENIZA_ALTO_VOLUME_DIGITAL: Grandes volumes, análise técnica
+
+### BLUE ICPs:
+- BLUE_ALTO_TICKET_IR: Alto volume cripto, IR complexo
+- BLUE_RECURRENTE: Cliente recorrente, renovação anual
+- BLUE_PERDIDO_RECUPERAVEL: Ex-cliente a reconquistar
+
+## PERSONAS (Perfil comportamental)
+- CONSTRUTOR_PATRIMONIO: Foco longo prazo, segurança
+- COLECIONADOR_DIGITAL: NFTs, entusiasta tech
+- INICIANTE_CAUTELOSO: Conservador, precisa educação
+- CRIPTO_CONTRIBUINTE_URGENTE: Urgência com IR
+- CLIENTE_FIEL_RENOVADOR: Confiança estabelecida
+- LEAD_PERDIDO_RECUPERAVEL: Precisa reengajamento
+
+## TEMPERATURAS (Estado atual do lead)
+- FRIO: Baixo engajamento, nutrição necessária
+- MORNO: Algum interesse, manter contato
+- QUENTE: Alta intenção, priorizar conversão
 
 ## INTENÇÕES POSSÍVEIS
 
@@ -137,10 +198,28 @@ INTENÇÕES NEUTRAS:
 - CRIAR_TAREFA_CLOSER: Criar tarefa para humano atuar
 - PAUSAR_CADENCIA: Pausar sequência de mensagens
 - CANCELAR_CADENCIA: Cancelar sequência definitivamente
-- AJUSTAR_TEMPERATURA: Alterar temperatura do lead (FRIO/MORNO/QUENTE)
+- AJUSTAR_TEMPERATURA: Alterar temperatura do lead (indicar nova em acao_detalhes)
 - MARCAR_OPT_OUT: Registrar que lead não quer mais contato
 - ESCALAR_HUMANO: Situação complexa requer humano
 - NENHUMA: Nenhuma ação necessária
+
+## MATRIZ AUTOMÁTICA DE TEMPERATURA
+
+Use acao = "AJUSTAR_TEMPERATURA" com acao_detalhes.nova_temperatura baseado em:
+
+| Intenção | Temperatura Atual | Nova Temperatura |
+|----------|-------------------|------------------|
+| INTERESSE_COMPRA | qualquer | QUENTE |
+| INTERESSE_IR | qualquer | QUENTE |
+| AGENDAMENTO_REUNIAO | qualquer | QUENTE |
+| SOLICITACAO_CONTATO | qualquer | QUENTE |
+| DUVIDA_PRODUTO | FRIO | MORNO |
+| DUVIDA_TECNICA | FRIO | MORNO |
+| OPT_OUT | qualquer | FRIO |
+| SEM_INTERESSE | QUENTE | MORNO |
+| SEM_INTERESSE | MORNO | FRIO |
+| OBJECAO_PRECO | qualquer | manter |
+| OBJECAO_RISCO | qualquer | manter |
 
 ## REGRAS DE COMPLIANCE (CRÍTICAS!)
 
@@ -181,6 +260,7 @@ INTENÇÕES NEUTRAS:
 Se deve_responder = true, forneça resposta_sugerida seguindo:
 - 1 a 3 frases no máximo
 - Tom humanizado (Ana/Pedro)
+- Adapte linguagem ao perfil ICP/Persona do lead
 - Sempre terminar com próximo passo claro
 - SEM promessas, SEM pressão
 
@@ -199,28 +279,59 @@ Se deve_responder = true, forneça resposta_sugerida seguindo:
   "confidence": 0.85,
   "summary": "Resumo do que o lead quer",
   "acao": "TIPO_ACAO",
-  "acao_detalhes": {},
+  "acao_detalhes": { "nova_temperatura": "QUENTE" },
   "deve_responder": true,
   "resposta_sugerida": "Sua resposta aqui..." ou null
 }`;
+
+// ========================================
+// MATRIZ DE TEMPERATURA AUTOMÁTICA
+// ========================================
+
+function computeNewTemperature(
+  intent: LeadIntentTipo,
+  temperaturaAtual: TemperaturaTipo
+): TemperaturaTipo | null {
+  // Intenções que sempre aquecem
+  const intentQuentes: LeadIntentTipo[] = [
+    'INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'
+  ];
+  
+  if (intentQuentes.includes(intent)) {
+    return temperaturaAtual !== 'QUENTE' ? 'QUENTE' : null;
+  }
+
+  // Intenções que esquentam de FRIO para MORNO
+  const intentMornas: LeadIntentTipo[] = ['DUVIDA_PRODUTO', 'DUVIDA_TECNICA'];
+  if (intentMornas.includes(intent) && temperaturaAtual === 'FRIO') {
+    return 'MORNO';
+  }
+
+  // OPT_OUT sempre esfria
+  if (intent === 'OPT_OUT') {
+    return temperaturaAtual !== 'FRIO' ? 'FRIO' : null;
+  }
+
+  // SEM_INTERESSE diminui temperatura
+  if (intent === 'SEM_INTERESSE') {
+    if (temperaturaAtual === 'QUENTE') return 'MORNO';
+    if (temperaturaAtual === 'MORNO') return 'FRIO';
+  }
+
+  return null; // Manter temperatura atual
+}
 
 // ========================================
 // FUNÇÕES AUXILIARES
 // ========================================
 
 /**
- * Carrega contexto completo da mensagem
+ * PATCH 5G-C Fase 2: Carrega contexto completo com classificação e opt-out
  */
 async function loadMessageContext(
   supabase: SupabaseClient,
   messageId: string
-): Promise<{ 
-  message: LeadMessage; 
-  historico: LeadMessage[]; 
-  leadNome?: string; 
-  cadenciaNome?: string;
-  telefone?: string;
-}> {
+): Promise<MessageContext> {
   // Buscar mensagem principal
   const { data: message, error: msgError } = await supabase
     .from('lead_messages')
@@ -237,9 +348,12 @@ async function loadMessageContext(
   let leadNome: string | undefined;
   let telefone: string | undefined;
   let cadenciaNome: string | undefined;
+  let optOut = false;
+  let classificacao: LeadClassification | undefined;
 
-  // Se tiver lead_id, buscar histórico e contato
+  // Se tiver lead_id, buscar histórico, contato e classificação
   if (msg.lead_id) {
+    // Histórico de mensagens
     const { data: hist } = await supabase
       .from('lead_messages')
       .select('id, lead_id, run_id, empresa, conteudo, direcao, created_at')
@@ -250,17 +364,32 @@ async function loadMessageContext(
 
     historico = (hist || []) as LeadMessage[];
 
-    // Buscar nome e telefone do lead
+    // Buscar contato com campos opt_out
     const { data: contact } = await supabase
       .from('lead_contacts')
-      .select('nome, primeiro_nome, telefone')
+      .select('nome, primeiro_nome, telefone, opt_out, opt_out_em, opt_out_motivo')
       .eq('lead_id', msg.lead_id)
       .limit(1)
       .maybeSingle();
 
     if (contact) {
-      leadNome = contact.nome || contact.primeiro_nome;
-      telefone = contact.telefone;
+      const c = contact as LeadContact;
+      leadNome = c.nome || c.primeiro_nome || undefined;
+      telefone = c.telefone || undefined;
+      optOut = c.opt_out ?? false;
+    }
+
+    // Buscar classificação mais recente
+    const { data: classif } = await supabase
+      .from('lead_classifications')
+      .select('icp, persona, temperatura, prioridade')
+      .eq('lead_id', msg.lead_id)
+      .order('classificado_em', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (classif) {
+      classificacao = classif as LeadClassification;
     }
   }
 
@@ -279,18 +408,27 @@ async function loadMessageContext(
     }
   }
 
-  return { message: msg, historico, leadNome, cadenciaNome, telefone };
+  return { 
+    message: msg, 
+    historico, 
+    leadNome, 
+    cadenciaNome, 
+    telefone, 
+    optOut,
+    classificacao 
+  };
 }
 
 /**
- * Chama a IA para interpretar a mensagem
+ * PATCH 5G-C Fase 3: Prompt enriquecido com ICP/Persona/Temperatura
  */
 async function interpretWithAI(
   mensagem: string,
   empresa: EmpresaTipo,
   historico: LeadMessage[],
   leadNome?: string,
-  cadenciaNome?: string
+  cadenciaNome?: string,
+  classificacao?: LeadClassification
 ): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number }> {
   const startTime = Date.now();
 
@@ -299,23 +437,39 @@ async function interpretWithAI(
     throw new Error('LOVABLE_API_KEY não configurada');
   }
 
-  // Montar contexto
+  // Montar contexto enriquecido
   let userPrompt = `EMPRESA: ${empresa}\n`;
-  userPrompt += `PERSONA: ${empresa === 'TOKENIZA' ? 'Ana' : 'Pedro'}\n`;
+  userPrompt += `PERSONA SDR: ${empresa === 'TOKENIZA' ? 'Ana' : 'Pedro'}\n`;
+  
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
+  // PATCH 5G-C: Adicionar contexto de classificação
+  if (classificacao) {
+    userPrompt += `\n## CONTEXTO DO LEAD:\n`;
+    userPrompt += `- ICP: ${classificacao.icp}\n`;
+    if (classificacao.persona) userPrompt += `- Persona: ${classificacao.persona}\n`;
+    userPrompt += `- Temperatura Atual: ${classificacao.temperatura}\n`;
+    userPrompt += `- Prioridade: ${classificacao.prioridade}\n`;
+  }
+  
   if (historico.length > 0) {
-    userPrompt += '\nHISTÓRICO RECENTE:\n';
+    userPrompt += '\n## HISTÓRICO RECENTE:\n';
     historico.reverse().forEach(h => {
       const dir = h.direcao === 'OUTBOUND' ? 'SDR' : 'LEAD';
       userPrompt += `[${dir}]: ${h.conteudo.substring(0, 200)}\n`;
     });
   }
 
-  userPrompt += `\nMENSAGEM A INTERPRETAR:\n"${mensagem}"`;
+  userPrompt += `\n## MENSAGEM A INTERPRETAR:\n"${mensagem}"`;
 
-  console.log('[IA] Enviando para interpretação:', { empresa, mensagemPreview: mensagem.substring(0, 100) });
+  console.log('[IA] Enviando para interpretação:', { 
+    empresa, 
+    mensagemPreview: mensagem.substring(0, 100),
+    temContexto: !!classificacao,
+    icp: classificacao?.icp,
+    temperatura: classificacao?.temperatura
+  });
 
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
     method: 'POST',
@@ -391,6 +545,24 @@ async function interpretWithAI(
   parsed.confidence = Math.max(0, Math.min(1, parsed.confidence || 0.5));
   parsed.deve_responder = parsed.deve_responder ?? false;
 
+  // PATCH 5G-C Fase 5: Aplicar matriz automática de temperatura
+  if (classificacao && parsed.acao !== 'AJUSTAR_TEMPERATURA') {
+    const novaTemp = computeNewTemperature(parsed.intent, classificacao.temperatura);
+    if (novaTemp) {
+      parsed.acao = 'AJUSTAR_TEMPERATURA';
+      parsed.acao_detalhes = { 
+        ...parsed.acao_detalhes, 
+        nova_temperatura: novaTemp,
+        motivo: `Ajuste automático baseado em intent ${parsed.intent}`
+      };
+      console.log('[IA] Temperatura ajustada automaticamente:', { 
+        de: classificacao.temperatura, 
+        para: novaTemp, 
+        intent: parsed.intent 
+      });
+    }
+  }
+
   return { response: parsed, tokensUsados, tempoMs };
 }
 
@@ -445,14 +617,16 @@ async function sendAutoResponse(
 }
 
 /**
- * Aplica ação interna recomendada
+ * PATCH 5G-C Fase 4: Aplica ação com MARCAR_OPT_OUT corrigido
  */
 async function applyAction(
   supabase: SupabaseClient,
   runId: string | null,
   leadId: string | null,
+  empresa: EmpresaTipo,
   acao: SdrAcaoTipo,
-  detalhes?: Record<string, unknown>
+  detalhes?: Record<string, unknown>,
+  mensagemOriginal?: string
 ): Promise<boolean> {
   if (acao === 'NENHUMA' || acao === 'ENVIAR_RESPOSTA_AUTOMATICA') return false;
   if (!runId && !leadId) return false;
@@ -504,21 +678,63 @@ async function applyAction(
         break;
 
       case 'MARCAR_OPT_OUT':
-        if (runId) {
+        // PATCH 5G-C Fase 4: Correção completa do MARCAR_OPT_OUT
+        if (leadId) {
+          const now = new Date().toISOString();
+          
+          // 1. Atualizar lead_contacts com opt_out
           await supabase
+            .from('lead_contacts')
+            .update({ 
+              opt_out: true, 
+              opt_out_em: now,
+              opt_out_motivo: mensagemOriginal?.substring(0, 500) || 'Solicitado via mensagem',
+              updated_at: now
+            })
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa);
+          
+          console.log('[Ação] Opt-out marcado em lead_contacts:', leadId);
+
+          // 2. Cancelar TODAS as cadências ativas do lead
+          const { data: activeRuns } = await supabase
             .from('lead_cadence_runs')
-            .update({ status: 'CANCELADA', updated_at: new Date().toISOString() })
-            .eq('id', runId);
-          
-          await supabase.from('lead_cadence_events').insert({
-            lead_cadence_run_id: runId,
-            step_ordem: 0,
-            template_codigo: 'SDR_IA_OPT_OUT',
-            tipo_evento: 'RESPOSTA_DETECTADA',
-            detalhes: { acao, motivo: 'Lead solicitou opt-out' },
-          });
-          
-          console.log('[Ação] Opt-out marcado:', leadId);
+            .select('id')
+            .eq('lead_id', leadId)
+            .in('status', ['ATIVA', 'PAUSADA']);
+
+          if (activeRuns && activeRuns.length > 0) {
+            const runIds = activeRuns.map((r: any) => r.id);
+            
+            await supabase
+              .from('lead_cadence_runs')
+              .update({ status: 'CANCELADA', updated_at: now })
+              .in('id', runIds);
+
+            // Registrar evento em cada run
+            for (const rid of runIds) {
+              await supabase.from('lead_cadence_events').insert({
+                lead_cadence_run_id: rid,
+                step_ordem: 0,
+                template_codigo: 'SDR_IA_OPT_OUT',
+                tipo_evento: 'RESPOSTA_DETECTADA',
+                detalhes: { acao, motivo: 'Lead solicitou opt-out - todas cadências canceladas' },
+              });
+            }
+
+            console.log('[Ação] Cadências canceladas por opt-out:', runIds.length);
+          }
+
+          // 3. Ajustar temperatura para FRIO
+          await supabase
+            .from('lead_classifications')
+            .update({ 
+              temperatura: 'FRIO',
+              updated_at: now
+            })
+            .eq('lead_id', leadId);
+
+          console.log('[Ação] Temperatura ajustada para FRIO devido a opt-out');
           return true;
         }
         break;
@@ -570,7 +786,6 @@ async function applyAction(
         break;
 
       case 'AJUSTAR_TEMPERATURA':
-        // PATCH 5G-B: Implementação completa
         if (leadId && detalhes?.nova_temperatura) {
           const novaTemp = detalhes.nova_temperatura as TemperaturaTipo;
           const validTemps: TemperaturaTipo[] = ['FRIO', 'MORNO', 'QUENTE'];
@@ -593,7 +808,7 @@ async function applyAction(
                   step_ordem: 0,
                   template_codigo: 'SDR_IA_TEMPERATURA',
                   tipo_evento: 'RESPOSTA_DETECTADA',
-                  detalhes: { acao, nova_temperatura: novaTemp },
+                  detalhes: { acao, nova_temperatura: novaTemp, motivo: detalhes.motivo },
                 });
               }
               
@@ -641,7 +856,6 @@ async function saveInterpretation(
     modelo_ia: 'google/gemini-2.5-flash',
     tokens_usados: tokensUsados,
     tempo_processamento_ms: tempoMs,
-    // PATCH 5G-B: Novos campos
     resposta_automatica_texto: respostaTexto,
     resposta_enviada_em: respostaEnviada ? new Date().toISOString() : null,
   };
@@ -693,8 +907,43 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Carregar contexto
-    const { message, historico, leadNome, cadenciaNome, telefone } = await loadMessageContext(supabase, messageId);
+    // 1. Carregar contexto completo (com opt-out e classificação)
+    const context = await loadMessageContext(supabase, messageId);
+    const { message, historico, leadNome, cadenciaNome, telefone, optOut, classificacao } = context;
+
+    // PATCH 5G-C Fase 6: Verificar opt-out antes de processar
+    if (optOut) {
+      console.log('[SDR-IA] Lead está em opt-out, bloqueando resposta automática:', message.lead_id);
+      
+      // Ainda salva interpretação mas não envia resposta
+      const intentId = await saveInterpretation(
+        supabase,
+        message,
+        {
+          intent: 'OPT_OUT',
+          confidence: 1.0,
+          summary: 'Lead já em opt-out - processamento bloqueado',
+          acao: 'NENHUMA',
+          deve_responder: false,
+          resposta_sugerida: null,
+        },
+        0,
+        0,
+        false,
+        false,
+        null
+      );
+
+      return new Response(
+        JSON.stringify({ 
+          success: true, 
+          intentId, 
+          optOutBlocked: true,
+          message: 'Lead em opt-out - resposta automática bloqueada'
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // 2. Verificar se já foi interpretado
     const { data: existing } = await supabase
@@ -712,13 +961,14 @@ serve(async (req) => {
       );
     }
 
-    // 3. Interpretar com IA
+    // 3. Interpretar com IA (contexto enriquecido)
     const { response: aiResponse, tokensUsados, tempoMs } = await interpretWithAI(
       message.conteudo,
       message.empresa,
       historico,
       leadNome,
-      cadenciaNome
+      cadenciaNome,
+      classificacao
     );
 
     console.log('[SDR-IA] Interpretação:', {
@@ -728,16 +978,18 @@ serve(async (req) => {
       deve_responder: aiResponse.deve_responder,
     });
 
-    // 4. Aplicar ação (se aplicável)
+    // 4. Aplicar ação (com correção do MARCAR_OPT_OUT)
     const acaoAplicada = await applyAction(
       supabase,
       message.run_id,
       message.lead_id,
+      message.empresa,
       aiResponse.acao,
-      aiResponse.acao_detalhes
+      aiResponse.acao_detalhes,
+      message.conteudo
     );
 
-    // 5. PATCH 5G-B: Enviar resposta automática se aplicável
+    // 5. Enviar resposta automática se aplicável (e não for opt-out)
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
@@ -745,6 +997,7 @@ serve(async (req) => {
       aiResponse.deve_responder &&
       aiResponse.resposta_sugerida &&
       telefone &&
+      aiResponse.intent !== 'OPT_OUT' && // Não responde a opt-out
       (aiResponse.acao === 'ENVIAR_RESPOSTA_AUTOMATICA' || aiResponse.acao === 'CRIAR_TAREFA_CLOSER')
     ) {
       respostaTexto = aiResponse.resposta_sugerida;
