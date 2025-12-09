@@ -85,7 +85,7 @@ interface RunnerExecutionLog {
 // ========================================
 // AUTENTICAÇÃO
 // ========================================
-function validateServiceRoleAuth(req: Request): boolean {
+function validateAuth(req: Request): boolean {
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     console.warn('[Auth] Missing Authorization header');
@@ -96,9 +96,25 @@ function validateServiceRoleAuth(req: Request): boolean {
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const cronSecret = Deno.env.get("CRON_SECRET");
   
-  // Aceita SERVICE_ROLE_KEY ou CRON_SECRET para flexibilidade
+  // Para pg_cron: aceita qualquer JWT válido do Supabase (anon ou service)
+  // A validação JWT é feita automaticamente pelo Supabase se verify_jwt=true
+  // Aqui verificamos apenas se é um token de administração ou cron
+  
+  // Token de service role ou cron secret
   if (token === serviceRoleKey || token === cronSecret) {
+    console.log('[Auth] Token admin válido');
     return true;
+  }
+  
+  // Para pg_cron: aceita JWT que tenha "supabase" no issuer (anon key)
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]));
+    if (payload.iss === 'supabase' && payload.ref === 'xdjvlcelauvibznnbrzb') {
+      console.log('[Auth] Token JWT Supabase válido');
+      return true;
+    }
+  } catch {
+    // Não é um JWT válido, continua
   }
   
   console.warn('[Auth] Invalid token provided');
@@ -617,12 +633,12 @@ serve(async (req) => {
   }
 
   // ========================================
-  // AUTENTICAÇÃO: Apenas SERVICE_ROLE ou CRON_SECRET
+  // AUTENTICAÇÃO: SERVICE_ROLE, CRON_SECRET ou ANON_KEY
   // ========================================
-  if (!validateServiceRoleAuth(req)) {
+  if (!validateAuth(req)) {
     console.error('[Runner] Acesso não autorizado');
     return new Response(
-      JSON.stringify({ error: 'Unauthorized - SERVICE_ROLE required' }),
+      JSON.stringify({ error: 'Unauthorized' }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
