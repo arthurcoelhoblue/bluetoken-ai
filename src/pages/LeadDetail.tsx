@@ -14,6 +14,7 @@ import {
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { MessageHistory } from '@/components/messages/MessageHistory';
+import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -140,6 +141,14 @@ function LeadDetailContent() {
                   <span>{contact.telefone}</span>
                 </div>
               )}
+              <Separator />
+              {/* WhatsApp Test Button */}
+              <WhatsAppTestButton
+                leadId={contact.lead_id}
+                empresa={contact.empresa}
+                telefone={contact.telefone}
+                nome={contact.nome || contact.primeiro_nome}
+              />
               <Separator />
               <ExternalLinks contact={contact} />
             </CardContent>
