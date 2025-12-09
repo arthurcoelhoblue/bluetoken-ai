@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
-// PATCH 5A - Cadence Runner
-// Motor de execução de cadências
+// PATCH 5A + 5E - Cadence Runner
+// Motor de execução automática de cadências
 // ========================================
 
 const corsHeaders = {
@@ -17,6 +17,7 @@ const corsHeaders = {
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 type CanalTipo = 'WHATSAPP' | 'EMAIL' | 'SMS';
 type CadenceRunStatus = 'ATIVA' | 'CONCLUIDA' | 'CANCELADA' | 'PAUSADA';
+type TriggerSource = 'CRON' | 'MANUAL' | 'TEST';
 
 interface LeadCadenceRun {
   id: string;
@@ -63,9 +64,45 @@ interface ProcessResult {
   leadId: string;
   stepOrdem: number;
   templateCodigo: string;
-  status: 'DISPARADO' | 'ERRO' | 'CONCLUIDA';
+  status: 'DISPARADO' | 'ERRO' | 'CONCLUIDA' | 'SKIPPED';
   mensagem?: string;
   erro?: string;
+}
+
+interface RunnerExecutionLog {
+  steps_executed: number;
+  errors: number;
+  runs_touched: number;
+  duration_ms: number;
+  trigger_source: TriggerSource;
+  details: {
+    results: ProcessResult[];
+    started_at: string;
+    finished_at: string;
+  };
+}
+
+// ========================================
+// AUTENTICAÇÃO
+// ========================================
+function validateServiceRoleAuth(req: Request): boolean {
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader) {
+    console.warn('[Auth] Missing Authorization header');
+    return false;
+  }
+
+  const token = authHeader.replace("Bearer ", "");
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const cronSecret = Deno.env.get("CRON_SECRET");
+  
+  // Aceita SERVICE_ROLE_KEY ou CRON_SECRET para flexibilidade
+  if (token === serviceRoleKey || token === cronSecret) {
+    return true;
+  }
+  
+  console.warn('[Auth] Invalid token provided');
+  return false;
 }
 
 // ========================================
@@ -192,7 +229,7 @@ async function dispararMensagem(
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else if (canal === 'EMAIL') {
-    // TODO PATCH 5D: Integrar com Resend para emails
+    // TODO PATCH 5D: Integrar com SMTP para emails
     console.log('[Disparo] [MOCK] Email enviado para:', to);
     
     // Registrar mensagem mock
@@ -200,7 +237,7 @@ async function dispararMensagem(
       lead_id: leadId,
       empresa,
       canal: 'EMAIL',
-      direcao: 'SAIDA',
+      direcao: 'OUTBOUND',
       conteudo: body,
       estado: 'ENVIADO',
       enviado_em: new Date().toISOString(),
@@ -235,7 +272,7 @@ async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<Pro
     .not('next_run_at', 'is', null)
     .lte('next_run_at', now)
     .order('next_run_at', { ascending: true })
-    .limit(50); // Processa em lotes
+    .limit(100); // Processa em lotes maiores para CRON
 
   if (runsError) {
     console.error('[Runner] Erro ao buscar runs:', runsError);
@@ -278,9 +315,9 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   const lockTime = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // +5min
   const { data: locked, error: lockError } = await supabase
     .from('lead_cadence_runs')
-    .update({ next_run_at: lockTime })
+    .update({ next_run_at: lockTime, updated_at: new Date().toISOString() })
     .eq('id', run.id)
-    .eq('next_run_at', run.next_run_at) // Lock otimista
+    .eq('next_run_at', run.next_run_at) // Lock otimista - só atualiza se next_run_at não mudou
     .select()
     .maybeSingle();
 
@@ -291,8 +328,8 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       leadId: run.lead_id,
       stepOrdem: run.next_step_ordem || 0,
       templateCodigo: '',
-      status: 'ERRO',
-      erro: 'Run em processamento por outra instância',
+      status: 'SKIPPED',
+      mensagem: 'Run em processamento por outra instância (lock otimista)',
     };
   }
 
@@ -313,6 +350,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
         status: 'CONCLUIDA',
         next_step_ordem: null,
         next_run_at: null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', run.id);
 
@@ -351,7 +389,10 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     // Restaura next_run_at para retry futuro
     await supabase
       .from('lead_cadence_runs')
-      .update({ next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() }) // +30min
+      .update({ 
+        next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', run.id);
 
     return {
@@ -387,7 +428,10 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     // Restaura para retry
     await supabase
       .from('lead_cadence_runs')
-      .update({ next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString() })
+      .update({ 
+        next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', run.id);
 
     return {
@@ -427,7 +471,10 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     // Restaura para retry
     await supabase
       .from('lead_cadence_runs')
-      .update({ next_run_at: new Date(Date.now() + 15 * 60 * 1000).toISOString() })
+      .update({ 
+        next_run_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', run.id);
 
     return {
@@ -450,6 +497,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       canal: currentStep.canal,
       to: mensagemResolvida.to,
       body_preview: mensagemResolvida.body!.substring(0, 100),
+      message_id: disparo.messageId,
     },
   });
 
@@ -479,6 +527,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
         last_step_ordem: currentStep.ordem,
         next_step_ordem: nextStep.ordem,
         next_run_at: nextRunAt,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', run.id);
 
@@ -510,6 +559,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
         last_step_ordem: currentStep.ordem,
         next_step_ordem: null,
         next_run_at: null,
+        updated_at: new Date().toISOString(),
       })
       .eq('id', run.id);
 
@@ -523,6 +573,29 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       status: 'CONCLUIDA',
       mensagem: 'Cadência concluída com sucesso',
     };
+  }
+}
+
+// ========================================
+// LOGGING DE EXECUÇÃO
+// ========================================
+async function registrarLogExecucao(
+  supabase: SupabaseClient,
+  log: RunnerExecutionLog
+): Promise<void> {
+  try {
+    await supabase.from('cadence_runner_logs').insert({
+      executed_at: new Date().toISOString(),
+      steps_executed: log.steps_executed,
+      errors: log.errors,
+      runs_touched: log.runs_touched,
+      duration_ms: log.duration_ms,
+      trigger_source: log.trigger_source,
+      details: log.details,
+    });
+    console.log('[Runner] Log de execução registrado');
+  } catch (error) {
+    console.error('[Runner] Erro ao registrar log:', error);
   }
 }
 
@@ -543,25 +616,65 @@ serve(async (req) => {
     );
   }
 
+  // ========================================
+  // AUTENTICAÇÃO: Apenas SERVICE_ROLE ou CRON_SECRET
+  // ========================================
+  if (!validateServiceRoleAuth(req)) {
+    console.error('[Runner] Acesso não autorizado');
+    return new Response(
+      JSON.stringify({ error: 'Unauthorized - SERVICE_ROLE required' }),
+      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+  // Determinar fonte do trigger
+  let triggerSource: TriggerSource = 'CRON';
   try {
-    console.log('[Cadence Runner] Iniciando processamento...');
+    const body = await req.json().catch(() => ({}));
+    if (body.trigger === 'MANUAL') triggerSource = 'MANUAL';
+    if (body.trigger === 'TEST') triggerSource = 'TEST';
+  } catch {
+    // Ignora erro de parse - usa default CRON
+  }
+
+  const startedAt = new Date().toISOString();
+
+  try {
+    console.log(`[Cadence Runner] Iniciando processamento (${triggerSource})...`);
     
     const startTime = Date.now();
     const results = await processarCadenciasVencidas(supabase);
     const duration = Date.now() - startTime;
+    const finishedAt = new Date().toISOString();
 
     const summary = {
       total: results.length,
       success: results.filter(r => r.status === 'DISPARADO' || r.status === 'CONCLUIDA').length,
       errors: results.filter(r => r.status === 'ERRO').length,
+      skipped: results.filter(r => r.status === 'SKIPPED').length,
       duration_ms: duration,
+      trigger_source: triggerSource,
     };
 
     console.log('[Cadence Runner] Processamento concluído:', summary);
+
+    // Registrar log de execução no banco
+    await registrarLogExecucao(supabase, {
+      steps_executed: summary.success,
+      errors: summary.errors,
+      runs_touched: summary.total,
+      duration_ms: duration,
+      trigger_source: triggerSource,
+      details: {
+        results,
+        started_at: startedAt,
+        finished_at: finishedAt,
+      },
+    });
 
     return new Response(
       JSON.stringify({
@@ -574,6 +687,21 @@ serve(async (req) => {
 
   } catch (error) {
     console.error('[Cadence Runner] Erro geral:', error);
+    
+    // Registrar erro no log
+    const duration = Date.now() - new Date(startedAt).getTime();
+    await registrarLogExecucao(supabase, {
+      steps_executed: 0,
+      errors: 1,
+      runs_touched: 0,
+      duration_ms: duration,
+      trigger_source: triggerSource,
+      details: {
+        results: [],
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+      },
+    });
     
     return new Response(
       JSON.stringify({ 

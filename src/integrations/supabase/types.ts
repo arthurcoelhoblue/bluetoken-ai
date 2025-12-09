@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      cadence_runner_logs: {
+        Row: {
+          details: Json | null
+          duration_ms: number | null
+          errors: number
+          executed_at: string
+          id: string
+          runs_touched: number
+          steps_executed: number
+          trigger_source: string | null
+        }
+        Insert: {
+          details?: Json | null
+          duration_ms?: number | null
+          errors?: number
+          executed_at?: string
+          id?: string
+          runs_touched?: number
+          steps_executed?: number
+          trigger_source?: string | null
+        }
+        Update: {
+          details?: Json | null
+          duration_ms?: number | null
+          errors?: number
+          executed_at?: string
+          id?: string
+          runs_touched?: number
+          steps_executed?: number
+          trigger_source?: string | null
+        }
+        Relationships: []
+      }
       cadence_steps: {
         Row: {
           cadence_id: string
