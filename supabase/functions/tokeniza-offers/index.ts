@@ -114,16 +114,18 @@ serve(async (req) => {
       documentos: offer.documents,
     }));
 
-    // Summary for open offers
-    const openOffers = transformedOffers.filter(o => o.status === 'open');
+    // Summary for active offers (API returns 'active', 'finished', 'inactive')
+    const activeOffers = transformedOffers.filter(o => 
+      o.status.toLowerCase() === 'active' || o.status.toLowerCase() === 'open'
+    );
     const summary = {
       totalOfertas: transformedOffers.length,
-      ofertasAbertas: openOffers.length,
-      maiorRentabilidade: openOffers.length > 0 
-        ? Math.max(...openOffers.map(o => parseInt(o.rentabilidade) || 0))
+      ofertasAbertas: activeOffers.length,
+      maiorRentabilidade: activeOffers.length > 0 
+        ? Math.max(...activeOffers.map(o => parseInt(o.rentabilidade) || 0))
         : 0,
-      menorContribuicao: openOffers.length > 0
-        ? Math.min(...openOffers.map(o => o.contribuicaoMinima))
+      menorContribuicao: activeOffers.length > 0
+        ? Math.min(...activeOffers.filter(o => o.contribuicaoMinima > 0).map(o => o.contribuicaoMinima))
         : 0,
     };
 
