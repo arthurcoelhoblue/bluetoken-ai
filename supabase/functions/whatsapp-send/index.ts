@@ -11,7 +11,7 @@ const CONNECTION_NAME = 'mensageria';
 
 // Modo de teste: se true, não envia para leads reais
 const TEST_MODE = true;
-const TEST_PHONE = '5561986266334'; // Número de teste
+const TEST_PHONE = '5561998317422'; // Número de teste - Arthur
 
 interface WhatsAppSendRequest {
   leadId: string;
