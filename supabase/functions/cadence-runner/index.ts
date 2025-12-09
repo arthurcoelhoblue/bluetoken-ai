@@ -141,35 +141,80 @@ async function resolverMensagem(
 }
 
 // ========================================
-// DISPARO DE MENSAGEM (MOCK)
+// DISPARO DE MENSAGEM
 // ========================================
 async function dispararMensagem(
+  supabase: SupabaseClient,
   canal: CanalTipo,
   to: string,
   body: string,
-  _leadId: string
-): Promise<{ success: boolean; error?: string }> {
+  leadId: string,
+  empresa: EmpresaTipo,
+  runId: string,
+  stepOrdem: number,
+  templateCodigo: string
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
   console.log('[Disparo] Enviando mensagem:', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
 
-  // TODO PATCH 5B: Integrar com API real de WhatsApp/Email
-  // Por enquanto, apenas loga e simula sucesso
-  
   if (canal === 'WHATSAPP') {
-    // Mock: Simula envio via WhatsApp
-    console.log('[Disparo] [MOCK] WhatsApp enviado para:', to);
-    // await enviarWhatsAppMensagem(to, body);
+    // Chamar edge function whatsapp-send
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    try {
+      const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          leadId,
+          telefone: to,
+          mensagem: body,
+          empresa,
+          runId,
+          stepOrdem,
+          templateCodigo,
+        }),
+      });
+
+      const data = await response.json();
+      console.log('[Disparo] Resposta WhatsApp:', data);
+
+      if (!data.success) {
+        return { success: false, error: data.error || 'Erro no envio WhatsApp' };
+      }
+
+      return { success: true, messageId: data.messageId };
+    } catch (error) {
+      console.error('[Disparo] Erro ao chamar whatsapp-send:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
   } else if (canal === 'EMAIL') {
-    // Mock: Simula envio via Email
+    // TODO PATCH 5D: Integrar com Resend para emails
     console.log('[Disparo] [MOCK] Email enviado para:', to);
-    // await enviarEmailTransacional(to, 'Assunto', body);
-  }
+    
+    // Registrar mensagem mock
+    await supabase.from('lead_messages').insert({
+      lead_id: leadId,
+      empresa,
+      canal: 'EMAIL',
+      direcao: 'SAIDA',
+      conteudo: body,
+      estado: 'ENVIADO',
+      enviado_em: new Date().toISOString(),
+      run_id: runId,
+      step_ordem: stepOrdem,
+      template_codigo: templateCodigo,
+    });
 
-  // Simula 5% de erro para testes
-  if (Math.random() < 0.05) {
-    return { success: false, error: 'Erro simulado para teste' };
+    return { success: true };
+  } else {
+    // SMS - mock por enquanto
+    console.log('[Disparo] [MOCK] SMS enviado para:', to);
+    return { success: true };
   }
-
-  return { success: true };
 }
 
 // ========================================
@@ -357,10 +402,15 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
 
   // 5. Disparar mensagem
   const disparo = await dispararMensagem(
+    supabase,
     currentStep.canal,
     mensagemResolvida.to!,
     mensagemResolvida.body!,
-    run.lead_id
+    run.lead_id,
+    run.empresa,
+    run.id,
+    currentStep.ordem,
+    currentStep.template_codigo
   );
 
   if (!disparo.success) {
