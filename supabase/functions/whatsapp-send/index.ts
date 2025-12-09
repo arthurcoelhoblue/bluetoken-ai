@@ -1,6 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+// ========================================
+// PATCH 5G-C - WhatsApp Send com Bloqueio Opt-Out
+// ========================================
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -21,6 +25,10 @@ interface WhatsAppSendRequest {
   runId?: string;
   stepOrdem?: number;
   templateCodigo?: string;
+  // Alternativas para compatibilidade
+  to?: string;
+  message?: string;
+  isAutoResponse?: boolean;
 }
 
 interface WhatsAppSendResponse {
@@ -29,6 +37,7 @@ interface WhatsAppSendResponse {
   error?: string;
   testMode?: boolean;
   originalPhone?: string;
+  optOutBlocked?: boolean;
 }
 
 serve(async (req) => {
@@ -47,13 +56,59 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const body: WhatsAppSendRequest = await req.json();
-    const { leadId, telefone, mensagem, empresa, runId, stepOrdem, templateCodigo } = body;
+    
+    // Normalizar campos (compatibilidade com chamadas do sdr-ia-interpret)
+    const leadId = body.leadId;
+    const telefone = body.telefone || body.to || '';
+    const mensagem = body.mensagem || body.message || '';
+    const empresa = body.empresa;
+    const runId = body.runId;
+    const stepOrdem = body.stepOrdem;
+    const templateCodigo = body.templateCodigo;
 
     // Validações
     if (!leadId || !telefone || !mensagem || !empresa) {
       return new Response(
         JSON.stringify({ success: false, error: 'Campos obrigatórios: leadId, telefone, mensagem, empresa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // PATCH 5G-C Fase 6: Verificar opt-out antes de enviar
+    const { data: contact } = await supabase
+      .from('lead_contacts')
+      .select('opt_out, opt_out_em')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa)
+      .limit(1)
+      .maybeSingle();
+
+    if (contact?.opt_out === true) {
+      console.log(`[whatsapp-send] BLOQUEADO - Lead ${leadId} está em opt-out desde ${contact.opt_out_em}`);
+      
+      // Registrar tentativa bloqueada
+      await supabase.from('lead_messages').insert({
+        lead_id: leadId,
+        empresa: empresa,
+        canal: 'WHATSAPP',
+        direcao: 'OUTBOUND',
+        conteudo: mensagem,
+        estado: 'ERRO',
+        erro_detalhe: 'Envio bloqueado: lead em opt-out',
+        run_id: runId || null,
+        step_ordem: stepOrdem || null,
+        template_codigo: templateCodigo || null,
+      });
+
+      const response: WhatsAppSendResponse = {
+        success: false,
+        error: 'Lead em opt-out - envio bloqueado',
+        optOutBlocked: true,
+      };
+
+      return new Response(
+        JSON.stringify(response),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
