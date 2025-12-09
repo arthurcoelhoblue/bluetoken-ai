@@ -122,22 +122,115 @@ function validateAuth(req: Request): boolean {
 }
 
 // ========================================
-// RESOLUÇÃO DE TEMPLATE
+// TIPOS DE OFERTA
 // ========================================
-function resolverPlaceholders(template: string, context: {
+interface TokenizaOferta {
+  id: string;
+  nome: string;
+  tipo: string;
+  status: string;
+  empresa: string;
+  empresaWebsite: string;
+  rentabilidade: string;
+  duracaoDias: number;
+  contribuicaoMinima: number;
+  metaCaptacao: number;
+  valorCaptado: number;
+  percentualCaptado: number;
+  tipoRisco: string;
+  diasRestantes: number;
+}
+
+// ========================================
+// BUSCAR OFERTA ATIVA (TOKENIZA)
+// ========================================
+async function buscarOfertaAtiva(): Promise<TokenizaOferta | null> {
+  try {
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    
+    const response = await fetch(`${supabaseUrl}/functions/v1/tokeniza-offers`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${supabaseServiceKey}`,
+      },
+    });
+
+    if (!response.ok) {
+      console.warn('[Oferta] Erro ao buscar ofertas:', response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    const ofertasAbertas = data.ofertas?.filter((o: TokenizaOferta) => o.status === 'open') || [];
+    
+    if (ofertasAbertas.length === 0) {
+      console.log('[Oferta] Nenhuma oferta aberta encontrada');
+      return null;
+    }
+
+    // Retorna a primeira oferta aberta (pode ser ordenada por prioridade futuramente)
+    const oferta = ofertasAbertas[0];
+    console.log('[Oferta] Oferta ativa encontrada:', oferta.nome);
+    return oferta;
+  } catch (error) {
+    console.error('[Oferta] Erro ao buscar oferta:', error);
+    return null;
+  }
+}
+
+// ========================================
+// RESOLUÇÃO DE TEMPLATE COM PLACEHOLDERS INTELIGENTES
+// ========================================
+interface PlaceholderContext {
+  // Lead
   nome: string;
   primeiro_nome: string;
   email: string;
   empresa: string;
-}): string {
+  // Oferta (opcional)
+  oferta?: TokenizaOferta | null;
+}
+
+function resolverPlaceholders(template: string, context: PlaceholderContext): string {
   let resultado = template;
   
+  // === Placeholders de Lead ===
   resultado = resultado.replace(/\{\{nome\}\}/g, context.nome || 'você');
   resultado = resultado.replace(/\{\{primeiro_nome\}\}/g, context.primeiro_nome || 'você');
+  resultado = resultado.replace(/\{\{lead_nome\}\}/g, context.nome || 'você');
   resultado = resultado.replace(/\{\{email\}\}/g, context.email || '');
   resultado = resultado.replace(/\{\{empresa\}\}/g, 
     context.empresa === 'TOKENIZA' ? 'Tokeniza' : 'Blue Consult'
   );
+  
+  // === Placeholders de Oferta (TOKENIZA) ===
+  if (context.oferta) {
+    const oferta = context.oferta;
+    resultado = resultado.replace(/\{\{oferta_nome\}\}/g, oferta.nome || '');
+    resultado = resultado.replace(/\{\{oferta_rentabilidade\}\}/g, oferta.rentabilidade || '');
+    resultado = resultado.replace(/\{\{oferta_prazo\}\}/g, `${oferta.duracaoDias || 0} dias`);
+    resultado = resultado.replace(/\{\{oferta_tipo\}\}/g, oferta.tipo || '');
+    resultado = resultado.replace(/\{\{oferta_url\}\}/g, oferta.empresaWebsite || 'https://tokeniza.com.br');
+    resultado = resultado.replace(/\{\{oferta_garantia\}\}/g, oferta.tipoRisco || 'Não informado');
+    resultado = resultado.replace(/\{\{oferta_minimo\}\}/g, 
+      oferta.contribuicaoMinima ? `R$ ${oferta.contribuicaoMinima.toLocaleString('pt-BR')}` : ''
+    );
+    resultado = resultado.replace(/\{\{oferta_captado\}\}/g, `${oferta.percentualCaptado}%`);
+    resultado = resultado.replace(/\{\{oferta_dias_restantes\}\}/g, `${oferta.diasRestantes}`);
+  } else {
+    // Remove placeholders de oferta se não houver oferta
+    resultado = resultado.replace(/\{\{oferta_nome\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_rentabilidade\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_prazo\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_tipo\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_url\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_garantia\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_minimo\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_captado\}\}/g, '');
+    resultado = resultado.replace(/\{\{oferta_dias_restantes\}\}/g, '');
+  }
   
   return resultado;
 }
@@ -148,7 +241,7 @@ async function resolverMensagem(
   templateCodigo: string,
   canal: CanalTipo,
   contact: LeadContact
-): Promise<{ success: boolean; body?: string; to?: string; error?: string }> {
+): Promise<{ success: boolean; body?: string; to?: string; error?: string; ofertaUsada?: string }> {
   console.log('[Template] Resolvendo:', { empresa, templateCodigo, canal });
 
   // Buscar template
@@ -182,15 +275,29 @@ async function resolverMensagem(
     return { success: false, error: `Contato sem ${canal === 'EMAIL' ? 'email' : 'telefone'}` };
   }
 
-  // Resolver placeholders
+  // Buscar oferta ativa (apenas para TOKENIZA e se template usa placeholders de oferta)
+  let oferta: TokenizaOferta | null = null;
+  const usaPlaceholdersOferta = template.conteudo.includes('{{oferta_');
+  
+  if (empresa === 'TOKENIZA' && usaPlaceholdersOferta) {
+    console.log('[Template] Template usa placeholders de oferta, buscando oferta ativa...');
+    oferta = await buscarOfertaAtiva();
+  }
+
+  // Resolver placeholders com contexto completo
   const body = resolverPlaceholders(template.conteudo, {
     nome: contact.nome || 'você',
     primeiro_nome: contact.primeiro_nome || contact.nome?.split(' ')[0] || 'você',
     email: contact.email || '',
     empresa: empresa,
+    oferta: oferta,
   });
 
-  return { success: true, body, to };
+  if (oferta) {
+    console.log('[Template] Placeholders resolvidos com oferta:', oferta.nome);
+  }
+
+  return { success: true, body, to, ofertaUsada: oferta?.nome };
 }
 
 // ========================================
