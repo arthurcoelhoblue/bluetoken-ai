@@ -6,7 +6,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const WHATSAPP_API_URL = 'https://mensageria.grupoblue.com.br/api/whatsapp/send';
+const WHATSAPP_API_URL = 'https://mensageria.grupoblue.com.br/api/send-message';
 const CONNECTION_NAME = 'mensageria';
 
 // Modo de teste: se true, não envia para leads reais
