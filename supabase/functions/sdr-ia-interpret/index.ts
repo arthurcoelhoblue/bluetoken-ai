@@ -80,6 +80,7 @@ interface LeadContact {
   opt_out: boolean;
   opt_out_em: string | null;
   opt_out_motivo: string | null;
+  pipedrive_deal_id: string | null;
 }
 
 interface MessageContext {
@@ -90,6 +91,7 @@ interface MessageContext {
   telefone?: string;
   optOut: boolean;
   classificacao?: LeadClassification;
+  pipedriveDealeId?: string;
 }
 
 interface InterpretRequest {
@@ -350,6 +352,7 @@ async function loadMessageContext(
   let cadenciaNome: string | undefined;
   let optOut = false;
   let classificacao: LeadClassification | undefined;
+  let pipedriveDealeId: string | undefined;
 
   // Se tiver lead_id, buscar histórico, contato e classificação
   if (msg.lead_id) {
@@ -364,10 +367,10 @@ async function loadMessageContext(
 
     historico = (hist || []) as LeadMessage[];
 
-    // Buscar contato com campos opt_out
+    // Buscar contato com campos opt_out e pipedrive_deal_id
     const { data: contact } = await supabase
       .from('lead_contacts')
-      .select('nome, primeiro_nome, telefone, opt_out, opt_out_em, opt_out_motivo')
+      .select('nome, primeiro_nome, telefone, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id')
       .eq('lead_id', msg.lead_id)
       .limit(1)
       .maybeSingle();
@@ -377,6 +380,7 @@ async function loadMessageContext(
       leadNome = c.nome || c.primeiro_nome || undefined;
       telefone = c.telefone || undefined;
       optOut = c.opt_out ?? false;
+      pipedriveDealeId = c.pipedrive_deal_id || undefined;
     }
 
     // Buscar classificação mais recente
@@ -415,7 +419,8 @@ async function loadMessageContext(
     cadenciaNome, 
     telefone, 
     optOut,
-    classificacao 
+    classificacao,
+    pipedriveDealeId
   };
 }
 
@@ -830,6 +835,106 @@ async function applyAction(
 }
 
 /**
+ * PATCH 6: Sincroniza com Pipedrive (background task)
+ */
+async function syncWithPipedrive(
+  pipedriveDealeId: string,
+  empresa: EmpresaTipo,
+  intent: LeadIntentTipo,
+  acao: SdrAcaoTipo,
+  acaoAplicada: boolean,
+  historico: LeadMessage[],
+  mensagemAtual: string,
+  classificacao?: LeadClassification
+): Promise<void> {
+  try {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+    
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.warn('[Pipedrive] Variáveis de ambiente não configuradas');
+      return;
+    }
+
+    // Formatar mensagens para log
+    const messages = [
+      ...historico.slice(-3).reverse().map(h => ({
+        direcao: h.direcao === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND',
+        conteudo: h.conteudo.substring(0, 500),
+        created_at: h.created_at,
+      })),
+      {
+        direcao: 'INBOUND',
+        conteudo: mensagemAtual.substring(0, 500),
+        created_at: new Date().toISOString(),
+      }
+    ];
+
+    console.log('[Pipedrive] Sincronizando conversa:', { pipedriveDealeId, intent, acao });
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/pipedrive-sync`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        action: 'log_conversation',
+        deal_id: pipedriveDealeId,
+        empresa,
+        data: {
+          messages,
+          intent,
+          acao_aplicada: acaoAplicada ? acao : undefined,
+          classification: classificacao ? {
+            icp: classificacao.icp,
+            persona: classificacao.persona,
+            temperatura: classificacao.temperatura,
+            prioridade: classificacao.prioridade,
+          } : undefined,
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      console.warn('[Pipedrive] Erro na sincronização:', response.status, err);
+    } else {
+      console.log('[Pipedrive] Conversa sincronizada com sucesso');
+    }
+
+    // Se a ação for CRIAR_TAREFA_CLOSER, criar atividade no Pipedrive
+    if (acao === 'CRIAR_TAREFA_CLOSER' && acaoAplicada) {
+      const activityResponse = await fetch(`${SUPABASE_URL}/functions/v1/pipedrive-sync`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: 'add_activity',
+          deal_id: pipedriveDealeId,
+          empresa,
+          data: {
+            activity_type: 'call',
+            subject: `[SDR IA] Lead qualificado - ${intent}`,
+            note: `Intent detectado: ${intent}\nConfiança: Alta\nLead demonstrou interesse e foi qualificado para atendimento humano.`,
+          },
+        }),
+      });
+
+      if (activityResponse.ok) {
+        console.log('[Pipedrive] Atividade criada para closer');
+      }
+    }
+
+  } catch (error) {
+    console.error('[Pipedrive] Erro na sincronização:', error);
+    // Não propaga erro - sync é best effort
+  }
+}
+
+/**
  * Salva interpretação no banco
  */
 async function saveInterpretation(
@@ -909,7 +1014,7 @@ serve(async (req) => {
 
     // 1. Carregar contexto completo (com opt-out e classificação)
     const context = await loadMessageContext(supabase, messageId);
-    const { message, historico, leadNome, cadenciaNome, telefone, optOut, classificacao } = context;
+    const { message, historico, leadNome, cadenciaNome, telefone, optOut, classificacao, pipedriveDealeId } = context;
 
     // PATCH 5G-C Fase 6: Verificar opt-out antes de processar
     if (optOut) {
@@ -1028,6 +1133,21 @@ serve(async (req) => {
     );
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
+
+    // 7. PATCH 6: Sincronizar com Pipedrive (background task)
+    if (pipedriveDealeId) {
+      // Fire and forget - não bloqueia a resposta
+      syncWithPipedrive(
+        pipedriveDealeId,
+        message.empresa,
+        aiResponse.intent,
+        aiResponse.acao,
+        acaoAplicada,
+        historico,
+        message.conteudo,
+        classificacao
+      ).catch(err => console.error('[Pipedrive] Erro em background:', err));
+    }
 
     const result: InterpretResult = {
       success: true,

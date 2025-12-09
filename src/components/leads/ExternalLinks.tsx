@@ -7,7 +7,7 @@ interface ExternalLinksProps {
 }
 
 // URLs base configuráveis
-const PIPEDRIVE_BASE_URL = 'https://app.pipedrive.com';
+const PIPEDRIVE_BASE_URL = 'https://grupoblue.pipedrive.com';
 const TOKENIZA_BASE_URL = 'https://app.tokeniza.com.br';
 const BLUE_BASE_URL = 'https://app.blueconsult.com.br';
 

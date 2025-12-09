@@ -39,6 +39,7 @@ interface DadosLead {
   utm_term?: string;
   score?: number;
   stage?: LeadStage;
+  pipedrive_deal_id?: string;
 }
 
 interface DadosTokeniza {
@@ -689,8 +690,10 @@ serve(async (req) => {
     const leadNormalizado = normalizeSGTEvent(payload);
     console.log('[SGT Webhook] Lead normalizado:', leadNormalizado);
 
-    // PATCH 5A: Upsert em lead_contacts para garantir dados de contato
+    // PATCH 5A + Pipedrive: Upsert em lead_contacts para garantir dados de contato
     const primeiroNome = leadNormalizado.nome.split(' ')[0] || leadNormalizado.nome;
+    const pipedriveDealeId = payload.dados_lead?.pipedrive_deal_id || null;
+    
     await supabase.from('lead_contacts').upsert({
       lead_id: payload.lead_id,
       empresa: payload.empresa,
@@ -698,10 +701,11 @@ serve(async (req) => {
       email: leadNormalizado.email,
       telefone: leadNormalizado.telefone,
       primeiro_nome: primeiroNome,
+      pipedrive_deal_id: pipedriveDealeId,
     }, {
       onConflict: 'lead_id,empresa',
     });
-    console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id);
+    console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id, 'pipedrive_deal_id:', pipedriveDealeId);
 
     // Variáveis para resposta
     let classification: LeadClassificationResult | null = null;
