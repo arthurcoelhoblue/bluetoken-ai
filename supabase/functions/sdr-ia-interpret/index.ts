@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
-// PATCH 5G - SDR IA Engine
-// Interpretação de mensagens inbound
+// PATCH 5G-B - SDR IA Engine Evoluído
+// Interpretação + Resposta Automática + Compliance
 // ========================================
 
 const corsHeaders = {
@@ -16,15 +16,21 @@ const corsHeaders = {
 // ========================================
 
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
 
 type LeadIntentTipo =
   | 'INTERESSE_COMPRA'
+  | 'INTERESSE_IR'
   | 'DUVIDA_PRODUTO'
   | 'DUVIDA_PRECO'
+  | 'DUVIDA_TECNICA'
   | 'SOLICITACAO_CONTATO'
   | 'AGENDAMENTO_REUNIAO'
   | 'RECLAMACAO'
   | 'OPT_OUT'
+  | 'OBJECAO_PRECO'
+  | 'OBJECAO_RISCO'
+  | 'SEM_INTERESSE'
   | 'NAO_ENTENDI'
   | 'CUMPRIMENTO'
   | 'AGRADECIMENTO'
@@ -39,7 +45,8 @@ type SdrAcaoTipo =
   | 'CRIAR_TAREFA_CLOSER'
   | 'MARCAR_OPT_OUT'
   | 'NENHUMA'
-  | 'ESCALAR_HUMANO';
+  | 'ESCALAR_HUMANO'
+  | 'ENVIAR_RESPOSTA_AUTOMATICA';
 
 interface LeadMessage {
   id: string;
@@ -62,6 +69,7 @@ interface InterpretResult {
   confidence?: number;
   acao?: SdrAcaoTipo;
   acaoAplicada?: boolean;
+  respostaEnviada?: boolean;
   error?: string;
 }
 
@@ -71,56 +79,129 @@ interface AIResponse {
   summary: string;
   acao: SdrAcaoTipo;
   acao_detalhes?: Record<string, unknown>;
+  resposta_sugerida?: string | null;
+  deve_responder: boolean;
 }
 
 // ========================================
-// PROMPT DO SDR IA
+// PROMPT DO SDR IA COM COMPLIANCE
 // ========================================
 
-const SYSTEM_PROMPT = `Você é um SDR (Sales Development Representative) de IA altamente especializado.
-Sua função é interpretar mensagens de leads e identificar a intenção por trás delas.
+const SYSTEM_PROMPT = `Você é um SDR (Sales Development Representative) de IA especializado.
+Sua função é interpretar mensagens de leads, identificar intenções, recomendar ações e, quando apropriado, sugerir uma resposta automática.
 
-EMPRESAS:
-- TOKENIZA: Plataforma de investimentos em tokens (criptoativos, imóveis tokenizados)
-- BLUE: Serviços de declaração de imposto de renda para criptomoedas
+## EMPRESAS E PERSONAS
 
-INTENÇÕES POSSÍVEIS:
-- INTERESSE_COMPRA: Lead demonstra interesse em comprar/investir
-- DUVIDA_PRODUTO: Pergunta sobre como funciona o produto/serviço
-- DUVIDA_PRECO: Pergunta sobre valores, taxas, custos
-- SOLICITACAO_CONTATO: Pede para alguém ligar/entrar em contato
+### TOKENIZA (Persona: Ana)
+- Plataforma de investimentos em tokens (criptoativos, imóveis tokenizados)
+- Tom: Amigável, didático, empolgado com inovação
+- Foco: Educação financeira, diversificação, tokenização
+
+### BLUE (Persona: Pedro)
+- Serviços de declaração de imposto de renda para criptomoedas
+- Tom: Profissional, confiável, técnico quando necessário
+- Foco: Conformidade fiscal, elisão legal, economia tributária
+
+## INTENÇÕES POSSÍVEIS
+
+INTENÇÕES DE ALTA CONVERSÃO:
+- INTERESSE_COMPRA: Lead quer investir/comprar (TOKENIZA)
+- INTERESSE_IR: Lead interessado em serviço de IR (BLUE)
 - AGENDAMENTO_REUNIAO: Quer marcar uma reunião/call
-- RECLAMACAO: Expressando insatisfação ou problema
+- SOLICITACAO_CONTATO: Pede para alguém ligar
+
+INTENÇÕES DE NUTRIÇÃO:
+- DUVIDA_PRODUTO: Pergunta sobre como funciona
+- DUVIDA_PRECO: Pergunta sobre valores, taxas, custos
+- DUVIDA_TECNICA: Pergunta técnica específica
+
+OBJEÇÕES:
+- OBJECAO_PRECO: Acha caro, não compensa
+- OBJECAO_RISCO: Medo de perda, desconfiança
+
+INTENÇÕES NEGATIVAS:
+- SEM_INTERESSE: Não quer, mas sem opt-out explícito
 - OPT_OUT: Pedindo para não receber mais mensagens
-- NAO_ENTENDI: Mensagem confusa ou sem sentido claro
-- CUMPRIMENTO: Apenas dizendo "oi", "olá", "bom dia"
+- RECLAMACAO: Expressando insatisfação ou problema
+
+INTENÇÕES NEUTRAS:
+- CUMPRIMENTO: Apenas "oi", "olá", "bom dia"
 - AGRADECIMENTO: Agradecendo por algo
-- FORA_CONTEXTO: Mensagem não relacionada aos serviços
-- OUTRO: Não se encaixa em nenhuma categoria
+- NAO_ENTENDI: Mensagem confusa
+- FORA_CONTEXTO: Não relacionada aos serviços
+- OUTRO: Não se encaixa
 
-AÇÕES RECOMENDADAS:
-- PAUSAR_CADENCIA: Quando lead responde positivamente ou tem dúvida importante
-- CANCELAR_CADENCIA: Quando lead pede opt-out ou demonstra total desinteresse
-- CRIAR_TAREFA_CLOSER: Quando lead quer agendar reunião ou demonstra alta intenção de compra
-- AJUSTAR_TEMPERATURA: Quando lead demonstra interesse mas precisa de mais aquecimento
-- MARCAR_OPT_OUT: Quando lead explicitamente pede para não receber mensagens
-- ESCALAR_HUMANO: Quando lead tem reclamação séria ou situação complexa
-- NENHUMA: Quando é apenas cumprimento ou agradecimento simples
+## AÇÕES POSSÍVEIS
 
-REGRAS IMPORTANTES:
-1. NUNCA responda ao lead - apenas interprete
-2. Seja conservador na confiança - use valores entre 0.6 e 0.95
-3. Na dúvida, prefira ESCALAR_HUMANO
-4. OPT_OUT deve ter ação MARCAR_OPT_OUT e CANCELAR_CADENCIA
-5. INTERESSE_COMPRA alto deve ter CRIAR_TAREFA_CLOSER
+- ENVIAR_RESPOSTA_AUTOMATICA: Responder automaticamente ao lead
+- CRIAR_TAREFA_CLOSER: Criar tarefa para humano atuar
+- PAUSAR_CADENCIA: Pausar sequência de mensagens
+- CANCELAR_CADENCIA: Cancelar sequência definitivamente
+- AJUSTAR_TEMPERATURA: Alterar temperatura do lead (FRIO/MORNO/QUENTE)
+- MARCAR_OPT_OUT: Registrar que lead não quer mais contato
+- ESCALAR_HUMANO: Situação complexa requer humano
+- NENHUMA: Nenhuma ação necessária
 
-Responda APENAS com JSON válido no formato:
+## REGRAS DE COMPLIANCE (CRÍTICAS!)
+
+### PROIBIÇÕES ABSOLUTAS - NUNCA fazer:
+1. ❌ NUNCA prometer retorno financeiro ou rentabilidade específica
+2. ❌ NUNCA indicar ou recomendar ativo específico para investir
+3. ❌ NUNCA inventar prazos ou metas de rentabilidade
+4. ❌ NUNCA negociar preços ou oferecer descontos
+5. ❌ NUNCA dar conselho de investimento personalizado
+6. ❌ NUNCA pressionar ou usar urgência artificial
+
+### PERMITIDO:
+✅ Explicar conceitos gerais sobre tokenização/cripto
+✅ Informar sobre processo de declaração de IR
+✅ Convidar para conversar com especialista
+✅ Tirar dúvidas procedimentais
+✅ Agradecer e ser cordial
+
+## MATRIZ DE DECISÃO: QUANDO RESPONDER?
+
+| Intenção | Confiança | Ação Principal | Responder? |
+|----------|-----------|----------------|------------|
+| INTERESSE_COMPRA | >0.7 | CRIAR_TAREFA_CLOSER | SIM |
+| INTERESSE_IR | >0.7 | CRIAR_TAREFA_CLOSER | SIM |
+| DUVIDA_PRODUTO | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
+| DUVIDA_PRECO | >0.6 | CRIAR_TAREFA_CLOSER | NÃO (humano negocia) |
+| DUVIDA_TECNICA | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
+| CUMPRIMENTO | >0.8 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
+| AGRADECIMENTO | >0.8 | NENHUMA | SIM |
+| OPT_OUT | >0.7 | MARCAR_OPT_OUT | NÃO |
+| OBJECAO_PRECO | >0.6 | CRIAR_TAREFA_CLOSER | NÃO |
+| OBJECAO_RISCO | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
+| SEM_INTERESSE | >0.7 | PAUSAR_CADENCIA | NÃO |
+| RECLAMACAO | >0.6 | ESCALAR_HUMANO | NÃO |
+
+## FORMATO DA RESPOSTA AUTOMÁTICA
+
+Se deve_responder = true, forneça resposta_sugerida seguindo:
+- 1 a 3 frases no máximo
+- Tom humanizado (Ana/Pedro)
+- Sempre terminar com próximo passo claro
+- SEM promessas, SEM pressão
+
+### Exemplos TOKENIZA (Ana):
+- Dúvida: "Que legal sua pergunta! A tokenização permite investir em frações de ativos. Posso te explicar mais ou você prefere falar com nosso especialista?"
+- Interesse: "Fico feliz que você se interessou! Vou pedir para um de nossos especialistas entrar em contato para te explicar tudo. Qual melhor horário?"
+
+### Exemplos BLUE (Pedro):
+- Dúvida IR: "Boa pergunta! A declaração de cripto tem algumas particularidades. Posso te passar para nosso contador especialista que vai esclarecer tudo pra você."
+- Interesse: "Legal que você quer regularizar suas operações! Vou agendar uma conversa com nosso time para entender seu caso específico."
+
+## RESPOSTA OBRIGATÓRIA (JSON)
+
 {
   "intent": "TIPO_INTENT",
   "confidence": 0.85,
-  "summary": "Resumo em uma frase do que o lead quer",
+  "summary": "Resumo do que o lead quer",
   "acao": "TIPO_ACAO",
-  "acao_detalhes": {}
+  "acao_detalhes": {},
+  "deve_responder": true,
+  "resposta_sugerida": "Sua resposta aqui..." ou null
 }`;
 
 // ========================================
@@ -133,7 +214,13 @@ Responda APENAS com JSON válido no formato:
 async function loadMessageContext(
   supabase: SupabaseClient,
   messageId: string
-): Promise<{ message: LeadMessage; historico: LeadMessage[]; leadNome?: string; cadenciaNome?: string }> {
+): Promise<{ 
+  message: LeadMessage; 
+  historico: LeadMessage[]; 
+  leadNome?: string; 
+  cadenciaNome?: string;
+  telefone?: string;
+}> {
   // Buscar mensagem principal
   const { data: message, error: msgError } = await supabase
     .from('lead_messages')
@@ -148,9 +235,10 @@ async function loadMessageContext(
   const msg = message as LeadMessage;
   let historico: LeadMessage[] = [];
   let leadNome: string | undefined;
+  let telefone: string | undefined;
   let cadenciaNome: string | undefined;
 
-  // Se tiver lead_id, buscar histórico
+  // Se tiver lead_id, buscar histórico e contato
   if (msg.lead_id) {
     const { data: hist } = await supabase
       .from('lead_messages')
@@ -162,16 +250,17 @@ async function loadMessageContext(
 
     historico = (hist || []) as LeadMessage[];
 
-    // Buscar nome do lead
+    // Buscar nome e telefone do lead
     const { data: contact } = await supabase
       .from('lead_contacts')
-      .select('nome, primeiro_nome')
+      .select('nome, primeiro_nome, telefone')
       .eq('lead_id', msg.lead_id)
       .limit(1)
       .maybeSingle();
 
     if (contact) {
       leadNome = contact.nome || contact.primeiro_nome;
+      telefone = contact.telefone;
     }
   }
 
@@ -190,7 +279,7 @@ async function loadMessageContext(
     }
   }
 
-  return { message: msg, historico, leadNome, cadenciaNome };
+  return { message: msg, historico, leadNome, cadenciaNome, telefone };
 }
 
 /**
@@ -212,6 +301,7 @@ async function interpretWithAI(
 
   // Montar contexto
   let userPrompt = `EMPRESA: ${empresa}\n`;
+  userPrompt += `PERSONA: ${empresa === 'TOKENIZA' ? 'Ana' : 'Pedro'}\n`;
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
@@ -257,7 +347,7 @@ async function interpretWithAI(
     throw new Error('Resposta vazia da IA');
   }
 
-  console.log('[IA] Resposta recebida:', { tokensUsados, tempoMs, content: content.substring(0, 200) });
+  console.log('[IA] Resposta recebida:', { tokensUsados, tempoMs, content: content.substring(0, 300) });
 
   // Parse do JSON
   let parsed: AIResponse;
@@ -273,19 +363,23 @@ async function interpretWithAI(
       confidence: 0.5,
       summary: 'Não foi possível interpretar a mensagem',
       acao: 'ESCALAR_HUMANO',
+      deve_responder: false,
+      resposta_sugerida: null,
     };
   }
 
   // Validar e normalizar
   const validIntents: LeadIntentTipo[] = [
-    'INTERESSE_COMPRA', 'DUVIDA_PRODUTO', 'DUVIDA_PRECO', 'SOLICITACAO_CONTATO',
-    'AGENDAMENTO_REUNIAO', 'RECLAMACAO', 'OPT_OUT', 'NAO_ENTENDI',
-    'CUMPRIMENTO', 'AGRADECIMENTO', 'FORA_CONTEXTO', 'OUTRO'
+    'INTERESSE_COMPRA', 'INTERESSE_IR', 'DUVIDA_PRODUTO', 'DUVIDA_PRECO',
+    'DUVIDA_TECNICA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO',
+    'RECLAMACAO', 'OPT_OUT', 'OBJECAO_PRECO', 'OBJECAO_RISCO',
+    'SEM_INTERESSE', 'NAO_ENTENDI', 'CUMPRIMENTO', 'AGRADECIMENTO',
+    'FORA_CONTEXTO', 'OUTRO'
   ];
   const validAcoes: SdrAcaoTipo[] = [
     'PAUSAR_CADENCIA', 'CANCELAR_CADENCIA', 'RETOMAR_CADENCIA',
     'AJUSTAR_TEMPERATURA', 'CRIAR_TAREFA_CLOSER', 'MARCAR_OPT_OUT',
-    'NENHUMA', 'ESCALAR_HUMANO'
+    'NENHUMA', 'ESCALAR_HUMANO', 'ENVIAR_RESPOSTA_AUTOMATICA'
   ];
 
   if (!validIntents.includes(parsed.intent)) {
@@ -295,8 +389,59 @@ async function interpretWithAI(
     parsed.acao = 'NENHUMA';
   }
   parsed.confidence = Math.max(0, Math.min(1, parsed.confidence || 0.5));
+  parsed.deve_responder = parsed.deve_responder ?? false;
 
   return { response: parsed, tokensUsados, tempoMs };
+}
+
+/**
+ * Envia resposta automática via WhatsApp
+ */
+async function sendAutoResponse(
+  supabase: SupabaseClient,
+  telefone: string,
+  empresa: EmpresaTipo,
+  resposta: string,
+  leadId: string | null,
+  runId: string | null
+): Promise<{ success: boolean; messageId?: string }> {
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+  const SUPABASE_SERVICE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+  console.log('[WhatsApp] Enviando resposta automática:', { telefone: telefone.substring(0, 6) + '...', empresa });
+
+  try {
+    // Chamar edge function whatsapp-send
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/whatsapp-send`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        to: telefone,
+        message: resposta,
+        empresa,
+        leadId,
+        runId,
+        isAutoResponse: true,
+      }),
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error('[WhatsApp] Erro ao enviar:', response.status, errText);
+      return { success: false };
+    }
+
+    const result = await response.json();
+    console.log('[WhatsApp] Resposta enviada:', result);
+
+    return { success: true, messageId: result.messageId };
+  } catch (error) {
+    console.error('[WhatsApp] Erro:', error);
+    return { success: false };
+  }
 }
 
 /**
@@ -309,7 +454,7 @@ async function applyAction(
   acao: SdrAcaoTipo,
   detalhes?: Record<string, unknown>
 ): Promise<boolean> {
-  if (acao === 'NENHUMA') return false;
+  if (acao === 'NENHUMA' || acao === 'ENVIAR_RESPOSTA_AUTOMATICA') return false;
   if (!runId && !leadId) return false;
 
   console.log('[Ação] Aplicando:', { acao, runId, leadId });
@@ -324,7 +469,6 @@ async function applyAction(
             .eq('id', runId)
             .eq('status', 'ATIVA');
           
-          // Registrar evento
           await supabase.from('lead_cadence_events').insert({
             lead_cadence_run_id: runId,
             step_ordem: 0,
@@ -360,7 +504,6 @@ async function applyAction(
         break;
 
       case 'MARCAR_OPT_OUT':
-        // Cancela cadência + marca opt-out (futura tabela lead_preferences)
         if (runId) {
           await supabase
             .from('lead_cadence_runs')
@@ -381,7 +524,6 @@ async function applyAction(
         break;
 
       case 'CRIAR_TAREFA_CLOSER':
-        // Registra evento para o closer atuar
         if (runId) {
           await supabase.from('lead_cadence_events').insert({
             lead_cadence_run_id: runId,
@@ -428,9 +570,38 @@ async function applyAction(
         break;
 
       case 'AJUSTAR_TEMPERATURA':
-        // Futuro: atualizar lead_classifications
-        console.log('[Ação] Ajuste de temperatura pendente (não implementado):', leadId);
-        return false;
+        // PATCH 5G-B: Implementação completa
+        if (leadId && detalhes?.nova_temperatura) {
+          const novaTemp = detalhes.nova_temperatura as TemperaturaTipo;
+          const validTemps: TemperaturaTipo[] = ['FRIO', 'MORNO', 'QUENTE'];
+          
+          if (validTemps.includes(novaTemp)) {
+            const { error } = await supabase
+              .from('lead_classifications')
+              .update({ 
+                temperatura: novaTemp,
+                updated_at: new Date().toISOString()
+              })
+              .eq('lead_id', leadId);
+            
+            if (!error) {
+              console.log('[Ação] Temperatura ajustada:', { leadId, novaTemp });
+              
+              if (runId) {
+                await supabase.from('lead_cadence_events').insert({
+                  lead_cadence_run_id: runId,
+                  step_ordem: 0,
+                  template_codigo: 'SDR_IA_TEMPERATURA',
+                  tipo_evento: 'RESPOSTA_DETECTADA',
+                  detalhes: { acao, nova_temperatura: novaTemp },
+                });
+              }
+              
+              return true;
+            }
+          }
+        }
+        break;
 
       default:
         return false;
@@ -452,7 +623,9 @@ async function saveInterpretation(
   aiResponse: AIResponse,
   tokensUsados: number,
   tempoMs: number,
-  acaoAplicada: boolean
+  acaoAplicada: boolean,
+  respostaEnviada: boolean,
+  respostaTexto: string | null
 ): Promise<string> {
   const record = {
     message_id: message.id,
@@ -468,6 +641,9 @@ async function saveInterpretation(
     modelo_ia: 'google/gemini-2.5-flash',
     tokens_usados: tokensUsados,
     tempo_processamento_ms: tempoMs,
+    // PATCH 5G-B: Novos campos
+    resposta_automatica_texto: respostaTexto,
+    resposta_enviada_em: respostaEnviada ? new Date().toISOString() : null,
   };
 
   const { data, error } = await supabase
@@ -518,7 +694,7 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     // 1. Carregar contexto
-    const { message, historico, leadNome, cadenciaNome } = await loadMessageContext(supabase, messageId);
+    const { message, historico, leadNome, cadenciaNome, telefone } = await loadMessageContext(supabase, messageId);
     
     // 2. Verificar se já foi interpretado
     const { data: existing } = await supabase
@@ -549,6 +725,7 @@ serve(async (req) => {
       intent: aiResponse.intent,
       confidence: aiResponse.confidence,
       acao: aiResponse.acao,
+      deve_responder: aiResponse.deve_responder,
     });
 
     // 4. Aplicar ação (se aplicável)
@@ -560,14 +737,41 @@ serve(async (req) => {
       aiResponse.acao_detalhes
     );
 
-    // 5. Salvar interpretação
+    // 5. PATCH 5G-B: Enviar resposta automática se aplicável
+    let respostaEnviada = false;
+    let respostaTexto: string | null = null;
+
+    if (
+      aiResponse.deve_responder &&
+      aiResponse.resposta_sugerida &&
+      telefone &&
+      (aiResponse.acao === 'ENVIAR_RESPOSTA_AUTOMATICA' || aiResponse.acao === 'CRIAR_TAREFA_CLOSER')
+    ) {
+      respostaTexto = aiResponse.resposta_sugerida;
+      
+      const sendResult = await sendAutoResponse(
+        supabase,
+        telefone,
+        message.empresa,
+        respostaTexto,
+        message.lead_id,
+        message.run_id
+      );
+      
+      respostaEnviada = sendResult.success;
+      console.log('[SDR-IA] Resposta automática:', { enviada: respostaEnviada });
+    }
+
+    // 6. Salvar interpretação
     const intentId = await saveInterpretation(
       supabase,
       message,
       aiResponse,
       tokensUsados,
       tempoMs,
-      acaoAplicada
+      acaoAplicada,
+      respostaEnviada,
+      respostaTexto
     );
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
@@ -579,6 +783,7 @@ serve(async (req) => {
       confidence: aiResponse.confidence,
       acao: aiResponse.acao,
       acaoAplicada,
+      respostaEnviada,
     };
 
     return new Response(

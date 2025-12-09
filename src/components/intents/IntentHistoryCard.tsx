@@ -1,10 +1,11 @@
 // ========================================
-// PATCH 5G - Card de Histórico de Interpretações IA
+// PATCH 5G-B - Card de Histórico de Interpretações IA
+// Evolução com exibição de resposta automática
 // ========================================
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Bot, Brain, Zap } from 'lucide-react';
+import { Bot, Brain, Zap, MessageSquare, CheckCircle2 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { LeadMessageIntent } from '@/types/intent';
@@ -80,7 +81,7 @@ export function IntentHistoryCard({
                   <div className="flex items-center gap-2">
                     <span className="text-lg">{getIntentIcon(intent.intent)}</span>
                     <Badge className={getIntentColor(intent.intent)} variant="default">
-                      {INTENT_LABELS[intent.intent]}
+                      {INTENT_LABELS[intent.intent] || intent.intent}
                     </Badge>
                     <span className="text-xs text-muted-foreground">
                       {Math.round(intent.intent_confidence * 100)}%
@@ -107,10 +108,31 @@ export function IntentHistoryCard({
                     className={intent.acao_aplicada ? getAcaoColor(intent.acao_recomendada) : ''}
                   >
                     <span className="mr-1">{getAcaoIcon(intent.acao_recomendada)}</span>
-                    {ACAO_LABELS[intent.acao_recomendada]}
+                    {ACAO_LABELS[intent.acao_recomendada] || intent.acao_recomendada}
                     {intent.acao_aplicada && ' ✓'}
                   </Badge>
                 </div>
+
+                {/* PATCH 5G-B: Resposta Automática */}
+                {intent.resposta_automatica_texto && (
+                  <div className="mt-2 p-2 bg-success/10 rounded border border-success/20">
+                    <div className="flex items-center gap-2 text-xs text-success mb-1">
+                      <MessageSquare className="h-3 w-3" />
+                      <span className="font-medium">Resposta automática</span>
+                      {intent.resposta_enviada_em ? (
+                        <span className="flex items-center gap-1 text-success">
+                          <CheckCircle2 className="h-3 w-3" />
+                          enviada às {format(new Date(intent.resposta_enviada_em), "HH:mm")}
+                        </span>
+                      ) : (
+                        <span className="text-warning">pendente</span>
+                      )}
+                    </div>
+                    <p className="text-sm text-foreground italic">
+                      "{intent.resposta_automatica_texto}"
+                    </p>
+                  </div>
+                )}
 
                 {/* Metadata */}
                 {(intent.tokens_usados || intent.tempo_processamento_ms) && (
