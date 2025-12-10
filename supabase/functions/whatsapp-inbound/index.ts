@@ -99,7 +99,40 @@ function validateAuth(req: Request): boolean {
 }
 
 /**
+ * Gera variações do telefone para busca flexível
+ * Trata variações do nono dígito brasileiro
+ */
+function generatePhoneVariations(phone: string): string[] {
+  const variations: string[] = [phone];
+  
+  // Remove DDI se presente (55)
+  const withoutDDI = phone.startsWith('55') ? phone.slice(2) : phone;
+  const ddd = withoutDDI.slice(0, 2); // Ex: 61
+  const number = withoutDDI.slice(2);  // Ex: 98317422 ou 998317422
+  
+  // Se tem 8 dígitos (sem nono), adiciona variação com 9
+  if (number.length === 8) {
+    const withNine = `55${ddd}9${number}`;
+    variations.push(withNine);
+    variations.push(`${ddd}9${number}`);
+  }
+  
+  // Se tem 9 dígitos (com nono), adiciona variação sem 9
+  if (number.length === 9 && number.startsWith('9')) {
+    const withoutNine = `55${ddd}${number.slice(1)}`;
+    variations.push(withoutNine);
+    variations.push(`${ddd}${number.slice(1)}`);
+  }
+  
+  // Adiciona versões sem DDI
+  variations.push(withoutDDI);
+  
+  return [...new Set(variations)]; // Remove duplicatas
+}
+
+/**
  * Busca lead pelo telefone normalizado
+ * Tenta múltiplas variações para lidar com nono dígito
  */
 async function findLeadByPhone(
   supabase: SupabaseClient,
@@ -107,30 +140,36 @@ async function findLeadByPhone(
 ): Promise<LeadContact | null> {
   console.log('[Lead] Buscando por telefone:', phoneNormalized);
   
-  // Busca exata
-  const { data: exactMatch } = await supabase
-    .from('lead_contacts')
-    .select('*')
-    .eq('telefone', phoneNormalized)
-    .limit(1)
-    .maybeSingle();
-    
-  if (exactMatch) {
-    console.log('[Lead] Match exato encontrado:', (exactMatch as LeadContact).lead_id);
-    return exactMatch as LeadContact;
+  // Gera todas as variações possíveis
+  const variations = generatePhoneVariations(phoneNormalized);
+  console.log('[Lead] Variações a testar:', variations);
+  
+  // Busca exata com todas as variações
+  for (const variant of variations) {
+    const { data: exactMatch } = await supabase
+      .from('lead_contacts')
+      .select('*')
+      .eq('telefone', variant)
+      .limit(1)
+      .maybeSingle();
+      
+    if (exactMatch) {
+      console.log('[Lead] Match exato encontrado com variação:', variant, '->', (exactMatch as LeadContact).lead_id);
+      return exactMatch as LeadContact;
+    }
   }
   
-  // Tenta buscar sem DDI (últimos 11 dígitos)
-  const phoneWithoutDDI = phoneNormalized.slice(-11);
+  // Tenta busca parcial com os últimos 8 dígitos (número sem DDD e sem nono)
+  const last8Digits = phoneNormalized.slice(-8);
   const { data: partialMatch } = await supabase
     .from('lead_contacts')
     .select('*')
-    .like('telefone', `%${phoneWithoutDDI}`)
+    .like('telefone', `%${last8Digits}`)
     .limit(1)
     .maybeSingle();
     
   if (partialMatch) {
-    console.log('[Lead] Match parcial encontrado:', (partialMatch as LeadContact).lead_id);
+    console.log('[Lead] Match parcial (últimos 8 dígitos) encontrado:', (partialMatch as LeadContact).lead_id);
     return partialMatch as LeadContact;
   }
   
