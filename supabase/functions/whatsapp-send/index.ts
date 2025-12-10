@@ -148,6 +148,9 @@ serve(async (req) => {
     console.log(`[whatsapp-send] Mensagem registrada: ${messageId}`);
 
     // Envia via API WhatsApp
+    console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
+    console.log('[whatsapp-send] Headers: X-API-Key presente:', !!apiKey);
+    
     const whatsappResponse = await fetch(WHATSAPP_API_URL, {
       method: 'POST',
       headers: {
@@ -163,8 +166,39 @@ serve(async (req) => {
       }),
     });
 
-    const whatsappData = await whatsappResponse.json();
-    console.log('[whatsapp-send] Resposta API:', whatsappData);
+    // Captura resposta como texto primeiro para diagnosticar erros HTML
+    const responseText = await whatsappResponse.text();
+    console.log('[whatsapp-send] Status:', whatsappResponse.status);
+    console.log('[whatsapp-send] Resposta bruta (primeiros 500 chars):', responseText.substring(0, 500));
+    
+    // Tenta parsear como JSON
+    let whatsappData;
+    try {
+      whatsappData = JSON.parse(responseText);
+      console.log('[whatsapp-send] Resposta JSON:', whatsappData);
+    } catch (parseError) {
+      console.error('[whatsapp-send] Resposta não é JSON válido. Pode ser página de erro HTML.');
+      
+      // Atualiza estado para ERRO com detalhes
+      await supabase
+        .from('lead_messages')
+        .update({
+          estado: 'ERRO',
+          erro_detalhe: `API retornou HTML/texto (status ${whatsappResponse.status}): ${responseText.substring(0, 200)}`,
+        })
+        .eq('id', messageId);
+
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `API retornou resposta inválida (status ${whatsappResponse.status}). Verifique se a URL e API Key estão corretas.`,
+          messageId,
+          statusCode: whatsappResponse.status,
+          responsePreview: responseText.substring(0, 200),
+        }),
+        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     if (!whatsappResponse.ok) {
       // Atualiza estado para ERRO
