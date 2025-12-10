@@ -56,6 +56,55 @@ type SdrAcaoTipo =
   | 'ESCALAR_HUMANO'
   | 'ENVIAR_RESPOSTA_AUTOMATICA';
 
+// ========================================
+// PATCH 6: TIPOS DE ESTADO DE CONVERSA
+// ========================================
+
+type EstadoFunil = 'SAUDACAO' | 'DIAGNOSTICO' | 'QUALIFICACAO' | 'OBJECOES' | 'FECHAMENTO' | 'POS_VENDA';
+type FrameworkTipo = 'GPCT' | 'BANT' | 'SPIN' | 'NONE';
+type PerfilDISC = 'D' | 'I' | 'S' | 'C';
+type PessoaRelacaoTipo = 'CLIENTE_IR' | 'LEAD_IR' | 'INVESTIDOR' | 'LEAD_INVESTIDOR' | 'DESCONHECIDO';
+
+interface FrameworkData {
+  gpct?: { g?: string | null; p?: string | null; c?: string | null; t?: string | null };
+  bant?: { b?: string | null; a?: string | null; n?: string | null; t?: string | null };
+  spin?: { s?: string | null; p?: string | null; i?: string | null; n?: string | null };
+}
+
+interface ConversationState {
+  id: string;
+  lead_id: string;
+  empresa: EmpresaTipo;
+  canal: string;
+  estado_funil: EstadoFunil;
+  framework_ativo: FrameworkTipo;
+  framework_data: FrameworkData;
+  perfil_disc?: PerfilDISC | null;
+  idioma_preferido: string;
+  ultima_pergunta_id?: string | null;
+  ultimo_contato_em: string;
+}
+
+interface PessoaContext {
+  pessoa: {
+    id: string;
+    nome: string;
+    telefone_e164?: string | null;
+    email_principal?: string | null;
+    idioma_preferido: string;
+    perfil_disc?: PerfilDISC | null;
+  };
+  relacionamentos: {
+    empresa: EmpresaTipo;
+    tipo_relacao: PessoaRelacaoTipo;
+    ultima_interacao_em?: string | null;
+  }[];
+}
+
+// ========================================
+// TIPOS EXISTENTES
+// ========================================
+
 interface LeadMessage {
   id: string;
   lead_id: string | null;
@@ -77,6 +126,8 @@ interface LeadContact {
   nome: string | null;
   primeiro_nome: string | null;
   telefone: string | null;
+  telefone_e164?: string | null;
+  pessoa_id?: string | null;
   opt_out: boolean;
   opt_out_em: string | null;
   opt_out_motivo: string | null;
@@ -92,6 +143,9 @@ interface MessageContext {
   optOut: boolean;
   classificacao?: LeadClassification;
   pipedriveDealeId?: string;
+  // PATCH 6: Novos campos
+  pessoaContext?: PessoaContext | null;
+  conversationState?: ConversationState | null;
 }
 
 interface InterpretRequest {
@@ -118,6 +172,201 @@ interface AIResponse {
   acao_detalhes?: Record<string, unknown>;
   resposta_sugerida?: string | null;
   deve_responder: boolean;
+  // PATCH 6: Novos campos de estado
+  novo_estado_funil?: EstadoFunil;
+  frameworks_atualizados?: FrameworkData;
+  disc_estimado?: PerfilDISC;
+  ultima_pergunta_id?: string;
+}
+
+// ========================================
+// PATCH 6: FUNÇÕES DE ESTADO DE CONVERSA
+// ========================================
+
+/**
+ * Carrega estado da conversa para o lead/empresa/canal
+ * Cria estado inicial se não existir
+ */
+async function loadConversationState(
+  supabase: SupabaseClient,
+  leadId: string,
+  empresa: EmpresaTipo,
+  canal: string = 'WHATSAPP'
+): Promise<ConversationState | null> {
+  const { data, error } = await supabase
+    .from('lead_conversation_state')
+    .select('*')
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa)
+    .eq('canal', canal)
+    .maybeSingle();
+  
+  if (error) {
+    console.error('[ConversationState] Erro ao carregar:', error);
+    return null;
+  }
+  
+  if (data) {
+    console.log('[ConversationState] Estado carregado:', {
+      leadId,
+      estadoFunil: data.estado_funil,
+      framework: data.framework_ativo,
+    });
+    return data as ConversationState;
+  }
+  
+  // Criar estado inicial
+  const frameworkAtivo: FrameworkTipo = empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
+  
+  const { data: newState, error: insertError } = await supabase
+    .from('lead_conversation_state')
+    .insert({
+      lead_id: leadId,
+      empresa,
+      canal,
+      estado_funil: 'SAUDACAO',
+      framework_ativo: frameworkAtivo,
+      framework_data: {},
+      idioma_preferido: 'PT',
+    })
+    .select()
+    .single();
+  
+  if (insertError) {
+    console.error('[ConversationState] Erro ao criar:', insertError);
+    return null;
+  }
+  
+  console.log('[ConversationState] Estado inicial criado:', {
+    leadId,
+    framework: frameworkAtivo,
+  });
+  
+  return newState as ConversationState;
+}
+
+/**
+ * Salva/atualiza estado da conversa
+ */
+async function saveConversationState(
+  supabase: SupabaseClient,
+  leadId: string,
+  empresa: EmpresaTipo,
+  canal: string,
+  updates: {
+    estado_funil?: EstadoFunil;
+    framework_data?: FrameworkData;
+    perfil_disc?: PerfilDISC | null;
+    ultima_pergunta_id?: string | null;
+  }
+): Promise<boolean> {
+  const now = new Date().toISOString();
+  
+  const { error } = await supabase
+    .from('lead_conversation_state')
+    .upsert({
+      lead_id: leadId,
+      empresa,
+      canal,
+      ...updates,
+      ultimo_contato_em: now,
+      updated_at: now,
+    }, {
+      onConflict: 'lead_id,empresa,canal',
+    });
+  
+  if (error) {
+    console.error('[ConversationState] Erro ao salvar:', error);
+    return false;
+  }
+  
+  console.log('[ConversationState] Estado atualizado:', { leadId, ...updates });
+  return true;
+}
+
+/**
+ * Carrega contexto da pessoa global (multi-empresa)
+ */
+async function loadPessoaContext(
+  supabase: SupabaseClient,
+  pessoaId: string
+): Promise<PessoaContext | null> {
+  // 1. Buscar dados da pessoa
+  const { data: pessoa, error: pessoaError } = await supabase
+    .from('pessoas')
+    .select('*')
+    .eq('id', pessoaId)
+    .single();
+  
+  if (pessoaError || !pessoa) {
+    console.error('[PessoaContext] Pessoa não encontrada:', pessoaId);
+    return null;
+  }
+  
+  // 2. Buscar todos os lead_contacts vinculados
+  const { data: contacts } = await supabase
+    .from('lead_contacts')
+    .select(`
+      lead_id,
+      empresa,
+      tokeniza_investor_id,
+      blue_client_id,
+      pipedrive_deal_id
+    `)
+    .eq('pessoa_id', pessoaId);
+  
+  // 3. Montar relacionamentos por empresa
+  const relacionamentos: PessoaContext['relacionamentos'] = [];
+  const empresas = [...new Set(contacts?.map(c => c.empresa) || [])];
+  
+  for (const emp of empresas) {
+    const contactsEmpresa = contacts?.filter(c => c.empresa === emp) || [];
+    
+    // Determinar tipo de relação
+    let tipo_relacao: PessoaRelacaoTipo = 'DESCONHECIDO';
+    
+    if (emp === 'BLUE') {
+      const hasBlueClient = contactsEmpresa.some(c => c.blue_client_id);
+      tipo_relacao = hasBlueClient ? 'CLIENTE_IR' : 'LEAD_IR';
+    } else if (emp === 'TOKENIZA') {
+      const hasInvestor = contactsEmpresa.some(c => c.tokeniza_investor_id);
+      tipo_relacao = hasInvestor ? 'INVESTIDOR' : 'LEAD_INVESTIDOR';
+    }
+    
+    // Buscar última interação
+    const leadIds = contactsEmpresa.map(c => c.lead_id);
+    const { data: lastMsg } = await supabase
+      .from('lead_messages')
+      .select('created_at')
+      .in('lead_id', leadIds)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    relacionamentos.push({
+      empresa: emp as EmpresaTipo,
+      tipo_relacao,
+      ultima_interacao_em: lastMsg?.created_at || null,
+    });
+  }
+  
+  console.log('[PessoaContext] Contexto carregado:', {
+    pessoaId,
+    nome: pessoa.nome,
+    relacionamentos: relacionamentos.map(r => `${r.empresa}:${r.tipo_relacao}`),
+  });
+  
+  return {
+    pessoa: {
+      id: pessoa.id,
+      nome: pessoa.nome,
+      telefone_e164: pessoa.telefone_e164,
+      email_principal: pessoa.email_principal,
+      idioma_preferido: pessoa.idioma_preferido || 'PT',
+      perfil_disc: pessoa.perfil_disc,
+    },
+    relacionamentos,
+  };
 }
 
 // ========================================
@@ -328,7 +577,7 @@ function computeNewTemperature(
 // ========================================
 
 /**
- * PATCH 5G-C Fase 2: Carrega contexto completo com classificação e opt-out
+ * PATCH 6: Carrega contexto completo com classificação, opt-out, pessoa e estado de conversa
  */
 async function loadMessageContext(
   supabase: SupabaseClient,
@@ -353,8 +602,10 @@ async function loadMessageContext(
   let optOut = false;
   let classificacao: LeadClassification | undefined;
   let pipedriveDealeId: string | undefined;
+  let pessoaContext: PessoaContext | null = null;
+  let conversationState: ConversationState | null = null;
 
-  // Se tiver lead_id, buscar histórico, contato e classificação
+  // Se tiver lead_id, buscar histórico, contato, classificação, pessoa e estado
   if (msg.lead_id) {
     // Histórico de mensagens
     const { data: hist } = await supabase
@@ -367,20 +618,31 @@ async function loadMessageContext(
 
     historico = (hist || []) as LeadMessage[];
 
-    // Buscar contato com campos opt_out e pipedrive_deal_id
+    // Buscar contato com campos opt_out, pipedrive_deal_id e pessoa_id
     const { data: contact } = await supabase
       .from('lead_contacts')
-      .select('nome, primeiro_nome, telefone, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id')
+      .select('nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id')
       .eq('lead_id', msg.lead_id)
+      .eq('empresa', msg.empresa)
       .limit(1)
       .maybeSingle();
 
     if (contact) {
       const c = contact as LeadContact;
       leadNome = c.nome || c.primeiro_nome || undefined;
-      telefone = c.telefone || undefined;
+      telefone = c.telefone_e164 || c.telefone || undefined;
       optOut = c.opt_out ?? false;
       pipedriveDealeId = c.pipedrive_deal_id || undefined;
+      
+      // PATCH 6: Carregar contexto da pessoa global
+      if (c.pessoa_id) {
+        pessoaContext = await loadPessoaContext(supabase, c.pessoa_id);
+        
+        // Se temos pessoa com nome melhor, usar
+        if (pessoaContext?.pessoa.nome && pessoaContext.pessoa.nome !== 'Desconhecido') {
+          leadNome = pessoaContext.pessoa.nome;
+        }
+      }
     }
 
     // Buscar classificação mais recente
@@ -395,6 +657,9 @@ async function loadMessageContext(
     if (classif) {
       classificacao = classif as LeadClassification;
     }
+
+    // PATCH 6: Carregar estado da conversa
+    conversationState = await loadConversationState(supabase, msg.lead_id, msg.empresa, 'WHATSAPP');
   }
 
   // Se tiver run_id, buscar nome da cadência
@@ -420,12 +685,14 @@ async function loadMessageContext(
     telefone, 
     optOut,
     classificacao,
-    pipedriveDealeId
+    pipedriveDealeId,
+    pessoaContext,
+    conversationState,
   };
 }
 
 /**
- * PATCH 5G-C Fase 3: Prompt enriquecido com ICP/Persona/Temperatura
+ * PATCH 6: Prompt enriquecido com pessoa global, estado de conversa e frameworks
  */
 async function interpretWithAI(
   mensagem: string,
@@ -433,7 +700,9 @@ async function interpretWithAI(
   historico: LeadMessage[],
   leadNome?: string,
   cadenciaNome?: string,
-  classificacao?: LeadClassification
+  classificacao?: LeadClassification,
+  pessoaContext?: PessoaContext | null,
+  conversationState?: ConversationState | null
 ): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number }> {
   const startTime = Date.now();
 
@@ -449,7 +718,62 @@ async function interpretWithAI(
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
-  // PATCH 5G-C: Adicionar contexto de classificação
+  // PATCH 6: Contexto da pessoa global (multi-empresa)
+  if (pessoaContext) {
+    userPrompt += `\n## IDENTIDADE DA PESSOA\n`;
+    userPrompt += `- Nome: ${pessoaContext.pessoa.nome}\n`;
+    if (pessoaContext.pessoa.telefone_e164) {
+      userPrompt += `- Telefone: ${pessoaContext.pessoa.telefone_e164}\n`;
+    }
+    userPrompt += `- Idioma preferido: ${pessoaContext.pessoa.idioma_preferido}\n`;
+    if (pessoaContext.pessoa.perfil_disc) {
+      userPrompt += `- Perfil DISC: ${pessoaContext.pessoa.perfil_disc}\n`;
+    }
+    
+    // Relacionamentos em outras empresas
+    const outrasEmpresas = pessoaContext.relacionamentos.filter(r => r.empresa !== empresa);
+    if (outrasEmpresas.length > 0) {
+      userPrompt += `\n## RELACIONAMENTO EM OUTRAS EMPRESAS DO GRUPO\n`;
+      for (const rel of outrasEmpresas) {
+        userPrompt += `- ${rel.empresa}: ${rel.tipo_relacao}\n`;
+      }
+      userPrompt += `\nREGRAS DE MULTI-EMPRESA:\n`;
+      userPrompt += `1) Você representa APENAS a ${empresa}.\n`;
+      if (empresa === 'TOKENIZA') {
+        userPrompt += `2) Pode usar o fato de ser atendido pela BLUE para gerar confiança, mas NUNCA ofereça IR.\n`;
+      } else {
+        userPrompt += `2) Pode mencionar investimentos tokenizados do grupo, mas NUNCA faça pitch.\n`;
+      }
+      userPrompt += `3) NUNCA misture marcas ou use nomes híbridos.\n`;
+    }
+  }
+  
+  // PATCH 6: Estado de conversa e frameworks
+  if (conversationState) {
+    userPrompt += `\n## ESTADO ATUAL DA CONVERSA\n`;
+    userPrompt += `- Etapa do funil: ${conversationState.estado_funil}\n`;
+    userPrompt += `- Framework ativo: ${conversationState.framework_ativo}\n`;
+    
+    if (conversationState.framework_data && Object.keys(conversationState.framework_data).length > 0) {
+      userPrompt += `- Dados já coletados: ${JSON.stringify(conversationState.framework_data)}\n`;
+    }
+    
+    if (conversationState.ultima_pergunta_id) {
+      userPrompt += `- Última pergunta feita: ${conversationState.ultima_pergunta_id}\n`;
+    }
+    
+    if (conversationState.perfil_disc) {
+      userPrompt += `- Perfil DISC: ${conversationState.perfil_disc}\n`;
+    }
+    
+    userPrompt += `\nREGRAS DE CONTINUIDADE:\n`;
+    if (conversationState.estado_funil !== 'SAUDACAO') {
+      userPrompt += `- NÃO reinicie com apresentação completa. Continue de onde parou.\n`;
+    }
+    userPrompt += `- Use os dados já coletados para avançar a qualificação.\n`;
+  }
+  
+  // Contexto de classificação
   if (classificacao) {
     userPrompt += `\n## CONTEXTO DO LEAD:\n`;
     userPrompt += `- ICP: ${classificacao.icp}\n`;
@@ -472,8 +796,10 @@ async function interpretWithAI(
     empresa, 
     mensagemPreview: mensagem.substring(0, 100),
     temContexto: !!classificacao,
-    icp: classificacao?.icp,
-    temperatura: classificacao?.temperatura
+    temPessoa: !!pessoaContext,
+    temConversation: !!conversationState,
+    estadoFunil: conversationState?.estado_funil,
+    framework: conversationState?.framework_ativo,
   });
 
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -1012,9 +1338,20 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Carregar contexto completo (com opt-out e classificação)
+    // 1. Carregar contexto completo (com opt-out, classificação, pessoa e estado de conversa)
     const context = await loadMessageContext(supabase, messageId);
-    const { message, historico, leadNome, cadenciaNome, telefone, optOut, classificacao, pipedriveDealeId } = context;
+    const { 
+      message, 
+      historico, 
+      leadNome, 
+      cadenciaNome, 
+      telefone, 
+      optOut, 
+      classificacao, 
+      pipedriveDealeId,
+      pessoaContext,
+      conversationState 
+    } = context;
 
     // PATCH 5G-C Fase 6: Verificar opt-out antes de processar
     if (optOut) {
@@ -1066,14 +1403,16 @@ serve(async (req) => {
       );
     }
 
-    // 3. Interpretar com IA (contexto enriquecido)
+    // 3. Interpretar com IA (contexto enriquecido com pessoa e estado de conversa)
     const { response: aiResponse, tokensUsados, tempoMs } = await interpretWithAI(
       message.conteudo,
       message.empresa,
       historico,
       leadNome,
       cadenciaNome,
-      classificacao
+      classificacao,
+      pessoaContext,
+      conversationState
     );
 
     console.log('[SDR-IA] Interpretação:', {
@@ -1081,6 +1420,8 @@ serve(async (req) => {
       confidence: aiResponse.confidence,
       acao: aiResponse.acao,
       deve_responder: aiResponse.deve_responder,
+      novo_estado_funil: aiResponse.novo_estado_funil,
+      disc_estimado: aiResponse.disc_estimado,
     });
 
     // 4. Aplicar ação (com correção do MARCAR_OPT_OUT)
@@ -1134,7 +1475,49 @@ serve(async (req) => {
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
 
-    // 7. PATCH 6: Sincronizar com Pipedrive (background task)
+    // 7. PATCH 6: Salvar estado de conversa atualizado
+    if (message.lead_id && (aiResponse.novo_estado_funil || aiResponse.frameworks_atualizados || aiResponse.disc_estimado)) {
+      const stateUpdates: {
+        estado_funil?: EstadoFunil;
+        framework_data?: FrameworkData;
+        perfil_disc?: PerfilDISC | null;
+        ultima_pergunta_id?: string | null;
+      } = {};
+      
+      if (aiResponse.novo_estado_funil) {
+        stateUpdates.estado_funil = aiResponse.novo_estado_funil;
+      }
+      
+      if (aiResponse.frameworks_atualizados) {
+        // Merge com dados existentes
+        const existingData = conversationState?.framework_data || {};
+        stateUpdates.framework_data = {
+          ...existingData,
+          ...aiResponse.frameworks_atualizados,
+          gpct: { ...(existingData.gpct || {}), ...(aiResponse.frameworks_atualizados.gpct || {}) },
+          bant: { ...(existingData.bant || {}), ...(aiResponse.frameworks_atualizados.bant || {}) },
+          spin: { ...(existingData.spin || {}), ...(aiResponse.frameworks_atualizados.spin || {}) },
+        };
+      }
+      
+      if (aiResponse.disc_estimado) {
+        stateUpdates.perfil_disc = aiResponse.disc_estimado;
+      }
+      
+      if (aiResponse.ultima_pergunta_id) {
+        stateUpdates.ultima_pergunta_id = aiResponse.ultima_pergunta_id;
+      }
+      
+      await saveConversationState(
+        supabase,
+        message.lead_id,
+        message.empresa,
+        'WHATSAPP',
+        stateUpdates
+      );
+    }
+
+    // 8. Sincronizar com Pipedrive (background task)
     if (pipedriveDealeId) {
       // Fire and forget - não bloqueia a resposta
       syncWithPipedrive(
