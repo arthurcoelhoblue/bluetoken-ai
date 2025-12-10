@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';
 import { useLeadMessages } from '@/hooks/useLeadMessages';
 import { useLeadIntents } from '@/hooks/useLeadIntents';
+import { useLeadContactIssues } from '@/hooks/useLeadContactIssues';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -14,6 +15,7 @@ import {
 } from '@/types/classification';
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
+import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { MessageHistory } from '@/components/messages/MessageHistory';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
@@ -71,6 +73,13 @@ function LeadDetailContent() {
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
     limit: 5,
+    enabled: !!leadId && !!empresa,
+  });
+
+  // PATCH 5H-PLUS: Issues de contato
+  const { data: contactIssues = [], isLoading: issuesLoading } = useLeadContactIssues({
+    leadId: leadId || '',
+    empresa: empresa as 'TOKENIZA' | 'BLUE',
     enabled: !!leadId && !!empresa,
   });
 
@@ -162,6 +171,14 @@ function LeadDetailContent() {
               <ExternalLinks contact={contact} />
             </CardContent>
           </Card>
+
+          {/* PATCH 5H-PLUS: Contact Issues */}
+          <ContactIssuesCard
+            issues={contactIssues}
+            isLoading={issuesLoading}
+            leadId={leadId || ''}
+            empresa={empresa || ''}
+          />
 
           {/* Classification */}
           <Card>
