@@ -360,6 +360,7 @@ export type Database = {
           opt_out_em: string | null
           opt_out_motivo: string | null
           origem_telefone: string | null
+          pessoa_id: string | null
           pipedrive_deal_id: string | null
           pipedrive_person_id: string | null
           primeiro_nome: string | null
@@ -386,6 +387,7 @@ export type Database = {
           opt_out_em?: string | null
           opt_out_motivo?: string | null
           origem_telefone?: string | null
+          pessoa_id?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
@@ -412,6 +414,7 @@ export type Database = {
           opt_out_em?: string | null
           opt_out_motivo?: string | null
           origem_telefone?: string | null
+          pessoa_id?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
@@ -420,6 +423,62 @@ export type Database = {
           telefone_validado_em?: string | null
           telefone_valido?: boolean
           tokeniza_investor_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_contacts_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_conversation_state: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          estado_funil: Database["public"]["Enums"]["estado_funil_tipo"]
+          framework_ativo: Database["public"]["Enums"]["framework_tipo"]
+          framework_data: Json | null
+          id: string
+          idioma_preferido: string
+          lead_id: string
+          perfil_disc: string | null
+          ultima_pergunta_id: string | null
+          ultimo_contato_em: string
+          updated_at: string
+        }
+        Insert: {
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
+          framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
+          framework_data?: Json | null
+          id?: string
+          idioma_preferido?: string
+          lead_id: string
+          perfil_disc?: string | null
+          ultima_pergunta_id?: string | null
+          ultimo_contato_em?: string
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
+          framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
+          framework_data?: Json | null
+          id?: string
+          idioma_preferido?: string
+          lead_id?: string
+          perfil_disc?: string | null
+          ultima_pergunta_id?: string | null
+          ultimo_contato_em?: string
           updated_at?: string
         }
         Relationships: []
@@ -612,6 +671,45 @@ export type Database = {
         }
         Relationships: []
       }
+      pessoas: {
+        Row: {
+          created_at: string
+          ddd: string | null
+          email_principal: string | null
+          id: string
+          idioma_preferido: string
+          nome: string
+          perfil_disc: string | null
+          telefone_base: string | null
+          telefone_e164: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          ddd?: string | null
+          email_principal?: string | null
+          id?: string
+          idioma_preferido?: string
+          nome: string
+          perfil_disc?: string | null
+          telefone_base?: string | null
+          telefone_e164?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          ddd?: string | null
+          email_principal?: string | null
+          id?: string
+          idioma_preferido?: string
+          nome?: string
+          perfil_disc?: string | null
+          telefone_base?: string | null
+          telefone_e164?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -778,6 +876,14 @@ export type Database = {
       canal_tipo: "WHATSAPP" | "EMAIL" | "SMS"
       classificacao_origem: "AUTOMATICA" | "MANUAL"
       empresa_tipo: "TOKENIZA" | "BLUE"
+      estado_funil_tipo:
+        | "SAUDACAO"
+        | "DIAGNOSTICO"
+        | "QUALIFICACAO"
+        | "OBJECOES"
+        | "FECHAMENTO"
+        | "POS_VENDA"
+      framework_tipo: "GPCT" | "BANT" | "SPIN" | "NONE"
       icp_tipo:
         | "TOKENIZA_SERIAL"
         | "TOKENIZA_MEDIO_PRAZO"
@@ -820,6 +926,12 @@ export type Database = {
         | "CRIPTO_CONTRIBUINTE_URGENTE"
         | "CLIENTE_FIEL_RENOVADOR"
         | "LEAD_PERDIDO_RECUPERAVEL"
+      pessoa_relacao_tipo:
+        | "CLIENTE_IR"
+        | "LEAD_IR"
+        | "INVESTIDOR"
+        | "LEAD_INVESTIDOR"
+        | "DESCONHECIDO"
       sdr_acao_tipo:
         | "PAUSAR_CADENCIA"
         | "CANCELAR_CADENCIA"
@@ -984,6 +1096,15 @@ export const Constants = {
       canal_tipo: ["WHATSAPP", "EMAIL", "SMS"],
       classificacao_origem: ["AUTOMATICA", "MANUAL"],
       empresa_tipo: ["TOKENIZA", "BLUE"],
+      estado_funil_tipo: [
+        "SAUDACAO",
+        "DIAGNOSTICO",
+        "QUALIFICACAO",
+        "OBJECOES",
+        "FECHAMENTO",
+        "POS_VENDA",
+      ],
+      framework_tipo: ["GPCT", "BANT", "SPIN", "NONE"],
       icp_tipo: [
         "TOKENIZA_SERIAL",
         "TOKENIZA_MEDIO_PRAZO",
@@ -1029,6 +1150,13 @@ export const Constants = {
         "CRIPTO_CONTRIBUINTE_URGENTE",
         "CLIENTE_FIEL_RENOVADOR",
         "LEAD_PERDIDO_RECUPERAVEL",
+      ],
+      pessoa_relacao_tipo: [
+        "CLIENTE_IR",
+        "LEAD_IR",
+        "INVESTIDOR",
+        "LEAD_INVESTIDOR",
+        "DESCONHECIDO",
       ],
       sdr_acao_tipo: [
         "PAUSAR_CADENCIA",
