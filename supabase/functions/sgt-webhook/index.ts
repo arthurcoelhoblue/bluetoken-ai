@@ -192,6 +192,40 @@ interface LeadClassificationResult {
 }
 
 // ========================================
+// PATCH 5H-PLUS: TIPOS DE SANITIZAÇÃO
+// ========================================
+type LeadContactIssueTipo = 
+  | 'SEM_CANAL_CONTATO'
+  | 'EMAIL_PLACEHOLDER'
+  | 'EMAIL_INVALIDO'
+  | 'TELEFONE_LIXO'
+  | 'TELEFONE_SEM_WHATSAPP'
+  | 'DADO_SUSPEITO';
+
+interface ContactIssue {
+  tipo: LeadContactIssueTipo;
+  severidade: 'ALTA' | 'MEDIA' | 'BAIXA';
+  mensagem: string;
+}
+
+interface PhoneNormalized {
+  e164: string;
+  ddi: string;
+  nacional: string;
+  internacional: boolean;
+}
+
+interface SanitizationResult {
+  descartarLead: boolean;
+  issues: ContactIssue[];
+  phoneInfo: PhoneNormalized | null;
+  emailPlaceholder: boolean;
+}
+
+// DDIs conhecidos para validação
+const DDI_CONHECIDOS = ['55', '1', '34', '351', '33', '49', '44', '39', '81', '86'];
+
+// ========================================
 // CONSTANTES
 // ========================================
 const EVENTOS_VALIDOS: SGTEventoTipo[] = [
@@ -232,6 +266,178 @@ function normalizeStage(stage: string | undefined): LeadStage | null {
   }
   
   return null;
+}
+
+// ========================================
+// PATCH 5H-PLUS: FUNÇÕES DE SANITIZAÇÃO
+// ========================================
+
+/**
+ * Normaliza telefone para formato E.164
+ */
+function normalizePhoneE164(raw: string | null): PhoneNormalized | null {
+  if (!raw) return null;
+  
+  let digits = raw.replace(/\D/g, '');
+  if (!digits || digits.length < 7) return null;
+  
+  // Detectar sequências lixo (000000, 111111, 98989898, etc.)
+  const uniqueDigits = new Set(digits.split(''));
+  if (uniqueDigits.size <= 2) {
+    console.log('[Sanitization] Telefone lixo detectado:', raw);
+    return null;
+  }
+  
+  // Remove 00 do início se presente (formato internacional antigo)
+  if (digits.startsWith('00')) {
+    digits = digits.slice(2);
+  }
+  
+  // Processar DDI brasileiro
+  if (digits.startsWith('55') && digits.length >= 12 && digits.length <= 13) {
+    return {
+      e164: `+${digits}`,
+      ddi: '55',
+      nacional: digits.slice(2),
+      internacional: false
+    };
+  }
+  
+  // Assumir BR se 10-11 dígitos (DDD + número)
+  if (digits.length === 10 || digits.length === 11) {
+    return {
+      e164: `+55${digits}`,
+      ddi: '55',
+      nacional: digits,
+      internacional: false
+    };
+  }
+  
+  // Verificar DDIs conhecidos
+  for (const ddi of DDI_CONHECIDOS) {
+    if (digits.startsWith(ddi) && digits.length > ddi.length + 6) {
+      return {
+        e164: `+${digits}`,
+        ddi,
+        nacional: digits.slice(ddi.length),
+        internacional: ddi !== '55'
+      };
+    }
+  }
+  
+  // Se ainda tem tamanho razoável, marca como internacional desconhecido
+  if (digits.length >= 10) {
+    console.log('[Sanitization] DDI não reconhecido, marcando como suspeito:', raw);
+    return null; // Será marcado como DADO_SUSPEITO
+  }
+  
+  return null;
+}
+
+/**
+ * Detecta se o e-mail é um placeholder
+ */
+function isPlaceholderEmail(email: string | null): boolean {
+  if (!email) return false;
+  const lowered = email.trim().toLowerCase();
+  
+  const placeholders = [
+    'sememail@', 'sem-email@', 'noemail@', 'sem@', 'nao-informado@',
+    'teste@teste', 'email@email', 'x@x', 'a@a',
+    'placeholder', '@exemplo.', '@example.', 'test@test'
+  ];
+  
+  return placeholders.some(p => lowered.includes(p));
+}
+
+/**
+ * Valida formato básico de e-mail
+ */
+function isValidEmailFormat(email: string | null): boolean {
+  if (!email) return false;
+  const trimmed = email.trim();
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return re.test(trimmed);
+}
+
+/**
+ * Sanitiza dados de contato do lead
+ */
+function sanitizeLeadContact(input: {
+  telefone?: string | null;
+  email?: string | null;
+  empresa: EmpresaTipo;
+}): SanitizationResult {
+  const { telefone, email } = input;
+  const issues: ContactIssue[] = [];
+  let descartarLead = false;
+  
+  const phoneInfo = normalizePhoneE164(telefone || null);
+  const emailPlaceholder = isPlaceholderEmail(email || null);
+  const emailValid = isValidEmailFormat(email || null);
+  
+  // Caso 1: Sem telefone E sem email
+  if (!phoneInfo && !email) {
+    descartarLead = true;
+    issues.push({
+      tipo: 'SEM_CANAL_CONTATO',
+      severidade: 'ALTA',
+      mensagem: 'Lead sem telefone e sem e-mail. Não é possível contatar.'
+    });
+    return { descartarLead, issues, phoneInfo: null, emailPlaceholder: false };
+  }
+  
+  // Caso 2: Telefone lixo E email placeholder/inexistente
+  if (!phoneInfo && telefone && (!email || emailPlaceholder)) {
+    descartarLead = true;
+    issues.push({
+      tipo: 'TELEFONE_LIXO',
+      severidade: 'ALTA',
+      mensagem: 'Telefone inválido/lixo e e-mail ausente ou placeholder.'
+    });
+    if (emailPlaceholder) {
+      issues.push({
+        tipo: 'EMAIL_PLACEHOLDER',
+        severidade: 'MEDIA',
+        mensagem: 'E-mail identificado como placeholder.'
+      });
+    }
+    return { descartarLead, issues, phoneInfo: null, emailPlaceholder };
+  }
+  
+  // Caso 3: Email placeholder mas telefone ok
+  if (emailPlaceholder && phoneInfo) {
+    issues.push({
+      tipo: 'EMAIL_PLACEHOLDER',
+      severidade: 'MEDIA',
+      mensagem: 'E-mail identificado como placeholder. Usar telefone como canal principal.'
+    });
+  }
+  
+  // Caso 4: Email com formato inválido (mas não é placeholder)
+  if (email && !emailPlaceholder && !emailValid) {
+    issues.push({
+      tipo: 'EMAIL_INVALIDO',
+      severidade: 'BAIXA',
+      mensagem: 'Formato de e-mail parece inválido. Revisar manualmente.'
+    });
+  }
+  
+  // Caso 5: Telefone suspeito (DDI não reconhecido)
+  if (telefone && !phoneInfo && telefone.replace(/\D/g, '').length >= 10) {
+    issues.push({
+      tipo: 'DADO_SUSPEITO',
+      severidade: 'BAIXA',
+      mensagem: 'Telefone com DDI não reconhecido. Verificar manualmente.'
+    });
+  }
+  
+  return {
+    descartarLead,
+    issues,
+    phoneInfo,
+    emailPlaceholder
+  };
 }
 
 function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
@@ -944,6 +1150,79 @@ serve(async (req) => {
       onConflict: 'lead_id,empresa',
     });
     console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id, 'pipedrive_deal_id:', pipedriveDealeId);
+
+    // PATCH 5H-PLUS: Sanitização de dados de contato
+    const sanitization = sanitizeLeadContact({
+      telefone: leadNormalizado.telefone,
+      email: leadNormalizado.email,
+      empresa: payload.empresa
+    });
+    console.log('[SGT Webhook] Sanitização:', {
+      leadId: payload.lead_id,
+      phoneInfo: sanitization.phoneInfo,
+      emailPlaceholder: sanitization.emailPlaceholder,
+      issuesCount: sanitization.issues.length,
+      descartarLead: sanitization.descartarLead
+    });
+
+    // Atualizar lead_contacts com dados normalizados
+    const updateData: Record<string, unknown> = {
+      telefone_valido: !!sanitization.phoneInfo,
+      telefone_validado_em: new Date().toISOString(),
+      email_placeholder: sanitization.emailPlaceholder
+    };
+    
+    if (sanitization.phoneInfo) {
+      updateData.telefone_e164 = sanitization.phoneInfo.e164;
+      updateData.ddi = sanitization.phoneInfo.ddi;
+      updateData.numero_nacional = sanitization.phoneInfo.nacional;
+      updateData.contato_internacional = sanitization.phoneInfo.internacional;
+      updateData.origem_telefone = 'SGT';
+    }
+    
+    await supabase
+      .from('lead_contacts')
+      .update(updateData)
+      .eq('lead_id', payload.lead_id)
+      .eq('empresa', payload.empresa);
+
+    // Registrar issues de contato
+    if (sanitization.issues.length > 0) {
+      const issuesToInsert = sanitization.issues.map(issue => ({
+        lead_id: payload.lead_id,
+        empresa: payload.empresa,
+        issue_tipo: issue.tipo,
+        severidade: issue.severidade,
+        mensagem: issue.mensagem
+      }));
+      
+      await supabase.from('lead_contact_issues').insert(issuesToInsert);
+      console.log('[SGT Webhook] Issues de contato registradas:', issuesToInsert.length);
+    }
+
+    // Se lead deve ser descartado, não prosseguir com classificação/cadência
+    if (sanitization.descartarLead) {
+      console.log('[SGT Webhook] Lead descartado - sem canal de contato válido:', payload.lead_id);
+      
+      await supabase
+        .from('sgt_events')
+        .update({ processado_em: new Date().toISOString() })
+        .eq('id', newEvent.id);
+      
+      return new Response(
+        JSON.stringify({
+          success: true,
+          event_id: newEvent.id,
+          lead_id: payload.lead_id,
+          evento: payload.evento,
+          empresa: payload.empresa,
+          discarded: true,
+          reason: 'LEAD_SEM_CANAL_CONTATO_VALIDO',
+          issues: sanitization.issues.map(i => i.mensagem)
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     let classification: LeadClassificationResult | null = null;
     let cadenceResult: { cadenceCodigo: string | null; runId?: string; skipped?: boolean } = { cadenceCodigo: null };

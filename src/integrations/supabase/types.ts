@@ -296,58 +296,129 @@ export type Database = {
           },
         ]
       }
+      lead_contact_issues: {
+        Row: {
+          criado_em: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          issue_tipo: Database["public"]["Enums"]["lead_contact_issue_tipo"]
+          lead_id: string
+          mensagem: string
+          resolvido: boolean
+          resolvido_em: string | null
+          resolvido_por: string | null
+          severidade: string
+        }
+        Insert: {
+          criado_em?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          issue_tipo: Database["public"]["Enums"]["lead_contact_issue_tipo"]
+          lead_id: string
+          mensagem: string
+          resolvido?: boolean
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          severidade: string
+        }
+        Update: {
+          criado_em?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          issue_tipo?: Database["public"]["Enums"]["lead_contact_issue_tipo"]
+          lead_id?: string
+          mensagem?: string
+          resolvido?: boolean
+          resolvido_em?: string | null
+          resolvido_por?: string | null
+          severidade?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
+            columns: ["resolvido_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_contacts: {
         Row: {
           blue_client_id: string | null
+          contato_internacional: boolean
           created_at: string
+          ddi: string | null
           email: string | null
+          email_placeholder: boolean
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           lead_id: string
           nome: string | null
+          numero_nacional: string | null
           opt_out: boolean
           opt_out_em: string | null
           opt_out_motivo: string | null
+          origem_telefone: string | null
           pipedrive_deal_id: string | null
           pipedrive_person_id: string | null
           primeiro_nome: string | null
           telefone: string | null
+          telefone_e164: string | null
+          telefone_validado_em: string | null
+          telefone_valido: boolean
           tokeniza_investor_id: string | null
           updated_at: string
         }
         Insert: {
           blue_client_id?: string | null
+          contato_internacional?: boolean
           created_at?: string
+          ddi?: string | null
           email?: string | null
+          email_placeholder?: boolean
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id: string
           nome?: string | null
+          numero_nacional?: string | null
           opt_out?: boolean
           opt_out_em?: string | null
           opt_out_motivo?: string | null
+          origem_telefone?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
           telefone?: string | null
+          telefone_e164?: string | null
+          telefone_validado_em?: string | null
+          telefone_valido?: boolean
           tokeniza_investor_id?: string | null
           updated_at?: string
         }
         Update: {
           blue_client_id?: string | null
+          contato_internacional?: boolean
           created_at?: string
+          ddi?: string | null
           email?: string | null
+          email_placeholder?: boolean
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id?: string
           nome?: string | null
+          numero_nacional?: string | null
           opt_out?: boolean
           opt_out_em?: string | null
           opt_out_motivo?: string | null
+          origem_telefone?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
           telefone?: string | null
+          telefone_e164?: string | null
+          telefone_validado_em?: string | null
+          telefone_valido?: boolean
           tokeniza_investor_id?: string | null
           updated_at?: string
         }
@@ -717,6 +788,13 @@ export type Database = {
         | "BLUE_RECURRENTE"
         | "BLUE_PERDIDO_RECUPERAVEL"
         | "BLUE_NAO_CLASSIFICADO"
+      lead_contact_issue_tipo:
+        | "SEM_CANAL_CONTATO"
+        | "EMAIL_PLACEHOLDER"
+        | "EMAIL_INVALIDO"
+        | "TELEFONE_LIXO"
+        | "TELEFONE_SEM_WHATSAPP"
+        | "DADO_SUSPEITO"
       lead_intent_tipo:
         | "INTERESSE_COMPRA"
         | "DUVIDA_PRODUTO"
@@ -916,6 +994,14 @@ export const Constants = {
         "BLUE_RECURRENTE",
         "BLUE_PERDIDO_RECUPERAVEL",
         "BLUE_NAO_CLASSIFICADO",
+      ],
+      lead_contact_issue_tipo: [
+        "SEM_CANAL_CONTATO",
+        "EMAIL_PLACEHOLDER",
+        "EMAIL_INVALIDO",
+        "TELEFONE_LIXO",
+        "TELEFONE_SEM_WHATSAPP",
+        "DADO_SUSPEITO",
       ],
       lead_intent_tipo: [
         "INTERESSE_COMPRA",

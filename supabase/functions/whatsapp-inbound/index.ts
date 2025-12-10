@@ -140,7 +140,24 @@ async function findLeadByPhone(
 ): Promise<LeadContact | null> {
   console.log('[Lead] Buscando por telefone:', phoneNormalized);
   
-  // Gera todas as variações possíveis
+  // 1. Busca por telefone_e164 (mais preciso - PATCH 5H-PLUS)
+  const e164 = phoneNormalized.startsWith('+') 
+    ? phoneNormalized 
+    : `+${phoneNormalized}`;
+    
+  const { data: e164Match } = await supabase
+    .from('lead_contacts')
+    .select('*')
+    .eq('telefone_e164', e164)
+    .limit(1)
+    .maybeSingle();
+    
+  if (e164Match) {
+    console.log('[Lead] Match por telefone_e164:', (e164Match as LeadContact).lead_id);
+    return e164Match as LeadContact;
+  }
+  
+  // 2. Gera todas as variações possíveis para busca no campo telefone
   const variations = generatePhoneVariations(phoneNormalized);
   console.log('[Lead] Variações a testar:', variations);
   
