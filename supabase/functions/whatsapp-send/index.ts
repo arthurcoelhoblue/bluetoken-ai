@@ -149,17 +149,16 @@ serve(async (req) => {
 
     // Envia via API WhatsApp
     console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
-    console.log('[whatsapp-send] Headers: X-API-Key presente:', !!apiKey);
+    console.log('[whatsapp-send] Headers: x-auth-api presente:', !!apiKey);
     
     const whatsappResponse = await fetch(WHATSAPP_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        'x-auth-api': apiKey,
       },
       body: JSON.stringify({
-        connectionName: CONNECTION_NAME,
-        to: phoneToSend,
+        phone: phoneToSend,
         message: TEST_MODE 
           ? `[TESTE - Lead: ${leadId}]\n\n${mensagem}` 
           : mensagem,
