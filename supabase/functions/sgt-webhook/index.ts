@@ -440,6 +440,207 @@ function sanitizeLeadContact(input: {
   };
 }
 
+// ========================================
+// PATCH 6: PESSOA GLOBAL - FUNÇÕES DE MATCHING
+// ========================================
+
+interface PhoneBaseResult {
+  base: string | null;      // Últimos 8 dígitos (sem o 9º dígito)
+  ddd: string | null;       // DDD (61, 11, etc.)
+  e164: string | null;      // Formato E.164 completo
+}
+
+/**
+ * Extrai os componentes do telefone brasileiro
+ * Lida com variações do 9º dígito (celulares brasileiros)
+ * 
+ * Exemplos:
+ * - +5561998317422 → { base: '98317422', ddd: '61', e164: '+5561998317422' }
+ * - +556198317422  → { base: '98317422', ddd: '61', e164: '+5561998317422' }
+ * - 61998317422    → { base: '98317422', ddd: '61', e164: '+5561998317422' }
+ * - 6198317422     → { base: '98317422', ddd: '61', e164: '+5561998317422' }
+ */
+function extractPhoneBase(phone: string | null): PhoneBaseResult {
+  if (!phone) return { base: null, ddd: null, e164: null };
+  
+  // Remove tudo que não é dígito
+  let digits = phone.replace(/\D/g, '');
+  
+  // Remove DDI 55 se presente no início
+  if (digits.startsWith('55') && digits.length >= 12) {
+    digits = digits.slice(2);
+  }
+  
+  // Precisamos de pelo menos 10 dígitos (DDD + 8 dígitos)
+  if (digits.length < 10) {
+    console.log('[extractPhoneBase] Telefone muito curto:', phone, '→', digits);
+    return { base: null, ddd: null, e164: null };
+  }
+  
+  const ddd = digits.slice(0, 2);
+  let number = digits.slice(2);
+  
+  // Se tem 9 dígitos e começa com 9, remove o 9º dígito para obter a base
+  if (number.length === 9 && number.startsWith('9')) {
+    const base = number.slice(1); // Remove o 9 do início
+    return {
+      base,
+      ddd,
+      e164: `+55${ddd}${number}` // Mantém formato completo com o 9
+    };
+  }
+  
+  // Se tem 8 dígitos, usa como base diretamente
+  if (number.length === 8) {
+    return {
+      base: number,
+      ddd,
+      e164: `+55${ddd}9${number}` // Adiciona o 9 no E.164
+    };
+  }
+  
+  console.log('[extractPhoneBase] Formato inesperado:', phone, '→ ddd:', ddd, 'number:', number);
+  return { base: null, ddd: null, e164: null };
+}
+
+/**
+ * Cria ou encontra pessoa global a partir de um lead_contact
+ * Usa telefone_base + ddd para matching flexível (ignora 9º dígito)
+ * 
+ * Ordem de matching:
+ * 1. telefone_base + ddd (mais confiável para BR)
+ * 2. email (se não for placeholder)
+ * 3. Cria nova pessoa se não encontrar
+ */
+async function upsertPessoaFromContact(
+  supabase: SupabaseClient,
+  contact: {
+    nome?: string | null;
+    email?: string | null;
+    telefone?: string | null;
+    telefone_e164?: string | null;
+  }
+): Promise<string | null> {
+  const phoneData = extractPhoneBase(contact.telefone_e164 ?? contact.telefone ?? null);
+  const emailNormalized = contact.email?.toLowerCase().trim() || null;
+  const isEmailPlaceholder = isPlaceholderEmail(emailNormalized);
+  
+  console.log('[Pessoa] Tentando match para:', {
+    nome: contact.nome,
+    telefone_e164: contact.telefone_e164,
+    phoneBase: phoneData.base,
+    ddd: phoneData.ddd,
+    email: emailNormalized,
+    isPlaceholder: isEmailPlaceholder
+  });
+  
+  // 1. Tentar match por telefone_base + ddd (mais confiável)
+  if (phoneData.base && phoneData.ddd) {
+    const { data: phoneMatch, error: phoneError } = await supabase
+      .from('pessoas')
+      .select('id, nome')
+      .eq('telefone_base', phoneData.base)
+      .eq('ddd', phoneData.ddd)
+      .maybeSingle();
+      
+    if (phoneError) {
+      console.error('[Pessoa] Erro ao buscar por telefone:', phoneError);
+    }
+    
+    if (phoneMatch) {
+      console.log('[Pessoa] Match por telefone_base:', phoneMatch.id, phoneMatch.nome);
+      return phoneMatch.id;
+    }
+  }
+  
+  // 2. Tentar match por email (se não for placeholder)
+  if (emailNormalized && !isEmailPlaceholder) {
+    const { data: emailMatch, error: emailError } = await supabase
+      .from('pessoas')
+      .select('id, nome')
+      .eq('email_principal', emailNormalized)
+      .maybeSingle();
+      
+    if (emailError) {
+      console.error('[Pessoa] Erro ao buscar por email:', emailError);
+    }
+    
+    if (emailMatch) {
+      console.log('[Pessoa] Match por email:', emailMatch.id, emailMatch.nome);
+      
+      // Se encontrou por email mas não tinha telefone, atualiza o telefone
+      if (phoneData.base && phoneData.ddd) {
+        await supabase
+          .from('pessoas')
+          .update({
+            telefone_e164: phoneData.e164,
+            telefone_base: phoneData.base,
+            ddd: phoneData.ddd,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', emailMatch.id);
+        console.log('[Pessoa] Telefone atualizado para pessoa existente:', emailMatch.id);
+      }
+      
+      return emailMatch.id;
+    }
+  }
+  
+  // 3. Criar nova pessoa
+  const nomeNormalizado = contact.nome?.trim() || 'Desconhecido';
+  
+  const insertData: Record<string, unknown> = {
+    nome: nomeNormalizado,
+    idioma_preferido: 'PT'
+  };
+  
+  if (phoneData.base && phoneData.ddd) {
+    insertData.telefone_e164 = phoneData.e164;
+    insertData.telefone_base = phoneData.base;
+    insertData.ddd = phoneData.ddd;
+  }
+  
+  if (emailNormalized && !isEmailPlaceholder) {
+    insertData.email_principal = emailNormalized;
+  }
+  
+  const { data: newPessoa, error: insertError } = await supabase
+    .from('pessoas')
+    .insert(insertData)
+    .select('id')
+    .single();
+    
+  if (insertError) {
+    // Pode ser conflito de unique constraint - tenta buscar novamente
+    console.error('[Pessoa] Erro ao criar (pode ser race condition):', insertError);
+    
+    // Retry: busca novamente por telefone ou email
+    if (phoneData.base && phoneData.ddd) {
+      const { data: retryMatch } = await supabase
+        .from('pessoas')
+        .select('id')
+        .eq('telefone_base', phoneData.base)
+        .eq('ddd', phoneData.ddd)
+        .maybeSingle();
+      if (retryMatch) return retryMatch.id;
+    }
+    
+    if (emailNormalized && !isEmailPlaceholder) {
+      const { data: retryMatch } = await supabase
+        .from('pessoas')
+        .select('id')
+        .eq('email_principal', emailNormalized)
+        .maybeSingle();
+      if (retryMatch) return retryMatch.id;
+    }
+    
+    return null;
+  }
+  
+  console.log('[Pessoa] Nova pessoa criada:', newPessoa.id, nomeNormalizado);
+  return newPessoa.id;
+}
+
 function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
   const { lead_id, evento, empresa, timestamp, dados_lead, dados_tokeniza, dados_blue, dados_mautic, dados_chatwoot, dados_notion, event_metadata } = payload;
   
@@ -1178,6 +1379,19 @@ serve(async (req) => {
       updateData.numero_nacional = sanitization.phoneInfo.nacional;
       updateData.contato_internacional = sanitization.phoneInfo.internacional;
       updateData.origem_telefone = 'SGT';
+    }
+
+    // PATCH 6: Upsert pessoa global e vincular ao lead_contact
+    const pessoaId = await upsertPessoaFromContact(supabase, {
+      nome: leadNormalizado.nome,
+      email: leadNormalizado.email,
+      telefone: leadNormalizado.telefone,
+      telefone_e164: sanitization.phoneInfo?.e164
+    });
+    
+    if (pessoaId) {
+      updateData.pessoa_id = pessoaId;
+      console.log('[SGT Webhook] Lead vinculado à pessoa global:', pessoaId);
     }
     
     await supabase
