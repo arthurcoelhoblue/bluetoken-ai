@@ -148,7 +148,16 @@ serve(async (req) => {
     console.log(`[whatsapp-send] Mensagem registrada: ${messageId}`);
 
     // Envia via API WhatsApp
+    const payloadToSend = {
+      connectionName: CONNECTION_NAME,
+      phone: phoneToSend,
+      message: TEST_MODE 
+        ? `[TESTE - Lead: ${leadId}]\n\n${mensagem}` 
+        : mensagem,
+    };
+    
     console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
+    console.log('[whatsapp-send] Payload:', JSON.stringify(payloadToSend));
     console.log('[whatsapp-send] Headers: x-auth-api presente:', !!apiKey);
     
     const whatsappResponse = await fetch(WHATSAPP_API_URL, {
@@ -157,12 +166,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
         'x-auth-api': apiKey,
       },
-      body: JSON.stringify({
-        phone: phoneToSend,
-        message: TEST_MODE 
-          ? `[TESTE - Lead: ${leadId}]\n\n${mensagem}` 
-          : mensagem,
-      }),
+      body: JSON.stringify(payloadToSend),
     });
 
     // Captura resposta como texto primeiro para diagnosticar erros HTML
