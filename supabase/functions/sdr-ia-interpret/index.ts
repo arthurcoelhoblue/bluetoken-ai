@@ -375,6 +375,52 @@ function validarCTAReuniao(
   return false;
 }
 
+/**
+ * PATCH 6G Gap Fix: Verifica se pergunta já foi respondida
+ */
+function perguntaJaRespondida(
+  tipo: ProximaPerguntaTipo, 
+  frameworkData: FrameworkData | undefined
+): boolean {
+  if (!frameworkData) return false;
+  
+  const spin = frameworkData.spin || {};
+  const gpct = frameworkData.gpct || {};
+  const bant = frameworkData.bant || {};
+  
+  switch (tipo) {
+    case 'SPIN_S': return !!spin.s;
+    case 'SPIN_P': return !!spin.p;
+    case 'SPIN_I': return !!spin.i;
+    case 'SPIN_N': return !!spin.n;
+    case 'GPCT_G': return !!gpct.g;
+    case 'GPCT_C': return !!gpct.c;
+    case 'GPCT_P': return !!gpct.p;
+    case 'GPCT_T': return !!gpct.t;
+    case 'BANT_B': return !!bant.b;
+    case 'BANT_A': return !!bant.a;
+    case 'BANT_N': return !!bant.n;
+    case 'BANT_T': return !!bant.t;
+    default: return false;
+  }
+}
+
+/**
+ * PATCH 6G Gap Fix: Gera instrução de tom baseada no DISC
+ */
+function getDiscToneInstruction(disc: PerfilDISC | null | undefined): string | null {
+  if (!disc) return null;
+  
+  const instrucoes: Record<PerfilDISC, string> = {
+    'D': '🎯 ADAPTE SEU TOM: Seja DIRETO e objetivo. Sem rodeios. Foco em resultados e ação.',
+    'I': '🎯 ADAPTE SEU TOM: Seja LEVE e conversado. Use entusiasmo. Conte exemplos e histórias.',
+    'S': '🎯 ADAPTE SEU TOM: Seja CALMO e acolhedor. Gere confiança. Seja paciente e empático.',
+    'C': '🎯 ADAPTE SEU TOM: Seja ESTRUTURADO e lógico. Use dados. Seja preciso e detalhado.',
+  };
+  
+  return instrucoes[disc] || null;
+}
+
 // ========================================
 // PATCH 6: FUNÇÕES DE ESTADO DE CONVERSA
 // ========================================
@@ -1013,22 +1059,49 @@ async function interpretWithAI(
     userPrompt += `- Etapa do funil: ${conversationState.estado_funil}\n`;
     userPrompt += `- Framework ativo: ${conversationState.framework_ativo}\n`;
     
+    // PATCH 6G Gap Fix: Contexto de última pergunta
+    if (conversationState.ultima_pergunta_id) {
+      userPrompt += `\n⚠️ ÚLTIMA PERGUNTA FEITA: ${conversationState.ultima_pergunta_id}\n`;
+      userPrompt += `NÃO repita esta pergunta. Avance para a próxima etapa do framework.\n`;
+    }
+    
+    // PATCH 6G Gap Fix: Listar dados JÁ coletados para evitar repetição
     if (conversationState.framework_data && Object.keys(conversationState.framework_data).length > 0) {
-      userPrompt += `- Dados já coletados:\n`;
+      userPrompt += `\n## DADOS JÁ COLETADOS (NÃO PERGUNTE NOVAMENTE):\n`;
       const fd = conversationState.framework_data;
-      if (fd.gpct && Object.values(fd.gpct).some(v => v)) {
-        userPrompt += `  GPCT: G=${fd.gpct.g || '?'}, P=${fd.gpct.p || '?'}, C=${fd.gpct.c || '?'}, T=${fd.gpct.t || '?'}\n`;
+      
+      // SPIN
+      if (fd.spin) {
+        if (fd.spin.s) userPrompt += `✅ SPIN_S (Situação): ${fd.spin.s}\n`;
+        if (fd.spin.p) userPrompt += `✅ SPIN_P (Problema): ${fd.spin.p}\n`;
+        if (fd.spin.i) userPrompt += `✅ SPIN_I (Implicação): ${fd.spin.i}\n`;
+        if (fd.spin.n) userPrompt += `✅ SPIN_N (Need-Payoff): ${fd.spin.n}\n`;
       }
-      if (fd.bant && Object.values(fd.bant).some(v => v)) {
-        userPrompt += `  BANT: B=${fd.bant.b || '?'}, A=${fd.bant.a || '?'}, N=${fd.bant.n || '?'}, T=${fd.bant.t || '?'}\n`;
+      
+      // GPCT
+      if (fd.gpct) {
+        if (fd.gpct.g) userPrompt += `✅ GPCT_G (Goals): ${fd.gpct.g}\n`;
+        if (fd.gpct.c) userPrompt += `✅ GPCT_C (Challenges): ${fd.gpct.c}\n`;
+        if (fd.gpct.p) userPrompt += `✅ GPCT_P (Plans): ${fd.gpct.p}\n`;
+        if (fd.gpct.t) userPrompt += `✅ GPCT_T (Timeline): ${fd.gpct.t}\n`;
       }
-      if (fd.spin && Object.values(fd.spin).some(v => v)) {
-        userPrompt += `  SPIN: S=${fd.spin.s || '?'}, P=${fd.spin.p || '?'}, I=${fd.spin.i || '?'}, N=${fd.spin.n || '?'}\n`;
+      
+      // BANT
+      if (fd.bant) {
+        if (fd.bant.b) userPrompt += `✅ BANT_B (Budget): ${fd.bant.b}\n`;
+        if (fd.bant.a) userPrompt += `✅ BANT_A (Authority): ${fd.bant.a}\n`;
+        if (fd.bant.n) userPrompt += `✅ BANT_N (Need): ${fd.bant.n}\n`;
+        if (fd.bant.t) userPrompt += `✅ BANT_T (Timing): ${fd.bant.t}\n`;
       }
     }
     
+    // PATCH 6G Gap Fix: Instrução ativa de tom DISC
     if (conversationState.perfil_disc) {
-      userPrompt += `- Perfil DISC detectado: ${conversationState.perfil_disc}\n`;
+      userPrompt += `\n- Perfil DISC detectado: ${conversationState.perfil_disc}\n`;
+      const discInstruction = getDiscToneInstruction(conversationState.perfil_disc);
+      if (discInstruction) {
+        userPrompt += `\n${discInstruction}\n`;
+      }
     }
     
     if (conversationState.estado_funil !== 'SAUDACAO') {
@@ -1145,14 +1218,27 @@ async function interpretWithAI(
   qualiState.intentAtual = parsed.intent;
   
   if (!validarCTAReuniao(aiSugeriuReuniao, qualiState)) {
-    // IA tentou pular etapas - forçar mais qualificação
-    console.log('[6G] Bloqueando CTA prematuro, forçando qualificação');
+    // PATCH 6G Gap Fix: Bloquear CTA prematuro EFETIVAMENTE
+    console.log('[6G] Bloqueando CTA prematuro, removendo menção a reunião');
     
     if (parsed.acao === 'CRIAR_TAREFA_CLOSER') {
       parsed.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
     }
     
-    // Não modificar a resposta - deixar a IA seguir o fluxo natural
+    // Remover resposta que contém CTA prematuro
+    if (parsed.resposta_sugerida) {
+      const respostaLower = parsed.resposta_sugerida.toLowerCase();
+      const temCTA = respostaLower.includes('reunião') || 
+                     respostaLower.includes('agendar') ||
+                     respostaLower.includes('conversar com') ||
+                     respostaLower.includes('especialista');
+      
+      if (temCTA) {
+        console.log('[6G] Resposta bloqueada - continha CTA prematuro');
+        parsed.resposta_sugerida = null;
+        parsed.deve_responder = false;
+      }
+    }
   }
 
   // Aplicar matriz automática de temperatura

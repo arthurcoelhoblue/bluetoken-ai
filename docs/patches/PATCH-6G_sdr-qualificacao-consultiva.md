@@ -1,8 +1,15 @@
 # PATCH 6G – SDR IA Qualificador Consultivo
 
+**Status:** ✅ Concluído  
+**Data:** 2025-12-11  
+
+---
+
 ## Objetivo
 
 Transformar o SDR IA em um qualificador consultivo usando metodologias de vendas (Receita Previsível + SPIN/GPCT+BANT), garantindo que reuniões só sejam sugeridas quando o lead estiver verdadeiramente qualificado.
+
+---
 
 ## Escopo
 
@@ -25,6 +32,15 @@ Transformar o SDR IA em um qualificador consultivo usando metodologias de vendas
    - Instrução de pergunta passa no contexto do prompt
    - Validação pós-IA para bloquear CTAs prematuros
    - Registro da pergunta feita no estado da conversa
+
+4. **Gap Fixes (2025-12-11)**
+   - ✅ Contexto de última pergunta (`ultima_pergunta_id`) adicionado ao prompt
+   - ✅ Bloqueio efetivo de CTA prematuro (remove resposta se contém reunião/agendar)
+   - ✅ Instrução ativa de tom DISC (`getDiscToneInstruction()`)
+   - ✅ Listagem de dados já coletados para evitar repetição
+   - ✅ Função `perguntaJaRespondida()` para validação
+
+---
 
 ## Lógica de Decisão
 
@@ -64,6 +80,8 @@ BANT_N preenchido? → BANT_T (Timing)
 GPCT+BANT completo + interesse + temperatura ≥ MORNO? → CTA_REUNIAO
 ```
 
+---
+
 ## Tipos de Pergunta
 
 | Tipo | Framework | Descrição |
@@ -83,6 +101,8 @@ GPCT+BANT completo + interesse + temperatura ≥ MORNO? → CTA_REUNIAO
 | CTA_REUNIAO | - | Lead qualificado, sugerir reunião |
 | NENHUMA | - | Continuar conversa naturalmente |
 
+---
+
 ## Regras de CTA
 
 A IA SÓ pode sugerir reunião se:
@@ -94,16 +114,64 @@ A IA SÓ pode sugerir reunião se:
    - TOKENIZA: pelo menos G e C do GPCT + B do BANT
 
 Se a IA tentar sugerir reunião sem atender critérios:
-- Ação é convertida de CRIAR_TAREFA_CLOSER para ENVIAR_RESPOSTA_AUTOMATICA
+- Ação é convertida de `CRIAR_TAREFA_CLOSER` para `ENVIAR_RESPOSTA_AUTOMATICA`
+- Resposta é **removida** se contiver menção a "reunião", "agendar", "conversar com", "especialista"
 - Log registra tentativa bloqueada
+
+---
+
+## Gap Fixes Implementados
+
+### 1. Contexto de Última Pergunta
+```typescript
+if (conversationState.ultima_pergunta_id) {
+  userPrompt += `⚠️ ÚLTIMA PERGUNTA FEITA: ${conversationState.ultima_pergunta_id}\n`;
+  userPrompt += `NÃO repita esta pergunta. Avance para a próxima etapa.\n`;
+}
+```
+
+### 2. Bloqueio Efetivo de CTA Prematuro
+```typescript
+if (!validarCTAReuniao(aiSugeriuReuniao, qualiState)) {
+  if (parsed.resposta_sugerida?.toLowerCase().includes('reunião')) {
+    parsed.resposta_sugerida = null;
+    parsed.deve_responder = false;
+  }
+}
+```
+
+### 3. Instrução Ativa de Tom DISC
+```typescript
+function getDiscToneInstruction(disc: PerfilDISC): string {
+  const instrucoes = {
+    'D': '🎯 ADAPTE SEU TOM: Seja DIRETO e objetivo.',
+    'I': '🎯 ADAPTE SEU TOM: Seja LEVE e conversado.',
+    'S': '🎯 ADAPTE SEU TOM: Seja CALMO e acolhedor.',
+    'C': '🎯 ADAPTE SEU TOM: Seja ESTRUTURADO e lógico.',
+  };
+  return instrucoes[disc];
+}
+```
+
+### 4. Listagem de Dados Já Coletados
+```
+## DADOS JÁ COLETADOS (NÃO PERGUNTE NOVAMENTE):
+✅ GPCT_G (Goals): Diversificar carteira
+✅ GPCT_C (Challenges): Taxas altas de banco
+```
+
+---
 
 ## Arquivos Modificados
 
-- `supabase/functions/sdr-ia-interpret/index.ts`
-  - Novos tipos: `ProximaPerguntaTipo`, `ConversationQualiState`
-  - Novas funções: `decidirProximaPerguntaBLUE()`, `decidirProximaPerguntaTOKENIZA()`, `decidirProximaPergunta()`, `validarCTAReuniao()`
-  - SYSTEM_PROMPT atualizado com foco em qualificação consultiva
-  - `interpretWithAI()` calcula e passa instrução de próxima pergunta
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Gap fixes + lógica consultiva |
+| `src/types/conversation.ts` | Tipos TypeScript |
+| `src/hooks/useConversationState.ts` | Hook React Query |
+| `src/components/conversation/ConversationStateCard.tsx` | UI |
+
+---
 
 ## Exemplo de Fluxo
 
@@ -112,38 +180,36 @@ Se a IA tentar sugerir reunião sem atender critérios:
 1. **Mensagem 1**: "Oi, vi sobre investimentos tokenizados"
    - Estado: SAUDACAO
    - Próxima pergunta: GPCT_G
-   - Resposta: "Oi! Que bom que você se interessou! Me conta, qual seu principal objetivo com investimentos hoje? Renda extra, aposentadoria, diversificar...?"
+   - Resposta: "Oi! Que bom que você se interessou! Me conta, qual seu principal objetivo com investimentos hoje?"
 
 2. **Mensagem 2**: "Quero diversificar minha carteira"
    - Estado: DIAGNOSTICO, GPCT.g = "diversificação"
    - Próxima pergunta: GPCT_C
-   - Resposta: "Diversificar é uma ótima estratégia! E o que mais te atrapalha hoje para conseguir diversificar do jeito que gostaria?"
+   - ⚠️ ultima_pergunta_id = "GPCT_G" (não repetir!)
+   - Resposta: "Diversificar é ótimo! E o que mais te atrapalha hoje para conseguir isso?"
 
 3. **Mensagem 3**: "Banco oferece só fundos com taxa alta"
-   - Estado: QUALIFICACAO, GPCT.c = "taxas altas de banco"
+   - Estado: QUALIFICACAO, GPCT.c = "taxas altas"
    - Próxima pergunta: GPCT_P
-   - Resposta: "Entendo! E hoje você investe mais em produtos tradicionais do banco ou já explora outras alternativas?"
-
-4. **Mensagem 4**: "Só banco mesmo, mas tenho bitcoin"
-   - Estado: QUALIFICACAO, GPCT.p = "banco + bitcoin"
-   - Próxima pergunta: GPCT_T
-   - Resposta: "Legal que já tem cripto! Em quanto tempo você imagina construir essa carteira mais diversificada? Curto, médio ou longo prazo?"
-
-5. **Mensagem 5**: "Médio prazo, uns 2-3 anos"
-   - Estado: QUALIFICACAO, GPCT completo
-   - Próxima pergunta: BANT_B
-   - Resposta: "Perfeito! E pra gente entender melhor as opções que fazem sentido, você tem uma ideia de quanto gostaria de alocar? Abaixo de 10k, entre 10k e 50k, ou acima?"
+   - DISC detectado: C (cauteloso - pergunta técnica)
+   - 🎯 Tom: estruturado e lógico
 
 ... (continua até qualificação completa)
+
+---
 
 ## Testes
 
 1. ✅ Lead novo recebe pergunta GPCT_G (Tokeniza) ou SPIN_S (Blue)
 2. ✅ Perguntas seguem sequência do framework
 3. ✅ CTA só aparece após qualificação mínima
-4. ✅ IA bloqueada de sugerir reunião prematura
+4. ✅ IA bloqueada de sugerir reunião prematura (resposta removida)
 5. ✅ Estado de framework é persistido entre mensagens
 6. ✅ Tom adapta ao perfil DISC detectado
+7. ✅ Última pergunta é mostrada no prompt para evitar repetição
+8. ✅ Dados já coletados são listados explicitamente
+
+---
 
 ## Próximos Passos
 
