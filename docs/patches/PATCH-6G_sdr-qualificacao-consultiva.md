@@ -1,4 +1,4 @@
-# PATCH 6G – SDR IA Qualificador Consultivo
+# PATCH 6G – SDR IA Qualificador Consultivo + Precificação Blue
 
 **Status:** ✅ Concluído  
 **Data:** 2025-12-11  
@@ -7,7 +7,7 @@
 
 ## Objetivo
 
-Transformar o SDR IA em um qualificador consultivo usando metodologias de vendas (Receita Previsível + SPIN/GPCT+BANT), garantindo que reuniões só sejam sugeridas quando o lead estiver verdadeiramente qualificado.
+Transformar o SDR IA em um qualificador consultivo usando metodologias de vendas (Receita Previsível + SPIN/GPCT+BANT), garantindo que reuniões só sejam sugeridas quando o lead estiver verdadeiramente qualificado. **Inclui conhecimento de precificação Blue para responder dúvidas de valor.**
 
 ---
 
@@ -39,6 +39,12 @@ Transformar o SDR IA em um qualificador consultivo usando metodologias de vendas
    - ✅ Instrução ativa de tom DISC (`getDiscToneInstruction()`)
    - ✅ Listagem de dados já coletados para evitar repetição
    - ✅ Função `perguntaJaRespondida()` para validação
+
+5. **Tabela de Preços Blue (2025-12-11)**
+   - ✅ Constante `BLUE_PRICING` com todos os planos e valores
+   - ✅ Função `formatBluePricingForPrompt()` para montar contexto
+   - ✅ Regras de quando mencionar preços (DUVIDA_PRECO, SPIN_N, pergunta direta)
+   - ✅ Regras de compliance (não divulgar Customizado, não negociar)
 
 ---
 
@@ -159,6 +165,43 @@ function getDiscToneInstruction(disc: PerfilDISC): string {
 ✅ GPCT_G (Goals): Diversificar carteira
 ✅ GPCT_C (Challenges): Taxas altas de banco
 ```
+
+---
+
+## Tabela de Preços Blue (IR Cripto)
+
+### Planos Principais
+| Plano | Preço | Descrição |
+|-------|-------|-----------|
+| IR Cripto - Gold | R$ 4.497 | Carteiras/exchanges ilimitadas, até 25k transações/ano |
+| IR Cripto - Diamond | R$ 2.997 | Até 4 carteiras/exchanges, até 25k transações/ano |
+| IR Cripto - Customizado* | R$ 998 | Até 4 carteiras/exchanges, até 2k transações/ano |
+
+*\* Plano Customizado é uso INTERNO, não divulgar ao lead*
+
+### Serviços Adicionais
+| Serviço | Preço |
+|---------|-------|
+| +5.000 operações | R$ 500 |
+| Apuração de dependente | R$ 500/dependente |
+| Upgrade Diamond → Gold | R$ 1.500 |
+| IR Simples (sem cripto) | R$ 300 |
+
+### Formas de Pagamento
+- PIX à vista, criptomoedas, ou cartão até 12x sem juros
+- Desconto PIX/Cripto: até **15%**
+- Desconto Cartão: até **10%**
+
+### Quando o SDR Pode Mencionar Preços
+✅ Quando o lead pergunta "quanto custa?"  
+✅ Durante SPIN_N (Need-Payoff), vinculando valor ao benefício  
+✅ Quando intent = `DUVIDA_PRECO`  
+✅ Quando intent = `OBJECAO_PRECO` (explicar o valor agregado)
+
+### Regras de Compliance
+❌ NÃO negociar preços além dos descontos padrão  
+❌ NÃO divulgar plano Customizado  
+❌ NÃO prometer valores diferentes dos tabelados
 
 ---
 
