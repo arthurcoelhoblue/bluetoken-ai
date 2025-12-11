@@ -177,6 +177,103 @@ const BLUE_PRICING = {
   },
 };
 
+// ========================================
+// PATCH 6G+: INTERFACE OFERTAS TOKENIZA
+// ========================================
+
+interface TokenizaOfertaSDR {
+  id: string;
+  nome: string;
+  rentabilidade: string;
+  duracaoDias: number;
+  diasRestantes: number;
+  contribuicaoMinima: number;
+  empresa: string;
+  tipoRisco: string;
+  status: string;
+}
+
+// Buscar ofertas ativas da Tokeniza
+async function fetchActiveTokenizaOffers(): Promise<TokenizaOfertaSDR[]> {
+  try {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL');
+    const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY');
+    
+    if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+      console.warn('[6G] Variáveis de ambiente não encontradas para buscar ofertas');
+      return [];
+    }
+    
+    const response = await fetch(
+      `${SUPABASE_URL}/functions/v1/tokeniza-offers`,
+      {
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    
+    if (!response.ok) {
+      console.error('[6G] Erro ao buscar ofertas Tokeniza:', response.status);
+      return [];
+    }
+    
+    const data = await response.json();
+    
+    // Filtrar apenas ofertas ativas
+    const activeOffers = (data.ofertas || []).filter((o: any) => 
+      o.status?.toLowerCase() === 'active' || o.status?.toLowerCase() === 'open'
+    );
+    
+    return activeOffers.map((o: any) => ({
+      id: o.id,
+      nome: o.nome,
+      rentabilidade: o.rentabilidade,
+      duracaoDias: o.duracaoDias,
+      diasRestantes: o.diasRestantes,
+      contribuicaoMinima: o.contribuicaoMinima,
+      empresa: o.empresa,
+      tipoRisco: o.tipoRisco,
+      status: o.status,
+    }));
+  } catch (err) {
+    console.error('[6G] Exceção ao buscar ofertas Tokeniza:', err);
+    return [];
+  }
+}
+
+// Formatar ofertas Tokeniza para prompt
+function formatTokenizaOffersForPrompt(ofertas: TokenizaOfertaSDR[]): string {
+  if (ofertas.length === 0) {
+    return `\n## OFERTAS TOKENIZA\nNenhuma oferta ativa no momento. Foque na qualificação e no relacionamento.\n`;
+  }
+
+  let text = `\n## OFERTAS ATIVAS TOKENIZA - USE QUANDO FALAR SOBRE INVESTIMENTOS\n\n`;
+  
+  for (const o of ofertas) {
+    text += `### ${o.nome} (${o.empresa})\n`;
+    text += `- Rentabilidade: ${o.rentabilidade}% ao ano\n`;
+    text += `- Prazo do investimento: ${o.duracaoDias} dias\n`;
+    text += `- Dias restantes para investir: ${o.diasRestantes}\n`;
+    text += `- Investimento mínimo: R$ ${o.contribuicaoMinima.toLocaleString('pt-BR')}\n`;
+    text += `- Tipo de risco: ${o.tipoRisco}\n\n`;
+  }
+  
+  text += `### REGRAS PARA MENCIONAR OFERTAS:\n`;
+  text += `✅ Mencione ofertas quando o lead perguntar sobre oportunidades/investimentos disponíveis\n`;
+  text += `✅ Cite rentabilidade e prazo quando perguntarem sobre ganhos potenciais\n`;
+  text += `✅ Informe valor mínimo quando perguntarem "quanto preciso para começar"\n`;
+  text += `✅ Mencione dias restantes APENAS se forem poucos (< 15 dias)\n`;
+  text += `✅ Use os nomes reais das ofertas, não invente\n`;
+  text += `❌ NUNCA prometa ou garanta a rentabilidade - é projeção, não garantia\n`;
+  text += `❌ NUNCA recomende uma oferta específica como "a melhor" ou "ideal para você"\n`;
+  text += `❌ NUNCA pressione com urgência artificial\n`;
+  text += `❌ NUNCA invente ofertas que não estão listadas\n`;
+  
+  return text;
+}
+
 // Formatar preços para prompt
 function formatBluePricingForPrompt(): string {
   let text = `\n## TABELA DE PREÇOS BLUE (IR CRIPTO) - USE QUANDO PERGUNTAREM SOBRE VALORES\n\n`;
@@ -851,6 +948,8 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 ✅ Mencionar que pessoa já é cliente de outra empresa do grupo (para confiança)
 ✅ **FAZER HANDOFF para outra empresa** quando o lead demonstrar interesse genuíno
 ✅ **INFORMAR PREÇOS DA BLUE** quando o lead perguntar (usar tabela fornecida)
+✅ **INFORMAR OFERTAS DA TOKENIZA** quando o lead perguntar sobre investimentos disponíveis
+✅ Mencionar rentabilidade, prazo e valor mínimo das ofertas ativas (sem recomendar especificamente)
 
 ## HANDOFF INTERNO (Ana ↔ Pedro)
 
@@ -1183,6 +1282,18 @@ async function interpretWithAI(
   // PATCH 6G: Adicionar tabela de preços para BLUE
   if (empresa === 'BLUE') {
     userPrompt += formatBluePricingForPrompt();
+  }
+  
+  // PATCH 6G+: Adicionar ofertas ativas para TOKENIZA
+  if (empresa === 'TOKENIZA') {
+    try {
+      const ofertas = await fetchActiveTokenizaOffers();
+      userPrompt += formatTokenizaOffersForPrompt(ofertas);
+      console.log('[6G] Ofertas Tokeniza carregadas:', ofertas.length);
+    } catch (err) {
+      console.error('[6G] Erro ao buscar ofertas Tokeniza:', err);
+      userPrompt += `\n## OFERTAS TOKENIZA\nNão foi possível carregar ofertas no momento. Foque na qualificação.\n`;
+    }
   }
   
   // Contexto de classificação
