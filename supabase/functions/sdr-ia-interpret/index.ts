@@ -177,6 +177,126 @@ const BLUE_PRICING = {
 };
 
 // ========================================
+// PATCH 7: CONHECIMENTO TOKENIZA (INVESTIMENTOS TOKENIZADOS)
+// ========================================
+
+const TOKENIZA_KNOWLEDGE = {
+  // Regra #1: TODOS leads são tratados como INVESTIDOR primeiro
+  regraLeads: {
+    default: 'INVESTIDOR',
+    percentual: { investidor: 90, captador: 10 },
+    instrucao: 'Sempre tratar o lead como investidor. Se ele se manifestar como captador, direcionar para esse fluxo.',
+  },
+  
+  // O que é Tokeniza
+  oQueE: {
+    definicao: 'Plataforma brasileira de investimentos tokenizados regulada pela CVM 88',
+    modelo: 'Conecta investidores (pessoas físicas) a captadores (empresas) com garantias reais',
+    diferencial: 'Democratiza acesso a investimentos estruturados com garantia real que antes só grandes investidores tinham',
+    oqueFaz: 'A Tokeniza faz a ponte entre duas pontas: investidores e captadores',
+  },
+  
+  // O que vendemos para investidores
+  produtoInvestidor: {
+    tipo: 'Investimentos tokenizados lastreados em garantia real',
+    oQueCompra: 'Token que representa fração de contrato de investimento coletivo (regulamentado CVM)',
+    caracteristicas: [
+      'Contratos de investimento coletivo representados por tokens em blockchain',
+      'Garantias reais ou contratuais',
+      'Retorno previsto e prazo determinado',
+      'Regras claras na lâmina da oferta',
+      'Contratos executáveis judicialmente',
+    ],
+    lastros: ['Imóveis', 'Recebíveis', 'Contratos firmados', 'Estoques', 'Alienação fiduciária', 'Caução', 'Penhor'],
+  },
+  
+  // Para captadores (10% dos leads)
+  produtoCaptador: {
+    tipo: 'Serviço de estruturação e distribuição',
+    processo: [
+      'Análise de viabilidade e risco',
+      'Conferência jurídica',
+      'Criação do contrato',
+      'Estruturação da tokenização',
+      'Emissão de tokens',
+      'Distribuição para investidores',
+      'Prestação de contas',
+    ],
+    custos: ['Taxa de estruturação', 'Taxa de captação (comissão sobre valor captado)'],
+    instrucao: 'Se lead for captador, direcionar para conversa específica sobre estruturação',
+  },
+  
+  // Perfil do investidor Tokeniza
+  perfilInvestidor: {
+    idade: '25-55 anos',
+    jaInveste: ['CDB', 'Ações', 'FII', 'Cripto', 'Renda fixa'],
+    busca: [
+      'Retorno maior com risco controlado',
+      'Garantia real tangível',
+      'Transparência total',
+      'Diversificação',
+      'Entender o ativo antes de investir',
+    ],
+    valoriza: 'Entender o ativo - não investe no escuro, gosta de novas tecnologias com segurança',
+  },
+  
+  // Por que investir com a Tokeniza
+  porQueInvestir: {
+    motivos: [
+      'Acesso a ativos que antes eram restritos a grandes investidores',
+      'Retorno maior que investimentos tradicionais',
+      'Segurança via garantias reais (imóveis, contratos)',
+      'Transparência total (risco, documentos, garantias visíveis)',
+      'Blockchain para registrar titularidade',
+    ],
+    exemploRetorno: 'Banco capta do investidor a 1%/mês e empresta a 5%. Na Tokeniza: empreendedor capta a 2,5%/mês e investidor recebe 2,5%/mês. Ganha todo mundo.',
+  },
+  
+  // Garantias
+  garantias: {
+    tipos: ['Alienação fiduciária de imóvel', 'Cessão fiduciária de recebíveis', 'Caução', 'Penhor'],
+    significado: 'Se a empresa não pagar, existe ativo real para executar judicialmente',
+    oQueGarante: 'Tangibilidade que o investidor quer: imóveis registrados, contratos validados, análises da equipe',
+  },
+  
+  // Estrutura de cada oferta
+  estruturaOferta: {
+    elementos: [
+      'Lastro (o que garante)',
+      'Tese (por que a operação existe)',
+      'Retorno previsto (ex: 18% ao ano)',
+      'Prazo',
+      'Risco explicado',
+      'Garantia descrita',
+      'Fluxo de pagamento',
+      'Documentos jurídicos',
+      'Responsáveis pela operação',
+    ],
+    modalidadesPagamento: ['Juros mensais', 'Juros + amortização final', 'Bullet (tudo no final)', 'Fluxo híbrido'],
+  },
+  
+  // Perguntas de qualificação ideais
+  perguntasQualificacao: [
+    'Como você investe hoje?',
+    'Já investiu em produtos estruturados?',
+    'Qual seu objetivo com esses investimentos?',
+    'Quanto normalmente investe por operação?',
+    'Busca segurança, retorno mensal, curto prazo ou diversificação?',
+  ],
+  
+  // Diferenciais para destacar
+  diferenciais: [
+    'Operações com garantia real',
+    'Plataforma regulada pela CVM 88',
+    'Transparência e lastro claro',
+    'Due diligence completa',
+    'Conexão direta investidor-captador',
+    'Democratização de produtos estruturados',
+    'Processo tecnológico, simples e acessível',
+  ],
+};
+
+// ========================================
 // PATCH 6G+: INTERFACE OFERTAS TOKENIZA
 // ========================================
 
@@ -306,6 +426,82 @@ function formatBluePricingForPrompt(): string {
   text += `- Durante SPIN_N (Need-Payoff), após apresentar valor, vincular ao benefício\n`;
   text += `- Se intent = DUVIDA_PRECO\n`;
   text += `- Se intent = OBJECAO_PRECO, explicar o valor (não é só declaração, é tranquilidade)\n`;
+  
+  return text;
+}
+
+// ========================================
+// PATCH 7: FORMATAÇÃO CONHECIMENTO TOKENIZA
+// ========================================
+
+function formatTokenizaKnowledgeForPrompt(): string {
+  let text = `\n## CONHECIMENTO TOKENIZA - O QUE AMÉLIA PRECISA SABER\n\n`;
+  
+  // Regra fundamental
+  text += `### ⚠️ REGRA FUNDAMENTAL PARA LEADS\n`;
+  text += `${TOKENIZA_KNOWLEDGE.regraLeads.instrucao}\n`;
+  text += `90% dos leads são investidores, 10% são captadores. Trate TODOS como investidores até que se identifiquem como captadores.\n\n`;
+  
+  // O que é a Tokeniza
+  text += `### O QUE É A TOKENIZA\n`;
+  text += `${TOKENIZA_KNOWLEDGE.oQueE.definicao}\n`;
+  text += `**Modelo:** ${TOKENIZA_KNOWLEDGE.oQueE.modelo}\n`;
+  text += `**Diferencial:** ${TOKENIZA_KNOWLEDGE.oQueE.diferencial}\n\n`;
+  
+  // O que vendemos para investidores
+  text += `### O QUE VENDEMOS PARA INVESTIDORES\n`;
+  text += `**Produto:** ${TOKENIZA_KNOWLEDGE.produtoInvestidor.tipo}\n`;
+  text += `**O que o investidor compra:** ${TOKENIZA_KNOWLEDGE.produtoInvestidor.oQueCompra}\n`;
+  text += `**Características:**\n`;
+  for (const c of TOKENIZA_KNOWLEDGE.produtoInvestidor.caracteristicas) {
+    text += `- ${c}\n`;
+  }
+  text += `**Lastros possíveis:** ${TOKENIZA_KNOWLEDGE.produtoInvestidor.lastros.join(', ')}\n\n`;
+  
+  // Por que investir
+  text += `### POR QUE INVESTIR NA TOKENIZA\n`;
+  for (const motivo of TOKENIZA_KNOWLEDGE.porQueInvestir.motivos) {
+    text += `✅ ${motivo}\n`;
+  }
+  text += `\n**Exemplo de vantagem:** ${TOKENIZA_KNOWLEDGE.porQueInvestir.exemploRetorno}\n\n`;
+  
+  // Garantias
+  text += `### GARANTIAS (MUITO IMPORTANTE!)\n`;
+  text += `**Tipos:** ${TOKENIZA_KNOWLEDGE.garantias.tipos.join(', ')}\n`;
+  text += `**O que garantem:** ${TOKENIZA_KNOWLEDGE.garantias.significado}\n`;
+  text += `**Tangibilidade:** ${TOKENIZA_KNOWLEDGE.garantias.oQueGarante}\n\n`;
+  
+  // Perfil do investidor
+  text += `### PERFIL DO INVESTIDOR TOKENIZA (memorize!)\n`;
+  text += `- Idade típica: ${TOKENIZA_KNOWLEDGE.perfilInvestidor.idade}\n`;
+  text += `- Já investe em: ${TOKENIZA_KNOWLEDGE.perfilInvestidor.jaInveste.join(', ')}\n`;
+  text += `- Busca: ${TOKENIZA_KNOWLEDGE.perfilInvestidor.busca.join(', ')}\n`;
+  text += `- Valoriza: ${TOKENIZA_KNOWLEDGE.perfilInvestidor.valoriza}\n\n`;
+  
+  // Estrutura de ofertas
+  text += `### ESTRUTURA DE CADA OFERTA\n`;
+  text += `Toda oferta tem: ${TOKENIZA_KNOWLEDGE.estruturaOferta.elementos.join(', ')}\n`;
+  text += `**Formas de pagamento:** ${TOKENIZA_KNOWLEDGE.estruturaOferta.modalidadesPagamento.join(', ')}\n\n`;
+  
+  // Perguntas de qualificação
+  text += `### PERGUNTAS PARA QUALIFICAR O INVESTIDOR\n`;
+  for (const p of TOKENIZA_KNOWLEDGE.perguntasQualificacao) {
+    text += `- "${p}"\n`;
+  }
+  text += `\n`;
+  
+  // Diferenciais
+  text += `### DIFERENCIAIS PARA DESTACAR\n`;
+  for (const diff of TOKENIZA_KNOWLEDGE.diferenciais) {
+    text += `✅ ${diff}\n`;
+  }
+  
+  // Se for captador
+  text += `\n### SE O LEAD FOR CAPTADOR (raro, 10%)\n`;
+  text += `Identificadores: "quero captar", "tenho uma empresa", "preciso de recursos", "quero tokenizar meu ativo"\n`;
+  text += `Serviço: ${TOKENIZA_KNOWLEDGE.produtoCaptador.tipo}\n`;
+  text += `Processo: ${TOKENIZA_KNOWLEDGE.produtoCaptador.processo.join(' → ')}\n`;
+  text += `${TOKENIZA_KNOWLEDGE.produtoCaptador.instrucao}\n`;
   
   return text;
 }
@@ -1373,14 +1569,19 @@ async function interpretWithAI(
     userPrompt += formatBluePricingForPrompt();
   }
   
-  // PATCH 6G+: Adicionar ofertas ativas para TOKENIZA
+  // PATCH 7: Adicionar conhecimento base Tokeniza + ofertas ativas
   if (empresa === 'TOKENIZA') {
+    // Conhecimento base (sempre disponível)
+    userPrompt += formatTokenizaKnowledgeForPrompt();
+    console.log('[7] Conhecimento Tokeniza adicionado ao prompt');
+    
+    // Ofertas ativas (dinâmico)
     try {
       const ofertas = await fetchActiveTokenizaOffers();
       userPrompt += formatTokenizaOffersForPrompt(ofertas);
-      console.log('[6G] Ofertas Tokeniza carregadas:', ofertas.length);
+      console.log('[7] Ofertas Tokeniza carregadas:', ofertas.length);
     } catch (err) {
-      console.error('[6G] Erro ao buscar ofertas Tokeniza:', err);
+      console.error('[7] Erro ao buscar ofertas Tokeniza:', err);
       userPrompt += `\n## OFERTAS TOKENIZA\nNão foi possível carregar ofertas no momento. Foque na qualificação.\n`;
     }
   }
