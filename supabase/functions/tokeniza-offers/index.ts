@@ -89,6 +89,19 @@ serve(async (req) => {
       );
     }
 
+    // Helper to calculate days remaining dynamically
+    const calcularDiasRestantes = (finalDate: string, status: string): number => {
+      // Finished/inactive offers have 0 days remaining
+      if (status.toLowerCase() === 'finished' || status.toLowerCase() === 'inactive') {
+        return 0;
+      }
+      const dataFim = new Date(finalDate);
+      const hoje = new Date();
+      const diffMs = dataFim.getTime() - hoje.getTime();
+      const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+      return Math.max(0, diffDias);
+    };
+
     // Transform for easier consumption
     const transformedOffers = filteredOffers.map(offer => ({
       id: offer.id,
@@ -110,7 +123,7 @@ serve(async (req) => {
       moeda: offer.acceptedCurrency,
       dataInicio: offer.startDate,
       dataFim: offer.finalDate,
-      diasRestantes: parseInt(offer.deadline) || 0,
+      diasRestantes: calcularDiasRestantes(offer.finalDate, offer.status),
       documentos: offer.documents,
     }));
 
