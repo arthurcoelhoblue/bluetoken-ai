@@ -47,7 +47,7 @@ export function ExternalLinks({ contact }: ExternalLinksProps) {
           </Button>
         )}
 
-        {contact.pipedrive_deal_id && (
+        {contact.pipedrive_deal_id && !contact.pipedrive_deal_id.startsWith('tokeniza_inv_') && (
           <Button
             variant="outline"
             size="sm"
