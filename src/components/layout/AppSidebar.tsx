@@ -14,6 +14,7 @@ import {
   ChevronRight,
   PlusCircle,
   Coins,
+  BookOpen,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -74,6 +75,13 @@ const navGroups: NavGroup[] = [
     items: [
       { title: 'Ofertas', url: '/tokeniza/offers', icon: Coins },
     ],
+  },
+  {
+    label: 'Administração',
+    items: [
+      { title: 'Treinamento Produtos', url: '/admin/produtos', icon: BookOpen, roles: ['ADMIN'] },
+    ],
+    roles: ['ADMIN'],
   },
 ];
 

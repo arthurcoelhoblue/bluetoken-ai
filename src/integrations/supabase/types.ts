@@ -127,6 +127,85 @@ export type Database = {
         }
         Relationships: []
       }
+      knowledge_documents: {
+        Row: {
+          descricao: string | null
+          id: string
+          nome_arquivo: string
+          product_knowledge_id: string
+          storage_path: string
+          tipo_documento: string | null
+          uploaded_at: string
+        }
+        Insert: {
+          descricao?: string | null
+          id?: string
+          nome_arquivo: string
+          product_knowledge_id: string
+          storage_path: string
+          tipo_documento?: string | null
+          uploaded_at?: string
+        }
+        Update: {
+          descricao?: string | null
+          id?: string
+          nome_arquivo?: string
+          product_knowledge_id?: string
+          storage_path?: string
+          tipo_documento?: string | null
+          uploaded_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_documents_product_knowledge_id_fkey"
+            columns: ["product_knowledge_id"]
+            isOneToOne: false
+            referencedRelation: "product_knowledge"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_sections: {
+        Row: {
+          conteudo: string
+          created_at: string
+          id: string
+          ordem: number
+          product_knowledge_id: string
+          tipo: Database["public"]["Enums"]["knowledge_section_tipo"]
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          conteudo: string
+          created_at?: string
+          id?: string
+          ordem?: number
+          product_knowledge_id: string
+          tipo: Database["public"]["Enums"]["knowledge_section_tipo"]
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          conteudo?: string
+          created_at?: string
+          id?: string
+          ordem?: number
+          product_knowledge_id?: string
+          tipo?: Database["public"]["Enums"]["knowledge_section_tipo"]
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_sections_product_knowledge_id_fkey"
+            columns: ["product_knowledge_id"]
+            isOneToOne: false
+            referencedRelation: "product_knowledge"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_cadence_events: {
         Row: {
           created_at: string
@@ -719,6 +798,39 @@ export type Database = {
         }
         Relationships: []
       }
+      product_knowledge: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao_curta: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          produto_id: string
+          produto_nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao_curta?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          produto_id: string
+          produto_nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao_curta?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          produto_id?: string
+          produto_nome?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           avatar_url: string | null
@@ -903,6 +1015,13 @@ export type Database = {
         | "BLUE_RECURRENTE"
         | "BLUE_PERDIDO_RECUPERAVEL"
         | "BLUE_NAO_CLASSIFICADO"
+      knowledge_section_tipo:
+        | "FAQ"
+        | "OBJECOES"
+        | "PITCH"
+        | "RISCOS"
+        | "ESTRUTURA_JURIDICA"
+        | "GERAL"
       lead_contact_issue_tipo:
         | "SEM_CANAL_CONTATO"
         | "EMAIL_PLACEHOLDER"
@@ -1125,6 +1244,14 @@ export const Constants = {
         "BLUE_RECURRENTE",
         "BLUE_PERDIDO_RECUPERAVEL",
         "BLUE_NAO_CLASSIFICADO",
+      ],
+      knowledge_section_tipo: [
+        "FAQ",
+        "OBJECOES",
+        "PITCH",
+        "RISCOS",
+        "ESTRUTURA_JURIDICA",
+        "GERAL",
       ],
       lead_contact_issue_tipo: [
         "SEM_CANAL_CONTATO",

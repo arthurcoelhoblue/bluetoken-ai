@@ -20,6 +20,8 @@ import CadenceRunDetail from "./pages/CadenceRunDetail";
 import CadenceNextActions from "./pages/CadenceNextActions";
 import CadenceEditor from "./pages/CadenceEditor";
 import TokenizaOffers from "./pages/TokenizaOffers";
+import ProductKnowledgeList from "./pages/admin/ProductKnowledgeList";
+import ProductKnowledgeEditor from "./pages/admin/ProductKnowledgeEditor";
 
 const queryClient = new QueryClient();
 
@@ -75,6 +77,18 @@ const App = () => (
             
             {/* Tokeniza routes */}
             <Route path="/tokeniza/offers" element={<TokenizaOffers />} />
+            
+            {/* Admin routes */}
+            <Route path="/admin/produtos" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <ProductKnowledgeList />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/produtos/:productId" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <ProductKnowledgeEditor />
+              </ProtectedRoute>
+            } />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
