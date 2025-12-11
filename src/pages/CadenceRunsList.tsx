@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCadenceRuns, useCadences } from '@/hooks/useCadences';
+import { useCadenceRunsWithPendingActions } from '@/hooks/useCadenceRunsWithPendingActions';
 import {
   EMPRESA_LABELS,
   CADENCE_RUN_STATUS_LABELS,
@@ -14,10 +15,12 @@ import {
   type EmpresaTipo,
   type CadenceRunStatus,
 } from '@/types/cadence';
+import { ACAO_LABELS, type SdrAcaoTipo } from '@/types/intent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -34,6 +37,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertTriangle,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -49,9 +53,10 @@ import { ptBR } from 'date-fns/locale';
 
 function CadenceRunsListContent() {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   
   const initialCadenceId = searchParams.get('cadence_id') || undefined;
+  const acaoPendente = searchParams.get('acao_pendente') as SdrAcaoTipo | null;
   
   const [filters, setFilters] = useState<CadenceRunsFilters>({
     cadence_id: initialCadenceId,
@@ -66,14 +71,32 @@ function CadenceRunsListContent() {
   });
   const { data: cadences } = useCadences();
 
+  // Query de runs com ação pendente
+  const { 
+    data: pendingRuns, 
+    isLoading: isPendingLoading 
+  } = useCadenceRunsWithPendingActions(acaoPendente);
+
   const handleClearFilters = () => {
     setFilters({});
     setSearchInput('');
     setPage(1);
+    if (acaoPendente) {
+      setSearchParams({});
+    }
+  };
+
+  const handleClearActionFilter = () => {
+    const newParams = new URLSearchParams(searchParams);
+    newParams.delete('acao_pendente');
+    setSearchParams(newParams);
   };
 
   const hasActiveFilters =
-    filters.empresa || filters.cadence_id || filters.status;
+    filters.empresa || filters.cadence_id || filters.status || acaoPendente;
+
+  const showPendingView = !!acaoPendente;
+  const acaoLabel = acaoPendente ? ACAO_LABELS[acaoPendente] || acaoPendente : '';
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -86,45 +109,66 @@ function CadenceRunsListContent() {
           <div>
             <h1 className="font-bold text-lg">Leads em Cadência</h1>
             <p className="text-xs text-muted-foreground">
-              Execuções ativas e histórico
+              {showPendingView ? `Ação pendente: ${acaoLabel}` : 'Execuções ativas e histórico'}
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setShowFilters(!showFilters)}
-          className={hasActiveFilters ? 'border-primary' : ''}
-        >
-          <Filter className="h-4 w-4 mr-2" />
-          Filtros
-          {hasActiveFilters && (
-            <Badge variant="secondary" className="ml-2">
-              Ativos
-            </Badge>
-          )}
-        </Button>
+        {!showPendingView && (
+          <Button
+            variant="outline"
+            onClick={() => setShowFilters(!showFilters)}
+            className={hasActiveFilters ? 'border-primary' : ''}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filtros
+            {hasActiveFilters && (
+              <Badge variant="secondary" className="ml-2">
+                Ativos
+              </Badge>
+            )}
+          </Button>
+        )}
       </div>
 
+      {/* Banner de Ação Pendente */}
+      {showPendingView && (
+        <Alert className="mb-6 border-warning bg-warning/10">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertTitle>Filtro ativo: {acaoLabel}</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              Mostrando {pendingRuns?.length || 0} execuções com esta ação pendente.
+            </span>
+            <Button variant="outline" size="sm" onClick={handleClearActionFilter}>
+              <X className="h-4 w-4 mr-1" />
+              Limpar filtro
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Search */}
-      <Card className="mb-6">
-        <CardContent className="pt-4">
-          <div className="flex gap-2">
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nome, email ou ID do lead..."
-                value={searchInput}
-                onChange={(e) => setSearchInput(e.target.value)}
-                className="pl-10"
-              />
+      {!showPendingView && (
+        <Card className="mb-6">
+          <CardContent className="pt-4">
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  placeholder="Buscar por nome, email ou ID do lead..."
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
+                  className="pl-10"
+                />
+              </div>
+              <Button onClick={() => setPage(1)}>Buscar</Button>
             </div>
-            <Button onClick={() => setPage(1)}>Buscar</Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Filters */}
-      {showFilters && (
+      {showFilters && !showPendingView && (
         <Card className="mb-6">
           <CardContent className="pt-4">
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -209,7 +253,7 @@ function CadenceRunsListContent() {
                 </Select>
               </div>
 
-              {hasActiveFilters && (
+              {hasActiveFilters && !acaoPendente && (
                 <div className="flex items-end">
                   <Button
                     variant="ghost"
@@ -231,17 +275,22 @@ function CadenceRunsListContent() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">
-              Execuções
-              {data && (
+              {showPendingView ? 'Execuções com Ação Pendente' : 'Execuções'}
+              {!showPendingView && data && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
                   ({data.totalCount} encontradas)
+                </span>
+              )}
+              {showPendingView && pendingRuns && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({pendingRuns.length} encontradas)
                 </span>
               )}
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {(showPendingView ? isPendingLoading : isLoading) ? (
             <div className="flex items-center justify-center py-12">
               <Bot className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -249,9 +298,89 @@ function CadenceRunsListContent() {
             <div className="text-center py-12 text-destructive">
               Erro ao carregar execuções. Tente novamente.
             </div>
-          ) : !data?.data.length ? (
+          ) : showPendingView && (!pendingRuns || pendingRuns.length === 0) ? (
+            <div className="text-center py-12 text-muted-foreground">
+              Nenhuma execução com esta ação pendente.
+            </div>
+          ) : !showPendingView && !data?.data.length ? (
             <div className="text-center py-12 text-muted-foreground">
               Nenhuma execução encontrada.
+            </div>
+          ) : showPendingView ? (
+            // Tabela de runs com ação pendente
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Lead</TableHead>
+                    <TableHead>Empresa</TableHead>
+                    <TableHead>Cadência</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Intent</TableHead>
+                    <TableHead>Resumo</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingRuns?.map((run) => (
+                    <TableRow
+                      key={`${run.run_id}-${run.created_at}`}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/cadences/runs/${run.run_id}`)}
+                    >
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
+                            <User className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">
+                              {run.lead_nome || 'Lead sem nome'}
+                            </p>
+                            <p className="text-xs text-muted-foreground">
+                              {run.lead_email || run.lead_id}
+                            </p>
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={run.empresa === 'TOKENIZA' ? 'default' : 'secondary'}>
+                          {EMPRESA_LABELS[run.empresa]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <p className="text-sm font-medium">{run.cadence_nome}</p>
+                          <code className="text-xs text-muted-foreground">{run.cadence_codigo}</code>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(run.status as CadenceRunStatus)}>
+                          {CADENCE_RUN_STATUS_LABELS[run.status as CadenceRunStatus]}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{run.intent}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {run.intent_summary || '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/cadences/runs/${run.run_id}`);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <>

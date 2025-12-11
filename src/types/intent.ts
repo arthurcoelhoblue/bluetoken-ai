@@ -35,7 +35,8 @@ export type SdrAcaoTipo =
   | 'MARCAR_OPT_OUT'
   | 'NENHUMA'
   | 'ESCALAR_HUMANO'
-  | 'ENVIAR_RESPOSTA_AUTOMATICA';  // NOVO: Responder automaticamente
+  | 'ENVIAR_RESPOSTA_AUTOMATICA'
+  | 'HANDOFF_EMPRESA';  // Transferência entre empresas
 
 // Labels para exibição
 export const INTENT_LABELS: Record<LeadIntentTipo, string> = {
@@ -68,6 +69,7 @@ export const ACAO_LABELS: Record<SdrAcaoTipo, string> = {
   NENHUMA: 'Nenhuma Ação',
   ESCALAR_HUMANO: 'Escalar para Humano',
   ENVIAR_RESPOSTA_AUTOMATICA: 'Resposta Automática',
+  HANDOFF_EMPRESA: 'Transferir para outra Empresa',
 };
 
 // Interface da interpretação de mensagem (expandida 5G-B)
@@ -158,6 +160,7 @@ export function getAcaoColor(acao: SdrAcaoTipo): string {
     case 'MARCAR_OPT_OUT':
       return 'bg-destructive text-destructive-foreground';
     case 'ESCALAR_HUMANO':
+    case 'HANDOFF_EMPRESA':
       return 'bg-accent text-accent-foreground';
     default:
       return 'bg-muted text-muted-foreground';
@@ -225,6 +228,8 @@ export function getAcaoIcon(acao: SdrAcaoTipo): string {
       return '👤';
     case 'ENVIAR_RESPOSTA_AUTOMATICA':
       return '💬';
+    case 'HANDOFF_EMPRESA':
+      return '🔄';
     case 'NENHUMA':
       return '✅';
     default:
