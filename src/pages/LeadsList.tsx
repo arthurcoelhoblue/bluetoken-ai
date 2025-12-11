@@ -1,11 +1,12 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import {
   useLeadsWithClassification,
   LeadsClassificationFilters,
 } from '@/hooks/useLeadClassification';
+import { useLeadsWithPendingActions } from '@/hooks/useLeadsWithPendingActions';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -16,10 +17,12 @@ import {
   ICPS_TOKENIZA,
   ICPS_BLUE,
 } from '@/types/classification';
+import { ACAO_LABELS, type SdrAcaoTipo } from '@/types/intent';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import {
   Select,
   SelectContent,
@@ -36,6 +39,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import {
+  AlertTriangle,
   Bot,
   ChevronLeft,
   ChevronRight,
@@ -78,17 +82,28 @@ function PrioridadeBadge({ prioridade }: { prioridade: Prioridade }) {
 
 function LeadsListContent() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Ação pendente do dashboard
+  const acaoPendente = searchParams.get('acao_pendente') as SdrAcaoTipo | null;
   
   const [filters, setFilters] = useState<LeadsClassificationFilters>({});
   const [page, setPage] = useState(1);
   const [searchInput, setSearchInput] = useState('');
   const [showFilters, setShowFilters] = useState(false);
 
+  // Query normal de leads
   const { data, isLoading, error } = useLeadsWithClassification({
     filters,
     page,
     pageSize: 15,
   });
+
+  // Query de leads com ação pendente
+  const { 
+    data: pendingLeads, 
+    isLoading: isPendingLoading 
+  } = useLeadsWithPendingActions(acaoPendente);
 
   const handleSearch = () => {
     setFilters((prev) => ({ ...prev, searchTerm: searchInput }));
@@ -99,6 +114,14 @@ function LeadsListContent() {
     setFilters({});
     setSearchInput('');
     setPage(1);
+    // Limpar também o filtro de ação pendente
+    if (acaoPendente) {
+      setSearchParams({});
+    }
+  };
+
+  const handleClearActionFilter = () => {
+    setSearchParams({});
   };
 
   const hasActiveFilters =
@@ -106,9 +129,14 @@ function LeadsListContent() {
     filters.temperatura ||
     filters.icp ||
     filters.prioridade ||
-    filters.searchTerm;
+    filters.searchTerm ||
+    acaoPendente;
 
   const allIcps = [...ICPS_TOKENIZA, ...ICPS_BLUE];
+
+  // Se tem filtro de ação pendente, mostrar lista específica
+  const showPendingView = !!acaoPendente;
+  const acaoLabel = acaoPendente ? ACAO_LABELS[acaoPendente] || acaoPendente : '';
 
   return (
     <div className="container mx-auto px-4 py-6">
@@ -121,24 +149,43 @@ function LeadsListContent() {
           <div>
             <h1 className="font-bold text-lg">Leads</h1>
             <p className="text-xs text-muted-foreground">
-              Gestão e priorização
+              {showPendingView ? `Ação pendente: ${acaoLabel}` : 'Gestão e priorização'}
             </p>
           </div>
         </div>
-        <Button
-          variant="outline"
-          onClick={() => setShowFilters(!showFilters)}
-          className={hasActiveFilters ? 'border-primary' : ''}
-        >
-          <Filter className="h-4 w-4 mr-2" />
-          Filtros
-          {hasActiveFilters && (
-            <Badge variant="secondary" className="ml-2">
-              Ativos
-            </Badge>
-          )}
-        </Button>
+        {!showPendingView && (
+          <Button
+            variant="outline"
+            onClick={() => setShowFilters(!showFilters)}
+            className={hasActiveFilters ? 'border-primary' : ''}
+          >
+            <Filter className="h-4 w-4 mr-2" />
+            Filtros
+            {hasActiveFilters && (
+              <Badge variant="secondary" className="ml-2">
+                Ativos
+              </Badge>
+            )}
+          </Button>
+        )}
       </div>
+
+      {/* Banner de Ação Pendente */}
+      {showPendingView && (
+        <Alert className="mb-6 border-warning bg-warning/10">
+          <AlertTriangle className="h-4 w-4 text-warning" />
+          <AlertTitle>Filtro ativo: {acaoLabel}</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>
+              Mostrando {pendingLeads?.length || 0} leads com esta ação pendente.
+            </span>
+            <Button variant="outline" size="sm" onClick={handleClearActionFilter}>
+              <X className="h-4 w-4 mr-1" />
+              Limpar filtro
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
 
       {/* Search and Filters */}
       <Card className="mb-6">
@@ -288,17 +335,22 @@ function LeadsListContent() {
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg">
-              Leads
-              {data && (
+              {showPendingView ? 'Leads com Ação Pendente' : 'Leads'}
+              {!showPendingView && data && (
                 <span className="text-sm font-normal text-muted-foreground ml-2">
                   ({data.totalCount} encontrados)
+                </span>
+              )}
+              {showPendingView && pendingLeads && (
+                <span className="text-sm font-normal text-muted-foreground ml-2">
+                  ({pendingLeads.length} encontrados)
                 </span>
               )}
             </CardTitle>
           </div>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {(showPendingView ? isPendingLoading : isLoading) ? (
             <div className="flex items-center justify-center py-12">
               <Bot className="h-8 w-8 animate-spin text-primary" />
             </div>
@@ -306,9 +358,75 @@ function LeadsListContent() {
             <div className="text-center py-12 text-destructive">
               Erro ao carregar leads. Tente novamente.
             </div>
-          ) : !data?.data.length ? (
+          ) : showPendingView && (!pendingLeads || pendingLeads.length === 0) ? (
+            <div className="text-center py-12 text-muted-foreground">
+              Nenhum lead com esta ação pendente.
+            </div>
+          ) : !showPendingView && !data?.data.length ? (
             <div className="text-center py-12 text-muted-foreground">
               Nenhum lead encontrado com os filtros aplicados.
+            </div>
+          ) : showPendingView ? (
+            // Tabela de leads com ação pendente
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nome</TableHead>
+                    <TableHead>Contato</TableHead>
+                    <TableHead>Empresa</TableHead>
+                    <TableHead>Intent</TableHead>
+                    <TableHead>Resumo</TableHead>
+                    <TableHead className="text-right">Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingLeads?.map((lead) => (
+                    <TableRow
+                      key={`${lead.lead_id}-${lead.message_id}`}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => navigate(`/leads/${lead.lead_id}/${lead.empresa}`)}
+                    >
+                      <TableCell className="font-medium">
+                        {lead.nome || lead.primeiro_nome || 'Sem nome'}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          {lead.email && (
+                            <div className="text-muted-foreground">{lead.email}</div>
+                          )}
+                          {lead.telefone && (
+                            <div className="text-muted-foreground">{lead.telefone}</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={lead.empresa === 'TOKENIZA' ? 'default' : 'secondary'}>
+                          {lead.empresa}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline">{lead.intent}</Badge>
+                      </TableCell>
+                      <TableCell className="max-w-[200px] truncate">
+                        {lead.intent_summary || '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigate(`/leads/${lead.lead_id}/${lead.empresa}`);
+                          }}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
             </div>
           ) : (
             <>
