@@ -312,6 +312,104 @@ function formatBluePricingForPrompt(): string {
 }
 
 // ========================================
+// PATCH 6H: KNOWLEDGE BASE DE PRODUTOS
+// ========================================
+
+interface ProductKnowledgeSDR {
+  produto_id: string;
+  produto_nome: string;
+  descricao_curta: string | null;
+  sections: {
+    tipo: string;
+    titulo: string;
+    conteudo: string;
+  }[];
+}
+
+// Buscar conhecimento de produto
+async function fetchProductKnowledge(
+  supabase: SupabaseClient,
+  empresa: EmpresaTipo,
+  productName?: string
+): Promise<ProductKnowledgeSDR[]> {
+  try {
+    let query = supabase
+      .from('product_knowledge')
+      .select('id, produto_id, produto_nome, descricao_curta')
+      .eq('empresa', empresa)
+      .eq('ativo', true);
+    
+    if (productName) {
+      query = query.ilike('produto_nome', `%${productName}%`);
+    }
+    
+    const { data: products, error: productError } = await query.limit(5);
+    
+    if (productError || !products || products.length === 0) {
+      return [];
+    }
+    
+    const productIds = products.map(p => p.id);
+    const { data: sections, error: sectionError } = await supabase
+      .from('knowledge_sections')
+      .select('product_knowledge_id, tipo, titulo, conteudo')
+      .in('product_knowledge_id', productIds)
+      .order('ordem');
+    
+    if (sectionError) {
+      return products.map(p => ({ ...p, sections: [] }));
+    }
+    
+    return products.map(p => ({
+      produto_id: p.produto_id,
+      produto_nome: p.produto_nome,
+      descricao_curta: p.descricao_curta,
+      sections: (sections || [])
+        .filter(s => s.product_knowledge_id === p.id)
+        .map(s => ({ tipo: s.tipo, titulo: s.titulo, conteudo: s.conteudo })),
+    }));
+  } catch (err) {
+    console.error('[6H] Erro ao buscar conhecimento:', err);
+    return [];
+  }
+}
+
+// Formatar conhecimento de produto para prompt
+function formatProductKnowledgeForPrompt(products: ProductKnowledgeSDR[]): string {
+  if (products.length === 0) return '';
+  
+  let text = `\n## CONHECIMENTO DETALHADO DOS PRODUTOS\n`;
+  text += `Use estas informações para responder perguntas específicas.\n\n`;
+  
+  const tipoLabels: Record<string, string> = {
+    PITCH: '💡 Pitch', FAQ: '❓ FAQ', OBJECOES: '🛡️ Objeções',
+    RISCOS: '⚠️ Riscos', ESTRUTURA_JURIDICA: '⚖️ Jurídico', GERAL: '📋 Geral',
+  };
+  
+  for (const product of products) {
+    text += `### ${product.produto_nome}\n`;
+    if (product.descricao_curta) text += `${product.descricao_curta}\n\n`;
+    
+    for (const tipo of ['PITCH', 'FAQ', 'OBJECOES', 'RISCOS', 'ESTRUTURA_JURIDICA', 'GERAL']) {
+      const tipoSections = product.sections.filter(s => s.tipo === tipo);
+      if (tipoSections.length > 0) {
+        text += `\n#### ${tipoLabels[tipo] || tipo}\n`;
+        for (const section of tipoSections) {
+          text += `**${section.titulo}**\n${section.conteudo}\n\n`;
+        }
+      }
+    }
+  }
+  
+  text += `### REGRAS:\n`;
+  text += `✅ Use informações específicas quando o lead perguntar\n`;
+  text += `✅ Use objeções e respostas quando o lead levantar preocupações\n`;
+  text += `❌ NUNCA invente informações que não estão aqui\n`;
+  
+  return text;
+}
+
+// ========================================
 // TIPOS EXISTENTES
 // ========================================
 
@@ -1294,6 +1392,21 @@ async function interpretWithAI(
       console.error('[6G] Erro ao buscar ofertas Tokeniza:', err);
       userPrompt += `\n## OFERTAS TOKENIZA\nNão foi possível carregar ofertas no momento. Foque na qualificação.\n`;
     }
+  }
+  
+  // PATCH 6H: Adicionar conhecimento de produtos
+  try {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    
+    const productKnowledge = await fetchProductKnowledge(supabaseAdmin, empresa);
+    if (productKnowledge.length > 0) {
+      userPrompt += formatProductKnowledgeForPrompt(productKnowledge);
+      console.log('[6H] Conhecimento de produtos carregado:', productKnowledge.length);
+    }
+  } catch (err) {
+    console.error('[6H] Erro ao buscar conhecimento de produtos:', err);
   }
   
   // Contexto de classificação
