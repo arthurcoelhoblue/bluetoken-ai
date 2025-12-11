@@ -285,6 +285,44 @@ async function saveConversationState(
 }
 
 /**
+ * PATCH 6B: Atualiza perfil DISC na tabela pessoas (persistência global)
+ */
+async function updatePessoaDISC(
+  supabase: SupabaseClient,
+  pessoaId: string,
+  perfilDISC: PerfilDISC
+): Promise<boolean> {
+  // Só atualiza se não houver perfil DISC definido
+  const { data: pessoa } = await supabase
+    .from('pessoas')
+    .select('perfil_disc')
+    .eq('id', pessoaId)
+    .single();
+  
+  // Se já tem DISC definido manualmente, não sobrescreve
+  if (pessoa?.perfil_disc) {
+    console.log('[DISC] Pessoa já tem perfil DISC definido, mantendo:', pessoa.perfil_disc);
+    return false;
+  }
+  
+  const { error } = await supabase
+    .from('pessoas')
+    .update({ 
+      perfil_disc: perfilDISC,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', pessoaId);
+  
+  if (error) {
+    console.error('[DISC] Erro ao atualizar perfil DISC:', error);
+    return false;
+  }
+  
+  console.log('[DISC] Perfil DISC atualizado:', { pessoaId, perfilDISC });
+  return true;
+}
+
+/**
  * Carrega contexto da pessoa global (multi-empresa)
  */
 async function loadPessoaContext(
@@ -483,6 +521,53 @@ Se o perfil DISC da pessoa for informado, adapte seu tom:
 | I | Influente | Entusiástico, amigável, conte histórias de sucesso. |
 | S | Estável | Paciente, acolhedor, gere confiança gradualmente. |
 | C | Cauteloso | Dados, estrutura, documentação. Seja preciso. |
+
+## DETECÇÃO AUTOMÁTICA DE PERFIL DISC (IMPORTANTE!)
+
+Analise TODAS as mensagens do lead para detectar o perfil DISC. Retorne "disc_estimado" com base nos seguintes indicadores:
+
+### Indicadores de DOMINANTE (D):
+- Mensagens curtas, diretas, sem rodeios
+- Usa imperativos: "Quero", "Preciso", "Faça"
+- Foco em resultados e números
+- Impaciente, quer respostas rápidas
+- Pode parecer agressivo ou assertivo
+- Pergunta "quanto custa?" antes de entender o produto
+- Exemplos: "Quanto?", "Me passa o link", "Qual o retorno?", "Direto ao ponto"
+
+### Indicadores de INFLUENTE (I):
+- Mensagens longas e expressivas
+- Usa emojis, exclamações, linguagem entusiasta
+- Faz perguntas sociais: "Como vai?", "Tudo bem?"
+- Conta histórias pessoais
+- Menciona amigos, família, experiências
+- Gosta de conversar antes de decidir
+- Exemplos: "Que legal!!!", "Me conta mais 😊", "Um amigo me indicou", "Nossa, adorei!"
+
+### Indicadores de ESTÁVEL (S):
+- Tom calmo e educado
+- Evita conflito, usa "por favor", "obrigado"
+- Faz muitas perguntas antes de decidir
+- Demonstra preocupação com segurança
+- Mensagens ponderadas, não precipitadas
+- Menciona família ou estabilidade
+- Exemplos: "Preciso pensar melhor", "Posso falar com minha esposa?", "Com calma", "Não tenho pressa"
+
+### Indicadores de CAUTELOSO (C):
+- Perguntas muito específicas e técnicas
+- Pede documentação, contratos, detalhes
+- Questiona números e dados
+- Cético, quer provas
+- Mensagens bem estruturadas
+- Analisa antes de agir
+- Exemplos: "Qual a taxa de administração?", "Onde vejo o contrato?", "Baseado em quê?", "Pode me enviar os dados?"
+
+### REGRAS DE DETECÇÃO:
+1. Se não houver indicadores claros (ex: só "oi"), NÃO retorne disc_estimado
+2. Analise o HISTÓRICO completo, não apenas a mensagem atual
+3. Quanto mais mensagens, maior a confiança na detecção
+4. Priorize padrões consistentes sobre mensagens isoladas
+5. Em caso de dúvida entre dois perfis, escolha o mais evidente ou não retorne
 
 ## TEMPERATURAS (Estado atual do lead)
 - FRIO: Baixo engajamento, nutrição necessária
@@ -1605,6 +1690,11 @@ serve(async (req) => {
         'WHATSAPP',
         stateUpdates
       );
+      
+      // PATCH 6B: Salvar DISC na tabela pessoas (persistência global)
+      if (aiResponse.disc_estimado && pessoaContext?.pessoa.id) {
+        await updatePessoaDISC(supabase, pessoaContext.pessoa.id, aiResponse.disc_estimado);
+      }
     }
 
     // 8. Sincronizar com Pipedrive (background task)

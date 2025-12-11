@@ -200,6 +200,23 @@ sequenceDiagram
 | S (Estável) | Paciente, acolhedor, seguro |
 | C (Cauteloso) | Dados, estrutura, detalhes |
 
+### Detecção Automática de DISC (PATCH-6B)
+
+A IA detecta automaticamente o perfil DISC baseado em indicadores nas mensagens:
+
+| Perfil | Indicadores |
+|--------|-------------|
+| **D** | Mensagens curtas, imperativos ("Quero", "Quanto?"), foco em resultados |
+| **I** | Emojis, exclamações, histórias pessoais, entusiasmo |
+| **S** | Tom calmo, "por favor/obrigado", preocupação com segurança |
+| **C** | Perguntas técnicas, pede documentos/dados, analítico |
+
+**Regras:**
+- Não detecta se não houver indicadores claros (ex: só "oi")
+- Analisa histórico completo, não apenas mensagem atual
+- Salva em `lead_conversation_state.perfil_disc` E `pessoas.perfil_disc`
+- Não sobrescreve perfil já definido manualmente
+
 ### Frameworks por Empresa
 
 - **Tokeniza**: GPCT (Goals, Plans, Challenges, Timeline)
@@ -219,7 +236,7 @@ sequenceDiagram
 
 ### Modificados
 - `src/pages/LeadDetail.tsx` - integração dos novos cards
-- `supabase/functions/sdr-ia-interpret/index.ts` - lógica conversacional
+- `supabase/functions/sdr-ia-interpret/index.ts` - lógica conversacional + detecção DISC
 
 ### Migrations
 - `20250611_create_pessoas_table.sql`
@@ -236,12 +253,13 @@ sequenceDiagram
 4. ✅ Transição de estados do funil
 5. ✅ Resposta automática contextualizada
 6. ✅ UI exibindo dados da pessoa e estado da conversa
+7. ✅ Detecção automática de perfil DISC via IA
 
 ---
 
 ## Próximos Passos (Futuro)
 
-1. **PATCH-6B**: Detecção automática de perfil DISC via IA
+1. ~~**PATCH-6B**: Detecção automática de perfil DISC via IA~~ ✅ IMPLEMENTADO
 2. **PATCH-6C**: Histórico de conversas entre empresas
 3. **PATCH-6D**: Dashboard de performance do SDR IA por estado
 4. **PATCH-6E**: A/B testing de mensagens por perfil DISC
