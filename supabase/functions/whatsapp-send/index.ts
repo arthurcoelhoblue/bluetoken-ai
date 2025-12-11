@@ -147,13 +147,16 @@ serve(async (req) => {
     const messageId = messageRecord.id;
     console.log(`[whatsapp-send] Mensagem registrada: ${messageId}`);
 
-    // Envia via API WhatsApp
+    // Log interno para rastreabilidade (não vai pro cliente)
+    if (TEST_MODE) {
+      console.log(`[whatsapp-send] 🧪 MODO TESTE ATIVO - Lead original: ${leadId}, telefone real: ${phoneClean}`);
+    }
+
+    // Envia via API WhatsApp - mensagem limpa sem tag de teste
     const payloadToSend = {
       connectionName: CONNECTION_NAME,
       phone: phoneToSend,
-      message: TEST_MODE 
-        ? `[TESTE - Lead: ${leadId}]\n\n${mensagem}` 
-        : mensagem,
+      message: mensagem,
     };
     
     console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
