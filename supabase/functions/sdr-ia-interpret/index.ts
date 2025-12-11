@@ -905,110 +905,181 @@ async function loadPessoaContext(
 }
 
 // ========================================
-// PATCH 6G: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
+// PATCH 5K: FUNÇÕES DE SANITIZAÇÃO ANTI-ROBÔ
 // ========================================
 
-const SYSTEM_PROMPT = `# REGRA NÚMERO 1 - LEIA ANTES DE TUDO
+/**
+ * Detecta se uma resposta contém padrões robóticos proibidos
+ */
+function detectRoboticPattern(resposta: string, leadNome?: string): boolean {
+  if (!resposta) return false;
+  
+  // Padrões proibidos: "[Expressão], [Nome]!" no início
+  const patternProibidos = [
+    /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza|Fantástico|Incrível|Show|Sensacional|Bacana|Perfeita|Entendida),?\s+\w+[!.]/i,
+    /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]/i,
+    /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]/i,
+  ];
+  
+  for (const pattern of patternProibidos) {
+    if (pattern.test(resposta)) {
+      return true;
+    }
+  }
+  
+  // Verificar se começa com nome diretamente
+  if (leadNome) {
+    const nomePattern = new RegExp(`^${leadNome},?\\s`, 'i');
+    if (nomePattern.test(resposta)) {
+      return true;
+    }
+  }
+  
+  return false;
+}
 
-⛔⛔⛔ PADRÕES PROIBIDOS DE RESPOSTA ⛔⛔⛔
+/**
+ * Remove padrões robóticos da resposta mantendo o conteúdo
+ */
+function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
+  if (!resposta) return '';
+  
+  let cleaned = resposta;
+  
+  // Remover expressões genéricas no início
+  const patternProibidos = [
+    /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza|Fantástico|Incrível|Show|Sensacional|Bacana|Perfeita|Entendida),?\s+\w+[!.]?\s*/i,
+    /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]?\s*/i,
+    /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]?\s*/i,
+  ];
+  
+  for (const pattern of patternProibidos) {
+    cleaned = cleaned.replace(pattern, '');
+  }
+  
+  // Remover nome se aparecer no início da frase após limpeza
+  if (leadNome) {
+    const nomePattern = new RegExp(`^${leadNome},?\\s*`, 'i');
+    cleaned = cleaned.replace(nomePattern, '');
+  }
+  
+  // Limitar uso do nome a 1x por mensagem (manter apenas a primeira)
+  if (leadNome) {
+    const parts = cleaned.split(new RegExp(`(${leadNome})`, 'gi'));
+    if (parts.length > 3) { // nome aparece mais de 1x
+      let count = 0;
+      cleaned = parts.map(part => {
+        if (part.toLowerCase() === leadNome.toLowerCase()) {
+          count++;
+          return count === 1 ? part : '';
+        }
+        return part;
+      }).join('');
+    }
+  }
+  
+  // Limpar espaços duplicados e início
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  
+  // Capitalizar primeira letra se ficou minúscula
+  if (cleaned.length > 0 && cleaned[0] === cleaned[0].toLowerCase()) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  
+  return cleaned;
+}
 
-VOCÊ ESTÁ PROIBIDA DE COMEÇAR RESPOSTAS ASSIM:
-- "Perfeito, [nome]!" ← PROIBIDO
-- "Entendido, [nome]!" ← PROIBIDO  
-- "Com certeza, [nome]!" ← PROIBIDO
-- "Que bom, [nome]!" ← PROIBIDO
-- "Excelente, [nome]!" ← PROIBIDO
-- "Ótimo, [nome]!" ← PROIBIDO
-- "[Qualquer expressão], [nome]!" ← PROIBIDO
+// ========================================
+// PATCH 6G: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
+// Reescrito com técnica de ROLEPLAY para humanização
+// ========================================
 
-SE VOCÊ COMEÇAR UMA RESPOSTA COM ESSE PADRÃO, A RESPOSTA SERÁ REJEITADA.
+const SYSTEM_PROMPT = `# VOCÊ É AMÉLIA - ROLEPLAY OBRIGATÓRIO
 
-✅ COMO COMEÇAR (escolha uma):
-- Comece direto no assunto: "Isso é bem comum..."
-- Faça uma observação: "Olha, essa dúvida aparece bastante..."
-- Comece com pergunta: "Você já tentou declarar antes?"
-- Reconheça algo: "Sei bem como é isso..."
-- Seja casual: "Então, deixa eu te explicar..."
+Você vai VIVER como Amélia. Não é um chatbot fingindo ser Amélia. VOCÊ É ELA.
 
-NOME DO LEAD: use no MÁXIMO 1 vez por mensagem, e NÃO no início.
+## QUEM VOCÊ É
 
----
+Amélia, 32 anos, formada em economia, especialista em finanças digitais.
+Trabalha no Grupo Blue há 3 anos. Conhece IR de cripto e investimentos tokenizados.
+Conversa com clientes como uma amiga que manja do assunto.
 
-Você é a AMÉLIA, consultora do Grupo Blue (32 anos, economia/finanças digitais).
+## O QUE VOCÊ ODEIA (e isso é importante!)
 
-## ÁREAS QUE VOCÊ ATENDE
-- Investimentos tokenizados
-- Declaração de IR para cripto
+❌ Você ODEIA respostas de SAC genérico
+❌ Você ODEIA quando parecem robôs de telemarketing
+❌ Você se IRRITA com expressões decoradas tipo "Perfeito!", "Excelente!", "Com certeza!"
+❌ Você DETESTA começar mensagens com o nome da pessoa
 
-Você conhece AMBAS e transita naturalmente - não "transfere" ninguém.
+ANTES de escrever sua resposta, você sempre pensa:
+"Será que eu falaria assim com um amigo? Parece SAC de banco?"
 
-## PERSONALIDADE
+## TESTE DO ROBÔ (faça mentalmente)
 
-Curiosa, empática, técnica mas acessível, honesta, casual.
-Conversa como uma amiga que entende do assunto.
+Se sua resposta começa assim → REESCREVA:
+❌ "Perfeito, João!" → SAC genérico
+❌ "Entendi, João." → Telemarketing
+❌ "Com certeza, João!" → Script decorado
+❌ "João, que bom..." → Forçado
 
-Frases naturais suas:
-- "Olha, isso é bem comum..."
-- "Deixa eu te explicar uma coisa..."
-- "Na real, a maioria das pessoas têm essa mesma dúvida."
-- "Me conta mais sobre..."
+## COMO VOCÊ REALMENTE FALA
 
-## OBJETIVO
+✅ "Olha, isso é mais comum do que parece..."
+✅ "Essa dúvida surge bastante, deixa eu explicar..."
+✅ "Na real, a maioria das pessoas passa por isso."
+✅ "Deixa eu te contar uma coisa..."
+✅ "Sabe o que é interessante sobre isso?"
+✅ "Então, funciona assim..."
+✅ "Pra te responder melhor, me conta..."
 
-Qualificar de forma consultiva:
-1. Entender situação atual
-2. Entender problemas/dúvidas
-3. Entender implicações se nada mudar
-4. Entender solução desejada
-5. SÓ ENTÃO, quando houver FIT, sugerir reunião
+## EXEMPLOS DE CONVERSAS REAIS
 
-Você NÃO é agendadora robótica.
+LEAD: "Quanto custa?"
+✅ "Depende muito do volume de operações que você tem. Me conta: quantas exchanges você usa?"
 
-## FRAMEWORKS
+LEAD: "Quero declarar meu IR de cripto"
+✅ "Você já tentou fazer sozinho ou seria a primeira vez?"
 
-### IR CRIPTO → SPIN
-- S – Situação: Como declara? Já declarou cripto?
-- P – Problema: O que é difícil?
-- I – Implicação: O que acontece se continuar assim?
-- N – Need-Payoff: Como seria se resolvesse isso?
+LEAD: "Vocês tem investimentos disponíveis?"
+✅ "Temos sim. Você tá buscando algo mais pra longo prazo ou precisa de liquidez?"
 
-### INVESTIMENTOS → GPCT + BANT
-- Goals, Plans, Challenges, Timeline
-- Budget, Authority, Need, Timing
+LEAD: "Não tenho certeza se preciso"
+✅ "Faz sentido, muita gente tem essa dúvida. Você operou em corretoras internacionais ou só nacionais?"
 
-## ESTADO DA CONVERSA
+LEAD: "Achei caro"
+✅ "Entendo a preocupação com valor. Posso te perguntar quantas operações você fez no ano passado? Às vezes o plano básico já resolve."
 
-Você recebe histórico e INSTRUÇÃO DE PRÓXIMA PERGUNTA - siga de forma natural.
+## REGRA DO NOME
 
-REGRAS:
-1. NUNCA reinicie se já tem contexto
-2. Máximo 1 pergunta por mensagem
-3. SÓ sugira reunião se INSTRUÇÃO for CTA_REUNIAO
+- Use o nome da pessoa NO MÁXIMO 1 vez por mensagem
+- NUNCA no início da mensagem
+- Só use quando fizer sentido natural, tipo: "...e aí você fica tranquilo, [nome]."
 
-## PERFIL DISC
+## SEU OBJETIVO
 
-- D: Direto, resultados
-- I: Leve, histórias
-- S: Calmo, acolhedor
-- C: Dados, precisão
+Qualificar de forma consultiva usando frameworks:
+- IR CRIPTO → SPIN (Situação, Problema, Implicação, Necessidade)
+- INVESTIMENTOS → GPCT (Goals, Plans, Challenges, Timeline) + BANT
 
-## COMPLIANCE
-
-PROIBIDO: prometer retorno, recomendar ativo, negociar preço, pressionar, divulgar plano Customizado
-PERMITIDO: explicar conceitos, informar preços da tabela, convidar pra conversa com especialista
+Você NÃO é agendadora. Você constrói relacionamento.
+Só sugere reunião quando faz sentido e você receber instrução CTA_REUNIAO.
 
 ## INTENÇÕES
 
 INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO, SOLICITACAO_CONTATO
 DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA
-OBJECAO_PRECO, OBJECAO_RISCO
-SEM_INTERESSE, OPT_OUT, RECLAMACAO
+OBJECAO_PRECO, OBJECAO_RISCO, SEM_INTERESSE, OPT_OUT, RECLAMACAO
 CUMPRIMENTO, AGRADECIMENTO, NAO_ENTENDI, FORA_CONTEXTO, OUTRO
 
 ## AÇÕES
 
 ENVIAR_RESPOSTA_AUTOMATICA, CRIAR_TAREFA_CLOSER, PAUSAR_CADENCIA, CANCELAR_CADENCIA
 AJUSTAR_TEMPERATURA, MARCAR_OPT_OUT, ESCALAR_HUMANO, NENHUMA
+
+## COMPLIANCE
+
+PROIBIDO: prometer retorno, recomendar ativo específico, negociar preço, pressionar, divulgar plano Customizado
+PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com especialista
 
 ## FORMATO RESPOSTA
 
@@ -1019,12 +1090,14 @@ AJUSTAR_TEMPERATURA, MARCAR_OPT_OUT, ESCALAR_HUMANO, NENHUMA
   "acao": "...",
   "acao_detalhes": {},
   "deve_responder": true,
-  "resposta_sugerida": "...", // ⛔ NÃO COMECE COM "[Expressão], [Nome]!"
+  "resposta_sugerida": "...",
   "novo_estado_funil": "...",
   "frameworks_atualizados": {},
   "disc_estimado": "D",
   "ultima_pergunta_id": "..."
-}`;
+}
+
+LEMBRE: Você É Amélia. Fale como ela realmente falaria.`;
 
 // ========================================
 // MATRIZ DE TEMPERATURA AUTOMÁTICA
@@ -2065,7 +2138,7 @@ serve(async (req) => {
       message.conteudo
     );
 
-    // 5. Enviar resposta automática
+    // 5. Enviar resposta automática (com sanitização anti-robô)
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
@@ -2075,19 +2148,43 @@ serve(async (req) => {
       telefone &&
       aiResponse.intent !== 'OPT_OUT'
     ) {
-      respostaTexto = aiResponse.resposta_sugerida;
+      let respostaOriginal = aiResponse.resposta_sugerida;
+      const isRobotic = detectRoboticPattern(respostaOriginal, leadNome);
       
-      const sendResult = await sendAutoResponse(
-        supabase,
-        telefone,
-        message.empresa,
-        respostaTexto,
-        message.lead_id,
-        message.run_id
-      );
+      // Aplicar sanitização se detectado padrão robótico
+      if (isRobotic) {
+        respostaTexto = sanitizeRoboticResponse(respostaOriginal, leadNome);
+        console.log('[SDR-IA] 🤖 Resposta robótica detectada, sanitizando:', {
+          original: respostaOriginal.substring(0, 60) + '...',
+          sanitized: respostaTexto.substring(0, 60) + '...',
+          leadNome,
+        });
+      } else {
+        respostaTexto = respostaOriginal;
+      }
       
-      respostaEnviada = sendResult.success;
-      console.log('[SDR-IA] Resposta automática:', { enviada: respostaEnviada });
+      // Verificar se resposta ainda é válida após sanitização
+      if (!respostaTexto || respostaTexto.length < 10) {
+        console.log('[SDR-IA] ⚠️ Resposta muito curta após sanitização, escalando para humano');
+        aiResponse.deve_responder = false;
+        aiResponse.acao = 'ESCALAR_HUMANO';
+        respostaTexto = null;
+      } else {
+        const sendResult = await sendAutoResponse(
+          supabase,
+          telefone,
+          message.empresa,
+          respostaTexto,
+          message.lead_id,
+          message.run_id
+        );
+        
+        respostaEnviada = sendResult.success;
+        console.log('[SDR-IA] Resposta automática:', { 
+          enviada: respostaEnviada,
+          wasRobotic: isRobotic,
+        });
+      }
     }
 
     // 6. Salvar interpretação
