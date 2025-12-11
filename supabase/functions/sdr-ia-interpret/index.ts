@@ -1529,12 +1529,12 @@ serve(async (req) => {
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
+    // CORREÇÃO: Enviar resposta quando deve_responder=true, independente da ação CRM
     if (
       aiResponse.deve_responder &&
       aiResponse.resposta_sugerida &&
       telefone &&
-      aiResponse.intent !== 'OPT_OUT' && // Não responde a opt-out
-      (aiResponse.acao === 'ENVIAR_RESPOSTA_AUTOMATICA' || aiResponse.acao === 'CRIAR_TAREFA_CLOSER')
+      aiResponse.intent !== 'OPT_OUT' // Não responde a opt-out
     ) {
       respostaTexto = aiResponse.resposta_sugerida;
       
