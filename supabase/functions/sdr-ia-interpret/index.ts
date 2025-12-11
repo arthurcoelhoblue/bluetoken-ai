@@ -1847,39 +1847,55 @@ async function interpretWithAI(
     estadoFunil: conversationState?.estado_funil,
   });
 
-  const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+  // PATCH: Migração para Claude Opus 4 via API Anthropic
+  const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+  if (!ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY não configurada');
+  }
+
+  console.log('[IA] Usando Claude Opus 4 via Anthropic API');
+
+  const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     headers: {
-      'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-      'Content-Type': 'application/json',
+      'x-api-key': ANTHROPIC_API_KEY,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
     },
     body: JSON.stringify({
-      model: 'google/gemini-2.5-flash',
+      model: 'claude-opus-4-1-20250805',
+      max_tokens: 1500,
+      temperature: 0.3,
+      system: SYSTEM_PROMPT,
       messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ],
-      temperature: 0.3,
-      max_tokens: 1500,
     }),
   });
 
   if (!response.ok) {
     const errText = await response.text();
-    console.error('[IA] Erro na API:', response.status, errText);
-    throw new Error(`Erro na API de IA: ${response.status}`);
+    console.error('[IA] Erro na API Anthropic:', response.status, errText);
+    throw new Error(`Erro na API Anthropic: ${response.status}`);
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content;
-  const tokensUsados = data.usage?.total_tokens || 0;
+  const content = data.content?.[0]?.text;
+  const tokensUsados = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
   const tempoMs = Date.now() - startTime;
 
   if (!content) {
     throw new Error('Resposta vazia da IA');
   }
 
-  console.log('[IA] Resposta recebida:', { tokensUsados, tempoMs, content: content.substring(0, 300) });
+  console.log('[IA] Resposta Claude Opus 4:', { 
+    tokensInput: data.usage?.input_tokens,
+    tokensOutput: data.usage?.output_tokens,
+    tokensTotal: tokensUsados, 
+    tempoMs, 
+    stopReason: data.stop_reason,
+    content: content.substring(0, 300) 
+  });
 
   // Parse do JSON
   let parsed: AIResponse;
