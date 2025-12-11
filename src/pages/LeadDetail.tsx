@@ -6,6 +6,8 @@ import { useLeadDetail } from '@/hooks/useLeadDetail';
 import { useLeadMessages } from '@/hooks/useLeadMessages';
 import { useLeadIntents } from '@/hooks/useLeadIntents';
 import { useLeadContactIssues } from '@/hooks/useLeadContactIssues';
+import { usePessoaContext } from '@/hooks/usePessoaContext';
+import { useConversationState } from '@/hooks/useConversationState';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -19,6 +21,8 @@ import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { MessageHistory } from '@/components/messages/MessageHistory';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
+import { PessoaCard } from '@/components/pessoa/PessoaCard';
+import { ConversationStateCard } from '@/components/conversation/ConversationStateCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -78,6 +82,19 @@ function LeadDetailContent() {
 
   // PATCH 5H-PLUS: Issues de contato
   const { data: contactIssues = [], isLoading: issuesLoading } = useLeadContactIssues({
+    leadId: leadId || '',
+    empresa: empresa as 'TOKENIZA' | 'BLUE',
+    enabled: !!leadId && !!empresa,
+  });
+
+  // PATCH 6: Pessoa Global e Estado de Conversa
+  const { data: pessoaContext, isLoading: pessoaLoading } = usePessoaContext({
+    leadId: leadId || '',
+    empresa: empresa as 'TOKENIZA' | 'BLUE',
+    enabled: !!leadId && !!empresa,
+  });
+
+  const { data: conversationState, isLoading: conversationLoading } = useConversationState({
     leadId: leadId || '',
     empresa: empresa as 'TOKENIZA' | 'BLUE',
     enabled: !!leadId && !!empresa,
@@ -249,6 +266,13 @@ function LeadDetailContent() {
               )}
             </CardContent>
           </Card>
+
+          {/* PATCH 6: Pessoa Global */}
+          <PessoaCard
+            pessoa={pessoaContext?.pessoa || null}
+            relacionamentos={pessoaContext?.relacionamentos || []}
+            isLoading={pessoaLoading}
+          />
         </div>
 
         {/* Main Content */}
@@ -311,6 +335,12 @@ function LeadDetailContent() {
             showCadenceName
             maxHeight="350px"
             emptyMessage="Nenhuma mensagem enviada para este lead."
+          />
+
+          {/* PATCH 6: Estado da Conversa */}
+          <ConversationStateCard
+            state={conversationState || null}
+            isLoading={conversationLoading}
           />
 
           {/* Intent History - PATCH 5G */}
