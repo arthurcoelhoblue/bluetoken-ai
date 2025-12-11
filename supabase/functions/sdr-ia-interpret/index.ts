@@ -54,7 +54,8 @@ type SdrAcaoTipo =
   | 'MARCAR_OPT_OUT'
   | 'NENHUMA'
   | 'ESCALAR_HUMANO'
-  | 'ENVIAR_RESPOSTA_AUTOMATICA';
+  | 'ENVIAR_RESPOSTA_AUTOMATICA'
+  | 'HANDOFF_EMPRESA';
 
 // ========================================
 // PATCH 6: TIPOS DE ESTADO DE CONVERSA
@@ -724,7 +725,6 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 ❌ NUNCA negociar preços ou oferecer descontos
 ❌ NUNCA dar conselho de investimento personalizado
 ❌ NUNCA pressionar ou usar urgência artificial
-❌ NUNCA fazer cross-sell explícito entre empresas do grupo
 
 ### PERMITIDO:
 ✅ Explicar conceitos gerais sobre tokenização/cripto
@@ -733,6 +733,18 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 ✅ Tirar dúvidas procedimentais
 ✅ Agradecer e ser cordial
 ✅ Mencionar que pessoa já é cliente de outra empresa do grupo (para confiança)
+✅ **FAZER HANDOFF para outra empresa** quando o lead demonstrar interesse genuíno
+
+## HANDOFF INTERNO (Ana ↔ Pedro)
+
+Quando o lead, durante conversa com você, demonstrar interesse GENUÍNO pela outra empresa:
+- Se você é Pedro (BLUE) e o lead quer saber sobre investimentos tokenizados → HANDOFF para Ana (TOKENIZA)
+- Se você é Ana (TOKENIZA) e o lead quer declarar IR cripto → HANDOFF para Pedro (BLUE)
+
+**COMO FAZER HANDOFF:**
+1. Use a ação "HANDOFF_EMPRESA" com acao_detalhes: { "empresa_destino": "TOKENIZA" ou "BLUE" }
+2. Na resposta, avise o lead: "Vou transferir você para a [Ana/Pedro], que cuida de [área]. A partir da próxima mensagem, você falará com [ela/ele]!"
+3. NÃO tente responder sobre a outra empresa - faça o handoff imediatamente
 
 ## INTENÇÕES POSSÍVEIS
 
@@ -751,6 +763,7 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 - AJUSTAR_TEMPERATURA: Alterar temperatura do lead
 - MARCAR_OPT_OUT: Registrar que lead não quer mais contato
 - ESCALAR_HUMANO: Situação complexa requer humano
+- HANDOFF_EMPRESA: Transferir lead para outra empresa do grupo (Ana ↔ Pedro)
 - NENHUMA: Nenhuma ação necessária
 
 ## FORMATO DA RESPOSTA
@@ -1459,6 +1472,77 @@ async function applyAction(
               return true;
             } else {
               console.error('[Ação] Erro ao ajustar temperatura:', upsertError);
+            }
+          }
+        }
+        break;
+
+      case 'HANDOFF_EMPRESA':
+        // Transferência interna entre Ana (TOKENIZA) ↔ Pedro (BLUE)
+        if (leadId && detalhes?.empresa_destino) {
+          const empresaDestino = detalhes.empresa_destino as EmpresaTipo;
+          const validEmpresas: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
+          
+          if (validEmpresas.includes(empresaDestino) && empresaDestino !== empresa) {
+            // Buscar o telefone do lead atual para encontrar o lead na outra empresa
+            const { data: leadAtual } = await supabase
+              .from('lead_contacts')
+              .select('telefone_e164, nome, primeiro_nome')
+              .eq('lead_id', leadId)
+              .maybeSingle();
+            
+            if (leadAtual?.telefone_e164) {
+              // Verificar se existe lead na empresa destino com mesmo telefone
+              const { data: leadDestino } = await supabase
+                .from('lead_contacts')
+                .select('lead_id')
+                .eq('telefone_e164', leadAtual.telefone_e164)
+                .eq('empresa', empresaDestino)
+                .maybeSingle();
+              
+              // Marcar handoff pendente no conversation_state da empresa ATUAL
+              // Isso será lido pelo whatsapp-inbound na próxima mensagem
+              const { error: handoffError } = await supabase
+                .from('lead_conversation_state')
+                .upsert({
+                  lead_id: leadId,
+                  empresa,
+                  canal: 'WHATSAPP',
+                  empresa_proxima_msg: empresaDestino,
+                  updated_at: new Date().toISOString(),
+                }, {
+                  onConflict: 'lead_id,empresa,canal',
+                });
+              
+              if (!handoffError) {
+                console.log('[Ação] HANDOFF marcado:', { 
+                  de: empresa, 
+                  para: empresaDestino, 
+                  leadAtual: leadId,
+                  leadDestino: leadDestino?.lead_id || 'será criado',
+                  telefone: leadAtual.telefone_e164 
+                });
+                
+                if (runId) {
+                  await supabase.from('lead_cadence_events').insert({
+                    lead_cadence_run_id: runId,
+                    step_ordem: 0,
+                    template_codigo: 'SDR_IA_HANDOFF',
+                    tipo_evento: 'RESPOSTA_DETECTADA',
+                    detalhes: { 
+                      acao, 
+                      empresa_origem: empresa,
+                      empresa_destino: empresaDestino,
+                      lead_destino: leadDestino?.lead_id,
+                      motivo: detalhes.motivo || 'Lead solicitou falar sobre outra empresa do grupo'
+                    },
+                  });
+                }
+                
+                return true;
+              } else {
+                console.error('[Ação] Erro ao marcar handoff:', handoffError);
+              }
             }
           }
         }

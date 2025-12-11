@@ -131,67 +131,163 @@ function generatePhoneVariations(phone: string): string[] {
 }
 
 /**
+ * Verifica se há handoff pendente para este telefone
+ * Retorna a empresa de destino se houver handoff, null caso contrário
+ */
+async function checkPendingHandoff(
+  supabase: SupabaseClient,
+  phoneE164: string
+): Promise<{ empresaDestino: EmpresaTipo; leadIdOrigem: string } | null> {
+  // Buscar todos os leads com este telefone
+  const { data: leads } = await supabase
+    .from('lead_contacts')
+    .select('lead_id, empresa')
+    .eq('telefone_e164', phoneE164);
+  
+  if (!leads || leads.length === 0) return null;
+  
+  // Para cada lead, verificar se há handoff pendente
+  for (const lead of leads) {
+    const { data: state } = await supabase
+      .from('lead_conversation_state')
+      .select('empresa_proxima_msg')
+      .eq('lead_id', lead.lead_id)
+      .eq('empresa', lead.empresa)
+      .not('empresa_proxima_msg', 'is', null)
+      .maybeSingle();
+    
+    if (state?.empresa_proxima_msg) {
+      console.log('[Handoff] Handoff pendente encontrado:', {
+        de: lead.empresa,
+        para: state.empresa_proxima_msg,
+        leadOrigem: lead.lead_id
+      });
+      return {
+        empresaDestino: state.empresa_proxima_msg as EmpresaTipo,
+        leadIdOrigem: lead.lead_id
+      };
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Limpa o flag de handoff após processamento
+ */
+async function clearHandoffFlag(
+  supabase: SupabaseClient,
+  leadId: string,
+  empresa: EmpresaTipo
+): Promise<void> {
+  await supabase
+    .from('lead_conversation_state')
+    .update({ empresa_proxima_msg: null, updated_at: new Date().toISOString() })
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa);
+  
+  console.log('[Handoff] Flag limpo para:', { leadId, empresa });
+}
+
+/**
  * Busca lead pelo telefone normalizado
- * Tenta múltiplas variações para lidar com nono dígito
+ * Agora considera handoffs pendentes para rotear corretamente
  */
 async function findLeadByPhone(
   supabase: SupabaseClient,
   phoneNormalized: string
-): Promise<LeadContact | null> {
+): Promise<{ lead: LeadContact | null; handoffInfo?: { leadIdOrigem: string; empresaOrigem: EmpresaTipo } }> {
   console.log('[Lead] Buscando por telefone:', phoneNormalized);
   
-  // 1. Busca por telefone_e164 (mais preciso - PATCH 5H-PLUS)
   const e164 = phoneNormalized.startsWith('+') 
     ? phoneNormalized 
     : `+${phoneNormalized}`;
+  
+  // 1. Verificar se há handoff pendente
+  const handoff = await checkPendingHandoff(supabase, e164);
+  
+  if (handoff) {
+    // Buscar o lead na empresa DESTINO do handoff
+    const { data: leadDestino } = await supabase
+      .from('lead_contacts')
+      .select('*')
+      .eq('telefone_e164', e164)
+      .eq('empresa', handoff.empresaDestino)
+      .maybeSingle();
     
+    if (leadDestino) {
+      console.log('[Lead] Handoff: roteando para', handoff.empresaDestino, '->', (leadDestino as LeadContact).lead_id);
+      
+      // Buscar empresa de origem para limpar o flag depois
+      const { data: leadOrigem } = await supabase
+        .from('lead_contacts')
+        .select('empresa')
+        .eq('lead_id', handoff.leadIdOrigem)
+        .maybeSingle();
+      
+      return { 
+        lead: leadDestino as LeadContact,
+        handoffInfo: {
+          leadIdOrigem: handoff.leadIdOrigem,
+          empresaOrigem: leadOrigem?.empresa as EmpresaTipo
+        }
+      };
+    }
+    
+    // Lead não existe na empresa destino - criar novo ou retornar origem
+    console.log('[Lead] Lead não existe na empresa destino, buscando origem');
+  }
+  
+  // 2. Busca normal por telefone_e164
   const { data: e164Match } = await supabase
     .from('lead_contacts')
     .select('*')
     .eq('telefone_e164', e164)
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
     
   if (e164Match) {
     console.log('[Lead] Match por telefone_e164:', (e164Match as LeadContact).lead_id);
-    return e164Match as LeadContact;
+    return { lead: e164Match as LeadContact };
   }
   
-  // 2. Gera todas as variações possíveis para busca no campo telefone
+  // 3. Gera todas as variações possíveis para busca no campo telefone
   const variations = generatePhoneVariations(phoneNormalized);
   console.log('[Lead] Variações a testar:', variations);
   
-  // Busca exata com todas as variações
   for (const variant of variations) {
     const { data: exactMatch } = await supabase
       .from('lead_contacts')
       .select('*')
       .eq('telefone', variant)
+      .order('updated_at', { ascending: false })
       .limit(1)
       .maybeSingle();
       
     if (exactMatch) {
       console.log('[Lead] Match exato encontrado com variação:', variant, '->', (exactMatch as LeadContact).lead_id);
-      return exactMatch as LeadContact;
+      return { lead: exactMatch as LeadContact };
     }
   }
   
-  // Tenta busca parcial com os últimos 8 dígitos (número sem DDD e sem nono)
+  // 4. Tenta busca parcial com os últimos 8 dígitos
   const last8Digits = phoneNormalized.slice(-8);
   const { data: partialMatch } = await supabase
     .from('lead_contacts')
     .select('*')
     .like('telefone', `%${last8Digits}`)
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle();
     
   if (partialMatch) {
     console.log('[Lead] Match parcial (últimos 8 dígitos) encontrado:', (partialMatch as LeadContact).lead_id);
-    return partialMatch as LeadContact;
+    return { lead: partialMatch as LeadContact };
   }
   
   console.log('[Lead] Nenhum lead encontrado para:', phoneNormalized);
-  return null;
+  return { lead: null };
 }
 
 /**
@@ -370,8 +466,8 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Buscar lead pelo telefone
-    const leadContact = await findLeadByPhone(supabase, phoneNormalized);
+    // 1. Buscar lead pelo telefone (com suporte a handoff)
+    const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);
     
     // 2. Buscar run ativa (se lead encontrado)
     let activeRun: LeadCadenceRun | null = null;
@@ -381,6 +477,17 @@ serve(async (req) => {
     
     // 3. Salvar mensagem
     const result = await saveInboundMessage(supabase, payload, leadContact, activeRun);
+    
+    // 4. Limpar flag de handoff após processar mensagem na empresa correta
+    if (handoffInfo) {
+      await clearHandoffFlag(supabase, handoffInfo.leadIdOrigem, handoffInfo.empresaOrigem);
+      console.log('[Inbound] Handoff processado:', {
+        de: handoffInfo.empresaOrigem,
+        para: leadContact?.empresa,
+        leadOrigem: handoffInfo.leadIdOrigem,
+        leadDestino: leadContact?.lead_id
+      });
+    }
     
     // 4. Disparar interpretação IA (PATCH 5G)
     if (result.success && result.messageId && result.status === 'MATCHED') {

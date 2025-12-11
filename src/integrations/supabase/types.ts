@@ -440,6 +440,9 @@ export type Database = {
           canal: Database["public"]["Enums"]["canal_tipo"]
           created_at: string
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          empresa_proxima_msg:
+            | Database["public"]["Enums"]["empresa_tipo"]
+            | null
           estado_funil: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo: Database["public"]["Enums"]["framework_tipo"]
           framework_data: Json | null
@@ -455,6 +458,9 @@ export type Database = {
           canal?: Database["public"]["Enums"]["canal_tipo"]
           created_at?: string
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          empresa_proxima_msg?:
+            | Database["public"]["Enums"]["empresa_tipo"]
+            | null
           estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
           framework_data?: Json | null
@@ -470,6 +476,9 @@ export type Database = {
           canal?: Database["public"]["Enums"]["canal_tipo"]
           created_at?: string
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          empresa_proxima_msg?:
+            | Database["public"]["Enums"]["empresa_tipo"]
+            | null
           estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
           framework_data?: Json | null
@@ -942,6 +951,7 @@ export type Database = {
         | "NENHUMA"
         | "ESCALAR_HUMANO"
         | "ENVIAR_RESPOSTA_AUTOMATICA"
+        | "HANDOFF_EMPRESA"
       sgt_event_status: "RECEBIDO" | "PROCESSADO" | "ERRO"
       sgt_evento_tipo:
         | "LEAD_NOVO"
@@ -1168,6 +1178,7 @@ export const Constants = {
         "NENHUMA",
         "ESCALAR_HUMANO",
         "ENVIAR_RESPOSTA_AUTOMATICA",
+        "HANDOFF_EMPRESA",
       ],
       sgt_event_status: ["RECEBIDO", "PROCESSADO", "ERRO"],
       sgt_evento_tipo: [
