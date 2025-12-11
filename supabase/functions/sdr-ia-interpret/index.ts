@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
-// PATCH 5G-C - SDR IA Engine Evoluído
-// Interpretação + Resposta Automática + Compliance + Opt-Out
+// PATCH 6G - SDR IA Qualificador Consultivo
+// Receita Previsível + SPIN/GPCT + Decisão de Próxima Pergunta
 // ========================================
 
 const corsHeaders = {
@@ -102,6 +102,49 @@ interface PessoaContext {
 }
 
 // ========================================
+// PATCH 6G: TIPOS DE DECISÃO DE PERGUNTA
+// ========================================
+
+type ProximaPerguntaTipo =
+  | 'SPIN_S' | 'SPIN_P' | 'SPIN_I' | 'SPIN_N'
+  | 'GPCT_G' | 'GPCT_P' | 'GPCT_C' | 'GPCT_T'
+  | 'BANT_B' | 'BANT_A' | 'BANT_N' | 'BANT_T'
+  | 'CTA_REUNIAO'
+  | 'NENHUMA';
+
+interface ConversationQualiState {
+  empresa: EmpresaTipo;
+  estadoFunil: EstadoFunil;
+  spin?: { s?: string | null; p?: string | null; i?: string | null; n?: string | null };
+  gpct?: { g?: string | null; p?: string | null; c?: string | null; t?: string | null };
+  bant?: { b?: string | null; a?: string | null; n?: string | null; t?: string | null };
+  temperatura: TemperaturaTipo;
+  intentAtual?: LeadIntentTipo;
+}
+
+// Mapeamento de tipos de pergunta para instruções
+const PERGUNTA_INSTRUCOES: Record<ProximaPerguntaTipo, string> = {
+  // SPIN
+  'SPIN_S': 'Faça uma pergunta de SITUAÇÃO (S): entenda como o lead declara IR hoje, se já declarou cripto antes, se usa software/contador.',
+  'SPIN_P': 'Faça uma pergunta de PROBLEMA (P): entenda o que é mais difícil para o lead hoje - dúvidas com cálculos, volume, regras, medo de errar.',
+  'SPIN_I': 'Faça uma pergunta de IMPLICAÇÃO (I): leve o lead a perceber os riscos - multas, malha fina, insegurança se continuar assim.',
+  'SPIN_N': 'Faça uma pergunta de NEED-PAYOFF (N): mostre o valor da solução - como ele se sentiria com tudo regularizado.',
+  // GPCT
+  'GPCT_G': 'Faça uma pergunta sobre GOALS (G): entenda o objetivo do lead com investimentos - renda extra, aposentadoria, diversificar.',
+  'GPCT_P': 'Faça uma pergunta sobre PLANS (P): entenda como ele investe hoje - tradicionais, cripto, tokenização.',
+  'GPCT_C': 'Faça uma pergunta sobre CHALLENGES (C): entenda os desafios que atrapalham - banco ganhando mais, falta de tempo/conhecimento, medo.',
+  'GPCT_T': 'Faça uma pergunta sobre TIMELINE (T): entenda o horizonte de tempo - curto, médio, longo prazo, eventos específicos.',
+  // BANT
+  'BANT_B': 'Faça uma pergunta sobre BUDGET (B): entenda a faixa de investimento - abaixo de 10k, entre 10k-50k, acima de 50k.',
+  'BANT_A': 'Faça uma pergunta sobre AUTHORITY (A): entenda se ele decide sozinho ou precisa consultar alguém.',
+  'BANT_N': 'Faça uma pergunta sobre NEED (N): entenda quão forte é a necessidade de mudar a situação atual.',
+  'BANT_T': 'Faça uma pergunta sobre TIMING (T): entenda quando ele quer resolver isso - agora, em meses, distante.',
+  // CTA
+  'CTA_REUNIAO': 'O lead está qualificado. Sugira uma reunião com nosso especialista explicando brevemente o que será discutido.',
+  'NENHUMA': 'Continue a conversa de forma natural, respondendo ao que o lead disse.',
+};
+
+// ========================================
 // TIPOS EXISTENTES
 // ========================================
 
@@ -143,7 +186,6 @@ interface MessageContext {
   optOut: boolean;
   classificacao?: LeadClassification;
   pipedriveDealeId?: string;
-  // PATCH 6: Novos campos
   pessoaContext?: PessoaContext | null;
   conversationState?: ConversationState | null;
 }
@@ -172,11 +214,164 @@ interface AIResponse {
   acao_detalhes?: Record<string, unknown>;
   resposta_sugerida?: string | null;
   deve_responder: boolean;
-  // PATCH 6: Novos campos de estado
   novo_estado_funil?: EstadoFunil;
   frameworks_atualizados?: FrameworkData;
   disc_estimado?: PerfilDISC;
   ultima_pergunta_id?: string;
+}
+
+// ========================================
+// PATCH 6G: LÓGICA DE DECISÃO DE PRÓXIMA PERGUNTA
+// ========================================
+
+/**
+ * Decide próxima pergunta para BLUE usando SPIN
+ */
+function decidirProximaPerguntaBLUE(state: ConversationQualiState): ProximaPerguntaTipo {
+  const spin = state.spin || {};
+
+  // 1) Se estamos ainda em saudação, primeiro passo é SITUAÇÃO
+  if (state.estadoFunil === 'SAUDACAO') {
+    return 'SPIN_S';
+  }
+
+  // 2) Situação ainda não bem estabelecida → perguntar SPIN_S
+  if (!spin.s) {
+    return 'SPIN_S';
+  }
+
+  // 3) Já sei a situação, mas não sei problema → SPIN_P
+  if (!spin.p) {
+    return 'SPIN_P';
+  }
+
+  // 4) Já sei problema, mas não explorei implicação → SPIN_I
+  if (!spin.i) {
+    return 'SPIN_I';
+  }
+
+  // 5) Já tenho S, P, I → posso ir para Need-Payoff
+  if (!spin.n) {
+    return 'SPIN_N';
+  }
+
+  // 6) Tenho SPIN relativamente completo:
+  //    se intenção e temperatura forem boas, posso sugerir reunião
+  const intent = state.intentAtual || 'OUTRO';
+  const interessado = ['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO'].includes(intent);
+  const tempBoa = state.temperatura !== 'FRIO';
+
+  if (interessado && tempBoa) {
+    return 'CTA_REUNIAO';
+  }
+
+  // 7) Caso contrário, nenhuma pergunta específica de framework:
+  return 'NENHUMA';
+}
+
+/**
+ * Decide próxima pergunta para TOKENIZA usando GPCT + BANT
+ */
+function decidirProximaPerguntaTOKENIZA(state: ConversationQualiState): ProximaPerguntaTipo {
+  const gpct = state.gpct || {};
+  const bant = state.bant || {};
+
+  // 1) Começo: sempre G (Goals)
+  if (state.estadoFunil === 'SAUDACAO' && !gpct.g) {
+    return 'GPCT_G';
+  }
+
+  // 2) Se não temos G ainda, é prioridade
+  if (!gpct.g) {
+    return 'GPCT_G';
+  }
+
+  // 3) Depois de G, entender Challenges (C)
+  if (!gpct.c) {
+    return 'GPCT_C';
+  }
+
+  // 4) Depois Plans (P) ou Timeline (T)
+  if (!gpct.p) {
+    return 'GPCT_P';
+  }
+
+  if (!gpct.t) {
+    return 'GPCT_T';
+  }
+
+  // 5) Já tenho GPCT básico → aprofundar BANT começando por Budget
+  if (!bant.b) {
+    return 'BANT_B';
+  }
+
+  // 6) Depois Authority
+  if (!bant.a) {
+    return 'BANT_A';
+  }
+
+  // 7) Depois Need
+  if (!bant.n) {
+    return 'BANT_N';
+  }
+
+  // 8) Depois Timing
+  if (!bant.t) {
+    return 'BANT_T';
+  }
+
+  // 9) Tenho GPCT+BANT razoavelmente preenchidos:
+  //    se intenção e temperatura forem boas → CTA reunião
+  const intent = state.intentAtual || 'OUTRO';
+  const interessado = ['INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'DUVIDA_PRODUTO', 'AGENDAMENTO_REUNIAO'].includes(intent);
+  const tempBoa = state.temperatura !== 'FRIO';
+
+  if (interessado && tempBoa) {
+    return 'CTA_REUNIAO';
+  }
+
+  return 'NENHUMA';
+}
+
+/**
+ * Função principal que decide próxima pergunta com base no contexto
+ */
+function decidirProximaPergunta(state: ConversationQualiState): { tipo: ProximaPerguntaTipo; instrucao: string } {
+  let tipo: ProximaPerguntaTipo;
+  
+  if (state.empresa === 'BLUE') {
+    tipo = decidirProximaPerguntaBLUE(state);
+  } else {
+    tipo = decidirProximaPerguntaTOKENIZA(state);
+  }
+  
+  return { 
+    tipo, 
+    instrucao: PERGUNTA_INSTRUCOES[tipo] 
+  };
+}
+
+/**
+ * Verifica se o CTA de reunião retornado pela IA é válido
+ */
+function validarCTAReuniao(
+  aiSugeriuReuniao: boolean, 
+  state: ConversationQualiState
+): boolean {
+  if (!aiSugeriuReuniao) return true; // Não sugeriu reunião, ok
+  
+  const decisao = decidirProximaPergunta(state);
+  
+  // Se a lógica diz CTA_REUNIAO, a IA pode sugerir
+  if (decisao.tipo === 'CTA_REUNIAO') return true;
+  
+  // Se não, a IA está pulando etapas
+  console.log('[6G] IA tentou sugerir reunião, mas qualificação incompleta:', {
+    empresa: state.empresa,
+    proximaPergunta: decisao.tipo,
+  });
+  
+  return false;
 }
 
 // ========================================
@@ -185,7 +380,6 @@ interface AIResponse {
 
 /**
  * Carrega estado da conversa para o lead/empresa/canal
- * Cria estado inicial se não existir
  */
 async function loadConversationState(
   supabase: SupabaseClient,
@@ -285,21 +479,19 @@ async function saveConversationState(
 }
 
 /**
- * PATCH 6B: Atualiza perfil DISC na tabela pessoas (persistência global)
+ * Atualiza perfil DISC na tabela pessoas
  */
 async function updatePessoaDISC(
   supabase: SupabaseClient,
   pessoaId: string,
   perfilDISC: PerfilDISC
 ): Promise<boolean> {
-  // Só atualiza se não houver perfil DISC definido
   const { data: pessoa } = await supabase
     .from('pessoas')
     .select('perfil_disc')
     .eq('id', pessoaId)
     .single();
   
-  // Se já tem DISC definido manualmente, não sobrescreve
   if (pessoa?.perfil_disc) {
     console.log('[DISC] Pessoa já tem perfil DISC definido, mantendo:', pessoa.perfil_disc);
     return false;
@@ -323,13 +515,12 @@ async function updatePessoaDISC(
 }
 
 /**
- * Carrega contexto da pessoa global (multi-empresa)
+ * Carrega contexto da pessoa global
  */
 async function loadPessoaContext(
   supabase: SupabaseClient,
   pessoaId: string
 ): Promise<PessoaContext | null> {
-  // 1. Buscar dados da pessoa
   const { data: pessoa, error: pessoaError } = await supabase
     .from('pessoas')
     .select('*')
@@ -341,7 +532,6 @@ async function loadPessoaContext(
     return null;
   }
   
-  // 2. Buscar todos os lead_contacts vinculados
   const { data: contacts } = await supabase
     .from('lead_contacts')
     .select(`
@@ -353,14 +543,12 @@ async function loadPessoaContext(
     `)
     .eq('pessoa_id', pessoaId);
   
-  // 3. Montar relacionamentos por empresa
   const relacionamentos: PessoaContext['relacionamentos'] = [];
   const empresas = [...new Set(contacts?.map(c => c.empresa) || [])];
   
   for (const emp of empresas) {
     const contactsEmpresa = contacts?.filter(c => c.empresa === emp) || [];
     
-    // Determinar tipo de relação
     let tipo_relacao: PessoaRelacaoTipo = 'DESCONHECIDO';
     
     if (emp === 'BLUE') {
@@ -371,7 +559,6 @@ async function loadPessoaContext(
       tipo_relacao = hasInvestor ? 'INVESTIDOR' : 'LEAD_INVESTIDOR';
     }
     
-    // Buscar última interação
     const leadIds = contactsEmpresa.map(c => c.lead_id);
     const { data: lastMsg } = await supabase
       .from('lead_messages')
@@ -408,292 +595,173 @@ async function loadPessoaContext(
 }
 
 // ========================================
-// PROMPT DO SDR IA COM COMPLIANCE + CONTEXTO
+// PATCH 6G: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
 // ========================================
 
-const SYSTEM_PROMPT = `Você é um SDR (Sales Development Representative) de IA especializado.
-Sua função é interpretar mensagens de leads, identificar intenções, recomendar ações e, quando apropriado, sugerir uma resposta automática.
+const SYSTEM_PROMPT = `Você é um SDR humano de pré-vendas do Grupo Blue.
 
-## EMPRESAS E PERSONAS
+Seu papel NÃO é vender, nem fechar, nem forçar reunião.
+Seu papel é QUALIFICAR com profundidade, de forma consultiva, usando frameworks de vendas, e só sugerir reunião quando fizer sentido.
 
-### TOKENIZA (Persona: Ana)
-- Plataforma de investimentos em tokens (criptoativos, imóveis tokenizados)
-- Tom: Amigável, didático, empolgado com inovação
-- Foco: Educação financeira, diversificação, tokenização
+## CONTEXTO GERAL
 
-### BLUE (Persona: Pedro)
-- Serviços de declaração de imposto de renda para criptomoedas
-- Tom: Profissional, confiável, técnico quando necessário
-- Foco: Conformidade fiscal, elisão legal, economia tributária
+O Grupo Blue tem duas empresas:
+- **TOKENIZA** → plataforma de investimentos tokenizados (B2C, pessoa física investidora).
+- **BLUE CONSULT** → declaração de imposto de renda para investidores de cripto (B2C).
 
-## 🌐 REGRAS MULTI-EMPRESA (CRÍTICAS!)
+Você sempre atende em nome de UMA das empresas por vez:
+- Se empresa_atual = TOKENIZA → você é a **Ana**, SDR de investimentos tokenizados.
+- Se empresa_atual = BLUE → você é o **Pedro**, SDR de IR cripto.
 
-O grupo possui duas empresas (TOKENIZA e BLUE) que compartilham base de pessoas.
-Uma pessoa pode ter DIFERENTES relacionamentos com cada empresa.
+Mesmo se essa pessoa tiver relação com as DUAS empresas, você deve:
+- Usar essa informação como contexto e prova de confiança.
+- Mas manter o foco na EMPRESA ATUAL da conversa.
 
-### TIPOS DE RELACIONAMENTO POR EMPRESA:
+## OBJETIVO DO SDR (MUITO IMPORTANTE)
 
-**BLUE:**
-- CLIENTE_IR: Já é cliente de declaração de IR (pagou pelo serviço)
-- LEAD_IR: Ainda não é cliente, mas tem interesse potencial
+Seu objetivo principal é:
 
-**TOKENIZA:**
-- INVESTIDOR: Já investiu em algum token
-- LEAD_INVESTIDOR: Ainda não investiu, mas tem interesse potencial
+1. Entender a situação atual do lead
+2. Entender os problemas/dúvidas/medos
+3. Entender implicações se nada mudar
+4. Entender o que seria uma solução desejada
+5. Entender o perfil e a capacidade (orçamento, prazo, perfil de risco)
+6. SÓ ENTÃO, quando houver FIT, sugerir reunião com closer humano ou próximo passo claro.
 
-**Genérico:**
-- DESCONHECIDO: Sem histórico com a empresa
+Você NÃO é um agendador robótico.
+Você é um SDR consultivo que usa:
+- **SPIN Selling** (para BLUE)
+- **GPCT + BANT** (para TOKENIZA)
 
-### REGRAS DE CONDUTA MULTI-EMPRESA:
+## FRAMEWORKS DE QUALIFICAÇÃO
 
-1. **VOCÊ REPRESENTA APENAS UMA EMPRESA POR VEZ**
-   - Se estiver como Ana (TOKENIZA): só fale de tokens/investimentos
-   - Se estiver como Pedro (BLUE): só fale de IR/impostos
-   - NUNCA misture marcas ou faça ofertas cruzadas
+### Para BLUE (empresa_atual = BLUE) → SPIN
 
-2. **USE O CONTEXTO PARA GERAR CONFIANÇA (sem vender)**
-   - Se pessoa é CLIENTE_IR na Blue e você é Ana (TOKENIZA):
-     ✅ "Que bom que você já faz parte do grupo e já resolve seu IR com a Blue!"
-     ❌ "Quer contratar nosso serviço de IR também?"
-   
-   - Se pessoa é INVESTIDOR na Tokeniza e você é Pedro (BLUE):
-     ✅ "Sei que você já conhece a Tokeniza e investe conosco no grupo!"
-     ❌ "Quer investir em mais tokens?"
+Use perguntas na ordem lógica, mas com flexibilidade:
 
-3. **NUNCA FAÇA CROSS-SELL EXPLÍCITO**
-   - Você pode MENCIONAR que a pessoa já é cliente de outra empresa do grupo
-   - Você NÃO pode OFERECER produtos/serviços da outra empresa
-   - Se lead perguntar sobre a outra empresa, diga: "Para isso, fale com [Ana/Pedro] da [empresa]. Posso passar seu contato?"
+1. **S – Situação**
+   - Como ele declara IR hoje?
+   - Já declarou cripto antes?
+   - Usa software, faz sozinho, tem contador?
 
-### EXEMPLO: CENÁRIO ARTHUR COELHO (Blue + Tokeniza)
+2. **P – Problema**
+   - O que é mais difícil hoje?
+   - Dúvida com cálculos? Volume? Regras? Medo de errar?
 
-**Contexto:** Arthur é CLIENTE_IR da Blue e INVESTIDOR da Tokeniza.
+3. **I – Implicação**
+   - O que pode acontecer se isso continuar assim?
+   - Multas? Malha fina? Insegurança?
 
-**Se Ana (TOKENIZA) contata Arthur:**
-- Pode dizer: "Arthur, que bom falar com você! Sei que você já faz parte da família Blue também, então já está com o IR em dia 😊"
-- Pode fazer: Oferecer novas oportunidades de tokens, tirar dúvidas sobre investimentos
-- NÃO pode: Oferecer serviços de IR, falar de preços da Blue, negociar renovação Blue
+4. **N – Need-Payoff**
+   - O que mudaria pra você se alguém assumisse isso?
+   - Como você gostaria de se sentir em relação ao seu IR?
 
-**Se Pedro (BLUE) contata Arthur:**
-- Pode dizer: "Arthur, tudo bem? Como investidor do grupo, você já sabe da importância de manter tudo regularizado!"
-- Pode fazer: Falar sobre renovação IR, oferecer análise tributária, esclarecer dúvidas fiscais
-- NÃO pode: Oferecer tokens, fazer pitch de investimento, falar de rentabilidade
+### Para TOKENIZA (empresa_atual = TOKENIZA) → GPCT + BANT
 
-### MATRIZ DE ABORDAGEM POR CENÁRIO:
+**GPCT:**
 
-| Eu sou | Pessoa é na Blue | Pessoa é na Tokeniza | Abordagem |
-|--------|------------------|----------------------|-----------|
-| Ana | CLIENTE_IR | LEAD_INVESTIDOR | "Você já resolve IR conosco. Que tal conhecer nossos investimentos?" |
-| Ana | CLIENTE_IR | INVESTIDOR | "Você já é parte da família completa! Tem novas oportunidades..." |
-| Ana | LEAD_IR | qualquer | Foco apenas em tokens. Não mencionar IR |
-| Pedro | qualquer | INVESTIDOR | "Como investidor, é importante ter o IR em dia!" |
-| Pedro | qualquer | LEAD_INVESTIDOR | Foco apenas em IR. Não mencionar investimentos |
-| Pedro | CLIENTE_IR | INVESTIDOR | "Ótimo ter você conosco nas duas frentes!" |
+- **G – Goals (Objetivos)**: O que ele quer com investimento? Renda extra? Aposentadoria? Diversificar?
+- **P – Plans (Planos)**: Como ele investe hoje? Tradicionais? Cripto? Tokenização?
+- **C – Challenges (Desafios)**: O que atrapalha? Banco ganhando mais? Falta de tempo? Medo?
+- **T – Timeline (Prazo)**: Horizonte curto, médio, longo? Evento específico?
 
-## PERFIS ICP (Use para contextualizar resposta)
+**BANT (para reforçar decisão):**
 
-### TOKENIZA ICPs:
-- TOKENIZA_SERIAL: Investidor experiente, quer diversificar em tokens
-- TOKENIZA_MEDIO_PRAZO: Busca rentabilidade 6-12 meses
-- TOKENIZA_EMERGENTE: Primeiro investimento, educação importante
-- TOKENIZA_ALTO_VOLUME_DIGITAL: Grandes volumes, análise técnica
+- **B – Budget**: Faixas (abaixo de 10k, 10k-50k, acima de 50k)
+- **A – Authority**: Decide sozinho? Precisa consultar alguém?
+- **N – Need**: Quão forte é a necessidade de mudar?
+- **T – Timing**: Quer resolver agora, em meses ou é distante?
 
-### BLUE ICPs:
-- BLUE_ALTO_TICKET_IR: Alto volume cripto, IR complexo
-- BLUE_RECURRENTE: Cliente recorrente, renovação anual
-- BLUE_PERDIDO_RECUPERAVEL: Ex-cliente a reconquistar
+## ESTADO DA CONVERSA E MEMÓRIA
 
-## PERSONAS (Perfil comportamental)
-- CONSTRUTOR_PATRIMONIO: Foco longo prazo, segurança
-- COLECIONADOR_DIGITAL: NFTs, entusiasta tech
-- INICIANTE_CAUTELOSO: Conservador, precisa educação
-- CRIPTO_CONTRIBUINTE_URGENTE: Urgência com IR
-- CLIENTE_FIEL_RENOVADOR: Confiança estabelecida
-- LEAD_PERDIDO_RECUPERAVEL: Precisa reengajamento
+Você SEMPRE recebe:
+- Histórico das últimas mensagens
+- Estado atual: etapa do funil, dados já coletados, perfil DISC estimado
+- **INSTRUÇÃO DE PRÓXIMA PERGUNTA**: O tipo de pergunta que você DEVE fazer
 
-## PERFIL DISC (Adapte comunicação!)
+**REGRAS CRÍTICAS:**
 
-Se o perfil DISC da pessoa for informado, adapte seu tom:
+1. **NUNCA reinicie a conversa do zero** se já houver dados de estado.
+   Não fique repetindo "Oi, eu sou a Ana da Tokeniza…" em toda mensagem.
+
+2. Sempre que responder:
+   - Responda o que o lead disse
+   - Faça **no máximo UMA boa pergunta de avanço**, seguindo a INSTRUÇÃO DE PRÓXIMA PERGUNTA
+   - A pergunta deve ser natural, não robótica
+
+3. **SÓ sugira reunião se a INSTRUÇÃO for CTA_REUNIAO**
+   - Se a instrução for outra, NÃO convide para reunião ainda
+   - Faça mais uma pergunta de qualificação
+
+## PERFIL DISC E TOM DE VOZ
+
+Adapte seu tom ao DISC estimado:
 
 | DISC | Estilo | Como abordar |
 |------|--------|--------------|
 | D | Dominante | Direto, objetivo, foco em resultados. Sem rodeios. |
-| I | Influente | Entusiástico, amigável, conte histórias de sucesso. |
-| S | Estável | Paciente, acolhedor, gere confiança gradualmente. |
+| I | Influente | Leve, conversado, engajado, conte histórias. |
+| S | Estável | Calmo, acolhedor, paciente, gere confiança. |
 | C | Cauteloso | Dados, estrutura, documentação. Seja preciso. |
 
-## DETECÇÃO AUTOMÁTICA DE PERFIL DISC (IMPORTANTE!)
+### DETECÇÃO DE DISC
 
-Analise TODAS as mensagens do lead para detectar o perfil DISC. Retorne "disc_estimado" com base nos seguintes indicadores:
+Analise as mensagens para detectar DISC:
 
-### Indicadores de DOMINANTE (D):
-- Mensagens curtas, diretas, sem rodeios
-- Usa imperativos: "Quero", "Preciso", "Faça"
-- Foco em resultados e números
-- Impaciente, quer respostas rápidas
-- Pode parecer agressivo ou assertivo
-- Pergunta "quanto custa?" antes de entender o produto
-- Exemplos: "Quanto?", "Me passa o link", "Qual o retorno?", "Direto ao ponto"
+**Dominante (D)**: Mensagens curtas, diretas, imperativos ("Quero", "Quanto?"), foco em resultados.
+**Influente (I)**: Mensagens longas, emojis, exclamações, perguntas sociais, conta histórias.
+**Estável (S)**: Tom calmo, "por favor", "obrigado", evita conflito, menciona família.
+**Cauteloso (C)**: Perguntas técnicas, pede documentação, questiona dados, cético.
 
-### Indicadores de INFLUENTE (I):
-- Mensagens longas e expressivas
-- Usa emojis, exclamações, linguagem entusiasta
-- Faz perguntas sociais: "Como vai?", "Tudo bem?"
-- Conta histórias pessoais
-- Menciona amigos, família, experiências
-- Gosta de conversar antes de decidir
-- Exemplos: "Que legal!!!", "Me conta mais 😊", "Um amigo me indicou", "Nossa, adorei!"
-
-### Indicadores de ESTÁVEL (S):
-- Tom calmo e educado
-- Evita conflito, usa "por favor", "obrigado"
-- Faz muitas perguntas antes de decidir
-- Demonstra preocupação com segurança
-- Mensagens ponderadas, não precipitadas
-- Menciona família ou estabilidade
-- Exemplos: "Preciso pensar melhor", "Posso falar com minha esposa?", "Com calma", "Não tenho pressa"
-
-### Indicadores de CAUTELOSO (C):
-- Perguntas muito específicas e técnicas
-- Pede documentação, contratos, detalhes
-- Questiona números e dados
-- Cético, quer provas
-- Mensagens bem estruturadas
-- Analisa antes de agir
-- Exemplos: "Qual a taxa de administração?", "Onde vejo o contrato?", "Baseado em quê?", "Pode me enviar os dados?"
-
-### REGRAS DE DETECÇÃO:
-1. Se não houver indicadores claros (ex: só "oi"), NÃO retorne disc_estimado
-2. Analise o HISTÓRICO completo, não apenas a mensagem atual
-3. Quanto mais mensagens, maior a confiança na detecção
-4. Priorize padrões consistentes sobre mensagens isoladas
-5. Em caso de dúvida entre dois perfis, escolha o mais evidente ou não retorne
-
-## TEMPERATURAS (Estado atual do lead)
-- FRIO: Baixo engajamento, nutrição necessária
-- MORNO: Algum interesse, manter contato
-- QUENTE: Alta intenção, priorizar conversão
-
-## INTENÇÕES POSSÍVEIS
-
-INTENÇÕES DE ALTA CONVERSÃO:
-- INTERESSE_COMPRA: Lead quer investir/comprar (TOKENIZA)
-- INTERESSE_IR: Lead interessado em serviço de IR (BLUE)
-- AGENDAMENTO_REUNIAO: Quer marcar uma reunião/call
-- SOLICITACAO_CONTATO: Pede para alguém ligar
-
-INTENÇÕES DE NUTRIÇÃO:
-- DUVIDA_PRODUTO: Pergunta sobre como funciona
-- DUVIDA_PRECO: Pergunta sobre valores, taxas, custos
-- DUVIDA_TECNICA: Pergunta técnica específica
-
-OBJEÇÕES:
-- OBJECAO_PRECO: Acha caro, não compensa
-- OBJECAO_RISCO: Medo de perda, desconfiança
-
-INTENÇÕES NEGATIVAS:
-- SEM_INTERESSE: Não quer, mas sem opt-out explícito
-- OPT_OUT: Pedindo para não receber mais mensagens
-- RECLAMACAO: Expressando insatisfação ou problema
-
-INTENÇÕES NEUTRAS:
-- CUMPRIMENTO: Apenas "oi", "olá", "bom dia"
-- AGRADECIMENTO: Agradecendo por algo
-- NAO_ENTENDI: Mensagem confusa
-- FORA_CONTEXTO: Não relacionada aos serviços
-- OUTRO: Não se encaixa
-
-## AÇÕES POSSÍVEIS
-
-- ENVIAR_RESPOSTA_AUTOMATICA: Responder automaticamente ao lead
-- CRIAR_TAREFA_CLOSER: Criar tarefa para humano atuar
-- PAUSAR_CADENCIA: Pausar sequência de mensagens
-- CANCELAR_CADENCIA: Cancelar sequência definitivamente
-- AJUSTAR_TEMPERATURA: Alterar temperatura do lead (indicar nova em acao_detalhes)
-- MARCAR_OPT_OUT: Registrar que lead não quer mais contato
-- ESCALAR_HUMANO: Situação complexa requer humano
-- NENHUMA: Nenhuma ação necessária
-
-## MATRIZ AUTOMÁTICA DE TEMPERATURA
-
-Use acao = "AJUSTAR_TEMPERATURA" com acao_detalhes.nova_temperatura baseado em:
-
-| Intenção | Temperatura Atual | Nova Temperatura |
-|----------|-------------------|------------------|
-| INTERESSE_COMPRA | qualquer | QUENTE |
-| INTERESSE_IR | qualquer | QUENTE |
-| AGENDAMENTO_REUNIAO | qualquer | QUENTE |
-| SOLICITACAO_CONTATO | qualquer | QUENTE |
-| DUVIDA_PRODUTO | FRIO | MORNO |
-| DUVIDA_TECNICA | FRIO | MORNO |
-| OPT_OUT | qualquer | FRIO |
-| SEM_INTERESSE | QUENTE | MORNO |
-| SEM_INTERESSE | MORNO | FRIO |
-| OBJECAO_PRECO | qualquer | manter |
-| OBJECAO_RISCO | qualquer | manter |
+Se não houver indicadores claros, NÃO retorne disc_estimado.
 
 ## REGRAS DE COMPLIANCE (CRÍTICAS!)
 
-### PROIBIÇÕES ABSOLUTAS - NUNCA fazer:
-1. ❌ NUNCA prometer retorno financeiro ou rentabilidade específica
-2. ❌ NUNCA indicar ou recomendar ativo específico para investir
-3. ❌ NUNCA inventar prazos ou metas de rentabilidade
-4. ❌ NUNCA negociar preços ou oferecer descontos
-5. ❌ NUNCA dar conselho de investimento personalizado
-6. ❌ NUNCA pressionar ou usar urgência artificial
-7. ❌ NUNCA fazer cross-sell explícito entre empresas do grupo
+### PROIBIÇÕES ABSOLUTAS:
+❌ NUNCA prometer retorno financeiro ou rentabilidade específica
+❌ NUNCA indicar ou recomendar ativo específico para investir
+❌ NUNCA inventar prazos ou metas de rentabilidade
+❌ NUNCA negociar preços ou oferecer descontos
+❌ NUNCA dar conselho de investimento personalizado
+❌ NUNCA pressionar ou usar urgência artificial
+❌ NUNCA fazer cross-sell explícito entre empresas do grupo
 
 ### PERMITIDO:
 ✅ Explicar conceitos gerais sobre tokenização/cripto
 ✅ Informar sobre processo de declaração de IR
-✅ Convidar para conversar com especialista
+✅ Convidar para conversar com especialista (quando qualificado!)
 ✅ Tirar dúvidas procedimentais
 ✅ Agradecer e ser cordial
 ✅ Mencionar que pessoa já é cliente de outra empresa do grupo (para confiança)
 
-## MATRIZ DE DECISÃO: QUANDO RESPONDER?
+## INTENÇÕES POSSÍVEIS
 
-| Intenção | Confiança | Ação Principal | Responder? |
-|----------|-----------|----------------|------------|
-| INTERESSE_COMPRA | >0.7 | CRIAR_TAREFA_CLOSER | SIM |
-| INTERESSE_IR | >0.7 | CRIAR_TAREFA_CLOSER | SIM |
-| DUVIDA_PRODUTO | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
-| DUVIDA_PRECO | >0.6 | CRIAR_TAREFA_CLOSER | NÃO (humano negocia) |
-| DUVIDA_TECNICA | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
-| CUMPRIMENTO | >0.8 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
-| AGRADECIMENTO | >0.8 | NENHUMA | SIM |
-| OPT_OUT | >0.7 | MARCAR_OPT_OUT | NÃO |
-| OBJECAO_PRECO | >0.6 | CRIAR_TAREFA_CLOSER | NÃO |
-| OBJECAO_RISCO | >0.6 | ENVIAR_RESPOSTA_AUTOMATICA | SIM |
-| SEM_INTERESSE | >0.7 | PAUSAR_CADENCIA | NÃO |
-| RECLAMACAO | >0.6 | ESCALAR_HUMANO | NÃO |
+**ALTA CONVERSÃO:** INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO, SOLICITACAO_CONTATO
+**NUTRIÇÃO:** DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA
+**OBJEÇÕES:** OBJECAO_PRECO, OBJECAO_RISCO
+**NEGATIVAS:** SEM_INTERESSE, OPT_OUT, RECLAMACAO
+**NEUTRAS:** CUMPRIMENTO, AGRADECIMENTO, NAO_ENTENDI, FORA_CONTEXTO, OUTRO
 
-## FORMATO DA RESPOSTA AUTOMÁTICA
+## AÇÕES POSSÍVEIS
+
+- ENVIAR_RESPOSTA_AUTOMATICA: Responder automaticamente
+- CRIAR_TAREFA_CLOSER: Criar tarefa para humano (lead muito qualificado)
+- PAUSAR_CADENCIA: Pausar sequência de mensagens
+- CANCELAR_CADENCIA: Cancelar sequência definitivamente
+- AJUSTAR_TEMPERATURA: Alterar temperatura do lead
+- MARCAR_OPT_OUT: Registrar que lead não quer mais contato
+- ESCALAR_HUMANO: Situação complexa requer humano
+- NENHUMA: Nenhuma ação necessária
+
+## FORMATO DA RESPOSTA
 
 Se deve_responder = true, forneça resposta_sugerida seguindo:
 - 1 a 3 frases no máximo
 - Tom humanizado (Ana/Pedro)
-- Adapte linguagem ao perfil ICP/Persona do lead
-- Adapte tom ao perfil DISC se disponível
-- Se pessoa é cliente em outra empresa do grupo, mencione de forma natural
-- Sempre terminar com próximo passo claro
-- SEM promessas, SEM pressão, SEM cross-sell
-
-### Exemplos TOKENIZA (Ana):
-
-**Lead novo:**
-"Que legal sua pergunta! A tokenização permite investir em frações de ativos. Posso te explicar mais ou você prefere falar com nosso especialista?"
-
-**Lead que é CLIENTE_IR da Blue:**
-"Oi [Nome]! Que bom falar com você. Sei que você já resolve seu IR com a Blue, então entende a importância de diversificar com segurança. Quer conhecer nossas oportunidades?"
-
-### Exemplos BLUE (Pedro):
-
-**Lead novo:**
-"Boa pergunta! A declaração de cripto tem algumas particularidades. Posso te passar para nosso contador especialista."
-
-**Lead que é INVESTIDOR da Tokeniza:**
-"Oi [Nome]! Como investidor do grupo, você sabe a importância de manter tudo regularizado. Posso te ajudar com a declaração deste ano?"
+- Adapte ao DISC do lead
+- **SIGA A INSTRUÇÃO DE PRÓXIMA PERGUNTA**
+- Termine com a pergunta de qualificação indicada (ou CTA se for o caso)
+- SEM promessas, SEM pressão
 
 ## RESPOSTA OBRIGATÓRIA (JSON)
 
@@ -706,8 +774,12 @@ Se deve_responder = true, forneça resposta_sugerida seguindo:
   "deve_responder": true,
   "resposta_sugerida": "Sua resposta aqui..." ou null,
   "novo_estado_funil": "DIAGNOSTICO",
-  "frameworks_atualizados": { "gpct": { "g": "objetivo identificado" } },
-  "disc_estimado": "D"
+  "frameworks_atualizados": { 
+    "gpct": { "g": "objetivo identificado" },
+    "spin": { "s": "situação identificada" }
+  },
+  "disc_estimado": "D",
+  "ultima_pergunta_id": "GPCT_G"
 }`;
 
 // ========================================
@@ -718,7 +790,6 @@ function computeNewTemperature(
   intent: LeadIntentTipo,
   temperaturaAtual: TemperaturaTipo
 ): TemperaturaTipo | null {
-  // Intenções que sempre aquecem
   const intentQuentes: LeadIntentTipo[] = [
     'INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'
   ];
@@ -727,24 +798,21 @@ function computeNewTemperature(
     return temperaturaAtual !== 'QUENTE' ? 'QUENTE' : null;
   }
 
-  // Intenções que esquentam de FRIO para MORNO
   const intentMornas: LeadIntentTipo[] = ['DUVIDA_PRODUTO', 'DUVIDA_TECNICA'];
   if (intentMornas.includes(intent) && temperaturaAtual === 'FRIO') {
     return 'MORNO';
   }
 
-  // OPT_OUT sempre esfria
   if (intent === 'OPT_OUT') {
     return temperaturaAtual !== 'FRIO' ? 'FRIO' : null;
   }
 
-  // SEM_INTERESSE diminui temperatura
   if (intent === 'SEM_INTERESSE') {
     if (temperaturaAtual === 'QUENTE') return 'MORNO';
     if (temperaturaAtual === 'MORNO') return 'FRIO';
   }
 
-  return null; // Manter temperatura atual
+  return null;
 }
 
 // ========================================
@@ -752,13 +820,12 @@ function computeNewTemperature(
 // ========================================
 
 /**
- * PATCH 6: Carrega contexto completo com classificação, opt-out, pessoa e estado de conversa
+ * Carrega contexto completo da mensagem
  */
 async function loadMessageContext(
   supabase: SupabaseClient,
   messageId: string
 ): Promise<MessageContext> {
-  // Buscar mensagem principal
   const { data: message, error: msgError } = await supabase
     .from('lead_messages')
     .select('*')
@@ -780,20 +847,17 @@ async function loadMessageContext(
   let pessoaContext: PessoaContext | null = null;
   let conversationState: ConversationState | null = null;
 
-  // Se tiver lead_id, buscar histórico, contato, classificação, pessoa e estado
   if (msg.lead_id) {
-    // Histórico de mensagens
     const { data: hist } = await supabase
       .from('lead_messages')
       .select('id, lead_id, run_id, empresa, conteudo, direcao, created_at')
       .eq('lead_id', msg.lead_id)
       .neq('id', messageId)
       .order('created_at', { ascending: false })
-      .limit(5);
+      .limit(10);
 
     historico = (hist || []) as LeadMessage[];
 
-    // Buscar contato com campos opt_out, pipedrive_deal_id e pessoa_id
     const { data: contact } = await supabase
       .from('lead_contacts')
       .select('nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id')
@@ -809,18 +873,15 @@ async function loadMessageContext(
       optOut = c.opt_out ?? false;
       pipedriveDealeId = c.pipedrive_deal_id || undefined;
       
-      // PATCH 6: Carregar contexto da pessoa global
       if (c.pessoa_id) {
         pessoaContext = await loadPessoaContext(supabase, c.pessoa_id);
         
-        // Se temos pessoa com nome melhor, usar
         if (pessoaContext?.pessoa.nome && pessoaContext.pessoa.nome !== 'Desconhecido') {
           leadNome = pessoaContext.pessoa.nome;
         }
       }
     }
 
-    // Buscar classificação mais recente
     const { data: classif } = await supabase
       .from('lead_classifications')
       .select('icp, persona, temperatura, prioridade')
@@ -833,11 +894,9 @@ async function loadMessageContext(
       classificacao = classif as LeadClassification;
     }
 
-    // PATCH 6: Carregar estado da conversa
     conversationState = await loadConversationState(supabase, msg.lead_id, msg.empresa, 'WHATSAPP');
   }
 
-  // Se tiver run_id, buscar nome da cadência
   if (msg.run_id) {
     const { data: run } = await supabase
       .from('lead_cadence_runs')
@@ -867,7 +926,7 @@ async function loadMessageContext(
 }
 
 /**
- * PATCH 6: Prompt enriquecido com pessoa global, estado de conversa e frameworks
+ * PATCH 6G: Interpretação com IA incluindo instrução de próxima pergunta
  */
 async function interpretWithAI(
   mensagem: string,
@@ -886,6 +945,20 @@ async function interpretWithAI(
     throw new Error('LOVABLE_API_KEY não configurada');
   }
 
+  // PATCH 6G: Calcular próxima pergunta baseado no estado atual
+  const qualiState: ConversationQualiState = {
+    empresa,
+    estadoFunil: conversationState?.estado_funil || 'SAUDACAO',
+    spin: conversationState?.framework_data?.spin,
+    gpct: conversationState?.framework_data?.gpct,
+    bant: conversationState?.framework_data?.bant,
+    temperatura: classificacao?.temperatura || 'FRIO',
+    intentAtual: undefined, // Será determinado pela IA
+  };
+  
+  const proximaPergunta = decidirProximaPergunta(qualiState);
+  console.log('[6G] Próxima pergunta decidida:', proximaPergunta);
+
   // Montar contexto enriquecido
   let userPrompt = `EMPRESA: ${empresa}\n`;
   userPrompt += `PERSONA SDR: ${empresa === 'TOKENIZA' ? 'Ana' : 'Pedro'}\n`;
@@ -893,7 +966,13 @@ async function interpretWithAI(
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
-  // PATCH 6: Contexto da pessoa global (multi-empresa)
+  // PATCH 6G: Instrução de próxima pergunta (CRÍTICO!)
+  userPrompt += `\n## ⚡ INSTRUÇÃO DE PRÓXIMA PERGUNTA (SIGA OBRIGATORIAMENTE)\n`;
+  userPrompt += `TIPO: ${proximaPergunta.tipo}\n`;
+  userPrompt += `INSTRUÇÃO: ${proximaPergunta.instrucao}\n`;
+  userPrompt += `\n⚠️ Sua resposta DEVE incluir uma pergunta seguindo esta instrução, a menos que seja NENHUMA.\n`;
+  
+  // Contexto da pessoa global (multi-empresa)
   if (pessoaContext) {
     userPrompt += `\n## IDENTIDADE DA PESSOA\n`;
     userPrompt += `- Nome: ${pessoaContext.pessoa.nome}\n`;
@@ -905,47 +984,43 @@ async function interpretWithAI(
       userPrompt += `- Perfil DISC: ${pessoaContext.pessoa.perfil_disc}\n`;
     }
     
-    // Relacionamentos em outras empresas
     const outrasEmpresas = pessoaContext.relacionamentos.filter(r => r.empresa !== empresa);
     if (outrasEmpresas.length > 0) {
       userPrompt += `\n## RELACIONAMENTO EM OUTRAS EMPRESAS DO GRUPO\n`;
       for (const rel of outrasEmpresas) {
         userPrompt += `- ${rel.empresa}: ${rel.tipo_relacao}\n`;
       }
-      userPrompt += `\nREGRAS DE MULTI-EMPRESA:\n`;
-      userPrompt += `1) Você representa APENAS a ${empresa}.\n`;
-      if (empresa === 'TOKENIZA') {
-        userPrompt += `2) Pode usar o fato de ser atendido pela BLUE para gerar confiança, mas NUNCA ofereça IR.\n`;
-      } else {
-        userPrompt += `2) Pode mencionar investimentos tokenizados do grupo, mas NUNCA faça pitch.\n`;
-      }
-      userPrompt += `3) NUNCA misture marcas ou use nomes híbridos.\n`;
+      userPrompt += `\nREGRAS: Use para gerar confiança, mas NUNCA faça cross-sell.\n`;
     }
   }
   
-  // PATCH 6: Estado de conversa e frameworks
+  // Estado de conversa e frameworks
   if (conversationState) {
     userPrompt += `\n## ESTADO ATUAL DA CONVERSA\n`;
     userPrompt += `- Etapa do funil: ${conversationState.estado_funil}\n`;
     userPrompt += `- Framework ativo: ${conversationState.framework_ativo}\n`;
     
     if (conversationState.framework_data && Object.keys(conversationState.framework_data).length > 0) {
-      userPrompt += `- Dados já coletados: ${JSON.stringify(conversationState.framework_data)}\n`;
-    }
-    
-    if (conversationState.ultima_pergunta_id) {
-      userPrompt += `- Última pergunta feita: ${conversationState.ultima_pergunta_id}\n`;
+      userPrompt += `- Dados já coletados:\n`;
+      const fd = conversationState.framework_data;
+      if (fd.gpct && Object.values(fd.gpct).some(v => v)) {
+        userPrompt += `  GPCT: G=${fd.gpct.g || '?'}, P=${fd.gpct.p || '?'}, C=${fd.gpct.c || '?'}, T=${fd.gpct.t || '?'}\n`;
+      }
+      if (fd.bant && Object.values(fd.bant).some(v => v)) {
+        userPrompt += `  BANT: B=${fd.bant.b || '?'}, A=${fd.bant.a || '?'}, N=${fd.bant.n || '?'}, T=${fd.bant.t || '?'}\n`;
+      }
+      if (fd.spin && Object.values(fd.spin).some(v => v)) {
+        userPrompt += `  SPIN: S=${fd.spin.s || '?'}, P=${fd.spin.p || '?'}, I=${fd.spin.i || '?'}, N=${fd.spin.n || '?'}\n`;
+      }
     }
     
     if (conversationState.perfil_disc) {
-      userPrompt += `- Perfil DISC: ${conversationState.perfil_disc}\n`;
+      userPrompt += `- Perfil DISC detectado: ${conversationState.perfil_disc}\n`;
     }
     
-    userPrompt += `\nREGRAS DE CONTINUIDADE:\n`;
     if (conversationState.estado_funil !== 'SAUDACAO') {
-      userPrompt += `- NÃO reinicie com apresentação completa. Continue de onde parou.\n`;
+      userPrompt += `\n⚠️ NÃO reinicie com apresentação. Continue de onde parou.\n`;
     }
-    userPrompt += `- Use os dados já coletados para avançar a qualificação.\n`;
   }
   
   // Contexto de classificação
@@ -959,9 +1034,9 @@ async function interpretWithAI(
   
   if (historico.length > 0) {
     userPrompt += '\n## HISTÓRICO RECENTE:\n';
-    historico.reverse().forEach(h => {
+    historico.slice().reverse().forEach(h => {
       const dir = h.direcao === 'OUTBOUND' ? 'SDR' : 'LEAD';
-      userPrompt += `[${dir}]: ${h.conteudo.substring(0, 200)}\n`;
+      userPrompt += `[${dir}]: ${h.conteudo.substring(0, 300)}\n`;
     });
   }
 
@@ -970,11 +1045,8 @@ async function interpretWithAI(
   console.log('[IA] Enviando para interpretação:', { 
     empresa, 
     mensagemPreview: mensagem.substring(0, 100),
-    temContexto: !!classificacao,
-    temPessoa: !!pessoaContext,
-    temConversation: !!conversationState,
+    proximaPergunta: proximaPergunta.tipo,
     estadoFunil: conversationState?.estado_funil,
-    framework: conversationState?.framework_ativo,
   });
 
   const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -989,6 +1061,8 @@ async function interpretWithAI(
         { role: 'system', content: SYSTEM_PROMPT },
         { role: 'user', content: userPrompt },
       ],
+      temperature: 0.3,
+      max_tokens: 1500,
     }),
   });
 
@@ -1012,12 +1086,10 @@ async function interpretWithAI(
   // Parse do JSON
   let parsed: AIResponse;
   try {
-    // Limpar possíveis marcadores de código
     const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
     parsed = JSON.parse(cleaned);
   } catch (e) {
     console.error('[IA] Erro ao parsear JSON:', content);
-    // Fallback seguro
     parsed = {
       intent: 'NAO_ENTENDI',
       confidence: 0.5,
@@ -1051,7 +1123,26 @@ async function interpretWithAI(
   parsed.confidence = Math.max(0, Math.min(1, parsed.confidence || 0.5));
   parsed.deve_responder = parsed.deve_responder ?? false;
 
-  // PATCH 5G-C Fase 5: Aplicar matriz automática de temperatura
+  // PATCH 6G: Validar se IA pode sugerir reunião
+  const aiSugeriuReuniao = parsed.acao === 'CRIAR_TAREFA_CLOSER' || 
+    (parsed.resposta_sugerida?.toLowerCase().includes('reunião') ?? false) ||
+    (parsed.resposta_sugerida?.toLowerCase().includes('agendar') ?? false);
+  
+  // Atualizar qualiState com intent detectado para validação
+  qualiState.intentAtual = parsed.intent;
+  
+  if (!validarCTAReuniao(aiSugeriuReuniao, qualiState)) {
+    // IA tentou pular etapas - forçar mais qualificação
+    console.log('[6G] Bloqueando CTA prematuro, forçando qualificação');
+    
+    if (parsed.acao === 'CRIAR_TAREFA_CLOSER') {
+      parsed.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+    }
+    
+    // Não modificar a resposta - deixar a IA seguir o fluxo natural
+  }
+
+  // Aplicar matriz automática de temperatura
   if (classificacao && parsed.acao !== 'AJUSTAR_TEMPERATURA') {
     const novaTemp = computeNewTemperature(parsed.intent, classificacao.temperatura);
     if (novaTemp) {
@@ -1067,6 +1158,11 @@ async function interpretWithAI(
         intent: parsed.intent 
       });
     }
+  }
+
+  // Registrar a pergunta feita
+  if (!parsed.ultima_pergunta_id) {
+    parsed.ultima_pergunta_id = proximaPergunta.tipo;
   }
 
   return { response: parsed, tokensUsados, tempoMs };
@@ -1089,7 +1185,6 @@ async function sendAutoResponse(
   console.log('[WhatsApp] Enviando resposta automática:', { telefone: telefone.substring(0, 6) + '...', empresa });
 
   try {
-    // Chamar edge function whatsapp-send
     const response = await fetch(`${SUPABASE_URL}/functions/v1/whatsapp-send`, {
       method: 'POST',
       headers: {
@@ -1123,7 +1218,7 @@ async function sendAutoResponse(
 }
 
 /**
- * PATCH 5G-C Fase 4: Aplica ação com MARCAR_OPT_OUT corrigido
+ * Aplica ação no CRM
  */
 async function applyAction(
   supabase: SupabaseClient,
@@ -1184,11 +1279,9 @@ async function applyAction(
         break;
 
       case 'MARCAR_OPT_OUT':
-        // PATCH 5G-C Fase 4: Correção completa do MARCAR_OPT_OUT
         if (leadId) {
           const now = new Date().toISOString();
           
-          // 1. Atualizar lead_contacts com opt_out
           await supabase
             .from('lead_contacts')
             .update({ 
@@ -1202,7 +1295,6 @@ async function applyAction(
           
           console.log('[Ação] Opt-out marcado em lead_contacts:', leadId);
 
-          // 2. Cancelar TODAS as cadências ativas do lead
           const { data: activeRuns } = await supabase
             .from('lead_cadence_runs')
             .select('id')
@@ -1217,7 +1309,6 @@ async function applyAction(
               .update({ status: 'CANCELADA', updated_at: now })
               .in('id', runIds);
 
-            // Registrar evento em cada run
             for (const rid of runIds) {
               await supabase.from('lead_cadence_events').insert({
                 lead_cadence_run_id: rid,
@@ -1231,7 +1322,6 @@ async function applyAction(
             console.log('[Ação] Cadências canceladas por opt-out:', runIds.length);
           }
 
-          // 3. Ajustar temperatura para FRIO
           await supabase
             .from('lead_classifications')
             .update({ 
@@ -1254,13 +1344,12 @@ async function applyAction(
             tipo_evento: 'RESPOSTA_DETECTADA',
             detalhes: { 
               acao, 
-              motivo: 'Lead demonstrou alta intenção - tarefa criada para closer',
+              motivo: 'Lead qualificado pelo SDR IA - tarefa criada para closer',
               prioridade: 'ALTA',
               ...detalhes,
             },
           });
           
-          // Pausar cadência enquanto closer atua
           await supabase
             .from('lead_cadence_runs')
             .update({ status: 'PAUSADA', updated_at: new Date().toISOString() })
@@ -1336,7 +1425,7 @@ async function applyAction(
 }
 
 /**
- * PATCH 6: Sincroniza com Pipedrive (background task)
+ * Sincroniza com Pipedrive
  */
 async function syncWithPipedrive(
   pipedriveDealeId: string,
@@ -1357,7 +1446,6 @@ async function syncWithPipedrive(
       return;
     }
 
-    // Formatar mensagens para log
     const messages = [
       ...historico.slice(-3).reverse().map(h => ({
         direcao: h.direcao === 'OUTBOUND' ? 'OUTBOUND' : 'INBOUND',
@@ -1404,7 +1492,6 @@ async function syncWithPipedrive(
       console.log('[Pipedrive] Conversa sincronizada com sucesso');
     }
 
-    // Se a ação for CRIAR_TAREFA_CLOSER, criar atividade no Pipedrive
     if (acao === 'CRIAR_TAREFA_CLOSER' && acaoAplicada) {
       const activityResponse = await fetch(`${SUPABASE_URL}/functions/v1/pipedrive-sync`, {
         method: 'POST',
@@ -1419,7 +1506,7 @@ async function syncWithPipedrive(
           data: {
             activity_type: 'call',
             subject: `[SDR IA] Lead qualificado - ${intent}`,
-            note: `Intent detectado: ${intent}\nConfiança: Alta\nLead demonstrou interesse e foi qualificado para atendimento humano.`,
+            note: `Intent detectado: ${intent}\nConfiança: Alta\nLead qualificado via frameworks SPIN/GPCT+BANT.`,
           },
         }),
       });
@@ -1431,7 +1518,6 @@ async function syncWithPipedrive(
 
   } catch (error) {
     console.error('[Pipedrive] Erro na sincronização:', error);
-    // Não propaga erro - sync é best effort
   }
 }
 
@@ -1485,7 +1571,6 @@ async function saveInterpretation(
 // ========================================
 
 serve(async (req) => {
-  // CORS
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -1513,7 +1598,7 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // 1. Carregar contexto completo (com opt-out, classificação, pessoa e estado de conversa)
+    // 1. Carregar contexto completo
     const context = await loadMessageContext(supabase, messageId);
     const { 
       message, 
@@ -1528,11 +1613,10 @@ serve(async (req) => {
       conversationState 
     } = context;
 
-    // PATCH 5G-C Fase 6: Verificar opt-out antes de processar
+    // Verificar opt-out
     if (optOut) {
       console.log('[SDR-IA] Lead está em opt-out, bloqueando resposta automática:', message.lead_id);
       
-      // Ainda salva interpretação mas não envia resposta
       const intentId = await saveInterpretation(
         supabase,
         message,
@@ -1578,7 +1662,7 @@ serve(async (req) => {
       );
     }
 
-    // 3. Interpretar com IA (contexto enriquecido com pessoa e estado de conversa)
+    // 3. Interpretar com IA
     const { response: aiResponse, tokensUsados, tempoMs } = await interpretWithAI(
       message.conteudo,
       message.empresa,
@@ -1597,9 +1681,10 @@ serve(async (req) => {
       deve_responder: aiResponse.deve_responder,
       novo_estado_funil: aiResponse.novo_estado_funil,
       disc_estimado: aiResponse.disc_estimado,
+      ultima_pergunta: aiResponse.ultima_pergunta_id,
     });
 
-    // 4. Aplicar ação (com correção do MARCAR_OPT_OUT)
+    // 4. Aplicar ação
     const acaoAplicada = await applyAction(
       supabase,
       message.run_id,
@@ -1610,16 +1695,15 @@ serve(async (req) => {
       message.conteudo
     );
 
-    // 5. Enviar resposta automática se aplicável (e não for opt-out)
+    // 5. Enviar resposta automática
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
-    // CORREÇÃO: Enviar resposta quando deve_responder=true, independente da ação CRM
     if (
       aiResponse.deve_responder &&
       aiResponse.resposta_sugerida &&
       telefone &&
-      aiResponse.intent !== 'OPT_OUT' // Não responde a opt-out
+      aiResponse.intent !== 'OPT_OUT'
     ) {
       respostaTexto = aiResponse.resposta_sugerida;
       
@@ -1650,7 +1734,7 @@ serve(async (req) => {
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
 
-    // 7. PATCH 6: Salvar estado de conversa atualizado
+    // 7. Salvar estado de conversa atualizado
     if (message.lead_id && (aiResponse.novo_estado_funil || aiResponse.frameworks_atualizados || aiResponse.disc_estimado)) {
       const stateUpdates: {
         estado_funil?: EstadoFunil;
@@ -1664,7 +1748,6 @@ serve(async (req) => {
       }
       
       if (aiResponse.frameworks_atualizados) {
-        // Merge com dados existentes
         const existingData = conversationState?.framework_data || {};
         stateUpdates.framework_data = {
           ...existingData,
@@ -1691,15 +1774,14 @@ serve(async (req) => {
         stateUpdates
       );
       
-      // PATCH 6B: Salvar DISC na tabela pessoas (persistência global)
+      // Salvar DISC na tabela pessoas
       if (aiResponse.disc_estimado && pessoaContext?.pessoa.id) {
         await updatePessoaDISC(supabase, pessoaContext.pessoa.id, aiResponse.disc_estimado);
       }
     }
 
-    // 8. Sincronizar com Pipedrive (background task)
+    // 8. Sincronizar com Pipedrive
     if (pipedriveDealeId) {
-      // Fire and forget - não bloqueia a resposta
       syncWithPipedrive(
         pipedriveDealeId,
         message.empresa,
