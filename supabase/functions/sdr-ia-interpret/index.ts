@@ -146,6 +146,75 @@ const PERGUNTA_INSTRUCOES: Record<ProximaPerguntaTipo, string> = {
 };
 
 // ========================================
+// PATCH 6G: TABELA DE PREÇOS BLUE (IR CRIPTO)
+// ========================================
+
+const BLUE_PRICING = {
+  planos: [
+    { nome: 'IR Cripto - Plano Gold', preco: 'R$ 4.497', descricao: 'Apuração ILIMITADA de carteiras/exchanges, até 25k transações/ano' },
+    { nome: 'IR Cripto - Plano Diamond', preco: 'R$ 2.997', descricao: 'Até 4 carteiras/exchanges, até 25k transações/ano' },
+    { nome: 'IR Cripto - Customizado', preco: 'R$ 998', descricao: 'Até 4 carteiras/exchanges, até 2k transações/ano (uso interno, não divulgar)' },
+  ],
+  adicionais: [
+    { nome: 'Pacote +5.000 operações', preco: 'R$ 500' },
+    { nome: 'Apuração de dependente', preco: 'R$ 500/dependente' },
+    { nome: 'Upgrade Diamond → Gold', preco: 'R$ 1.500' },
+    { nome: 'IR Simples (sem cripto)', preco: 'R$ 300' },
+  ],
+  consultoria: [
+    { nome: 'Consultoria Geral', preco: 'R$ 1.200/hora', descricao: 'Com Mychel Mendes ou especialistas' },
+    { nome: 'Consultoria Privacidade', preco: 'R$ 1.500/hora', descricao: 'Estratégia de privacidade' },
+    { nome: 'Consultoria G20', preco: 'R$ 60.000/ano', descricao: 'Consultoria em grupo, 12 meses' },
+  ],
+  pagamento: {
+    formas: 'PIX à vista, criptomoedas, ou cartão até 12x sem juros',
+    descontoPix: '15%',
+    descontoCartao: '10%',
+  },
+  regras: {
+    planoCustomizadoRestrito: true, // não divulgar abertamente
+    naoNegociarPreco: true,
+  },
+};
+
+// Formatar preços para prompt
+function formatBluePricingForPrompt(): string {
+  let text = `\n## TABELA DE PREÇOS BLUE (IR CRIPTO) - USE QUANDO PERGUNTAREM SOBRE VALORES\n\n`;
+  
+  text += `### PLANOS PRINCIPAIS:\n`;
+  for (const p of BLUE_PRICING.planos) {
+    if (p.nome.includes('Customizado')) continue; // Não divulgar
+    text += `- **${p.nome}**: ${p.preco} (${p.descricao})\n`;
+  }
+  
+  text += `\n### SERVIÇOS ADICIONAIS:\n`;
+  for (const a of BLUE_PRICING.adicionais) {
+    text += `- ${a.nome}: ${a.preco}\n`;
+  }
+  
+  text += `\n### FORMAS DE PAGAMENTO:\n`;
+  text += `- ${BLUE_PRICING.pagamento.formas}\n`;
+  text += `- Desconto PIX/Cripto: até ${BLUE_PRICING.pagamento.descontoPix}\n`;
+  text += `- Desconto Cartão: até ${BLUE_PRICING.pagamento.descontoCartao}\n`;
+  
+  text += `\n### REGRAS DE PRECIFICAÇÃO:\n`;
+  text += `✅ PODE: Informar os valores dos planos Gold e Diamond\n`;
+  text += `✅ PODE: Explicar diferenças entre planos\n`;
+  text += `✅ PODE: Mencionar formas de pagamento e descontos padrão\n`;
+  text += `❌ NÃO PODE: Negociar preços ou dar descontos além do padrão\n`;
+  text += `❌ NÃO PODE: Divulgar o plano Customizado (uso interno)\n`;
+  text += `❌ NÃO PODE: Prometer valores diferentes dos tabelados\n`;
+  
+  text += `\n### QUANDO MENCIONAR PREÇOS:\n`;
+  text += `- Se o lead perguntar diretamente "quanto custa?"\n`;
+  text += `- Durante SPIN_N (Need-Payoff), após apresentar valor, vincular ao benefício\n`;
+  text += `- Se intent = DUVIDA_PRECO\n`;
+  text += `- Se intent = OBJECAO_PRECO, explicar o valor (não é só declaração, é tranquilidade)\n`;
+  
+  return text;
+}
+
+// ========================================
 // TIPOS EXISTENTES
 // ========================================
 
@@ -768,9 +837,10 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 ❌ NUNCA prometer retorno financeiro ou rentabilidade específica
 ❌ NUNCA indicar ou recomendar ativo específico para investir
 ❌ NUNCA inventar prazos ou metas de rentabilidade
-❌ NUNCA negociar preços ou oferecer descontos
+❌ NUNCA negociar preços ou oferecer descontos ALÉM DO PADRÃO (PIX 15%, Cartão 10%)
 ❌ NUNCA dar conselho de investimento personalizado
 ❌ NUNCA pressionar ou usar urgência artificial
+❌ NUNCA divulgar o plano "Customizado" da Blue (uso interno)
 
 ### PERMITIDO:
 ✅ Explicar conceitos gerais sobre tokenização/cripto
@@ -780,6 +850,7 @@ Se não houver indicadores claros, NÃO retorne disc_estimado.
 ✅ Agradecer e ser cordial
 ✅ Mencionar que pessoa já é cliente de outra empresa do grupo (para confiança)
 ✅ **FAZER HANDOFF para outra empresa** quando o lead demonstrar interesse genuíno
+✅ **INFORMAR PREÇOS DA BLUE** quando o lead perguntar (usar tabela fornecida)
 
 ## HANDOFF INTERNO (Ana ↔ Pedro)
 
@@ -1107,6 +1178,11 @@ async function interpretWithAI(
     if (conversationState.estado_funil !== 'SAUDACAO') {
       userPrompt += `\n⚠️ NÃO reinicie com apresentação. Continue de onde parou.\n`;
     }
+  }
+  
+  // PATCH 6G: Adicionar tabela de preços para BLUE
+  if (empresa === 'BLUE') {
+    userPrompt += formatBluePricingForPrompt();
   }
   
   // Contexto de classificação
