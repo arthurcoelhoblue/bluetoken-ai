@@ -1386,16 +1386,65 @@ async function applyAction(
           const validTemps: TemperaturaTipo[] = ['FRIO', 'MORNO', 'QUENTE'];
           
           if (validTemps.includes(novaTemp)) {
-            const { error } = await supabase
-              .from('lead_classifications')
-              .update({ 
-                temperatura: novaTemp,
-                updated_at: new Date().toISOString()
-              })
-              .eq('lead_id', leadId);
+            // Buscar empresa do lead para definir ICP default caso não exista classificação
+            const { data: leadContact } = await supabase
+              .from('lead_contacts')
+              .select('empresa')
+              .eq('lead_id', leadId)
+              .maybeSingle();
             
-            if (!error) {
-              console.log('[Ação] Temperatura ajustada:', { leadId, novaTemp });
+            const empresaLead = leadContact?.empresa || empresa;
+            const defaultIcp = empresaLead === 'TOKENIZA' 
+              ? 'TOKENIZA_NAO_CLASSIFICADO' 
+              : 'BLUE_NAO_CLASSIFICADO';
+            
+            // Verificar se já existe classificação para este lead
+            const { data: existingClassification } = await supabase
+              .from('lead_classifications')
+              .select('id')
+              .eq('lead_id', leadId)
+              .eq('empresa', empresaLead)
+              .maybeSingle();
+            
+            let upsertError;
+            
+            if (existingClassification) {
+              // UPDATE: Apenas atualizar temperatura se já existe
+              const { error } = await supabase
+                .from('lead_classifications')
+                .update({ 
+                  temperatura: novaTemp,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', existingClassification.id);
+              upsertError = error;
+            } else {
+              // INSERT: Criar nova classificação com valores padrão
+              const { error } = await supabase
+                .from('lead_classifications')
+                .insert({
+                  lead_id: leadId,
+                  empresa: empresaLead,
+                  temperatura: novaTemp,
+                  icp: defaultIcp,
+                  prioridade: 3,
+                  origem: 'AUTOMATICA',
+                });
+              upsertError = error;
+              console.log('[Ação] Nova classificação criada para lead sem classificação prévia:', { 
+                leadId, 
+                empresa: empresaLead, 
+                temperatura: novaTemp,
+                icp: defaultIcp
+              });
+            }
+            
+            if (!upsertError) {
+              console.log('[Ação] Temperatura ajustada:', { 
+                leadId, 
+                novaTemp, 
+                operacao: existingClassification ? 'UPDATE' : 'INSERT' 
+              });
               
               if (runId) {
                 await supabase.from('lead_cadence_events').insert({
@@ -1408,6 +1457,8 @@ async function applyAction(
               }
               
               return true;
+            } else {
+              console.error('[Ação] Erro ao ajustar temperatura:', upsertError);
             }
           }
         }
