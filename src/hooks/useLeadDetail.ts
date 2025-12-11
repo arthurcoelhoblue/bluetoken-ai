@@ -240,7 +240,13 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       classificationQuery.isLoading ||
       sgtEventsQuery.isLoading ||
       cadenceRunQuery.isLoading,
-    error: contactQuery.error || classificationQuery.error,
+    error: contactQuery.error || classificationQuery.error || sgtEventsQuery.error || cadenceRunQuery.error,
+    errors: {
+      contact: contactQuery.error,
+      classification: classificationQuery.error,
+      sgtEvents: sgtEventsQuery.error,
+      cadenceRun: cadenceRunQuery.error,
+    },
     refetch,
   };
 }

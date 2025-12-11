@@ -55,8 +55,16 @@ const App = () => (
             } />
             
             {/* Leads routes */}
-            <Route path="/leads" element={<LeadsList />} />
-            <Route path="/leads/:leadId/:empresa" element={<LeadDetail />} />
+            <Route path="/leads" element={
+              <ProtectedRoute>
+                <LeadsList />
+              </ProtectedRoute>
+            } />
+            <Route path="/leads/:leadId/:empresa" element={
+              <ProtectedRoute>
+                <LeadDetail />
+              </ProtectedRoute>
+            } />
             
             {/* Cadences routes - ÉPICO 4 */}
             <Route path="/cadences/new" element={
@@ -69,14 +77,38 @@ const App = () => (
                 <CadenceEditor />
               </ProtectedRoute>
             } />
-            <Route path="/cadences/runs/:runId" element={<CadenceRunDetail />} />
-            <Route path="/cadences/runs" element={<CadenceRunsList />} />
-            <Route path="/cadences/next-actions" element={<CadenceNextActions />} />
-            <Route path="/cadences/:cadenceId" element={<CadenceDetail />} />
-            <Route path="/cadences" element={<CadencesList />} />
+            <Route path="/cadences/runs/:runId" element={
+              <ProtectedRoute>
+                <CadenceRunDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/cadences/runs" element={
+              <ProtectedRoute>
+                <CadenceRunsList />
+              </ProtectedRoute>
+            } />
+            <Route path="/cadences/next-actions" element={
+              <ProtectedRoute>
+                <CadenceNextActions />
+              </ProtectedRoute>
+            } />
+            <Route path="/cadences/:cadenceId" element={
+              <ProtectedRoute>
+                <CadenceDetail />
+              </ProtectedRoute>
+            } />
+            <Route path="/cadences" element={
+              <ProtectedRoute>
+                <CadencesList />
+              </ProtectedRoute>
+            } />
             
             {/* Tokeniza routes */}
-            <Route path="/tokeniza/offers" element={<TokenizaOffers />} />
+            <Route path="/tokeniza/offers" element={
+              <ProtectedRoute>
+                <TokenizaOffers />
+              </ProtectedRoute>
+            } />
             
             {/* Admin routes */}
             <Route path="/admin/produtos" element={
