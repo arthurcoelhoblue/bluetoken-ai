@@ -297,6 +297,112 @@ const TOKENIZA_KNOWLEDGE = {
 };
 
 // ========================================
+// PATCH 8: CROSS-SELLING BLUE ↔ TOKENIZA
+// ========================================
+
+interface CrossCompanyInterest {
+  detected: boolean;
+  targetCompany: EmpresaTipo | null;
+  reason: string;
+}
+
+function detectCrossCompanyInterest(
+  mensagem: string, 
+  empresaAtual: EmpresaTipo
+): CrossCompanyInterest {
+  const msgLower = mensagem.toLowerCase();
+  
+  // Palavras-chave que indicam interesse em Tokeniza (para leads da Blue)
+  const tokenizaKeywords = [
+    'investimento', 'investir', 'investimentos',
+    'tokenizado', 'tokenização', 'token',
+    'ofertas', 'oferta disponível', 'oportunidade de investimento',
+    'rentabilidade', 'rendimento', 'retorno',
+    'aplicar dinheiro', 'onde aplicar', 'aplicação',
+    'renda passiva', 'ganhar dinheiro investindo',
+    'quanto rende', 'qual o retorno',
+  ];
+  
+  // Palavras-chave que indicam interesse em Blue (para leads da Tokeniza)
+  const blueKeywords = [
+    'imposto de renda', 'ir de cripto', 'declarar cripto',
+    'declaração', 'receita federal',
+    'exchange', 'exchanges',
+    'bitcoin', 'ethereum', 'cripto', 'criptomoeda',
+    'ganho de capital', 'come-cotas',
+    'declarar', 'imposto', 'ir',
+  ];
+  
+  // Se está na Blue e demonstra interesse em investimentos
+  if (empresaAtual === 'BLUE') {
+    for (const keyword of tokenizaKeywords) {
+      if (msgLower.includes(keyword)) {
+        return {
+          detected: true,
+          targetCompany: 'TOKENIZA',
+          reason: `Lead mencionou "${keyword}" - possível interesse em investimentos tokenizados`,
+        };
+      }
+    }
+  }
+  
+  // Se está na Tokeniza e demonstra interesse em IR/cripto
+  if (empresaAtual === 'TOKENIZA') {
+    for (const keyword of blueKeywords) {
+      if (msgLower.includes(keyword)) {
+        return {
+          detected: true,
+          targetCompany: 'BLUE',
+          reason: `Lead mencionou "${keyword}" - possível interesse em serviço de IR`,
+        };
+      }
+    }
+  }
+  
+  return { detected: false, targetCompany: null, reason: '' };
+}
+
+const CROSS_COMPANY_INSTRUCTIONS = `
+## CROSS-SELLING ENTRE EMPRESAS DO GRUPO
+
+Blue e Tokeniza são empresas do mesmo grupo. Você pode oferecer produtos de ambas quando fizer sentido.
+
+### REGRAS DE TRANSIÇÃO:
+1. SEMPRE deixe claro quando mudar de contexto
+2. Use frases de transição como:
+   - "Sobre investimentos, deixa eu te falar da Tokeniza..."
+   - "A gente também tem a Blue, que cuida de IR de cripto..."
+3. Não misture assuntos - trate um de cada vez
+4. Pergunte se o lead quer saber mais antes de aprofundar
+
+### QUANDO OFERECER TOKENIZA (para leads Blue):
+- Lead pergunta sobre investimentos
+- Lead menciona onde aplicar dinheiro
+- Lead quer diversificar patrimônio
+
+### QUANDO OFERECER BLUE (para leads Tokeniza):
+- Lead menciona que opera cripto
+- Lead pergunta sobre imposto de renda
+- Lead tem dúvidas sobre declaração
+
+### EXEMPLO DE TRANSIÇÃO BLUE → TOKENIZA:
+Lead Blue: "Quero saber de investimentos também"
+Amélia: "Sobre investimentos, a gente tem a Tokeniza - somos do mesmo grupo. 
+Lá você encontra ofertas tokenizadas com garantia real. Hoje temos [citar ofertas]. 
+Quer que eu explique como funciona?"
+
+### EXEMPLO DE TRANSIÇÃO TOKENIZA → BLUE:
+Lead Tokeniza: "Tenho cripto também, preciso declarar"
+Amélia: "Sobre declaração de cripto, a gente tem a Blue - também do nosso grupo.
+Eles fazem toda a apuração e declaração de IR de criptomoedas. 
+Quer que eu te passe os planos disponíveis?"
+
+### IMPORTANTE:
+- Quando apresentar ofertas Tokeniza, SEMPRE cite nome, rentabilidade e prazo de cada oferta ativa
+- Não force cross-selling - só ofereça se o lead demonstrar interesse
+`;
+
+// ========================================
 // PATCH 6G+: INTERFACE OFERTAS TOKENIZA
 // ========================================
 
@@ -1564,9 +1670,34 @@ async function interpretWithAI(
     }
   }
   
+  // PATCH 8: Detectar interesse cross-company
+  const crossInterest = detectCrossCompanyInterest(mensagem, empresa);
+  if (crossInterest.detected) {
+    console.log('[CROSS-SELLING]', {
+      empresaOriginal: empresa,
+      empresaAlvo: crossInterest.targetCompany,
+      razao: crossInterest.reason,
+    });
+    userPrompt += CROSS_COMPANY_INSTRUCTIONS;
+  }
+  
   // PATCH 6G: Adicionar tabela de preços para BLUE
   if (empresa === 'BLUE') {
     userPrompt += formatBluePricingForPrompt();
+    
+    // PATCH 8: Se detectou interesse em Tokeniza, carregar ofertas também
+    if (crossInterest.detected && crossInterest.targetCompany === 'TOKENIZA') {
+      userPrompt += formatTokenizaKnowledgeForPrompt();
+      console.log('[CROSS] Conhecimento Tokeniza adicionado para lead Blue');
+      
+      try {
+        const ofertas = await fetchActiveTokenizaOffers();
+        userPrompt += formatTokenizaOffersForPrompt(ofertas);
+        console.log('[CROSS] Ofertas Tokeniza carregadas para lead Blue:', ofertas.length);
+      } catch (err) {
+        console.error('[CROSS] Erro ao buscar ofertas Tokeniza:', err);
+      }
+    }
   }
   
   // PATCH 7: Adicionar conhecimento base Tokeniza + ofertas ativas
@@ -1583,6 +1714,12 @@ async function interpretWithAI(
     } catch (err) {
       console.error('[7] Erro ao buscar ofertas Tokeniza:', err);
       userPrompt += `\n## OFERTAS TOKENIZA\nNão foi possível carregar ofertas no momento. Foque na qualificação.\n`;
+    }
+    
+    // PATCH 8: Se detectou interesse em Blue, carregar preços também
+    if (crossInterest.detected && crossInterest.targetCompany === 'BLUE') {
+      userPrompt += formatBluePricingForPrompt();
+      console.log('[CROSS] Preços Blue adicionados para lead Tokeniza');
     }
   }
   
