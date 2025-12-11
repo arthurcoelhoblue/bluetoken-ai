@@ -2,13 +2,10 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import type { TokenizaOffersResponse, TokenizaOferta } from "@/types/tokeniza";
 
-export function useTokenizaOffers(status?: string) {
+export function useTokenizaOffers() {
   return useQuery({
-    queryKey: ['tokeniza-offers', status],
+    queryKey: ['tokeniza-offers'],
     queryFn: async (): Promise<TokenizaOffersResponse> => {
-      const params = new URLSearchParams();
-      if (status) params.set('status', status);
-      
       const { data, error } = await supabase.functions.invoke('tokeniza-offers', {
         body: null,
         method: 'GET',
@@ -20,8 +17,8 @@ export function useTokenizaOffers(status?: string) {
 
       return data as TokenizaOffersResponse;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutos de cache
-    refetchInterval: 10 * 60 * 1000, // Refresh a cada 10 minutos
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 10 * 60 * 1000,
   });
 }
 
@@ -31,19 +28,24 @@ export function useTokenizaOffer(offerId: string | undefined) {
     queryFn: async (): Promise<TokenizaOferta> => {
       if (!offerId) throw new Error('ID da oferta não informado');
       
-      const { data, error } = await supabase.functions.invoke('tokeniza-offers', {
-        body: null,
-        method: 'GET',
-      });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/tokeniza-offers?id=${encodeURIComponent(offerId)}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+            'apikey': import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
+          },
+        }
+      );
 
-      if (error) {
-        throw new Error(error.message || 'Erro ao buscar oferta');
+      if (!response.ok) {
+        throw new Error('Erro ao buscar oferta');
       }
 
-      const response = data as TokenizaOffersResponse;
-      const offer = response.ofertas.find(o => o.id === offerId);
-      if (!offer) throw new Error('Oferta não encontrada');
-      
+      const offer = await response.json() as TokenizaOferta;
       return offer;
     },
     enabled: !!offerId,
