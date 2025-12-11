@@ -110,6 +110,7 @@ type ProximaPerguntaTipo =
   | 'GPCT_G' | 'GPCT_P' | 'GPCT_C' | 'GPCT_T'
   | 'BANT_B' | 'BANT_A' | 'BANT_N' | 'BANT_T'
   | 'CTA_REUNIAO'
+  | 'ESCALAR_IMEDIATO'
   | 'NENHUMA';
 
 interface ConversationQualiState {
@@ -120,6 +121,130 @@ interface ConversationQualiState {
   bant?: { b?: string | null; a?: string | null; n?: string | null; t?: string | null };
   temperatura: TemperaturaTipo;
   intentAtual?: LeadIntentTipo;
+}
+
+// ========================================
+// PATCH 9: DETECÇÃO DE LEAD QUENTE IMEDIATO
+// ========================================
+
+type SinalUrgenciaTipo = 
+  | 'DECISAO_TOMADA'       // "quero contratar", "como pago"
+  | 'URGENCIA_TEMPORAL'    // "preciso resolver essa semana"
+  | 'FRUSTRADO_ALTERNATIVA' // "já tentei outro e não deu"
+  | 'PEDIDO_REUNIAO_DIRETO' // "quero falar com alguém"
+  | 'PEDIDO_HUMANO'        // "quero falar com humano/atendente"
+  | 'NENHUM';
+
+interface DeteccaoUrgencia {
+  detectado: boolean;
+  tipo: SinalUrgenciaTipo;
+  frase_gatilho: string | null;
+  confianca: 'ALTA' | 'MEDIA' | 'BAIXA';
+}
+
+// Padrões de detecção de lead quente imediato
+const URGENCIA_PATTERNS: Record<Exclude<SinalUrgenciaTipo, 'NENHUM'>, string[]> = {
+  DECISAO_TOMADA: [
+    'quero contratar', 'quero fechar', 'vamos fechar', 'fechado', 
+    'como pago', 'como faço o pagamento', 'manda o pix', 'manda o contrato',
+    'pode mandar', 'aceito', 'bora', 'vamos lá', 'to dentro',
+    'quero esse plano', 'quero o gold', 'quero o diamond',
+    'próximo passo', 'qual o próximo passo', 'como proceder',
+    'me manda o link', 'onde pago', 'pode cobrar',
+  ],
+  URGENCIA_TEMPORAL: [
+    'urgente', 'é urgente', 'preciso urgente', 'urgência',
+    'prazo', 'até amanhã', 'essa semana', 'semana que vem',
+    'receita federal', 'malha fina', 'multa', 
+    'declaração', 'prazo da declaração', 'prazo do ir',
+    'estou atrasado', 'tô atrasado', 'em atraso',
+    'preciso resolver rápido', 'preciso disso logo',
+    'não posso esperar', 'correndo contra o tempo',
+  ],
+  FRUSTRADO_ALTERNATIVA: [
+    'já tentei', 'já usei', 'não funcionou', 'não deu certo',
+    'gastei dinheiro', 'perdi dinheiro', 'joguei dinheiro fora',
+    'contador não resolve', 'contador não entende',
+    'cansei', 'cansado de', 'frustrado', 
+    'não resolveu', 'não consegui', 'não conseguiu',
+    'péssima experiência', 'experiência ruim', 
+    'outro serviço', 'outra empresa', 'concorrente',
+  ],
+  PEDIDO_REUNIAO_DIRETO: [
+    'quero uma reunião', 'marcar reunião', 'agendar reunião',
+    'podemos conversar', 'vamos conversar', 'me liga',
+    'pode me ligar', 'quero falar por telefone',
+    'prefiro por telefone', 'melhor por telefone',
+    'quero entender melhor pessoalmente',
+  ],
+  PEDIDO_HUMANO: [
+    'falar com humano', 'falar com alguém', 'falar com uma pessoa',
+    'atendente', 'atendimento humano', 'pessoa real',
+    'especialista', 'falar com especialista', 'consultor',
+    'vocês são robô', 'você é robô', 'isso é bot',
+    'quero falar com gente', 'tem alguém aí',
+  ],
+};
+
+/**
+ * PATCH 9: Detecta se o lead está "quente" e pronto para escalar imediatamente
+ * Retorna sinais de urgência que indicam que devemos PARAR de qualificar
+ */
+function detectarLeadQuenteImediato(mensagem: string): DeteccaoUrgencia {
+  const msgLower = mensagem.toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, ''); // Remove acentos para melhor matching
+  
+  // Ordem de prioridade: PEDIDO_HUMANO > DECISAO_TOMADA > URGENCIA_TEMPORAL > FRUSTRADO_ALTERNATIVA > PEDIDO_REUNIAO_DIRETO
+  const ordemPrioridade: Exclude<SinalUrgenciaTipo, 'NENHUM'>[] = [
+    'PEDIDO_HUMANO',
+    'DECISAO_TOMADA', 
+    'URGENCIA_TEMPORAL',
+    'FRUSTRADO_ALTERNATIVA',
+    'PEDIDO_REUNIAO_DIRETO',
+  ];
+  
+  for (const tipo of ordemPrioridade) {
+    const patterns = URGENCIA_PATTERNS[tipo];
+    
+    for (const pattern of patterns) {
+      const patternNorm = pattern.toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+      
+      if (msgLower.includes(patternNorm)) {
+        // Determinar confiança baseada no tipo e contexto
+        let confianca: 'ALTA' | 'MEDIA' | 'BAIXA' = 'MEDIA';
+        
+        // Padrões que são ALTA confiança (ação clara)
+        if (['quero contratar', 'como pago', 'manda o pix', 'vamos fechar', 
+             'falar com humano', 'preciso urgente', 'malha fina'].some(p => msgLower.includes(p))) {
+          confianca = 'ALTA';
+        }
+        
+        // Padrões que são BAIXA confiança (podem ser exploratórios)
+        if (['podemos conversar', 'já tentei', 'prazo'].some(p => msgLower.includes(p) && msgLower.length < 20)) {
+          confianca = 'BAIXA';
+        }
+        
+        console.log('[URGENCIA] Lead quente detectado:', { tipo, pattern, confianca, mensagem: mensagem.substring(0, 50) });
+        
+        return {
+          detectado: true,
+          tipo,
+          frase_gatilho: pattern,
+          confianca,
+        };
+      }
+    }
+  }
+  
+  return {
+    detectado: false,
+    tipo: 'NENHUM',
+    frase_gatilho: null,
+    confianca: 'BAIXA',
+  };
 }
 
 // Mapeamento de tipos de pergunta para instruções
@@ -141,6 +266,7 @@ const PERGUNTA_INSTRUCOES: Record<ProximaPerguntaTipo, string> = {
   'BANT_T': 'Faça uma pergunta sobre TIMING (T): entenda quando ele quer resolver isso - agora, em meses, distante.',
   // CTA
   'CTA_REUNIAO': 'O lead está qualificado. Sugira uma reunião com nosso especialista explicando brevemente o que será discutido.',
+  'ESCALAR_IMEDIATO': '🚨 ESCALAÇÃO IMEDIATA: O lead demonstrou sinal claro de urgência. Responda com empatia, confirme o interesse e avise que vai transferir para especialista.',
   'NENHUMA': 'Continue a conversa de forma natural, respondendo ao que o lead disse.',
 };
 
@@ -901,8 +1027,48 @@ function decidirProximaPerguntaTOKENIZA(state: ConversationQualiState): ProximaP
 
 /**
  * Função principal que decide próxima pergunta com base no contexto
+ * PATCH 9: Agora verifica urgência ANTES de decidir próxima pergunta
  */
-function decidirProximaPergunta(state: ConversationQualiState): { tipo: ProximaPerguntaTipo; instrucao: string } {
+function decidirProximaPergunta(
+  state: ConversationQualiState, 
+  mensagemAtual?: string
+): { tipo: ProximaPerguntaTipo; instrucao: string; urgencia?: DeteccaoUrgencia } {
+  
+  // PATCH 9: Verificar se há sinal de urgência ANTES de continuar qualificação
+  if (mensagemAtual) {
+    const urgencia = detectarLeadQuenteImediato(mensagemAtual);
+    
+    if (urgencia.detectado && urgencia.confianca === 'ALTA') {
+      console.log('[ESCALACAO] Lead quente detectado - pulando qualificação:', {
+        tipo: urgencia.tipo,
+        fraseGatilho: urgencia.frase_gatilho,
+        empresa: state.empresa,
+        estadoFunil: state.estadoFunil,
+      });
+      
+      return { 
+        tipo: 'ESCALAR_IMEDIATO', 
+        instrucao: PERGUNTA_INSTRUCOES['ESCALAR_IMEDIATO'],
+        urgencia,
+      };
+    }
+    
+    // Se urgência MEDIA e lead já está QUENTE, também escalamos
+    if (urgencia.detectado && urgencia.confianca === 'MEDIA' && state.temperatura === 'QUENTE') {
+      console.log('[ESCALACAO] Lead quente + urgência média - escalando:', {
+        tipo: urgencia.tipo,
+        temperatura: state.temperatura,
+      });
+      
+      return { 
+        tipo: 'ESCALAR_IMEDIATO', 
+        instrucao: PERGUNTA_INSTRUCOES['ESCALAR_IMEDIATO'],
+        urgencia,
+      };
+    }
+  }
+  
+  // Fluxo normal de qualificação
   let tipo: ProximaPerguntaTipo;
   
   if (state.empresa === 'BLUE') {
@@ -1513,6 +1679,52 @@ Qualificar de forma consultiva usando frameworks:
 Você NÃO é agendadora. Você constrói relacionamento.
 Só sugere reunião quando faz sentido e você receber instrução CTA_REUNIAO.
 
+## 🚨 ESCALAÇÃO IMEDIATA - QUANDO PARAR DE QUALIFICAR
+
+⚠️ REGRA CRÍTICA: Se o lead quer comprar, NÃO CONTINUE QUALIFICANDO!
+
+### GATILHOS DE ESCALAÇÃO IMEDIATA (NÃO PERGUNTE MAIS, ESCALE):
+
+1. **Lead pediu para fechar/contratar:**
+   - "quero contratar", "como pago", "manda o contrato", "vamos fechar"
+   → RESPOSTA: "Perfeito! Vou te passar pro nosso especialista finalizar os detalhes. Ele vai te chamar já já."
+   → AÇÃO: ESCALAR_HUMANO
+
+2. **Lead tem urgência real (prazo/multa):**
+   - "prazo é essa semana", "estou atrasado", "receita federal", "malha fina"
+   → RESPOSTA: "Entendo a urgência! Vou acionar nossa equipe agora pra resolver isso pra você."
+   → AÇÃO: ESCALAR_HUMANO
+
+3. **Lead pediu humano explicitamente:**
+   - "quero falar com alguém", "tem atendente", "falar com pessoa"
+   → RESPOSTA: "Claro! Já estou acionando alguém da equipe pra te atender."
+   → AÇÃO: ESCALAR_HUMANO
+
+4. **Lead frustrado com alternativa:**
+   - "já tentei outro", "gastei dinheiro e não resolveu", "cansei"
+   → RESPOSTA: "Entendo sua frustração. Vou te passar pro especialista que vai te ajudar de verdade."
+   → AÇÃO: ESCALAR_HUMANO
+
+### IMPORTANTE:
+- Quando receber instrução ESCALAR_IMEDIATO, sua ação DEVE ser ESCALAR_HUMANO
+- Quando escalar, seja empático mas BREVE
+- NÃO faça mais perguntas de qualificação depois de detectar urgência
+- Confirme o interesse, gere confiança e avise da transferência
+
+### EXEMPLOS DE ESCALAÇÃO:
+
+LEAD: "Quero contratar, como faço o pagamento?"
+✅ "Show! Vou te passar pro Felipe que cuida dessa parte. Ele vai te chamar em seguida."
+❌ "Antes de contratar, me conta: quantas exchanges você usa?" (ERRADO! Lead quer fechar!)
+
+LEAD: "Preciso resolver isso urgente, prazo é semana que vem"
+✅ "Entendi a urgência! Vou acionar nossa equipe agora. O pessoal prioriza casos assim."
+❌ "Como você faz a declaração hoje?" (ERRADO! Lead tem pressa!)
+
+LEAD: "Você é um robô? Quero falar com uma pessoa"
+✅ "Kk sou eu sim, Amélia! Mas entendi, vou te passar pra equipe. Já já te chamam."
+❌ "Não sou robô! Me conta, como você..." (ERRADO! Lead quer humano!)
+
 ## INTENÇÕES
 
 INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO, SOLICITACAO_CONTATO
@@ -1711,7 +1923,7 @@ async function interpretWithAI(
     throw new Error('LOVABLE_API_KEY não configurada');
   }
 
-  // PATCH 6G: Calcular próxima pergunta baseado no estado atual
+  // PATCH 6G + 9: Calcular próxima pergunta baseado no estado atual + detectar urgência
   const qualiState: ConversationQualiState = {
     empresa,
     estadoFunil: conversationState?.estado_funil || 'SAUDACAO',
@@ -1722,8 +1934,14 @@ async function interpretWithAI(
     intentAtual: undefined, // Será determinado pela IA
   };
   
-  const proximaPergunta = decidirProximaPergunta(qualiState);
-  console.log('[6G] Próxima pergunta decidida:', proximaPergunta);
+  // PATCH 9: Passa a mensagem atual para detectar urgência
+  const proximaPergunta = decidirProximaPergunta(qualiState, mensagem);
+  console.log('[6G+9] Próxima pergunta decidida:', {
+    tipo: proximaPergunta.tipo,
+    urgenciaDetectada: proximaPergunta.urgencia?.detectado || false,
+    urgenciaTipo: proximaPergunta.urgencia?.tipo || null,
+    fraseGatilho: proximaPergunta.urgencia?.frase_gatilho || null,
+  });
 
   // Montar contexto enriquecido
   let userPrompt = `EMPRESA_CONTEXTO: ${empresa}\n`;
@@ -1733,11 +1951,22 @@ async function interpretWithAI(
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
-  // PATCH 6G: Instrução de próxima pergunta (CRÍTICO!)
-  userPrompt += `\n## ⚡ INSTRUÇÃO DE PRÓXIMA PERGUNTA (SIGA OBRIGATORIAMENTE)\n`;
-  userPrompt += `TIPO: ${proximaPergunta.tipo}\n`;
-  userPrompt += `INSTRUÇÃO: ${proximaPergunta.instrucao}\n`;
-  userPrompt += `\n⚠️ Sua resposta DEVE incluir uma pergunta seguindo esta instrução, a menos que seja NENHUMA.\n`;
+  // PATCH 9: Instrução especial se escalação imediata
+  if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {
+    userPrompt += `\n## 🚨 ESCALAÇÃO IMEDIATA DETECTADA\n`;
+    userPrompt += `TIPO DE URGÊNCIA: ${proximaPergunta.urgencia.tipo}\n`;
+    userPrompt += `GATILHO DETECTADO: "${proximaPergunta.urgencia.frase_gatilho}"\n`;
+    userPrompt += `CONFIANÇA: ${proximaPergunta.urgencia.confianca}\n`;
+    userPrompt += `\n⚠️ AÇÃO OBRIGATÓRIA: Responda com empatia, confirme interesse e ESCALE para humano.\n`;
+    userPrompt += `⚠️ SUA AÇÃO DEVE SER: ESCALAR_HUMANO\n`;
+    userPrompt += `⚠️ NÃO FAÇA perguntas de qualificação. O lead quer ação AGORA.\n`;
+  } else {
+    // PATCH 6G: Instrução de próxima pergunta (CRÍTICO!)
+    userPrompt += `\n## ⚡ INSTRUÇÃO DE PRÓXIMA PERGUNTA (SIGA OBRIGATORIAMENTE)\n`;
+    userPrompt += `TIPO: ${proximaPergunta.tipo}\n`;
+    userPrompt += `INSTRUÇÃO: ${proximaPergunta.instrucao}\n`;
+    userPrompt += `\n⚠️ Sua resposta DEVE incluir uma pergunta seguindo esta instrução, a menos que seja NENHUMA.\n`;
+  }
   
   // Contexto da pessoa global (multi-empresa)
   if (pessoaContext) {
