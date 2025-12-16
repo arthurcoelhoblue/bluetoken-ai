@@ -2756,7 +2756,47 @@ serve(async (req) => {
   }
 
   try {
-    const { messageId }: InterpretRequest = await req.json();
+    const body = await req.json();
+    
+    // MODO DE TESTE: Para testar detecção de urgência sem API
+    if (body.testMode === 'urgencia') {
+      const mensagens = body.mensagens || [
+        'quero contratar',
+        'como pago?',
+        'preciso resolver urgente',
+        'já tentei outro serviço e não funcionou',
+        'quero falar com alguém humano',
+        'vamos fechar',
+        'estou em malha fina',
+        'qual o prazo?',
+        'obrigado pela informação',
+        'oi, tudo bem?',
+      ];
+      
+      const resultados = mensagens.map((msg: string) => {
+        const deteccao = detectarLeadQuenteImediato(msg);
+        return {
+          mensagem: msg,
+          ...deteccao,
+          deveEscalar: deteccao.detectado && (deteccao.confianca === 'ALTA' || deteccao.confianca === 'MEDIA'),
+        };
+      });
+      
+      console.log('[TEST] Detecção de urgência testada:', resultados.length, 'mensagens');
+      
+      return new Response(
+        JSON.stringify({ 
+          testMode: 'urgencia',
+          total: resultados.length,
+          detectados: resultados.filter((r: { detectado: boolean }) => r.detectado).length,
+          escalarImediato: resultados.filter((r: { deveEscalar: boolean }) => r.deveEscalar).length,
+          resultados,
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    
+    const { messageId } = body as InterpretRequest;
 
     if (!messageId) {
       return new Response(
