@@ -2140,53 +2140,156 @@ async function interpretWithAI(
     estadoFunil: conversationState?.estado_funil,
   });
 
-  // PATCH: Migração para Claude Opus 4 via API Anthropic
-  const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-  if (!ANTHROPIC_API_KEY) {
-    throw new Error('ANTHROPIC_API_KEY não configurada');
+  // ========================================
+  // SISTEMA DE FALLBACK DE MODELOS IA
+  // Prioridade: 1) Anthropic Claude → 2) Gemini → 3) GPT
+  // ========================================
+  
+  type ModelProvider = 'ANTHROPIC' | 'GEMINI' | 'GPT';
+  
+  interface AICallResult {
+    success: boolean;
+    content?: string;
+    tokensUsados?: number;
+    provider?: ModelProvider;
+    error?: string;
   }
-
-  console.log('[IA] Usando Claude Opus 4 via Anthropic API');
-
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-opus-4-1-20250805',
-      max_tokens: 1500,
-      temperature: 0.3,
-      system: SYSTEM_PROMPT,
-      messages: [
-        { role: 'user', content: userPrompt },
-      ],
-    }),
-  });
-
-  if (!response.ok) {
-    const errText = await response.text();
-    console.error('[IA] Erro na API Anthropic:', response.status, errText);
-    throw new Error(`Erro na API Anthropic: ${response.status}`);
+  
+  async function tryAnthropic(systemPrompt: string, userPrompt: string): Promise<AICallResult> {
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!ANTHROPIC_API_KEY) {
+      return { success: false, error: 'ANTHROPIC_API_KEY não configurada' };
+    }
+    
+    try {
+      console.log('[IA] Tentando Anthropic Claude Sonnet 4.5...');
+      
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-5-20250514',
+          max_tokens: 1500,
+          temperature: 0.3,
+          system: systemPrompt,
+          messages: [{ role: 'user', content: userPrompt }],
+        }),
+      });
+      
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error('[IA] Anthropic falhou:', response.status, errText);
+        return { success: false, error: `Anthropic ${response.status}: ${errText}` };
+      }
+      
+      const data = await response.json();
+      const content = data.content?.[0]?.text;
+      const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+      
+      if (!content) {
+        return { success: false, error: 'Resposta vazia do Anthropic' };
+      }
+      
+      console.log('[IA] ✅ Anthropic respondeu:', { tokens, contentPreview: content.substring(0, 100) });
+      return { success: true, content, tokensUsados: tokens, provider: 'ANTHROPIC' };
+    } catch (err) {
+      console.error('[IA] Erro Anthropic:', err);
+      return { success: false, error: String(err) };
+    }
   }
-
-  const data = await response.json();
-  const content = data.content?.[0]?.text;
-  const tokensUsados = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+  
+  async function tryLovableAI(systemPrompt: string, userPrompt: string, model: string, provider: ModelProvider): Promise<AICallResult> {
+    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    if (!LOVABLE_API_KEY) {
+      return { success: false, error: 'LOVABLE_API_KEY não configurada' };
+    }
+    
+    try {
+      console.log(`[IA] Tentando ${provider} (${model}) via Lovable AI...`);
+      
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[IA] ${provider} falhou:`, response.status, errText);
+        
+        // Erros específicos do Lovable AI
+        if (response.status === 429) {
+          return { success: false, error: 'Rate limit Lovable AI excedido' };
+        }
+        if (response.status === 402) {
+          return { success: false, error: 'Créditos Lovable AI insuficientes' };
+        }
+        
+        return { success: false, error: `${provider} ${response.status}: ${errText}` };
+      }
+      
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      const tokens = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+      
+      if (!content) {
+        return { success: false, error: `Resposta vazia do ${provider}` };
+      }
+      
+      console.log(`[IA] ✅ ${provider} respondeu:`, { tokens, contentPreview: content.substring(0, 100) });
+      return { success: true, content, tokensUsados: tokens, provider };
+    } catch (err) {
+      console.error(`[IA] Erro ${provider}:`, err);
+      return { success: false, error: String(err) };
+    }
+  }
+  
+  // Executar fallback em ordem de prioridade
+  let aiResult: AICallResult;
+  
+  // 1. Tentar Anthropic Claude (modelo primário)
+  aiResult = await tryAnthropic(SYSTEM_PROMPT, userPrompt);
+  
+  // 2. Fallback para Gemini via Lovable AI
+  if (!aiResult.success) {
+    console.log('[IA] ⚠️ Anthropic falhou, tentando Gemini...');
+    aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, 'google/gemini-2.5-flash', 'GEMINI');
+  }
+  
+  // 3. Fallback para GPT via Lovable AI
+  if (!aiResult.success) {
+    console.log('[IA] ⚠️ Gemini falhou, tentando GPT...');
+    aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, 'openai/gpt-5-mini', 'GPT');
+  }
+  
+  // Se todos falharam, lançar erro
+  if (!aiResult.success) {
+    console.error('[IA] ❌ Todos os modelos falharam:', aiResult.error);
+    throw new Error(`Todos os modelos de IA falharam. Último erro: ${aiResult.error}`);
+  }
+  
+  const content = aiResult.content!;
+  const tokensUsados = aiResult.tokensUsados || 0;
   const tempoMs = Date.now() - startTime;
-
-  if (!content) {
-    throw new Error('Resposta vazia da IA');
-  }
-
-  console.log('[IA] Resposta Claude Opus 4:', { 
-    tokensInput: data.usage?.input_tokens,
-    tokensOutput: data.usage?.output_tokens,
+  
+  console.log(`[IA] Resposta final (${aiResult.provider}):`, { 
+    provider: aiResult.provider,
     tokensTotal: tokensUsados, 
     tempoMs, 
-    stopReason: data.stop_reason,
     content: content.substring(0, 300) 
   });
 
