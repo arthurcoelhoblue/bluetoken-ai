@@ -362,6 +362,16 @@ function isValidEmailFormat(email: string | null): boolean {
 
 /**
  * Sanitiza dados de contato do lead
+ * 
+ * REGRAS DE DESCARTE:
+ * - Caso 1: Sem telefone E sem email → DESCARTA
+ * - Caso 2: Sem telefone (ou vazio) E email placeholder → DESCARTA
+ * - Caso 3: Telefone lixo (presente mas inválido) E email ausente/placeholder → DESCARTA
+ * 
+ * ISSUES INFORMATIVOS (não descarta):
+ * - Email placeholder com telefone válido → MEDIA
+ * - Email formato inválido → BAIXA
+ * - Telefone com DDI suspeito → BAIXA
  */
 function sanitizeLeadContact(input: {
   telefone?: string | null;
@@ -376,6 +386,9 @@ function sanitizeLeadContact(input: {
   const emailPlaceholder = isPlaceholderEmail(email || null);
   const emailValid = isValidEmailFormat(email || null);
   
+  // Determina se tem telefone informado (mesmo que lixo)
+  const temTelefoneInformado = telefone && telefone.trim() !== '';
+  
   // Caso 1: Sem telefone E sem email
   if (!phoneInfo && !email) {
     descartarLead = true;
@@ -387,8 +400,20 @@ function sanitizeLeadContact(input: {
     return { descartarLead, issues, phoneInfo: null, emailPlaceholder: false };
   }
   
-  // Caso 2: Telefone lixo E email placeholder/inexistente
-  if (!phoneInfo && telefone && (!email || emailPlaceholder)) {
+  // Caso 2: Sem telefone (nulo ou vazio) E email placeholder
+  // Este é o caso que estava falhando antes!
+  if (!phoneInfo && !temTelefoneInformado && emailPlaceholder) {
+    descartarLead = true;
+    issues.push({
+      tipo: 'SEM_CANAL_CONTATO',
+      severidade: 'ALTA',
+      mensagem: 'Lead sem telefone e com e-mail placeholder. Não é possível contatar.'
+    });
+    return { descartarLead, issues, phoneInfo: null, emailPlaceholder: true };
+  }
+  
+  // Caso 3: Telefone lixo (informado mas inválido) E email placeholder/inexistente
+  if (!phoneInfo && temTelefoneInformado && (!email || emailPlaceholder)) {
     descartarLead = true;
     issues.push({
       tipo: 'TELEFONE_LIXO',
@@ -405,7 +430,7 @@ function sanitizeLeadContact(input: {
     return { descartarLead, issues, phoneInfo: null, emailPlaceholder };
   }
   
-  // Caso 3: Email placeholder mas telefone ok
+  // Caso 4: Email placeholder mas telefone ok (não descarta, apenas registra issue)
   if (emailPlaceholder && phoneInfo) {
     issues.push({
       tipo: 'EMAIL_PLACEHOLDER',
@@ -414,7 +439,7 @@ function sanitizeLeadContact(input: {
     });
   }
   
-  // Caso 4: Email com formato inválido (mas não é placeholder)
+  // Caso 5: Email com formato inválido (mas não é placeholder)
   if (email && !emailPlaceholder && !emailValid) {
     issues.push({
       tipo: 'EMAIL_INVALIDO',
@@ -423,8 +448,8 @@ function sanitizeLeadContact(input: {
     });
   }
   
-  // Caso 5: Telefone suspeito (DDI não reconhecido)
-  if (telefone && !phoneInfo && telefone.replace(/\D/g, '').length >= 10) {
+  // Caso 6: Telefone suspeito (DDI não reconhecido)
+  if (temTelefoneInformado && !phoneInfo && telefone!.replace(/\D/g, '').length >= 10) {
     issues.push({
       tipo: 'DADO_SUSPEITO',
       severidade: 'BAIXA',
@@ -1143,6 +1168,38 @@ async function iniciarCadenciaParaLead(
   fonteEventoId: string
 ): Promise<{ success: boolean; runId?: string; skipped?: boolean; reason?: string }> {
   console.log('[Cadência] Iniciando cadência:', { leadId, empresa, cadenceCodigo });
+
+  // VALIDAÇÃO EXTRA: Verificar se o lead tem canal de contato válido antes de iniciar
+  const { data: leadContact, error: contactError } = await supabase
+    .from('lead_contacts')
+    .select('telefone, telefone_valido, telefone_e164, email, email_placeholder')
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa)
+    .maybeSingle();
+
+  if (contactError) {
+    console.error('[Cadência] Erro ao buscar lead_contact:', contactError);
+  }
+
+  if (leadContact) {
+    const temTelefoneValido = leadContact.telefone_valido && leadContact.telefone_e164;
+    const temEmailValido = leadContact.email && !leadContact.email_placeholder;
+    
+    if (!temTelefoneValido && !temEmailValido) {
+      console.log('[Cadência] Lead sem canal de contato válido, não iniciando cadência:', {
+        leadId,
+        telefone: leadContact.telefone,
+        telefone_valido: leadContact.telefone_valido,
+        email: leadContact.email,
+        email_placeholder: leadContact.email_placeholder
+      });
+      return { 
+        success: false, 
+        skipped: true, 
+        reason: 'Lead sem canal de contato válido (telefone inválido e email placeholder/ausente)' 
+      };
+    }
+  }
 
   const { data: cadence, error: cadenceError } = await supabase
     .from('cadences')
