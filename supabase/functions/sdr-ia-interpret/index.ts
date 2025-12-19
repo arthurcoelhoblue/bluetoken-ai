@@ -1915,7 +1915,7 @@ async function interpretWithAI(
   classificacao?: LeadClassification,
   pessoaContext?: PessoaContext | null,
   conversationState?: ConversationState | null
-): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number }> {
+): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number; modeloUsado: string }> {
   const startTime = Date.now();
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
@@ -2172,7 +2172,7 @@ async function interpretWithAI(
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-5-20250514',
+          model: 'claude-sonnet-4-20250514',
           max_tokens: 1500,
           temperature: 0.3,
           system: systemPrompt,
@@ -2388,7 +2388,15 @@ async function interpretWithAI(
     parsed.ultima_pergunta_id = proximaPergunta.tipo;
   }
 
-  return { response: parsed, tokensUsados, tempoMs };
+  // Mapear provider para nome do modelo
+  const modeloMap: Record<ModelProvider, string> = {
+    'ANTHROPIC': 'anthropic/claude-sonnet-4',
+    'GEMINI': 'google/gemini-2.5-flash',
+    'GPT': 'openai/gpt-5-mini'
+  };
+  const modeloUsado = modeloMap[aiResult.provider!] || 'unknown';
+
+  return { response: parsed, tokensUsados, tempoMs, modeloUsado };
 }
 
 /**
@@ -2808,7 +2816,8 @@ async function saveInterpretation(
   tempoMs: number,
   acaoAplicada: boolean,
   respostaEnviada: boolean,
-  respostaTexto: string | null
+  respostaTexto: string | null,
+  modeloUsado: string = 'unknown'
 ): Promise<string> {
   const record = {
     message_id: message.id,
@@ -2821,7 +2830,7 @@ async function saveInterpretation(
     acao_recomendada: aiResponse.acao,
     acao_aplicada: acaoAplicada,
     acao_detalhes: aiResponse.acao_detalhes || null,
-    modelo_ia: 'google/gemini-2.5-flash',
+    modelo_ia: modeloUsado,
     tokens_usados: tokensUsados,
     tempo_processamento_ms: tempoMs,
     resposta_automatica_texto: respostaTexto,
@@ -2979,7 +2988,7 @@ serve(async (req) => {
     }
 
     // 3. Interpretar com IA
-    const { response: aiResponse, tokensUsados, tempoMs } = await interpretWithAI(
+    const { response: aiResponse, tokensUsados, tempoMs, modeloUsado } = await interpretWithAI(
       message.conteudo,
       message.empresa,
       historico,
@@ -3069,7 +3078,8 @@ serve(async (req) => {
       tempoMs,
       acaoAplicada,
       respostaEnviada,
-      respostaTexto
+      respostaTexto,
+      modeloUsado
     );
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
