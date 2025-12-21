@@ -1,5 +1,6 @@
 // ========================================
 // PATCH 6 - SDR Conversacional Inteligente
+// PATCH 6+ - Multicanal WhatsApp + Email
 // Tipos de Estado de Conversa & Frameworks de Vendas
 // ========================================
 
@@ -14,6 +15,12 @@ export type EstadoFunil =
 
 // Frameworks de vendas por empresa
 export type FrameworkAtivo = 'GPCT' | 'BANT' | 'SPIN' | 'NONE';
+
+// Canal de comunicação
+export type CanalConversa = 'WHATSAPP' | 'EMAIL';
+
+// PATCH 6+: Perfil do investidor para adaptação de comunicação
+export type PerfilInvestidor = 'CONSERVADOR' | 'ARROJADO' | null;
 
 // GPCT Framework (Tokeniza - Goals, Plans, Challenges, Timeline)
 export interface GPCTState {
@@ -54,11 +61,12 @@ export interface ConversationState {
   id: string;
   lead_id: string;
   empresa: 'TOKENIZA' | 'BLUE';
-  canal: 'WHATSAPP' | 'EMAIL';
+  canal: CanalConversa;
   estado_funil: EstadoFunil;
   framework_ativo: FrameworkAtivo;
   framework_data: FrameworkData;
   perfil_disc?: PerfilDISC | null;
+  perfil_investidor?: PerfilInvestidor; // PATCH 6+
   idioma_preferido: 'PT' | 'EN' | 'ES';
   ultima_pergunta_id?: string | null;
   ultimo_contato_em: string;
@@ -88,6 +96,12 @@ export const DISC_LABELS: Record<PerfilDISC, { nome: string; descricao: string }
   I: { nome: 'Influente', descricao: 'Comunicativo, entusiasta, relacional' },
   S: { nome: 'Estável', descricao: 'Paciente, confiável, colaborativo' },
   C: { nome: 'Cauteloso', descricao: 'Analítico, preciso, detalhista' },
+};
+
+// PATCH 6+: Labels para perfil investidor
+export const PERFIL_INVESTIDOR_LABELS: Record<NonNullable<PerfilInvestidor>, { nome: string; descricao: string }> = {
+  CONSERVADOR: { nome: 'Conservador', descricao: 'Prioriza segurança, garantia e risco controlado' },
+  ARROJADO: { nome: 'Arrojado', descricao: 'Foco em resultados, rentabilidade e eficiência' },
 };
 
 // Cores para badges de estado
@@ -141,4 +155,38 @@ export function getFrameworkCompleteness(
     total,
     percentage: total > 0 ? Math.round((filled / total) * 100) : 0,
   };
+}
+
+// PATCH 6+: Helper para inferir perfil investidor baseado em DISC e keywords
+export function inferirPerfilInvestidor(
+  disc: PerfilDISC | null | undefined,
+  mensagem?: string
+): PerfilInvestidor {
+  // Palavras-chave para conservador
+  const conservadorKeywords = [
+    'segurança', 'seguro', 'garantia', 'risco', 'proteção',
+    'tranquilidade', 'certeza', 'estabilidade', 'conservador'
+  ];
+  
+  // Palavras-chave para arrojado
+  const arrojadoKeywords = [
+    'rentabilidade', 'retorno', 'lucro', 'ganho', 'resultado',
+    'crescimento', 'oportunidade', 'arrojado', 'agressivo'
+  ];
+  
+  // Verificar keywords na mensagem
+  if (mensagem) {
+    const msgLower = mensagem.toLowerCase();
+    const conservadorMatch = conservadorKeywords.some(k => msgLower.includes(k));
+    const arrojadoMatch = arrojadoKeywords.some(k => msgLower.includes(k));
+    
+    if (conservadorMatch && !arrojadoMatch) return 'CONSERVADOR';
+    if (arrojadoMatch && !conservadorMatch) return 'ARROJADO';
+  }
+  
+  // Inferir baseado no DISC
+  if (disc === 'D') return 'ARROJADO';  // Dominante = direto, quer resultados
+  if (disc === 'C') return 'CONSERVADOR'; // Cauteloso = analítico, quer segurança
+  
+  return null; // Não inferido ainda
 }
