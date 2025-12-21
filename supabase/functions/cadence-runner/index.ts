@@ -352,24 +352,51 @@ async function dispararMensagem(
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else if (canal === 'EMAIL') {
-    // TODO PATCH 5D: Integrar com SMTP para emails
-    console.log('[Disparo] [MOCK] Email enviado para:', to);
-    
-    // Registrar mensagem mock
-    await supabase.from('lead_messages').insert({
-      lead_id: leadId,
-      empresa,
-      canal: 'EMAIL',
-      direcao: 'OUTBOUND',
-      conteudo: body,
-      estado: 'ENVIADO',
-      enviado_em: new Date().toISOString(),
-      run_id: runId,
-      step_ordem: stepOrdem,
-      template_codigo: templateCodigo,
-    });
+    // PATCH 5D: Integração com SMTP via edge function email-send
+    console.log('[Disparo] Enviando email para:', to);
 
-    return { success: true };
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+      // Extrair assunto do template (primeira linha com "Assunto:" ou fallback)
+      const lines = body.split('\n');
+      const subject = lines[0]?.startsWith('Assunto:') 
+        ? lines[0].replace('Assunto:', '').trim()
+        : `Mensagem de ${empresa === 'TOKENIZA' ? 'Tokeniza' : 'Blue Consult'}`;
+      const htmlBody = lines[0]?.startsWith('Assunto:') ? lines.slice(1).join('\n').trim() : body;
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/email-send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseServiceKey}`,
+        },
+        body: JSON.stringify({
+          to,
+          subject,
+          html: htmlBody.replace(/\n/g, '<br>'),
+          text: htmlBody,
+          lead_id: leadId,
+          empresa,
+          run_id: runId,
+          step_ordem: stepOrdem,
+          template_codigo: templateCodigo,
+        }),
+      });
+
+      const data = await response.json();
+      console.log('[Disparo] Resposta Email:', data);
+
+      if (!data.success) {
+        return { success: false, error: data.error || 'Erro no envio de email' };
+      }
+
+      return { success: true, messageId: data.messageId };
+    } catch (error) {
+      console.error('[Disparo] Erro ao chamar email-send:', error);
+      return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
+    }
   } else {
     // SMS - mock por enquanto
     console.log('[Disparo] [MOCK] SMS enviado para:', to);
