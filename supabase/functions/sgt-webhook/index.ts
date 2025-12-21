@@ -1252,7 +1252,7 @@ async function classificarLead(
   await supabase.from('sgt_event_logs').insert({
     event_id: eventId,
     status: 'PROCESSADO',
-    mensagem: `Lead classificado: ICP=${icp}, Temperatura=${temperatura}, Prioridade=${prioridade}`,
+    mensagem: `Lead classificado: ICP=${icp}, Temperatura=${temperaturaResult.temperatura}, Prioridade=${prioridadeResult.prioridade}`,
   } as Record<string, unknown>);
 
   return classification;
