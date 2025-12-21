@@ -16,6 +16,7 @@ import {
   ORIGEM_LABELS,
 } from '@/types/classification';
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
+import { ClassificationExplanation } from '@/components/leads/ClassificationExplanation';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { MessageHistory } from '@/components/messages/MessageHistory';
@@ -260,6 +261,9 @@ function LeadDetailContent() {
                       </div>
                     )}
                   </div>
+                  <Separator />
+                  {/* Explicação da Classificação */}
+                  <ClassificationExplanation justificativa={classification.justificativa} />
                 </>
               ) : (
                 <p className="text-muted-foreground">Sem classificação ainda.</p>

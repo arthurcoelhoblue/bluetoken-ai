@@ -75,6 +75,48 @@ export interface LeadClassification {
   override_motivo: string | null;
   classificado_em: string;
   updated_at: string;
+  justificativa: ClassificationJustificativa | null;
+}
+
+// ========================================
+// Justificativa da Classificação (PATCH Explicabilidade)
+// ========================================
+
+export interface ScoreBreakdown {
+  base_temperatura: number;
+  bonus_icp: number;
+  bonus_evento: number;
+  bonus_score_externo: number;
+  bonus_mautic: number;
+  bonus_chatwoot: number;
+  bonus_carrinho: number;
+  bonus_lead_pago: number;
+  ajuste_prioridade: number;
+  total: number;
+}
+
+export interface DadosUtilizados {
+  evento: string;
+  stage: string | null;
+  score_externo: number;
+  mautic_page_hits: number;
+  mautic_email_clicks: number;
+  chatwoot_mensagens: number;
+  carrinho_abandonado: boolean;
+  valor_carrinho: number;
+  valor_investido: number;
+  qtd_investimentos: number;
+  qtd_compras_ir: number;
+  ticket_medio: number;
+  lead_pago: boolean;
+}
+
+export interface ClassificationJustificativa {
+  icp_razao: string;
+  temperatura_razao: string;
+  prioridade_razao: string;
+  score_breakdown: ScoreBreakdown;
+  dados_utilizados: DadosUtilizados;
 }
 
 // Lead com dados de contato e classificação (PATCH 3.0)

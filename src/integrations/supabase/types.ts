@@ -317,6 +317,7 @@ export type Database = {
             | null
           icp: Database["public"]["Enums"]["icp_tipo"]
           id: string
+          justificativa: Json | null
           lead_id: string
           origem: Database["public"]["Enums"]["classificacao_origem"]
           override_motivo: string | null
@@ -336,6 +337,7 @@ export type Database = {
             | null
           icp: Database["public"]["Enums"]["icp_tipo"]
           id?: string
+          justificativa?: Json | null
           lead_id: string
           origem?: Database["public"]["Enums"]["classificacao_origem"]
           override_motivo?: string | null
@@ -355,6 +357,7 @@ export type Database = {
             | null
           icp?: Database["public"]["Enums"]["icp_tipo"]
           id?: string
+          justificativa?: Json | null
           lead_id?: string
           origem?: Database["public"]["Enums"]["classificacao_origem"]
           override_motivo?: string | null

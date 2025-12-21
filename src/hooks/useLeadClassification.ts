@@ -85,6 +85,7 @@ export function useLeadClassification(
         override_motivo: data.override_motivo,
         classificado_em: data.classificado_em,
         updated_at: data.updated_at,
+        justificativa: (data.justificativa as unknown) as LeadClassification['justificativa'],
       };
     },
     enabled: !!leadId,
@@ -201,6 +202,7 @@ export function useLeadsWithClassification(
             override_motivo: c.override_motivo,
             classificado_em: c.classificado_em,
             updated_at: c.updated_at,
+            justificativa: (c.justificativa as unknown) as LeadClassification['justificativa'],
           });
         }
       });
@@ -290,5 +292,6 @@ export async function getLeadClassification(
     override_motivo: data.override_motivo,
     classificado_em: data.classificado_em,
     updated_at: data.updated_at,
+    justificativa: (data.justificativa as unknown) as LeadClassification['justificativa'],
   };
 }
