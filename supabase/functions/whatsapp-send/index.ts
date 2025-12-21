@@ -10,7 +10,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const WHATSAPP_API_URL = 'https://mensageria.grupoblue.com.br/api/send-message';
+// Ambiente de desenvolvimento
+const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/send-message';
 const CONNECTION_NAME = 'mensageria';
 
 // Modo de teste: se true, não envia para leads reais
@@ -173,7 +174,7 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-auth-api': apiKey,
+        'X-API-Key': apiKey,
       },
       body: JSON.stringify(payloadToSend),
     });
