@@ -16,6 +16,19 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { LeadMessageWithContext, MensagemEstado, MensagemDirecao } from '@/types/messaging';
 import type { CanalTipo } from '@/types/cadence';
+import { EmailPreviewDialog } from './EmailPreviewDialog';
+
+function isHtmlContent(content: string): boolean {
+  const trimmed = content.trim();
+  return trimmed.startsWith('<') && (
+    trimmed.startsWith('<!DOCTYPE') ||
+    trimmed.startsWith('<html') ||
+    trimmed.startsWith('<body') ||
+    trimmed.startsWith('<div') ||
+    trimmed.startsWith('<table') ||
+    trimmed.startsWith('<p')
+  );
+}
 
 interface MessageHistoryProps {
   messages: LeadMessageWithContext[];
@@ -119,7 +132,19 @@ function MessageBubble({
         </div>
 
         {/* Content */}
-        <p className="text-sm whitespace-pre-wrap break-words">{message.conteudo}</p>
+        {message.canal === 'EMAIL' && isHtmlContent(message.conteudo) ? (
+          <div className="space-y-2">
+            <p className="text-sm text-muted-foreground italic">
+              Conteúdo HTML - clique em Preview para visualizar
+            </p>
+            <EmailPreviewDialog 
+              htmlContent={message.conteudo}
+              subject={message.template_codigo || undefined}
+            />
+          </div>
+        ) : (
+          <p className="text-sm whitespace-pre-wrap break-words">{message.conteudo}</p>
+        )}
 
         {/* Footer */}
         <div className="flex items-center justify-between mt-2 gap-2">
