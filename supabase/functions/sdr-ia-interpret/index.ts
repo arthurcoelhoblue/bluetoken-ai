@@ -58,12 +58,15 @@ type SdrAcaoTipo =
 
 // ========================================
 // PATCH 6: TIPOS DE ESTADO DE CONVERSA
+// PATCH 6+: MULTICANAL + PERFIL INVESTIDOR
 // ========================================
 
 type EstadoFunil = 'SAUDACAO' | 'DIAGNOSTICO' | 'QUALIFICACAO' | 'OBJECOES' | 'FECHAMENTO' | 'POS_VENDA';
 type FrameworkTipo = 'GPCT' | 'BANT' | 'SPIN' | 'NONE';
 type PerfilDISC = 'D' | 'I' | 'S' | 'C';
 type PessoaRelacaoTipo = 'CLIENTE_IR' | 'LEAD_IR' | 'INVESTIDOR' | 'LEAD_INVESTIDOR' | 'DESCONHECIDO';
+type CanalConversa = 'WHATSAPP' | 'EMAIL';
+type PerfilInvestidor = 'CONSERVADOR' | 'ARROJADO' | null;
 
 interface FrameworkData {
   gpct?: { g?: string | null; p?: string | null; c?: string | null; t?: string | null };
@@ -75,14 +78,246 @@ interface ConversationState {
   id: string;
   lead_id: string;
   empresa: EmpresaTipo;
-  canal: string;
+  canal: CanalConversa;
   estado_funil: EstadoFunil;
   framework_ativo: FrameworkTipo;
   framework_data: FrameworkData;
   perfil_disc?: PerfilDISC | null;
+  perfil_investidor?: PerfilInvestidor;
   idioma_preferido: string;
   ultima_pergunta_id?: string | null;
   ultimo_contato_em: string;
+}
+
+// ========================================
+// PATCH 6+: INFERÊNCIA DE PERFIL INVESTIDOR
+// ========================================
+
+function inferirPerfilInvestidor(
+  disc: PerfilDISC | null | undefined,
+  mensagem?: string
+): PerfilInvestidor {
+  // Palavras-chave para conservador
+  const conservadorKeywords = [
+    'segurança', 'seguro', 'garantia', 'risco', 'proteção',
+    'tranquilidade', 'certeza', 'estabilidade', 'conservador',
+    'medo', 'preocupado', 'cuidado', 'cautela'
+  ];
+  
+  // Palavras-chave para arrojado
+  const arrojadoKeywords = [
+    'rentabilidade', 'retorno', 'lucro', 'ganho', 'resultado',
+    'crescimento', 'oportunidade', 'arrojado', 'agressivo',
+    'quanto rende', 'qual o rendimento', 'prazo curto'
+  ];
+  
+  if (mensagem) {
+    const msgLower = mensagem.toLowerCase();
+    const conservadorMatch = conservadorKeywords.some(k => msgLower.includes(k));
+    const arrojadoMatch = arrojadoKeywords.some(k => msgLower.includes(k));
+    
+    if (conservadorMatch && !arrojadoMatch) return 'CONSERVADOR';
+    if (arrojadoMatch && !conservadorMatch) return 'ARROJADO';
+  }
+  
+  // Inferir baseado no DISC
+  if (disc === 'D') return 'ARROJADO';
+  if (disc === 'C') return 'CONSERVADOR';
+  
+  return null;
+}
+
+// ========================================
+// PATCH 6+: REGRAS DE COMPORTAMENTO POR CANAL
+// ========================================
+
+const CHANNEL_RULES = {
+  WHATSAPP: `
+## 📱 REGRAS WHATSAPP (OBRIGATÓRIO)
+
+FORMATO WHATSAPP:
+- Mensagens CURTAS (2-4 linhas máximo)
+- Tom conversacional e informal
+- NUNCA repetir apresentação se já houve interação
+- UMA ÚNICA pergunta por mensagem (obrigatório)
+- Sempre reagir ao último input do lead
+- Avançar a conversa passo a passo
+
+PROIBIDO NO WHATSAPP:
+❌ Blocos de texto longos (mais de 4 linhas)
+❌ Listas extensas
+❌ Pitch completo em uma mensagem
+❌ Explicações técnicas longas sem pedido explícito
+❌ Múltiplas perguntas na mesma mensagem
+
+EXEMPLO BOM WHATSAPP:
+"Entendi que você já investe em renda fixa. O que te fez buscar alternativas?"
+
+EXEMPLO RUIM WHATSAPP:
+"Entendi! Na Tokeniza, trabalhamos com investimentos tokenizados que são regulados pela CVM 88, com garantias reais e prazos definidos. Temos várias ofertas disponíveis, cada uma com sua rentabilidade e prazo específicos. Você busca segurança ou rentabilidade maior? Quantos anos você planeja investir? Qual seu orçamento disponível?"
+`,
+
+  EMAIL: `
+## 📧 REGRAS EMAIL (OBRIGATÓRIO)
+
+FORMATO EMAIL:
+- Mensagens ESTRUTURADAS com parágrafos
+- Tom consultivo e profissional
+- RETOMAR contexto brevemente no início
+- Cada e-mail avança UM estágio da conversa
+- Pode conter explicação mais completa
+- Máximo 3-4 parágrafos
+
+ESTRUTURA DO EMAIL:
+1. Retomada breve do contexto (1 frase)
+2. Conteúdo principal (1-2 parágrafos)
+3. Próximo passo claro (1 pergunta ou CTA)
+
+PROIBIDO NO EMAIL:
+❌ Perguntas soltas sem contexto
+❌ Pitch agressivo ou urgência artificial
+❌ Linguagem de WhatsApp (muito informal)
+❌ Assuntos genéricos
+
+EXEMPLO BOM EMAIL:
+"No nosso contato você comentou que quer entender melhor como funciona o investimento antes de tomar qualquer decisão.
+
+Na Tokeniza, os investimentos são estruturados com lastro em garantias reais, prazo definido e regras claras desde o início. Isso significa que o foco é previsibilidade e segurança jurídica.
+
+No próximo contato, posso te explicar com mais detalhe como essas garantias funcionam na prática?"
+
+EXEMPLO RUIM EMAIL:
+"Oi! Tudo bem? Queria saber se você tem interesse em investir."
+`
+};
+
+// ========================================
+// PATCH 6+: EXEMPLOS POR PERFIL INVESTIDOR E CANAL
+// ========================================
+
+const INVESTOR_PROFILE_EXAMPLES = {
+  TOKENIZA: {
+    CONSERVADOR: {
+      foco: 'Segurança, garantia, risco controlado',
+      tom: 'Explicar primeiro o risco, depois o retorno',
+      exemplos: {
+        WHATSAPP: `
+LEAD: "Quero entender melhor como funciona esse investimento"
+RESPOSTA: "Antes de falar em retorno, costuma ser mais importante entender o risco. Posso te explicar primeiro como funciona a garantia desses investimentos?"
+
+LEAD: "Qual a garantia?"
+RESPOSTA: "Cada oferta tem sua garantia específica. Na maioria, são imóveis ou recebíveis. Qual te preocupa mais: o prazo ou a segurança do dinheiro?"
+`,
+        EMAIL: `
+Assunto: {{primeiro_nome}}, como funcionam as garantias nos investimentos tokenizados
+
+{{nome}},
+
+No nosso contato você comentou que quer entender melhor como funciona o investimento antes de tomar qualquer decisão.
+
+Na Tokeniza, os investimentos são estruturados com lastro em garantias reais, prazo definido e regras claras desde o início. Isso significa que o foco é previsibilidade e segurança jurídica — não promessa de retorno.
+
+No próximo contato, posso te explicar com mais detalhe como essas garantias funcionam na prática e em quais tipos de ativos elas são usadas.
+`
+      }
+    },
+    ARROJADO: {
+      foco: 'Resultado direto, rentabilidade, eficiência',
+      tom: 'Direto ao ponto, sem rodeios',
+      exemplos: {
+        WHATSAPP: `
+LEAD: "Quero entender melhor como funciona esse investimento"
+RESPOSTA: "Direto ao ponto: são investimentos com prazo definido e lastro real. Quer começar entendendo a rentabilidade ou a estrutura de garantia?"
+
+LEAD: "Quanto rende?"
+RESPOSTA: "As ofertas variam de 15% a 22% ao ano, dependendo do prazo e risco. Qual faixa te interessa mais?"
+`,
+        EMAIL: `
+Assunto: {{primeiro_nome}}, retornos e prazos dos investimentos Tokeniza
+
+{{nome}},
+
+Pelo seu perfil, faz sentido ir direto ao ponto.
+
+Os investimentos na Tokeniza têm prazo definido, rentabilidade alvo e estrutura jurídica clara desde o início. Cada oferta deixa explícito o risco, o prazo e o valor mínimo.
+
+Se fizer sentido, no próximo passo posso te mostrar como avaliar rapidamente se uma oferta combina ou não com seu perfil.
+`
+      }
+    }
+  },
+  BLUE: {
+    CONSERVADOR: {
+      foco: 'Regularização, evitar problemas, tranquilidade',
+      tom: 'Empático, explicar riscos de não fazer',
+      exemplos: {
+        WHATSAPP: `
+LEAD: "Preciso declarar minhas criptos"
+RESPOSTA: "Entendi. Você já tentou fazer sozinho ou é a primeira vez? Quero entender o tamanho do trabalho."
+
+LEAD: "Tenho medo de fazer errado"
+RESPOSTA: "Normal, a maioria das pessoas tem. A questão é: se declarar errado, a Receita pode pegar. A gente cuida pra você ficar tranquilo."
+`,
+        EMAIL: `
+Assunto: {{primeiro_nome}}, como regularizar suas operações de cripto
+
+{{nome}},
+
+Entendo sua preocupação em fazer tudo corretamente. A declaração de criptomoedas tem regras específicas que mudam todo ano.
+
+Na Blue, cuidamos de toda a apuração e declaração, garantindo que você fique em dia com a Receita Federal. O processo é simples: você nos passa o acesso às exchanges e nós fazemos o resto.
+
+Posso te explicar como funciona o processo completo?
+`
+      }
+    },
+    ARROJADO: {
+      foco: 'Resolver rápido, eficiência, custo-benefício',
+      tom: 'Objetivo, mostrar ROI do serviço',
+      exemplos: {
+        WHATSAPP: `
+LEAD: "Quanto custa?"
+RESPOSTA: "Depende do volume. Plano Gold R$ 4.497 (ilimitado) ou Diamond R$ 2.997 (até 4 exchanges). Quantas exchanges você usa?"
+
+LEAD: "Muitas operações"
+RESPOSTA: "Então o Gold faz mais sentido - sem limite de carteiras. Você teria paz de espírito e economia de tempo."
+`,
+        EMAIL: `
+Assunto: {{primeiro_nome}}, solução rápida para seu IR de cripto
+
+{{nome}},
+
+Direto ao ponto: fazer IR de cripto sozinho não compensa pelo tempo gasto e risco de erro.
+
+O plano Gold (R$ 4.497) cobre carteiras ilimitadas e até 25k operações. Se você tem volume alto, o ROI é claro - você economiza dezenas de horas e evita multas.
+
+Qual seu volume aproximado de operações no ano?
+`
+      }
+    }
+  }
+};
+
+// Formatar exemplos para o prompt
+function formatInvestorProfileExamples(
+  empresa: EmpresaTipo,
+  perfilInvestidor: PerfilInvestidor,
+  canal: CanalConversa
+): string {
+  if (!perfilInvestidor) return '';
+  
+  const perfil = INVESTOR_PROFILE_EXAMPLES[empresa]?.[perfilInvestidor];
+  if (!perfil) return '';
+  
+  return `
+## 🎯 PERFIL DO LEAD: ${perfilInvestidor}
+
+FOCO: ${perfil.foco}
+TOM A USAR: ${perfil.tom}
+
+EXEMPLOS PARA ESSE PERFIL (${canal}):
+${perfil.exemplos[canal]}
+`;
 }
 
 interface PessoaContext {
@@ -2043,7 +2278,67 @@ async function interpretWithAI(
     
     if (conversationState.estado_funil !== 'SAUDACAO') {
       userPrompt += `\n⚠️ NÃO reinicie com apresentação. Continue de onde parou.\n`;
+      userPrompt += `⚠️ NÃO cumprimente novamente. O lead já conhece você.\n`;
     }
+  }
+  
+  // ========================================
+  // PATCH 6+: REGRAS DE CANAL E PERFIL INVESTIDOR
+  // ========================================
+  
+  // Detectar canal da mensagem (por enquanto, assumindo WhatsApp para inbound)
+  const canalAtivo: CanalConversa = (conversationState?.canal as CanalConversa) || 'WHATSAPP';
+  
+  // Inferir perfil investidor
+  let perfilInvestidor: PerfilInvestidor = conversationState?.perfil_investidor || null;
+  if (!perfilInvestidor) {
+    perfilInvestidor = inferirPerfilInvestidor(conversationState?.perfil_disc, mensagem);
+    if (perfilInvestidor) {
+      console.log('[6+] Perfil investidor inferido:', perfilInvestidor);
+    }
+  }
+  
+  // Adicionar regras de canal ao prompt
+  userPrompt += `\n## 📱 CANAL ATIVO: ${canalAtivo}\n`;
+  userPrompt += CHANNEL_RULES[canalAtivo];
+  
+  // Adicionar exemplos por perfil investidor
+  if (perfilInvestidor) {
+    userPrompt += formatInvestorProfileExamples(empresa, perfilInvestidor, canalAtivo);
+  }
+  
+  // ========================================
+  // PATCH 6+: REGRAS DE MEMÓRIA CONVERSACIONAL
+  // ========================================
+  
+  if (historico.length > 0) {
+    userPrompt += `
+## 🧠 REGRAS DE MEMÓRIA CONVERSACIONAL (OBRIGATÓRIO)
+
+O AGENTE NUNCA DEVE:
+❌ Repetir perguntas já respondidas (veja "DADOS JÁ COLETADOS")
+❌ Voltar para "Oi, tudo bem?" se já houve interação
+❌ Ignorar informações coletadas (SPIN / GPCT)
+❌ Se reapresentar se o lead já sabe quem você é
+❌ Fazer a mesma pergunta de formas diferentes
+
+O AGENTE SEMPRE DEVE:
+✅ Referenciar aprendizados anteriores na resposta
+✅ Usar informações coletadas para formular próximas perguntas
+✅ Evoluir o diálogo até pré-qualificação clara
+✅ Reconhecer o que o lead disse antes de perguntar algo novo
+`;
+  }
+  
+  // Gerar histórico resumido para contexto
+  if (historico.length > 3) {
+    const outbounds = historico.filter(h => h.direcao === 'OUTBOUND').map(h => h.conteudo.substring(0, 100));
+    const inbounds = historico.filter(h => h.direcao === 'INBOUND').map(h => h.conteudo.substring(0, 100));
+    
+    userPrompt += `\n## RESUMO DA CONVERSA ATÉ AGORA:\n`;
+    userPrompt += `- Total de mensagens trocadas: ${historico.length}\n`;
+    userPrompt += `- Últimas respostas do lead: ${inbounds.slice(0, 3).join(' | ')}\n`;
+    userPrompt += `- Você já falou sobre: ${outbounds.slice(0, 2).join(' | ')}\n`;
   }
   
   // PATCH 8: Detectar interesse cross-company
