@@ -872,7 +872,7 @@ function generateIdempotencyKey(payload: SGTPayload): string {
 // ========================================
 // CLASSIFICAÇÃO - Usa dados enriquecidos
 // ========================================
-function classificarTokeniza(lead: LeadNormalizado): { icp: IcpTokeniza; persona: PersonaTokeniza | null } {
+function classificarTokeniza(lead: LeadNormalizado): { icp: IcpTokeniza; persona: PersonaTokeniza | null; razao: string } {
   const dados = lead.dados_empresa as DadosTokeniza | null;
   const valorInvestido = dados?.valor_investido ?? 0;
   const qtdInvestimentos = dados?.qtd_investimentos ?? 0;
@@ -882,36 +882,71 @@ function classificarTokeniza(lead: LeadNormalizado): { icp: IcpTokeniza; persona
 
   // Carrinho abandonado com valor alto → Prioridade máxima
   if (carrinhoAbandonado && valorCarrinho >= 5000) {
-    return { icp: 'TOKENIZA_SERIAL', persona: 'CONSTRUTOR_PATRIMONIO' };
+    return { 
+      icp: 'TOKENIZA_SERIAL', 
+      persona: 'CONSTRUTOR_PATRIMONIO',
+      razao: `Carrinho abandonado com valor alto (R$ ${valorCarrinho.toLocaleString('pt-BR')}). Lead prioritário para recuperação.`
+    };
   }
 
   // TOKENIZA_SERIAL
   if (valorInvestido >= 100000 || qtdInvestimentos >= 40 || qtdProjetos >= 20) {
-    return { icp: 'TOKENIZA_SERIAL', persona: 'CONSTRUTOR_PATRIMONIO' };
+    const motivos: string[] = [];
+    if (valorInvestido >= 100000) motivos.push(`valor investido de R$ ${valorInvestido.toLocaleString('pt-BR')} (≥ R$ 100.000)`);
+    if (qtdInvestimentos >= 40) motivos.push(`${qtdInvestimentos} investimentos (≥ 40)`);
+    if (qtdProjetos >= 20) motivos.push(`${qtdProjetos} projetos (≥ 20)`);
+    return { 
+      icp: 'TOKENIZA_SERIAL', 
+      persona: 'CONSTRUTOR_PATRIMONIO',
+      razao: `Investidor de alto volume: ${motivos.join(', ')}.`
+    };
   }
 
   // TOKENIZA_ALTO_VOLUME_DIGITAL
   if (lead.metadata?.tipo_compra && valorInvestido >= 10000) {
-    return { icp: 'TOKENIZA_ALTO_VOLUME_DIGITAL', persona: 'COLECIONADOR_DIGITAL' };
+    return { 
+      icp: 'TOKENIZA_ALTO_VOLUME_DIGITAL', 
+      persona: 'COLECIONADOR_DIGITAL',
+      razao: `Perfil de compra digital identificado com R$ ${valorInvestido.toLocaleString('pt-BR')} investidos.`
+    };
   }
 
   // TOKENIZA_MEDIO_PRAZO
   if ((valorInvestido >= 20000 && valorInvestido < 100000) || 
       (qtdInvestimentos >= 15 && qtdInvestimentos < 40)) {
-    return { icp: 'TOKENIZA_MEDIO_PRAZO', persona: 'CONSTRUTOR_PATRIMONIO' };
+    const motivos: string[] = [];
+    if (valorInvestido >= 20000) motivos.push(`R$ ${valorInvestido.toLocaleString('pt-BR')} investidos (entre R$ 20.000 e R$ 100.000)`);
+    if (qtdInvestimentos >= 15) motivos.push(`${qtdInvestimentos} investimentos (entre 15 e 40)`);
+    return { 
+      icp: 'TOKENIZA_MEDIO_PRAZO', 
+      persona: 'CONSTRUTOR_PATRIMONIO',
+      razao: `Investidor de médio porte: ${motivos.join(', ')}.`
+    };
   }
 
   // TOKENIZA_EMERGENTE
   if ((valorInvestido >= 5000 && valorInvestido < 20000) || 
       (qtdInvestimentos >= 5 && qtdInvestimentos < 15) ||
       carrinhoAbandonado) {
-    return { icp: 'TOKENIZA_EMERGENTE', persona: 'INICIANTE_CAUTELOSO' };
+    const motivos: string[] = [];
+    if (valorInvestido >= 5000 && valorInvestido < 20000) motivos.push(`R$ ${valorInvestido.toLocaleString('pt-BR')} investidos`);
+    if (qtdInvestimentos >= 5 && qtdInvestimentos < 15) motivos.push(`${qtdInvestimentos} investimentos`);
+    if (carrinhoAbandonado) motivos.push(`carrinho abandonado de R$ ${valorCarrinho.toLocaleString('pt-BR')}`);
+    return { 
+      icp: 'TOKENIZA_EMERGENTE', 
+      persona: 'INICIANTE_CAUTELOSO',
+      razao: `Investidor iniciante/emergente: ${motivos.join(', ')}.`
+    };
   }
 
-  return { icp: 'TOKENIZA_NAO_CLASSIFICADO', persona: null };
+  return { 
+    icp: 'TOKENIZA_NAO_CLASSIFICADO', 
+    persona: null,
+    razao: 'Dados insuficientes para classificação. Lead precisa de mais interações.'
+  };
 }
 
-function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: PersonaBlue | null } {
+function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: PersonaBlue | null; razao: string } {
   const dados = lead.dados_empresa as DadosBlue | null;
   const ticketMedio = dados?.ticket_medio ?? 0;
   const scoreMautic = dados?.score_mautic ?? 0;
@@ -927,23 +962,46 @@ function classificarBlue(lead: LeadNormalizado): { icp: IcpBlue; persona: Person
   if (ticketMedio >= 4000 || 
       (mauticScore >= 30 && (stage === 'Negociação' || stage === 'Cliente')) ||
       (pageHits >= 20 && emailClicks >= 5)) {
-    return { icp: 'BLUE_ALTO_TICKET_IR', persona: 'CRIPTO_CONTRIBUINTE_URGENTE' };
+    const motivos: string[] = [];
+    if (ticketMedio >= 4000) motivos.push(`ticket médio de R$ ${ticketMedio.toLocaleString('pt-BR')} (≥ R$ 4.000)`);
+    if (mauticScore >= 30 && (stage === 'Negociação' || stage === 'Cliente')) motivos.push(`score ${mauticScore} no Mautic em stage ${stage}`);
+    if (pageHits >= 20 && emailClicks >= 5) motivos.push(`alto engajamento (${pageHits} page hits, ${emailClicks} cliques em email)`);
+    return { 
+      icp: 'BLUE_ALTO_TICKET_IR', 
+      persona: 'CRIPTO_CONTRIBUINTE_URGENTE',
+      razao: `Cliente de alto valor para IR: ${motivos.join(', ')}.`
+    };
   }
 
   // BLUE_RECURRENTE
   if (qtdComprasIr >= 2) {
-    return { icp: 'BLUE_RECURRENTE', persona: 'CLIENTE_FIEL_RENOVADOR' };
+    return { 
+      icp: 'BLUE_RECURRENTE', 
+      persona: 'CLIENTE_FIEL_RENOVADOR',
+      razao: `Cliente recorrente com ${qtdComprasIr} compras de serviço IR.`
+    };
   }
 
   // BLUE_PERDIDO_RECUPERAVEL - Considera engajamento recente
   if (stage === 'Perdido' && (mauticScore >= 20 || pageHits >= 5)) {
-    return { icp: 'BLUE_PERDIDO_RECUPERAVEL', persona: 'LEAD_PERDIDO_RECUPERAVEL' };
+    const motivos: string[] = [`stage ${stage}`];
+    if (mauticScore >= 20) motivos.push(`score ${mauticScore} no Mautic`);
+    if (pageHits >= 5) motivos.push(`${pageHits} page hits recentes`);
+    return { 
+      icp: 'BLUE_PERDIDO_RECUPERAVEL', 
+      persona: 'LEAD_PERDIDO_RECUPERAVEL',
+      razao: `Lead perdido com sinais de reengajamento: ${motivos.join(', ')}.`
+    };
   }
 
-  return { icp: 'BLUE_NAO_CLASSIFICADO', persona: null };
+  return { 
+    icp: 'BLUE_NAO_CLASSIFICADO', 
+    persona: null,
+    razao: 'Dados insuficientes para classificação. Lead precisa de mais interações ou dados de compra.'
+  };
 }
 
-function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
+function calcularTemperatura(lead: LeadNormalizado, icp: ICP): { temperatura: Temperatura; razao: string } {
   const evento = lead.evento;
   const stage = lead.stage;
   const pageHits = lead.dados_mautic?.page_hits ?? 0;
@@ -951,107 +1009,150 @@ function calcularTemperatura(lead: LeadNormalizado, icp: ICP): Temperatura {
 
   // Carrinho abandonado = QUENTE
   if (carrinhoAbandonado) {
-    return 'QUENTE';
+    return { temperatura: 'QUENTE', razao: 'Carrinho abandonado indica alta intenção de compra.' };
   }
 
   // Eventos quentes sempre aumentam temperatura
   if (EVENTOS_QUENTES.includes(evento)) {
-    return 'QUENTE';
+    return { temperatura: 'QUENTE', razao: `Evento ${evento} indica lead com alta intenção.` };
   }
 
   // Stage de negociação/cliente indica alta intenção
   if (stage === 'Negociação' || stage === 'Cliente') {
-    return 'QUENTE';
+    return { temperatura: 'QUENTE', razao: `Stage "${stage}" indica lead em fase avançada do funil.` };
   }
 
   // Alto engajamento no Mautic
   if (pageHits >= 15) {
-    return 'QUENTE';
+    return { temperatura: 'QUENTE', razao: `Alto engajamento com ${pageHits} page hits no site.` };
   }
 
   // ICPs de alto valor tendem a ser mais quentes
   if (icp === 'TOKENIZA_SERIAL' || icp === 'BLUE_ALTO_TICKET_IR') {
-    return evento === 'LEAD_NOVO' ? 'MORNO' : 'QUENTE';
+    if (evento === 'LEAD_NOVO') {
+      return { temperatura: 'MORNO', razao: `ICP de alto valor (${icp}) com evento de entrada.` };
+    }
+    return { temperatura: 'QUENTE', razao: `ICP de alto valor (${icp}) com engajamento adicional.` };
   }
 
   // Leads perdidos são mornos se tiverem engajamento
   if (icp === 'BLUE_PERDIDO_RECUPERAVEL') {
-    return 'MORNO';
+    return { temperatura: 'MORNO', razao: 'Lead perdido demonstrando sinais de reengajamento.' };
   }
 
   // ICPs médios
   if (icp === 'TOKENIZA_MEDIO_PRAZO' || icp === 'BLUE_RECURRENTE' || icp === 'TOKENIZA_ALTO_VOLUME_DIGITAL') {
-    return 'MORNO';
+    return { temperatura: 'MORNO', razao: `ICP de médio valor (${icp}).` };
   }
 
   // Engajamento moderado no Mautic
   if (pageHits >= 5) {
-    return 'MORNO';
+    return { temperatura: 'MORNO', razao: `Engajamento moderado com ${pageHits} page hits.` };
   }
 
   // Default para leads novos ou emergentes
   if (evento === 'LEAD_NOVO' || evento === 'ATUALIZACAO') {
-    return icp.includes('NAO_CLASSIFICADO') ? 'FRIO' : 'MORNO';
+    if (icp.includes('NAO_CLASSIFICADO')) {
+      return { temperatura: 'FRIO', razao: 'Lead novo sem classificação definida. Aguardando mais dados.' };
+    }
+    return { temperatura: 'MORNO', razao: `Lead ${evento === 'LEAD_NOVO' ? 'novo' : 'atualizado'} com ICP definido.` };
   }
 
-  return 'FRIO';
+  return { temperatura: 'FRIO', razao: 'Sem sinais claros de engajamento ou intenção.' };
 }
 
-function calcularPrioridade(icp: ICP, temperatura: Temperatura): Prioridade {
+function calcularPrioridade(icp: ICP, temperatura: Temperatura): { prioridade: Prioridade; razao: string } {
   if (temperatura === 'QUENTE' && 
       (icp === 'TOKENIZA_SERIAL' || icp === 'TOKENIZA_ALTO_VOLUME_DIGITAL' || icp === 'BLUE_ALTO_TICKET_IR')) {
-    return 1;
+    return { prioridade: 1, razao: `Prioridade máxima: temperatura QUENTE + ICP de alto valor (${icp}).` };
   }
 
   if ((icp === 'TOKENIZA_MEDIO_PRAZO' || icp === 'BLUE_RECURRENTE') ||
       (temperatura === 'QUENTE' && !icp.includes('NAO_CLASSIFICADO'))) {
-    return 2;
+    return { prioridade: 2, razao: `Prioridade média: ${temperatura === 'QUENTE' ? 'temperatura QUENTE' : `ICP ${icp}`}.` };
   }
 
-  return 3;
+  return { prioridade: 3, razao: 'Prioridade padrão: sem indicadores de urgência.' };
 }
 
-function calcularScoreInterno(lead: LeadNormalizado, icp: ICP, temperatura: Temperatura, prioridade: Prioridade): number {
-  let score = 0;
+interface ScoreBreakdown {
+  base_temperatura: number;
+  bonus_icp: number;
+  bonus_evento: number;
+  bonus_score_externo: number;
+  bonus_mautic: number;
+  bonus_chatwoot: number;
+  bonus_carrinho: number;
+  bonus_lead_pago: number;
+  ajuste_prioridade: number;
+  total: number;
+}
+
+function calcularScoreInterno(lead: LeadNormalizado, icp: ICP, temperatura: Temperatura, prioridade: Prioridade): ScoreBreakdown {
+  const breakdown: ScoreBreakdown = {
+    base_temperatura: 0,
+    bonus_icp: 0,
+    bonus_evento: 0,
+    bonus_score_externo: 0,
+    bonus_mautic: 0,
+    bonus_chatwoot: 0,
+    bonus_carrinho: 0,
+    bonus_lead_pago: 0,
+    ajuste_prioridade: 0,
+    total: 0,
+  };
 
   // Base por temperatura
-  if (temperatura === 'QUENTE') score += 40;
-  else if (temperatura === 'MORNO') score += 25;
-  else score += 10;
+  if (temperatura === 'QUENTE') breakdown.base_temperatura = 40;
+  else if (temperatura === 'MORNO') breakdown.base_temperatura = 25;
+  else breakdown.base_temperatura = 10;
 
   // Bonus por ICP
-  if (icp === 'TOKENIZA_SERIAL' || icp === 'BLUE_ALTO_TICKET_IR') score += 30;
-  else if (icp === 'TOKENIZA_MEDIO_PRAZO' || icp === 'BLUE_RECURRENTE') score += 20;
-  else if (icp === 'TOKENIZA_ALTO_VOLUME_DIGITAL') score += 25;
-  else if (!icp.includes('NAO_CLASSIFICADO')) score += 10;
+  if (icp === 'TOKENIZA_SERIAL' || icp === 'BLUE_ALTO_TICKET_IR') breakdown.bonus_icp = 30;
+  else if (icp === 'TOKENIZA_MEDIO_PRAZO' || icp === 'BLUE_RECURRENTE') breakdown.bonus_icp = 20;
+  else if (icp === 'TOKENIZA_ALTO_VOLUME_DIGITAL') breakdown.bonus_icp = 25;
+  else if (!icp.includes('NAO_CLASSIFICADO')) breakdown.bonus_icp = 10;
 
   // Bonus por evento
-  if (EVENTOS_QUENTES.includes(lead.evento)) score += 15;
+  if (EVENTOS_QUENTES.includes(lead.evento)) breakdown.bonus_evento = 15;
 
   // Bonus por score externo
-  score += Math.min(lead.score * 0.1, 10);
+  breakdown.bonus_score_externo = Math.min(Math.round(lead.score * 0.1), 10);
 
   // Bonus por engajamento Mautic
   const pageHits = lead.dados_mautic?.page_hits ?? 0;
   const emailClicks = lead.dados_mautic?.email_clicks ?? 0;
-  score += Math.min(pageHits * 0.5, 10);
-  score += Math.min(emailClicks * 1, 5);
+  breakdown.bonus_mautic = Math.min(Math.round(pageHits * 0.5) + Math.min(emailClicks, 5), 15);
 
   // Bonus por conversas Chatwoot
   const mensagensTotal = lead.dados_chatwoot?.mensagens_total ?? 0;
-  score += Math.min(mensagensTotal * 0.5, 5);
+  breakdown.bonus_chatwoot = Math.min(Math.round(mensagensTotal * 0.5), 5);
 
   // Bonus por carrinho abandonado
   const carrinhoAbandonado = (lead.dados_empresa as DadosTokeniza)?.carrinho_abandonado ?? false;
-  if (carrinhoAbandonado) score += 15;
+  if (carrinhoAbandonado) breakdown.bonus_carrinho = 15;
 
   // Bonus por lead pago
-  if (lead.lead_pago) score += 5;
+  if (lead.lead_pago) breakdown.bonus_lead_pago = 5;
 
   // Ajuste por prioridade (inverso)
-  score += (4 - prioridade) * 5;
+  breakdown.ajuste_prioridade = (4 - prioridade) * 5;
 
-  return Math.min(Math.round(score), 100);
+  // Calcular total
+  breakdown.total = Math.min(
+    breakdown.base_temperatura +
+    breakdown.bonus_icp +
+    breakdown.bonus_evento +
+    breakdown.bonus_score_externo +
+    breakdown.bonus_mautic +
+    breakdown.bonus_chatwoot +
+    breakdown.bonus_carrinho +
+    breakdown.bonus_lead_pago +
+    breakdown.ajuste_prioridade,
+    100
+  );
+
+  return breakdown;
 }
 
 async function classificarLead(
@@ -1067,29 +1168,60 @@ async function classificarLead(
 
   let icp: ICP;
   let persona: Persona;
+  let icpRazao: string;
 
   if (lead.empresa === 'TOKENIZA') {
     const result = classificarTokeniza(lead);
     icp = result.icp;
     persona = result.persona;
+    icpRazao = result.razao;
   } else {
     const result = classificarBlue(lead);
     icp = result.icp;
     persona = result.persona;
+    icpRazao = result.razao;
   }
 
-  const temperatura = calcularTemperatura(lead, icp);
-  const prioridade = calcularPrioridade(icp, temperatura);
-  const scoreInterno = calcularScoreInterno(lead, icp, temperatura, prioridade);
+  const temperaturaResult = calcularTemperatura(lead, icp);
+  const prioridadeResult = calcularPrioridade(icp, temperaturaResult.temperatura);
+  const scoreBreakdown = calcularScoreInterno(lead, icp, temperaturaResult.temperatura, prioridadeResult.prioridade);
+
+  // Construir dados utilizados para justificativa
+  const dadosTokeniza = lead.dados_empresa as DadosTokeniza | null;
+  const dadosBlue = lead.dados_empresa as DadosBlue | null;
+  
+  const dadosUtilizados = {
+    evento: lead.evento,
+    stage: lead.stage,
+    score_externo: lead.score,
+    mautic_page_hits: lead.dados_mautic?.page_hits ?? 0,
+    mautic_email_clicks: lead.dados_mautic?.email_clicks ?? 0,
+    chatwoot_mensagens: lead.dados_chatwoot?.mensagens_total ?? 0,
+    carrinho_abandonado: dadosTokeniza?.carrinho_abandonado ?? false,
+    valor_carrinho: dadosTokeniza?.valor_carrinho ?? 0,
+    valor_investido: dadosTokeniza?.valor_investido ?? 0,
+    qtd_investimentos: dadosTokeniza?.qtd_investimentos ?? 0,
+    qtd_compras_ir: dadosBlue?.qtd_compras_ir ?? 0,
+    ticket_medio: dadosBlue?.ticket_medio ?? 0,
+    lead_pago: lead.lead_pago,
+  };
+
+  const justificativa = {
+    icp_razao: icpRazao,
+    temperatura_razao: temperaturaResult.razao,
+    prioridade_razao: prioridadeResult.razao,
+    score_breakdown: scoreBreakdown,
+    dados_utilizados: dadosUtilizados,
+  };
 
   const classification: LeadClassificationResult = {
     leadId: lead.lead_id,
     empresa: lead.empresa,
     icp,
     persona,
-    temperatura,
-    prioridade,
-    scoreInterno,
+    temperatura: temperaturaResult.temperatura,
+    prioridade: prioridadeResult.prioridade,
+    scoreInterno: scoreBreakdown.total,
   };
 
   console.log('[Classificação] Resultado:', classification);
@@ -1101,12 +1233,13 @@ async function classificarLead(
       empresa: lead.empresa,
       icp: icp,
       persona: persona,
-      temperatura: temperatura,
-      prioridade: prioridade,
-      score_interno: scoreInterno,
+      temperatura: temperaturaResult.temperatura,
+      prioridade: prioridadeResult.prioridade,
+      score_interno: scoreBreakdown.total,
       fonte_evento_id: eventId,
       fonte_evento_tipo: lead.evento,
       classificado_em: new Date().toISOString(),
+      justificativa: justificativa,
     } as Record<string, unknown>, {
       onConflict: 'lead_id,empresa',
     });

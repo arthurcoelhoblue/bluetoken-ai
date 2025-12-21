@@ -140,6 +140,7 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
         override_motivo: data.override_motivo,
         classificado_em: data.classificado_em,
         updated_at: data.updated_at,
+        justificativa: (data.justificativa as unknown) as LeadClassification['justificativa'],
       };
     },
     enabled: !!leadId,
