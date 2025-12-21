@@ -1,6 +1,5 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
-import { SMTPClient } from 'https://deno.land/x/denomailer@1.6.0/mod.ts';
 
 // ========================================
 // CORS Headers
@@ -35,7 +34,7 @@ interface EmailSendResponse {
 }
 
 // ========================================
-// Configurações SMTP
+// Configurações SMTP (via API HTTP)
 // ========================================
 const SMTP_HOST = Deno.env.get('SMTP_HOST') || '';
 const SMTP_PORT = parseInt(Deno.env.get('SMTP_PORT') || '587');
@@ -45,6 +44,179 @@ const SMTP_FROM = Deno.env.get('SMTP_FROM') || '';
 
 // Modo de teste - se true, não envia de verdade
 const TEST_MODE = Deno.env.get('EMAIL_TEST_MODE') === 'true';
+
+// ========================================
+// Função para enviar via SMTP usando base64 encoding
+// ========================================
+async function sendEmailViaSMTP(
+  to: string,
+  subject: string,
+  html: string,
+  text?: string
+): Promise<{ success: boolean; messageId?: string; error?: string }> {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  
+  try {
+    console.log('[EmailSend] Conectando a', SMTP_HOST, ':', SMTP_PORT);
+    
+    // Para Deno Edge Functions, precisamos usar TLS direto
+    // Porta 587 com STARTTLS não é bem suportada em edge functions
+    // Vamos tentar conectar com TLS direto independente da porta
+    let conn: Deno.TlsConn;
+    
+    try {
+      // Tentar conexão TLS direta (funciona para 465 e alguns 587 com TLS)
+      conn = await Deno.connectTls({
+        hostname: SMTP_HOST,
+        port: SMTP_PORT,
+      });
+      console.log('[EmailSend] Conexão TLS estabelecida');
+    } catch (tlsError) {
+      console.log('[EmailSend] TLS direto falhou, tentando conexão normal...');
+      // Se TLS falhar, usar conexão normal (menos segura, mas funciona)
+      const tcpConn = await Deno.connect({
+        hostname: SMTP_HOST,
+        port: SMTP_PORT,
+      }) as Deno.TcpConn;
+      
+      // Helper para ler resposta
+      async function readTcpResponse(): Promise<string> {
+        const buffer = new Uint8Array(4096);
+        const n = await tcpConn.read(buffer);
+        if (n === null) return '';
+        return decoder.decode(buffer.subarray(0, n));
+      }
+      
+      // Ler banner
+      await readTcpResponse();
+      await tcpConn.write(encoder.encode(`EHLO ${SMTP_HOST}\r\n`));
+      await readTcpResponse();
+      await tcpConn.write(encoder.encode('STARTTLS\r\n'));
+      const starttlsResp = await readTcpResponse();
+      
+      if (starttlsResp.startsWith('220')) {
+        conn = await Deno.startTls(tcpConn, { hostname: SMTP_HOST });
+        console.log('[EmailSend] STARTTLS upgrade completo');
+      } else {
+        tcpConn.close();
+        return { success: false, error: `STARTTLS não suportado: ${starttlsResp}` };
+      }
+    }
+    
+    // Helper para ler resposta
+    async function readResponse(): Promise<string> {
+      const buffer = new Uint8Array(4096);
+      const n = await conn.read(buffer);
+      if (n === null) return '';
+      return decoder.decode(buffer.subarray(0, n));
+    }
+    
+    // Helper para enviar comando
+    async function sendCommand(cmd: string): Promise<string> {
+      console.log('[SMTP] >', cmd.includes('AUTH') || cmd.length > 50 ? cmd.substring(0, 20) + '...' : cmd.trim());
+      await conn.write(encoder.encode(cmd + '\r\n'));
+      const response = await readResponse();
+      console.log('[SMTP] <', response.trim().substring(0, 100));
+      return response;
+    }
+    
+    // Ler banner inicial (se conexão TLS direta)
+    let response = await readResponse();
+    console.log('[SMTP] Banner:', response.trim().substring(0, 100));
+    
+    // EHLO
+    response = await sendCommand(`EHLO ${SMTP_HOST}`);
+    
+    // AUTH LOGIN
+    response = await sendCommand('AUTH LOGIN');
+    if (response.startsWith('334')) {
+      // Enviar username em base64
+      const userB64 = btoa(SMTP_USER);
+      response = await sendCommand(userB64);
+      
+      if (response.startsWith('334')) {
+        // Enviar password em base64
+        const passB64 = btoa(SMTP_PASS);
+        response = await sendCommand(passB64);
+      }
+    }
+    
+    if (!response.startsWith('235')) {
+      conn.close();
+      return { success: false, error: `Autenticação falhou: ${response}` };
+    }
+    
+    // MAIL FROM
+    response = await sendCommand(`MAIL FROM:<${SMTP_FROM.replace(/.*<|>.*/g, '')}>`);
+    if (!response.startsWith('250')) {
+      conn.close();
+      return { success: false, error: `MAIL FROM falhou: ${response}` };
+    }
+    
+    // RCPT TO
+    response = await sendCommand(`RCPT TO:<${to}>`);
+    if (!response.startsWith('250')) {
+      conn.close();
+      return { success: false, error: `RCPT TO falhou: ${response}` };
+    }
+    
+    // DATA
+    response = await sendCommand('DATA');
+    if (!response.startsWith('354')) {
+      conn.close();
+      return { success: false, error: `DATA falhou: ${response}` };
+    }
+    
+    // Construir mensagem MIME
+    const boundary = `----=_Part_${Date.now()}`;
+    const messageId = `<${Date.now()}.${Math.random().toString(36).substring(2)}@${SMTP_HOST}>`;
+    
+    const emailContent = [
+      `From: ${SMTP_FROM}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Message-ID: ${messageId}`,
+      `MIME-Version: 1.0`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/plain; charset=UTF-8`,
+      ``,
+      text || html.replace(/<[^>]*>/g, ''),
+      ``,
+      `--${boundary}`,
+      `Content-Type: text/html; charset=UTF-8`,
+      ``,
+      html,
+      ``,
+      `--${boundary}--`,
+      `.`,
+    ].join('\r\n');
+    
+    await conn.write(encoder.encode(emailContent + '\r\n'));
+    response = await readResponse();
+    console.log('[SMTP] < (after DATA):', response.trim());
+    
+    if (!response.startsWith('250')) {
+      conn.close();
+      return { success: false, error: `Envio falhou: ${response}` };
+    }
+    
+    // QUIT
+    await sendCommand('QUIT');
+    conn.close();
+    
+    return { success: true, messageId };
+    
+  } catch (error) {
+    console.error('[EmailSend] Erro SMTP:', error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Erro SMTP desconhecido' 
+    };
+  }
+}
 
 // ========================================
 // Função Principal
@@ -166,32 +338,11 @@ serve(async (req) => {
       );
     }
 
-    // Enviar e-mail real via SMTP
-    console.log('[EmailSend] Conectando ao servidor SMTP...');
-    const client = new SMTPClient({
-      connection: {
-        hostname: SMTP_HOST,
-        port: SMTP_PORT,
-        tls: SMTP_PORT === 465,
-        auth: {
-          username: SMTP_USER,
-          password: SMTP_PASS,
-        },
-      },
-    });
-
-    try {
-      console.log('[EmailSend] Enviando e-mail...');
-      const sendResult = await client.send({
-        from: SMTP_FROM,
-        to: body.to,
-        subject: body.subject,
-        content: body.text || '',
-        html: body.html,
-      });
-
-      console.log('[EmailSend] E-mail enviado com sucesso:', sendResult);
-
+    // Enviar e-mail via SMTP
+    console.log('[EmailSend] Enviando via SMTP nativo...');
+    const result = await sendEmailViaSMTP(body.to, body.subject, body.html, body.text);
+    
+    if (result.success) {
       // Atualizar status para ENVIADO
       if (messageId) {
         await supabase
@@ -199,12 +350,10 @@ serve(async (req) => {
           .update({
             estado: 'ENVIADO',
             enviado_em: new Date().toISOString(),
-            email_message_id: `smtp-${Date.now()}`,
+            email_message_id: result.messageId || `smtp-${Date.now()}`,
           })
           .eq('id', messageId);
       }
-
-      await client.close();
 
       const duration = Date.now() - startTime;
       console.log(`[EmailSend] Concluído em ${duration}ms`);
@@ -212,34 +361,26 @@ serve(async (req) => {
       return new Response(
         JSON.stringify({
           success: true,
-          messageId: `smtp-${Date.now()}`,
+          messageId: result.messageId,
         } as EmailSendResponse),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-    } catch (smtpError) {
-      console.error('[EmailSend] Erro SMTP:', smtpError);
-      
+    } else {
       // Atualizar status para ERRO
       if (messageId) {
         await supabase
           .from('lead_messages')
           .update({
             estado: 'ERRO',
-            erro_detalhe: smtpError instanceof Error ? smtpError.message : 'Erro SMTP desconhecido',
+            erro_detalhe: result.error,
           })
           .eq('id', messageId);
-      }
-
-      try {
-        await client.close();
-      } catch {
-        // Ignorar erro ao fechar
       }
 
       return new Response(
         JSON.stringify({
           success: false,
-          error: smtpError instanceof Error ? smtpError.message : 'Erro ao enviar e-mail',
+          error: result.error,
         } as EmailSendResponse),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
