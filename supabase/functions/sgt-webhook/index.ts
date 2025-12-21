@@ -1457,28 +1457,57 @@ serve(async (req) => {
       .eq('lead_id', payload.lead_id)
       .eq('empresa', payload.empresa);
 
-    // Registrar issues de contato
+    // Registrar issues de contato (evitar duplicatas)
     if (sanitization.issues.length > 0) {
-      const issuesToInsert = sanitization.issues.map(issue => ({
-        lead_id: payload.lead_id,
-        empresa: payload.empresa,
-        issue_tipo: issue.tipo,
-        severidade: issue.severidade,
-        mensagem: issue.mensagem
-      }));
-      
-      await supabase.from('lead_contact_issues').insert(issuesToInsert);
-      console.log('[SGT Webhook] Issues de contato registradas:', issuesToInsert.length);
+      for (const issue of sanitization.issues) {
+        // Verificar se já existe issue pendente do mesmo tipo
+        const { data: existingIssue } = await supabase
+          .from('lead_contact_issues')
+          .select('id')
+          .eq('lead_id', payload.lead_id)
+          .eq('empresa', payload.empresa)
+          .eq('issue_tipo', issue.tipo)
+          .eq('resolvido', false)
+          .maybeSingle();
+        
+        if (!existingIssue) {
+          await supabase.from('lead_contact_issues').insert({
+            lead_id: payload.lead_id,
+            empresa: payload.empresa,
+            issue_tipo: issue.tipo,
+            severidade: issue.severidade,
+            mensagem: issue.mensagem
+          });
+          console.log('[SGT Webhook] Issue de contato registrada:', issue.tipo);
+        } else {
+          console.log('[SGT Webhook] Issue já existe, ignorando duplicata:', issue.tipo);
+        }
+      }
     }
 
-    // Se lead deve ser descartado, não prosseguir com classificação/cadência
+    // Se lead deve ser descartado, deletar dados e não prosseguir
     if (sanitization.descartarLead) {
-      console.log('[SGT Webhook] Lead descartado - sem canal de contato válido:', payload.lead_id);
+      console.log('[SGT Webhook] Lead descartado - deletando dados:', payload.lead_id);
+      
+      // Deletar dados relacionados ao lead (cascade)
+      await supabase.from('lead_message_intents').delete().eq('lead_id', payload.lead_id);
+      await supabase.from('lead_messages').delete().eq('lead_id', payload.lead_id);
+      await supabase.from('lead_conversation_state').delete().eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
+      await supabase.from('lead_classifications').delete().eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
+      await supabase.from('lead_cadence_events').delete().in('lead_cadence_run_id', 
+        (await supabase.from('lead_cadence_runs').select('id').eq('lead_id', payload.lead_id).eq('empresa', payload.empresa)).data?.map(r => r.id) || []
+      );
+      await supabase.from('lead_cadence_runs').delete().eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
+      
+      // Manter lead_contact_issues para auditoria, mas deletar o lead_contact
+      await supabase.from('lead_contacts').delete().eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
       
       await supabase
         .from('sgt_events')
         .update({ processado_em: new Date().toISOString() })
         .eq('id', newEvent.id);
+      
+      console.log('[SGT Webhook] Lead e dados relacionados deletados:', payload.lead_id);
       
       return new Response(
         JSON.stringify({
@@ -1488,6 +1517,7 @@ serve(async (req) => {
           evento: payload.evento,
           empresa: payload.empresa,
           discarded: true,
+          deleted: true,
           reason: 'LEAD_SEM_CANAL_CONTATO_VALIDO',
           issues: sanitization.issues.map(i => i.mensagem)
         }),
