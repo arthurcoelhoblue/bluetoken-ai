@@ -725,6 +725,7 @@ export type Database = {
       }
       message_templates: {
         Row: {
+          assunto_template: string | null
           ativo: boolean
           canal: Database["public"]["Enums"]["canal_tipo"]
           codigo: string
@@ -737,6 +738,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assunto_template?: string | null
           ativo?: boolean
           canal: Database["public"]["Enums"]["canal_tipo"]
           codigo: string
@@ -749,6 +751,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assunto_template?: string | null
           ativo?: boolean
           canal?: Database["public"]["Enums"]["canal_tipo"]
           codigo?: string
