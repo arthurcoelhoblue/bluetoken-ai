@@ -43,7 +43,8 @@ const SMTP_PASS = Deno.env.get('SMTP_PASS') || '';
 const SMTP_FROM = Deno.env.get('SMTP_FROM') || '';
 
 // Modo de teste - se true, não envia de verdade
-const TEST_MODE = Deno.env.get('EMAIL_TEST_MODE') === 'true';
+// Modo de teste ativado - simula envio sem conectar a SMTP
+const TEST_MODE = true;
 
 // ========================================
 // Função para enviar via SMTP usando base64 encoding
