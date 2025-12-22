@@ -11,9 +11,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Nova API do Mensageria (conforme PATCH 6)
-// Testando com prefixo /api
-const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/connections/mensageria/send';
+// Nova API do Mensageria - endpoint correto conforme documentação
+const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/send-message';
 
 // Modo de teste: se true, não envia para leads reais
 const TEST_MODE = true;
@@ -161,21 +160,22 @@ serve(async (req) => {
     console.log(`[whatsapp-send] Simulando digitação: ${typingDelayMs}ms para ${mensagem.length} caracteres`);
     await new Promise(resolve => setTimeout(resolve, typingDelayMs));
 
-    // Envia via nova API Mensageria - formato atualizado
+    // Envia via nova API Mensageria - formato correto conforme documentação
     const payloadToSend = {
-      phone: phoneToSend,
+      connectionName: 'mensageria',  // Obrigatório conforme docs
+      to: phoneToSend,               // Campo correto é "to", não "phone"
       message: mensagem,
     };
     
     console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
     console.log('[whatsapp-send] Payload:', JSON.stringify(payloadToSend));
-    console.log('[whatsapp-send] Headers: x-api-key presente:', !!apiKey);
+    console.log('[whatsapp-send] Headers: X-API-Key presente:', !!apiKey);
     
     const whatsappResponse = await fetch(WHATSAPP_API_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': apiKey, // lowercase conforme documentação
+        'X-API-Key': apiKey,  // Case-sensitive conforme documentação
       },
       body: JSON.stringify(payloadToSend),
     });
