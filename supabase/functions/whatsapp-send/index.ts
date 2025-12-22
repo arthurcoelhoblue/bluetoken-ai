@@ -174,7 +174,7 @@ serve(async (req) => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-API-Key': apiKey,
+        'x-api-key': apiKey, // lowercase conforme documentação
       },
       body: JSON.stringify(payloadToSend),
     });
