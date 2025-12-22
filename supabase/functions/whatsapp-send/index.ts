@@ -12,7 +12,8 @@ const corsHeaders = {
 };
 
 // Nova API do Mensageria (conforme PATCH 6)
-const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/connections/mensageria/send';
+// Testando com prefixo /api
+const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/connections/mensageria/send';
 
 // Modo de teste: se true, não envia para leads reais
 const TEST_MODE = true;
