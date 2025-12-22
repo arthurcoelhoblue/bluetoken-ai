@@ -3,6 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
 // PATCH 5G-C - WhatsApp Send com Bloqueio Opt-Out
+// Atualizado: Nova API Mensageria (dev-mensageria.grupoblue.com.br)
 // ========================================
 
 const corsHeaders = {
@@ -10,9 +11,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Ambiente de desenvolvimento
-const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/send-message';
-const CONNECTION_NAME = 'mensageria';
+// Nova API do Mensageria (conforme PATCH 6)
+const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/connections/mensageria/send';
 
 // Modo de teste: se true, não envia para leads reais
 const TEST_MODE = true;
@@ -47,9 +47,10 @@ serve(async (req) => {
   }
 
   try {
-    const apiKey = Deno.env.get('WHATSAPP_API_KEY');
+    // Usa a nova MENSAGERIA_API_KEY
+    const apiKey = Deno.env.get('MENSAGERIA_API_KEY');
     if (!apiKey) {
-      throw new Error('WHATSAPP_API_KEY não configurada');
+      throw new Error('MENSAGERIA_API_KEY não configurada');
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
@@ -159,16 +160,15 @@ serve(async (req) => {
     console.log(`[whatsapp-send] Simulando digitação: ${typingDelayMs}ms para ${mensagem.length} caracteres`);
     await new Promise(resolve => setTimeout(resolve, typingDelayMs));
 
-    // Envia via API WhatsApp - mensagem limpa sem tag de teste
+    // Envia via nova API Mensageria - formato atualizado
     const payloadToSend = {
-      connectionName: CONNECTION_NAME,
       phone: phoneToSend,
       message: mensagem,
     };
     
     console.log('[whatsapp-send] Chamando API:', WHATSAPP_API_URL);
     console.log('[whatsapp-send] Payload:', JSON.stringify(payloadToSend));
-    console.log('[whatsapp-send] Headers: x-auth-api presente:', !!apiKey);
+    console.log('[whatsapp-send] Headers: x-api-key presente:', !!apiKey);
     
     const whatsappResponse = await fetch(WHATSAPP_API_URL, {
       method: 'POST',
