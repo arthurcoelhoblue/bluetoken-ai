@@ -3400,8 +3400,30 @@ serve(async (req) => {
         ultima_pergunta_id?: string | null;
       } = {};
       
+      // Validar e mapear estado de funil (IA pode retornar estados inválidos)
       if (aiResponse.novo_estado_funil) {
-        stateUpdates.estado_funil = aiResponse.novo_estado_funil;
+        const validEstadosFunil: EstadoFunil[] = [
+          'SAUDACAO', 'DIAGNOSTICO', 'QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'
+        ];
+        
+        let estadoFinal: EstadoFunil | null = null;
+        const estadoSugerido = aiResponse.novo_estado_funil.toUpperCase();
+        
+        // Mapear estados inválidos comuns para estados válidos
+        if (validEstadosFunil.includes(estadoSugerido as EstadoFunil)) {
+          estadoFinal = estadoSugerido as EstadoFunil;
+        } else if (['TRANSFERIDO', 'TRANSFERIDO_CLOSER', 'ESCALACAO_HUMANA', 'HANDOFF'].some(s => estadoSugerido.includes(s))) {
+          // Quando escala para humano/closer, mover para FECHAMENTO
+          estadoFinal = 'FECHAMENTO';
+          console.log('[ConversationState] Estado inválido mapeado:', { original: estadoSugerido, mapeado: 'FECHAMENTO' });
+        } else {
+          // Estado desconhecido - manter estado atual (não atualizar)
+          console.warn('[ConversationState] Estado inválido ignorado:', estadoSugerido);
+        }
+        
+        if (estadoFinal) {
+          stateUpdates.estado_funil = estadoFinal;
+        }
       }
       
       if (aiResponse.frameworks_atualizados) {
