@@ -1,8 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
-import { Separator } from '@/components/ui/separator';
 import {
   MessageSquare,
   Mail,
@@ -334,13 +332,13 @@ export function ConversationView({
             <p>{emptyMessage}</p>
           </div>
         ) : (
-          <ScrollArea 
+          <div 
             ref={scrollRef}
             style={{ maxHeight }} 
-            className="pr-4"
+            className="overflow-y-auto pr-4"
           >
             <MessagesByDate messages={messages} leadNome={leadNome} />
-          </ScrollArea>
+          </div>
         )}
       </CardContent>
     </Card>
