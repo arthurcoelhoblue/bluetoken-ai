@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';
-import { useLeadMessages } from '@/hooks/useLeadMessages';
+import { useConversationMessages } from '@/hooks/useConversationMessages';
 import { useLeadIntents } from '@/hooks/useLeadIntents';
 import { useLeadContactIssues } from '@/hooks/useLeadContactIssues';
 import { usePessoaContext } from '@/hooks/usePessoaContext';
@@ -19,7 +19,7 @@ import { EditClassificationModal } from '@/components/leads/EditClassificationMo
 import { ClassificationExplanation } from '@/components/leads/ClassificationExplanation';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
-import { MessageHistory } from '@/components/messages/MessageHistory';
+import { ConversationView } from '@/components/messages/ConversationView';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
@@ -68,9 +68,11 @@ function LeadDetailContent() {
   const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
     useLeadDetail(leadId || '', empresa as EmpresaTipo);
 
-  const { data: messages = [], isLoading: messagesLoading } = useLeadMessages({
+  // Usar novo hook com realtime
+  const { data: messages = [], isLoading: messagesLoading } = useConversationMessages({
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
+    telefone: contact?.telefone,
     enabled: !!leadId && !!empresa,
   });
 
@@ -332,12 +334,12 @@ function LeadDetailContent() {
             </CardContent>
           </Card>
 
-          {/* Message History */}
-          <MessageHistory
+          {/* Conversation View - Melhorado */}
+          <ConversationView
             messages={messages}
             isLoading={messagesLoading}
-            showCadenceName
-            maxHeight="350px"
+            leadNome={contact.nome || contact.primeiro_nome}
+            maxHeight="500px"
             emptyMessage="Nenhuma mensagem enviada para este lead."
           />
 

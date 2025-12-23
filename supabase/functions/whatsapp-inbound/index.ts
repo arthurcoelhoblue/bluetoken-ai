@@ -191,13 +191,13 @@ async function clearHandoffFlag(
 
 /**
  * Busca lead pelo telefone normalizado
- * Agora considera handoffs pendentes para rotear corretamente
+ * MELHORIA: Busca em TODAS as empresas e prioriza leads com cadência ativa
  */
 async function findLeadByPhone(
   supabase: SupabaseClient,
   phoneNormalized: string
 ): Promise<{ lead: LeadContact | null; handoffInfo?: { leadIdOrigem: string; empresaOrigem: EmpresaTipo } }> {
-  console.log('[Lead] Buscando por telefone:', phoneNormalized);
+  console.log('[Lead] Buscando por telefone em TODAS empresas:', phoneNormalized);
   
   const e164 = phoneNormalized.startsWith('+') 
     ? phoneNormalized 
@@ -238,18 +238,36 @@ async function findLeadByPhone(
     console.log('[Lead] Lead não existe na empresa destino, buscando origem');
   }
   
-  // 2. Busca normal por telefone_e164
-  const { data: e164Match } = await supabase
+  // 2. Busca por telefone_e164 em TODAS as empresas, priorizando quem tem cadência ativa
+  const { data: e164Matches } = await supabase
     .from('lead_contacts')
     .select('*')
     .eq('telefone_e164', e164)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
     
-  if (e164Match) {
-    console.log('[Lead] Match por telefone_e164:', (e164Match as LeadContact).lead_id);
-    return { lead: e164Match as LeadContact };
+  if (e164Matches && e164Matches.length > 0) {
+    console.log('[Lead] Encontrados', e164Matches.length, 'leads por telefone_e164');
+    
+    // Verificar qual tem cadência ativa
+    for (const lead of e164Matches as LeadContact[]) {
+      const { data: activeRun } = await supabase
+        .from('lead_cadence_runs')
+        .select('id')
+        .eq('lead_id', lead.lead_id)
+        .eq('empresa', lead.empresa)
+        .eq('status', 'ATIVA')
+        .limit(1)
+        .maybeSingle();
+      
+      if (activeRun) {
+        console.log('[Lead] Match com cadência ativa:', lead.lead_id, '-', lead.empresa);
+        return { lead };
+      }
+    }
+    
+    // Nenhum com cadência ativa, retorna o mais recente
+    console.log('[Lead] Match por telefone_e164 (mais recente):', (e164Matches[0] as LeadContact).lead_id);
+    return { lead: e164Matches[0] as LeadContact };
   }
   
   // 3. Gera todas as variações possíveis para busca no campo telefone
@@ -257,33 +275,63 @@ async function findLeadByPhone(
   console.log('[Lead] Variações a testar:', variations);
   
   for (const variant of variations) {
-    const { data: exactMatch } = await supabase
+    const { data: matches } = await supabase
       .from('lead_contacts')
       .select('*')
       .eq('telefone', variant)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
+      .order('updated_at', { ascending: false });
       
-    if (exactMatch) {
-      console.log('[Lead] Match exato encontrado com variação:', variant, '->', (exactMatch as LeadContact).lead_id);
-      return { lead: exactMatch as LeadContact };
+    if (matches && matches.length > 0) {
+      // Priorizar quem tem cadência ativa
+      for (const lead of matches as LeadContact[]) {
+        const { data: activeRun } = await supabase
+          .from('lead_cadence_runs')
+          .select('id')
+          .eq('lead_id', lead.lead_id)
+          .eq('empresa', lead.empresa)
+          .eq('status', 'ATIVA')
+          .limit(1)
+          .maybeSingle();
+        
+        if (activeRun) {
+          console.log('[Lead] Match exato com cadência ativa:', lead.lead_id, '-', lead.empresa);
+          return { lead };
+        }
+      }
+      
+      console.log('[Lead] Match exato (mais recente):', (matches[0] as LeadContact).lead_id);
+      return { lead: matches[0] as LeadContact };
     }
   }
   
   // 4. Tenta busca parcial com os últimos 8 dígitos
   const last8Digits = phoneNormalized.slice(-8);
-  const { data: partialMatch } = await supabase
+  const { data: partialMatches } = await supabase
     .from('lead_contacts')
     .select('*')
     .like('telefone', `%${last8Digits}`)
-    .order('updated_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('updated_at', { ascending: false });
     
-  if (partialMatch) {
-    console.log('[Lead] Match parcial (últimos 8 dígitos) encontrado:', (partialMatch as LeadContact).lead_id);
-    return { lead: partialMatch as LeadContact };
+  if (partialMatches && partialMatches.length > 0) {
+    // Priorizar quem tem cadência ativa
+    for (const lead of partialMatches as LeadContact[]) {
+      const { data: activeRun } = await supabase
+        .from('lead_cadence_runs')
+        .select('id')
+        .eq('lead_id', lead.lead_id)
+        .eq('empresa', lead.empresa)
+        .eq('status', 'ATIVA')
+        .limit(1)
+        .maybeSingle();
+      
+      if (activeRun) {
+        console.log('[Lead] Match parcial com cadência ativa:', lead.lead_id, '-', lead.empresa);
+        return { lead };
+      }
+    }
+    
+    console.log('[Lead] Match parcial (mais recente):', (partialMatches[0] as LeadContact).lead_id);
+    return { lead: partialMatches[0] as LeadContact };
   }
   
   console.log('[Lead] Nenhum lead encontrado para:', phoneNormalized);

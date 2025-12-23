@@ -23,7 +23,7 @@ export type MensagemEstado =
 // Mensagem do lead (log centralizado)
 export interface LeadMessage {
   id: string;
-  lead_id: string;
+  lead_id: string | null;
   empresa: EmpresaTipo;
   run_id: string | null;
   step_ordem: number | null;
@@ -46,6 +46,8 @@ export interface LeadMessage {
 export interface LeadMessageWithContext extends LeadMessage {
   template_nome?: string;
   cadencia_nome?: string;
+  // Flag para mensagens INBOUND não associadas ao lead
+  unmatched?: boolean;
 }
 
 // Parâmetros para criar mensagem outbound
