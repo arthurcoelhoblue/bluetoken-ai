@@ -837,10 +837,19 @@ function formatTokenizaOffersForPrompt(ofertas: TokenizaOfertaSDR[]): string {
 
   let text = `\n## OFERTAS ATIVAS TOKENIZA - USE QUANDO FALAR SOBRE INVESTIMENTOS\n\n`;
   
+  // REGRA CRÍTICA SOBRE PRAZOS
+  text += `### ⚠️ ENTENDIMENTO CORRETO DOS PRAZOS (OBRIGATÓRIO!)\n`;
+  text += `- **Período de captação**: É o prazo em que os investidores podem aportar dinheiro na oferta\n`;
+  text += `- **Prazo de rentabilidade**: SEMPRE 12 meses (1 ano) APÓS o encerramento da captação\n`;
+  text += `- **Exemplo**: Uma oferta com "180 dias de captação" e "25% de rentabilidade" significa:\n`;
+  text += `  - Investidores têm 180 dias para investir\n`;
+  text += `  - Após encerrar a captação, começa o prazo de 12 meses para pagamento dos 25%\n`;
+  text += `  - Total: ~18 meses do investimento até receber o retorno completo\n\n`;
+  
   for (const o of ofertas) {
     text += `### ${o.nome} (${o.empresa})\n`;
-    text += `- Rentabilidade: ${o.rentabilidade}% ao ano\n`;
-    text += `- Prazo do investimento: ${o.duracaoDias} dias\n`;
+    text += `- Rentabilidade: ${o.rentabilidade}% ao ano (pago em 12 meses após fim da captação)\n`;
+    text += `- Período de captação: ${o.duracaoDias} dias (prazo para investir)\n`;
     text += `- Dias restantes para investir: ${o.diasRestantes}\n`;
     text += `- Investimento mínimo: R$ ${o.contribuicaoMinima.toLocaleString('pt-BR')}\n`;
     text += `- Tipo de risco: ${o.tipoRisco}\n\n`;
@@ -848,11 +857,14 @@ function formatTokenizaOffersForPrompt(ofertas: TokenizaOfertaSDR[]): string {
   
   text += `### REGRAS PARA MENCIONAR OFERTAS:\n`;
   text += `✅ Mencione ofertas quando o lead perguntar sobre oportunidades/investimentos disponíveis\n`;
-  text += `✅ Cite rentabilidade e prazo quando perguntarem sobre ganhos potenciais\n`;
+  text += `✅ SEMPRE esclareça que a rentabilidade é paga ao longo de 12 meses APÓS o fim da captação\n`;
+  text += `✅ Diferencie "prazo de captação" (quando investir) de "prazo de retorno" (sempre 12 meses depois)\n`;
   text += `✅ Informe valor mínimo quando perguntarem "quanto preciso para começar"\n`;
   text += `✅ Mencione dias restantes APENAS se forem poucos (< 15 dias)\n`;
   text += `✅ Use os nomes reais das ofertas, não invente\n`;
   text += `❌ NUNCA prometa ou garanta a rentabilidade - é projeção, não garantia\n`;
+  text += `❌ NUNCA confunda período de captação com prazo de pagamento da rentabilidade\n`;
+  text += `❌ NUNCA diga que a rentabilidade será paga no mesmo prazo da captação\n`;
   text += `❌ NUNCA recomende uma oferta específica como "a melhor" ou "ideal para você"\n`;
   text += `❌ NUNCA pressione com urgência artificial\n`;
   text += `❌ NUNCA invente ofertas que não estão listadas\n`;
