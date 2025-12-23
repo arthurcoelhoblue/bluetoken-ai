@@ -334,6 +334,39 @@ async function findLeadByPhone(
     return { lead: partialMatches[0] as LeadContact };
   }
   
+  // 5. FALLBACK: Busca por última mensagem OUTBOUND recente (modo teste)
+  // Útil quando o número de resposta não bate com o número cadastrado
+  console.log('[Lead] Tentando fallback por último OUTBOUND...');
+  const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+  
+  const { data: lastOutbound } = await supabase
+    .from('lead_messages')
+    .select('lead_id, empresa')
+    .eq('direcao', 'OUTBOUND')
+    .eq('canal', 'WHATSAPP')
+    .eq('estado', 'ENVIADO')
+    .gte('created_at', thirtyMinutesAgo)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastOutbound && lastOutbound.lead_id) {
+    console.log('[Lead] Fallback: encontrado OUTBOUND recente para lead:', lastOutbound.lead_id);
+    
+    // Buscar dados completos do lead
+    const { data: leadData } = await supabase
+      .from('lead_contacts')
+      .select('*')
+      .eq('lead_id', lastOutbound.lead_id)
+      .eq('empresa', lastOutbound.empresa)
+      .maybeSingle();
+    
+    if (leadData) {
+      console.log('[Lead] Fallback: associando ao lead do último OUTBOUND:', (leadData as LeadContact).lead_id, '-', (leadData as LeadContact).empresa);
+      return { lead: leadData as LeadContact };
+    }
+  }
+  
   console.log('[Lead] Nenhum lead encontrado para:', phoneNormalized);
   return { lead: null };
 }
