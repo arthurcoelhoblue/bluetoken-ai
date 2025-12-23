@@ -482,6 +482,163 @@ function detectarLeadQuenteImediato(mensagem: string): DeteccaoUrgencia {
   };
 }
 
+// ========================================
+// PATCH 10: DETECTOR DE LEAD PRONTO PARA ESCALAR
+// ========================================
+
+interface SinaisLeadPronto {
+  conscienciaTotalPresente: boolean;
+  aberturaExplicita: boolean;
+  volumeTempoConhecido: boolean;
+  perguntaPreco: boolean;
+  reconheceuPlano: boolean;
+  totalSinais: number;
+}
+
+/**
+ * PATCH 10: Detecta se o lead está pronto para escalar para vendedor
+ * Diferente de urgência (que é imediato), aqui o lead está qualificado
+ */
+function detectarLeadProntoParaEscalar(
+  mensagem: string,
+  historico: LeadMessage[],
+  frameworkData?: FrameworkData
+): SinaisLeadPronto {
+  const msgLower = mensagem.toLowerCase();
+  const historicoText = historico
+    .filter(h => h.direcao === 'INBOUND')
+    .map(h => h.conteudo.toLowerCase())
+    .join(' ');
+  const todoTexto = msgLower + ' ' + historicoText;
+  
+  // 1. Consciência total: sabe que precisa declarar/investir, conhece os riscos
+  const conscienciaPatterns = [
+    'sei que preciso', 'tenho que declarar', 'preciso regularizar',
+    'sei do risco', 'sei que é importante', 'entendo que preciso',
+    'quero resolver', 'preciso resolver', 'quero me regularizar',
+    'quero investir', 'quero começar a investir', 'estou pronto',
+  ];
+  const conscienciaTotalPresente = conscienciaPatterns.some(p => todoTexto.includes(p));
+  
+  // 2. Abertura explícita: demonstra interesse ativo
+  const aberturaPatterns = [
+    'claro', 'com certeza', 'pode me ajudar', 'quero saber mais',
+    'me explica', 'como funciona', 'pode sim', 'quero sim',
+    'estou interessado', 'interessada', 'quero entender',
+    'pode falar', 'pode me contar', 'bora', 'vamos lá',
+  ];
+  const aberturaExplicita = aberturaPatterns.some(p => msgLower.includes(p));
+  
+  // 3. Volume/tempo conhecido: já informou quantas exchanges, anos, operações
+  const spin = frameworkData?.spin || {};
+  const volumeTempoConhecido = !!(spin.s && spin.p);
+  
+  // 4. Pergunta de preço: indica consideração de compra
+  const precoPatterns = [
+    'quanto custa', 'qual o valor', 'qual o preço', 'preço',
+    'quanto fica', 'quanto é', 'qual plano', 'valores',
+  ];
+  const perguntaPreco = precoPatterns.some(p => todoTexto.includes(p));
+  
+  // 5. Reconheceu plano: já demonstrou preferência
+  const planoPatterns = [
+    'gold', 'diamond', 'esse plano', 'quero o plano', 'prefiro',
+    'esse ai', 'esse aí', 'esse mesmo', 'é esse', 'vou querer',
+  ];
+  const reconheceuPlano = planoPatterns.some(p => todoTexto.includes(p));
+  
+  const sinais = {
+    conscienciaTotalPresente,
+    aberturaExplicita,
+    volumeTempoConhecido,
+    perguntaPreco,
+    reconheceuPlano,
+    totalSinais: [
+      conscienciaTotalPresente,
+      aberturaExplicita,
+      volumeTempoConhecido,
+      perguntaPreco,
+      reconheceuPlano,
+    ].filter(Boolean).length,
+  };
+  
+  if (sinais.totalSinais >= 3) {
+    console.log('[PATCH10] Lead pronto para escalar:', {
+      sinais,
+      trigger: 'Múltiplos sinais de qualificação detectados',
+    });
+  }
+  
+  return sinais;
+}
+
+// ========================================
+// PATCH 10: MODO BLOCO DE QUALIFICAÇÃO BLUE
+// ========================================
+
+const BLOCO_QUALIFICACAO_BLUE = {
+  ativo: true,
+  pergunta: `Pra te indicar o melhor caminho, me responde 3 coisas rápidas:
+1. Quais anos você precisa declarar?
+2. Quantas exchanges/carteiras você usou nesse período?
+3. Tem alguma carteira descentralizada (tipo MetaMask, Trust)?`,
+  
+  condicoesAtivacao: [
+    'Após identificar que lead precisa de regularização',
+    'Lead demonstrou interesse em IR',
+    'Estado funil é DIAGNOSTICO ou QUALIFICACAO',
+  ],
+};
+
+// ========================================
+// PATCH 10: VARIAÇÕES DE TRANSIÇÃO ANTI-REPETIÇÃO
+// ========================================
+
+const VARIACOES_TRANSICAO = {
+  // Substituir "Me conta" por variações naturais
+  perguntasDiretas: [
+    'Quantas exchanges você usa?',
+    'Você lembra quantas operações fez mais ou menos?',
+    'Como você declara hoje - sozinho ou com contador?',
+    'Tem carteira descentralizada tipo MetaMask?',
+    'Desde quando você opera?',
+    'Qual exchange você mais usa?',
+  ],
+  
+  // Aberturas variadas para perguntas
+  aberturasPerguntas: [
+    'Uma coisa rápida:',
+    'E sobre',
+    'Ah, e',
+    'Uma dúvida:',
+    'Deixa eu entender:',
+    '',  // Direto sem abertura
+  ],
+  
+  // Reconhecimentos variados (não elogios!)
+  reconhecimentos: [
+    'Entendi.',
+    'Faz sentido.',
+    'Tá, entendi.',
+    'Hmm, entendi.',
+    'Ah, tá.',
+    'Saquei.',
+  ],
+  
+  // Conectores para continuar
+  conectores: [
+    'E',
+    'Sobre isso,',
+    'Então,',
+    '',
+  ],
+};
+
+// Função para selecionar variação aleatória
+function selecionarVariacao(array: string[]): string {
+  return array[Math.floor(Math.random() * array.length)];
+}
+
 // Mapeamento de tipos de pergunta para instruções
 const PERGUNTA_INSTRUCOES: Record<ProximaPerguntaTipo, string> = {
   // SPIN
@@ -1164,34 +1321,62 @@ interface AIResponse {
 // ========================================
 
 /**
- * Decide próxima pergunta para BLUE usando SPIN
+ * PATCH 10: Decide próxima pergunta para BLUE usando SPIN
+ * COM MODO BLOCO DE 3 PERGUNTAS
  */
-function decidirProximaPerguntaBLUE(state: ConversationQualiState): ProximaPerguntaTipo {
+function decidirProximaPerguntaBLUE(
+  state: ConversationQualiState,
+  historicoLength: number = 0
+): { tipo: ProximaPerguntaTipo; usarBloco?: boolean } {
   const spin = state.spin || {};
+
+  // PATCH 10: Se estamos no início (SAUDACAO ou DIAGNOSTICO) e poucas mensagens
+  // Ativar modo BLOCO de 3 perguntas
+  if (
+    BLOCO_QUALIFICACAO_BLUE.ativo &&
+    (state.estadoFunil === 'SAUDACAO' || state.estadoFunil === 'DIAGNOSTICO') &&
+    historicoLength <= 3 &&
+    !spin.s  // Ainda não coletou situação
+  ) {
+    console.log('[PATCH10] Ativando BLOCO de 3 perguntas BLUE');
+    return { tipo: 'SPIN_S', usarBloco: true };
+  }
 
   // 1) Se estamos ainda em saudação, primeiro passo é SITUAÇÃO
   if (state.estadoFunil === 'SAUDACAO') {
-    return 'SPIN_S';
+    return { tipo: 'SPIN_S' };
   }
 
   // 2) Situação ainda não bem estabelecida → perguntar SPIN_S
   if (!spin.s) {
-    return 'SPIN_S';
+    return { tipo: 'SPIN_S' };
   }
 
   // 3) Já sei a situação, mas não sei problema → SPIN_P
   if (!spin.p) {
-    return 'SPIN_P';
+    return { tipo: 'SPIN_P' };
+  }
+
+  // PATCH 10: Se já tem S e P, lead pode estar pronto
+  // Verificar se pode pular direto para CTA
+  if (spin.s && spin.p && state.temperatura !== 'FRIO') {
+    const intent = state.intentAtual || 'OUTRO';
+    const interessado = ['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO', 'DUVIDA_PRECO'].includes(intent);
+    
+    if (interessado) {
+      console.log('[PATCH10] Lead qualificado rápido - S+P + interesse, escalando');
+      return { tipo: 'CTA_REUNIAO' };
+    }
   }
 
   // 4) Já sei problema, mas não explorei implicação → SPIN_I
   if (!spin.i) {
-    return 'SPIN_I';
+    return { tipo: 'SPIN_I' };
   }
 
   // 5) Já tenho S, P, I → posso ir para Need-Payoff
   if (!spin.n) {
-    return 'SPIN_N';
+    return { tipo: 'SPIN_N' };
   }
 
   // 6) Tenho SPIN relativamente completo:
@@ -1201,11 +1386,11 @@ function decidirProximaPerguntaBLUE(state: ConversationQualiState): ProximaPergu
   const tempBoa = state.temperatura !== 'FRIO';
 
   if (interessado && tempBoa) {
-    return 'CTA_REUNIAO';
+    return { tipo: 'CTA_REUNIAO' };
   }
 
   // 7) Caso contrário, nenhuma pergunta específica de framework:
-  return 'NENHUMA';
+  return { tipo: 'NENHUMA' };
 }
 
 /**
@@ -1273,13 +1458,21 @@ function decidirProximaPerguntaTOKENIZA(state: ConversationQualiState): ProximaP
 }
 
 /**
- * Função principal que decide próxima pergunta com base no contexto
- * PATCH 9: Agora verifica urgência ANTES de decidir próxima pergunta
+ * PATCH 10: Função principal que decide próxima pergunta com base no contexto
+ * Agora verifica urgência, lead pronto, e modo bloco
  */
 function decidirProximaPergunta(
   state: ConversationQualiState, 
-  mensagemAtual?: string
-): { tipo: ProximaPerguntaTipo; instrucao: string; urgencia?: DeteccaoUrgencia } {
+  mensagemAtual?: string,
+  historico?: LeadMessage[],
+  frameworkData?: FrameworkData
+): { 
+  tipo: ProximaPerguntaTipo; 
+  instrucao: string; 
+  urgencia?: DeteccaoUrgencia;
+  usarBloco?: boolean;
+  leadPronto?: SinaisLeadPronto;
+} {
   
   // PATCH 9: Verificar se há sinal de urgência ANTES de continuar qualificação
   if (mensagemAtual) {
@@ -1315,18 +1508,57 @@ function decidirProximaPergunta(
     }
   }
   
+  // PATCH 10: Verificar se lead está pronto para escalar (qualificado)
+  if (mensagemAtual && historico) {
+    const leadPronto = detectarLeadProntoParaEscalar(mensagemAtual, historico, frameworkData);
+    
+    if (leadPronto.totalSinais >= 3) {
+      console.log('[PATCH10] Lead pronto detectado - escalando para vendedor:', {
+        sinais: leadPronto.totalSinais,
+        detalhes: leadPronto,
+      });
+      
+      return { 
+        tipo: 'CTA_REUNIAO', 
+        instrucao: PERGUNTA_INSTRUCOES['CTA_REUNIAO'] + ' O lead demonstrou estar pronto. Confirme interesse e passe para o especialista.',
+        leadPronto,
+      };
+    }
+  }
+  
   // Fluxo normal de qualificação
   let tipo: ProximaPerguntaTipo;
+  let usarBloco: boolean | undefined;
+  const historicoLength = historico?.length || 0;
   
   if (state.empresa === 'BLUE') {
-    tipo = decidirProximaPerguntaBLUE(state);
+    const resultado = decidirProximaPerguntaBLUE(state, historicoLength);
+    tipo = resultado.tipo;
+    usarBloco = resultado.usarBloco;
   } else {
     tipo = decidirProximaPerguntaTOKENIZA(state);
   }
   
+  // Se for usar bloco, adicionar instrução especial
+  let instrucao = PERGUNTA_INSTRUCOES[tipo];
+  if (usarBloco) {
+    instrucao = `## MODO BLOCO ATIVADO (PATCH 10)
+Faça as 3 perguntas DE UMA VEZ em vez de uma por vez:
+
+${BLOCO_QUALIFICACAO_BLUE.pergunta}
+
+APÓS a resposta:
+- Se respondeu as 3: RECOMENDE O PLANO adequado
+- Se respondeu parcialmente: Peça apenas o que falta
+- Se perguntou preço: RECOMENDE O PLANO + explique opções
+
+⚠️ REGRA CRÍTICA: Após recomendar plano e lead demonstrar interesse → ESCALE PARA HUMANO`;
+  }
+  
   return { 
     tipo, 
-    instrucao: PERGUNTA_INSTRUCOES[tipo] 
+    instrucao,
+    usarBloco,
   };
 }
 
@@ -1712,6 +1944,12 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
   cleaned = cleaned.replace(/,?\s*que (mostra|demonstra) que você (está|é) (atento|interessado|engajado)[^.!?]*/gi, '');
   cleaned = cleaned.replace(/,?\s*e?\s*fico (feliz|contente) que você[^.!?]*/gi, '');
   
+  // PATCH 10: Remover padrões "me conta" repetitivos
+  cleaned = cleaned.replace(/me conta:?\s*/gi, '');
+  cleaned = cleaned.replace(/me conta uma coisa:?\s*/gi, '');
+  cleaned = cleaned.replace(/agora me conta:?\s*/gi, '');
+  cleaned = cleaned.replace(/me fala:?\s*/gi, '');
+  
   // Remover nome se aparecer no início da frase após limpeza
   if (leadNome) {
     const nomePattern = new RegExp(`^${leadNome},?\\s*`, 'i');
@@ -1745,8 +1983,8 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
 }
 
 // ========================================
-// PATCH 6G: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
-// Reescrito com técnica de ROLEPLAY para humanização
+// PATCH 6G + 10: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
+// COM REGRAS DE BLOCO, ANTI-REPETIÇÃO E ESCALAÇÃO RÁPIDA
 // ========================================
 
 const SYSTEM_PROMPT = `# VOCÊ É AMÉLIA - ROLEPLAY OBRIGATÓRIO
@@ -1758,6 +1996,38 @@ Você vai VIVER como Amélia. Não é um chatbot fingindo ser Amélia. VOCÊ É 
 Amélia, 32 anos, formada em economia, especialista em finanças digitais.
 Trabalha no Grupo Blue há 3 anos. Conhece IR de cripto e investimentos tokenizados.
 Conversa com clientes como uma amiga que manja do assunto.
+
+## 🚨 PATCH 10: REGRA DE ESCALAÇÃO RÁPIDA
+
+VOCÊ NÃO EXISTE PARA QUALIFICAR INFINITAMENTE. Seu objetivo é:
+1. Entender rapidamente o contexto do lead
+2. Identificar se ele está pronto
+3. ESCALAR PARA VENDEDOR assim que fizer sentido
+
+### SINAIS DE LEAD PRONTO (qualquer 3 = ESCALE!):
+- ✅ Consciência: Sabe que precisa (declarar/investir)
+- ✅ Abertura: "Claro", "Pode me ajudar", "Quero saber mais"
+- ✅ Volume conhecido: Já disse quantas exchanges/operações
+- ✅ Perguntou preço
+- ✅ Reconheceu plano ("quero o Gold", "esse aí")
+
+Se 3+ sinais → PARE DE QUALIFICAR → ESCALE!
+
+## 🔥 PATCH 10: REGRA "ME CONTA" PROIBIDO
+
+NUNCA use estas frases repetitivas:
+❌ "Me conta:"
+❌ "Me conta uma coisa:"
+❌ "Agora me conta:"
+❌ "Me fala:"
+
+USE VARIAÇÕES NATURAIS:
+✅ "Quantas exchanges você usa?"
+✅ "Você lembra quantas operações fez?"
+✅ "Como você declara hoje?"
+✅ "Desde quando você opera?"
+✅ "E sobre [assunto]..."
+✅ VÁ DIRETO À PERGUNTA SEM INTRODUÇÃO
 
 ## ⚠️ REGRA CRÍTICA: QUANDO NÃO SOUBER
 
@@ -1775,6 +2045,7 @@ EXEMPLOS:
 ✅ CERTO: "Esse detalhe eu preciso confirmar com a equipe, me dá um minuto que já te retorno."
 
 ## 🚫 FRASES ABSOLUTAMENTE PROIBIDAS (NUNCA USE!)
+
 
 ❌ "Essa é uma ótima pergunta" / "Boa pergunta" / "Excelente pergunta"
 ❌ "Essa é uma dúvida bem comum" / "Essa pergunta é muito boa"
@@ -1826,14 +2097,30 @@ Se sua resposta começa assim → REESCREVA:
 ✅ "Pra te responder melhor, me conta..."
 ✅ VÁ DIRETO AO PONTO - sem elogiar a pergunta antes
 
-## 📝 REGRA DE OURO: UMA PERGUNTA POR VEZ
+## 📝 REGRA DE OURO: UMA PERGUNTA POR VEZ (COM EXCEÇÃO)
 
 NUNCA bombardeie o lead com múltiplas perguntas. Isso é comportamento de robô.
 
 ❌ ERRADO: "Quantas exchanges você usa? E quantas operações fez? É a primeira vez declarando?"
 ✅ CERTO: "Quantas exchanges você usa?" (espera resposta, depois pergunta a próxima)
 
-Se você fizer mais de 1 pergunta por mensagem, VOCÊ FALHOU.
+### ⚡ EXCEÇÃO: MODO BLOCO DE QUALIFICAÇÃO (BLUE - IR CRIPTO)
+
+Quando você receber instrução "MODO BLOCO ATIVADO", faça as 3 perguntas DE UMA VEZ:
+
+"Pra te indicar o melhor caminho, me responde 3 coisas rápidas:
+1. Quais anos você precisa declarar?
+2. Quantas exchanges/carteiras você usou nesse período?
+3. Tem alguma carteira descentralizada (tipo MetaMask, Trust)?"
+
+APÓS a resposta completa:
+- Se respondeu as 3: RECOMENDE O PLANO (Gold ou Diamond)
+- Se respondeu parcialmente: Peça APENAS o que falta
+- Se perguntou preço: RECOMENDE O PLANO + preços
+
+⚠️ REGRA CRÍTICA: Após recomendar plano e lead demonstrar interesse → ESCALE!
+
+Se você fizer mais de 1 pergunta FORA do modo bloco, VOCÊ FALHOU.
 
 ## 🎭 EMOJIS - USE COM MODERAÇÃO
 
@@ -2181,12 +2468,19 @@ async function interpretWithAI(
     intentAtual: undefined, // Será determinado pela IA
   };
   
-  // PATCH 9: Passa a mensagem atual para detectar urgência
-  const proximaPergunta = decidirProximaPergunta(qualiState, mensagem);
-  console.log('[6G+9] Próxima pergunta decidida:', {
+  // PATCH 10: Passa mensagem, histórico e framework para detectar lead pronto
+  const proximaPergunta = decidirProximaPergunta(
+    qualiState, 
+    mensagem, 
+    historico,
+    conversationState?.framework_data
+  );
+  console.log('[PATCH10] Próxima pergunta decidida:', {
     tipo: proximaPergunta.tipo,
     urgenciaDetectada: proximaPergunta.urgencia?.detectado || false,
     urgenciaTipo: proximaPergunta.urgencia?.tipo || null,
+    usarBloco: proximaPergunta.usarBloco || false,
+    leadProntoSinais: proximaPergunta.leadPronto?.totalSinais || 0,
     fraseGatilho: proximaPergunta.urgencia?.frase_gatilho || null,
   });
 
@@ -2198,7 +2492,7 @@ async function interpretWithAI(
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
-  // PATCH 9: Instrução especial se escalação imediata
+  // PATCH 9/10: Instrução especial se escalação imediata ou lead pronto
   if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {
     userPrompt += `\n## 🚨 ESCALAÇÃO IMEDIATA DETECTADA\n`;
     userPrompt += `TIPO DE URGÊNCIA: ${proximaPergunta.urgencia.tipo}\n`;
@@ -2207,12 +2501,30 @@ async function interpretWithAI(
     userPrompt += `\n⚠️ AÇÃO OBRIGATÓRIA: Responda com empatia, confirme interesse e ESCALE para humano.\n`;
     userPrompt += `⚠️ SUA AÇÃO DEVE SER: ESCALAR_HUMANO\n`;
     userPrompt += `⚠️ NÃO FAÇA perguntas de qualificação. O lead quer ação AGORA.\n`;
+  } else if (proximaPergunta.leadPronto && proximaPergunta.leadPronto.totalSinais >= 3) {
+    // PATCH 10: Lead pronto para escalar
+    userPrompt += `\n## ✅ LEAD PRONTO PARA ESCALAR (PATCH 10)\n`;
+    userPrompt += `SINAIS DETECTADOS: ${proximaPergunta.leadPronto.totalSinais}\n`;
+    userPrompt += `- Consciência: ${proximaPergunta.leadPronto.conscienciaTotalPresente ? '✅' : '❌'}\n`;
+    userPrompt += `- Abertura: ${proximaPergunta.leadPronto.aberturaExplicita ? '✅' : '❌'}\n`;
+    userPrompt += `- Volume conhecido: ${proximaPergunta.leadPronto.volumeTempoConhecido ? '✅' : '❌'}\n`;
+    userPrompt += `- Perguntou preço: ${proximaPergunta.leadPronto.perguntaPreco ? '✅' : '❌'}\n`;
+    userPrompt += `- Reconheceu plano: ${proximaPergunta.leadPronto.reconheceuPlano ? '✅' : '❌'}\n`;
+    userPrompt += `\n⚠️ AÇÃO: Confirme interesse, recomende plano se ainda não fez, e ESCALE para vendedor.\n`;
+    userPrompt += `⚠️ NÃO CONTINUE qualificando. O lead está pronto!\n`;
+  } else if (proximaPergunta.usarBloco) {
+    // PATCH 10: Modo bloco de 3 perguntas
+    userPrompt += `\n## 🔷 MODO BLOCO ATIVADO (PATCH 10)\n`;
+    userPrompt += `INSTRUÇÃO: ${proximaPergunta.instrucao}\n`;
+    userPrompt += `\n⚠️ Faça as 3 PERGUNTAS DE UMA VEZ conforme instrução acima.\n`;
+    userPrompt += `⚠️ Após resposta completa: RECOMENDE PLANO e ESCALE se houver interesse.\n`;
   } else {
-    // PATCH 6G: Instrução de próxima pergunta (CRÍTICO!)
+    // Fluxo normal
     userPrompt += `\n## ⚡ INSTRUÇÃO DE PRÓXIMA PERGUNTA (SIGA OBRIGATORIAMENTE)\n`;
     userPrompt += `TIPO: ${proximaPergunta.tipo}\n`;
     userPrompt += `INSTRUÇÃO: ${proximaPergunta.instrucao}\n`;
     userPrompt += `\n⚠️ Sua resposta DEVE incluir uma pergunta seguindo esta instrução, a menos que seja NENHUMA.\n`;
+    userPrompt += `⚠️ NUNCA use "me conta" - vá direto à pergunta.\n`;
   }
   
   // Contexto da pessoa global (multi-empresa)
