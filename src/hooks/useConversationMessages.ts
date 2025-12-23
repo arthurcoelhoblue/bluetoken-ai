@@ -145,8 +145,9 @@ export function useConversationMessages({
   useEffect(() => {
     if (!enabled || !leadId) return;
     
-    const channel = supabase
-      .channel(`messages-${leadId}`)
+    // Channel 1: Mensagens associadas ao lead
+    const leadChannel = supabase
+      .channel(`messages-lead-${leadId}`)
       .on(
         'postgres_changes',
         {
@@ -156,8 +157,7 @@ export function useConversationMessages({
           filter: `lead_id=eq.${leadId}`,
         },
         (payload) => {
-          console.log('[Realtime] Mensagem atualizada:', payload);
-          // Invalidar query para recarregar
+          console.log('[Realtime] Mensagem do lead atualizada:', payload);
           queryClient.invalidateQueries({ 
             queryKey: ['conversation-messages', leadId, empresa, telefone] 
           });
@@ -165,8 +165,32 @@ export function useConversationMessages({
       )
       .subscribe();
     
+    // Channel 2: Mensagens INBOUND não associadas (podem ser do lead)
+    const inboundChannel = supabase
+      .channel(`messages-inbound-unmatched`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'lead_messages',
+        },
+        (payload) => {
+          const newMsg = payload.new as any;
+          // Se for INBOUND e não tiver lead_id, pode ser mensagem não associada
+          if (newMsg.direcao === 'INBOUND' && !newMsg.lead_id) {
+            console.log('[Realtime] Nova mensagem INBOUND não associada:', payload);
+            queryClient.invalidateQueries({ 
+              queryKey: ['conversation-messages', leadId, empresa, telefone] 
+            });
+          }
+        }
+      )
+      .subscribe();
+    
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(leadChannel);
+      supabase.removeChannel(inboundChannel);
     };
   }, [leadId, empresa, telefone, enabled, queryClient]);
   
