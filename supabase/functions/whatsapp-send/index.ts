@@ -155,8 +155,8 @@ serve(async (req) => {
     }
 
     // PATCH: Delay proporcional ao tamanho da mensagem para parecer humano
-    // Fórmula: ~30ms por caractere, min 800ms, max 4000ms
-    const typingDelayMs = Math.min(Math.max(mensagem.length * 30, 800), 4000);
+    // Fórmula: ~15ms por caractere, min 300ms, max 1500ms (otimizado)
+    const typingDelayMs = Math.min(Math.max(mensagem.length * 15, 300), 1500);
     console.log(`[whatsapp-send] Simulando digitação: ${typingDelayMs}ms para ${mensagem.length} caracteres`);
     await new Promise(resolve => setTimeout(resolve, typingDelayMs));
 

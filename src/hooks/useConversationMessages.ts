@@ -82,19 +82,22 @@ export function useConversationMessages({
       // 2. Buscar mensagens INBOUND UNMATCHED pelo telefone (se fornecido)
       // Isso pega mensagens que chegaram mas não foram associadas ao lead
       if (telefone) {
-        // Normalizar telefone para busca
+        // Normalizar telefone para busca (remover tudo que não é dígito)
         const phoneNormalized = telefone.replace(/\D/g, '');
-        const e164 = `+${phoneNormalized.startsWith('55') ? phoneNormalized : `55${phoneNormalized}`}`;
+        // Garantir que temos pelo menos os últimos 8 dígitos para match
+        const phonePattern = phoneNormalized.slice(-8);
         
-        // Buscar por whatsapp_message_id que contenha o telefone no padrão comum
-        // E mensagens UNMATCHED que possam ser do mesmo telefone
+        // Buscar por whatsapp_message_id que contenha o telefone
+        // O whatsapp_message_id segue padrão: wamid.xxx_5581987580922@xxx
         const { data: unmatchedMessages } = await supabase
           .from('lead_messages')
           .select('*')
           .is('lead_id', null)
           .eq('direcao', 'INBOUND')
           .eq('canal', 'WHATSAPP')
-          .order('created_at', { ascending: true });
+          .ilike('whatsapp_message_id', `%${phonePattern}%`)
+          .order('created_at', { ascending: true })
+          .limit(50);
         
         // Adicionar apenas se não já estiver na lista
         if (unmatchedMessages) {
