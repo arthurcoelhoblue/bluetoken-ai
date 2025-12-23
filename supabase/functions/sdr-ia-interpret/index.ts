@@ -386,6 +386,13 @@ const URGENCIA_PATTERNS: Record<Exclude<SinalUrgenciaTipo, 'NENHUM'>, string[]> 
     'quero esse plano', 'quero o gold', 'quero o diamond',
     'próximo passo', 'qual o próximo passo', 'como proceder',
     'me manda o link', 'onde pago', 'pode cobrar',
+    // PATCH: Frases que indicam lead pronto para fechar/documentação
+    'o que preciso enviar', 'o que eu preciso enviar', 'o que tenho que enviar',
+    'o que devo enviar', 'quais documentos', 'que documentos preciso',
+    'que documentos vocês precisam', 'documentos necessários',
+    'como começo', 'como inicio', 'como a gente começa', 'quando começamos',
+    'já posso enviar', 'posso já enviar', 'mando agora',
+    'como funciona o processo', 'como é o processo',
   ],
   URGENCIA_TEMPORAL: [
     'urgente', 'é urgente', 'preciso urgente', 'urgência',
@@ -699,6 +706,13 @@ const BLUE_PRICING = {
     multiplosAnos: {
       precoEspecial: true,
       instrucao: 'Para múltiplos anos, mencionar que podemos fazer condição especial. Cada ano pode ter plano diferente.',
+    },
+    // PATCH: Prescrição fiscal - a Receita só cobra os últimos 5 anos
+    prescricaoFiscal: {
+      anos: 5,
+      instrucao: 'A Receita Federal só pode cobrar os ÚLTIMOS 5 ANOS FISCAIS. Anos anteriores já prescreveram.',
+      exemplo: 'Em 2024: regularizar 2020, 2021, 2022, 2023, 2024 = 5 anos. Anos antes de 2020 (ex: 2019, 2018) já prescreveram.',
+      comoExplicar: 'Se o cliente mencionar anos antigos (ex: 2019 em 2025), tranquilizá-lo: "Boa notícia! Esses anos já prescreveram, a Receita não pode mais cobrar."',
     },
   },
 };
@@ -1060,11 +1074,22 @@ function formatBluePricingForPrompt(): string {
   
   text += `\n### ⚠️ REGRA CRÍTICA - COBRANÇA POR ANO FISCAL:\n`;
   text += `- **CADA PLANO COBRE APENAS 1 ANO FISCAL** (ex: declaração 2024 = 1 contratação)\n`;
-  text += `- Se o cliente precisa declarar MÚLTIPLOS ANOS (ex: 2019-2024), são 6 contratações SEPARADAS\n`;
+  text += `- Se o cliente precisa declarar MÚLTIPLOS ANOS (ex: 2020-2024), são 5 contratações SEPARADAS\n`;
   text += `- Para múltiplos anos: SEMPRE mencionar "podemos fazer uma condição especial dependendo das circunstâncias"\n`;
-  text += `- Cada ano pode ter um plano diferente (ex: 2019 pode ser Diamond, 2024 pode ser Gold)\n`;
+  text += `- Cada ano pode ter um plano diferente (ex: 2020 pode ser Diamond, 2024 pode ser Gold)\n`;
   text += `- ❌ NÃO calcule o total automaticamente - deixe para a reunião com especialista\n`;
   text += `- ❌ NUNCA diga que "um plano cobre todos os anos"\n`;
+  
+  // PATCH: Prescrição fiscal de 5 anos
+  const anoAtual = new Date().getFullYear();
+  const anoMaisAntigo = anoAtual - 4; // 5 anos incluindo o atual
+  text += `\n### 📅 PRESCRIÇÃO FISCAL (5 ANOS) - MUITO IMPORTANTE:\n`;
+  text += `- A Receita Federal SÓ pode cobrar os **últimos 5 anos fiscais**\n`;
+  text += `- Anos anteriores já **PRESCREVERAM** - o cliente NÃO precisa se preocupar com eles!\n`;
+  text += `- Em ${anoAtual}: regularizar ${anoMaisAntigo}, ${anoMaisAntigo + 1}, ${anoMaisAntigo + 2}, ${anoMaisAntigo + 3}, ${anoAtual} (5 anos)\n`;
+  text += `- Anos antes de ${anoMaisAntigo} (ex: ${anoMaisAntigo - 1}, ${anoMaisAntigo - 2}) já prescreveram!\n`;
+  text += `- Se o cliente mencionar anos antigos: "Boa notícia! [ANO] já prescreveu, a Receita não pode mais cobrar. Vamos focar nos últimos 5 anos."\n`;
+  text += `- SEMPRE tranquilizar o cliente sobre anos prescritos - é uma boa notícia!\n`;
   
   text += `\n### REGRAS DE PRECIFICAÇÃO:\n`;
   text += `✅ PODE: Informar os valores dos planos Gold e Diamond (sempre /ano-fiscal)\n`;
@@ -1082,9 +1107,9 @@ function formatBluePricingForPrompt(): string {
   text += `- Se intent = DUVIDA_PRECO\n`;
   text += `- Se intent = OBJECAO_PRECO, explicar o valor (não é só declaração, é tranquilidade)\n`;
   
-  text += `\n### EXEMPLO PARA MÚLTIPLOS ANOS:\n`;
-  text += `Lead: "Preciso declarar 2019 até 2024"\n`;
-  text += `Amélia: "Entendi! São 6 anos de declaração. Cada ano é tratado separado, mas pra quem tem vários anos como você, a gente costuma fazer condições especiais. Dependendo da quantidade de exchanges e operações em cada ano, nem todos precisam ser o mesmo plano. Melhor a gente conversar pra montar a proposta ideal. Posso agendar uma call rápida?"\n`;
+  text += `\n### EXEMPLO PARA MÚLTIPLOS ANOS (COM PRESCRIÇÃO):\n`;
+  text += `Lead: "Preciso declarar desde 2019 até 2024"\n`;
+  text += `Amélia: "Tenho uma boa notícia! 2019 já prescreveu - a Receita só pode cobrar os últimos 5 anos. Então vamos focar de 2020 a 2024, são 5 anos. Cada ano é tratado separado, mas pra quem tem vários anos como você, a gente faz condições especiais. Melhor a gente conversar pra montar a proposta ideal. Posso te passar pro nosso especialista?"\n`;
   
   return text;
 }
