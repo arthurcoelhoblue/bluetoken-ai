@@ -16,7 +16,7 @@ const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/s
 
 // Modo de teste: se true, não envia para leads reais
 const TEST_MODE = true;
-const TEST_PHONE = '5561998317422'; // Número de teste - Arthur
+const TEST_PHONE = '5581987580922'; // Número de teste - Vanessa Dulcine
 
 interface WhatsAppSendRequest {
   leadId: string;
