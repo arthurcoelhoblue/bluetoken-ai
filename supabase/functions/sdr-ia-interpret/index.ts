@@ -668,9 +668,9 @@ const PERGUNTA_INSTRUCOES: Record<ProximaPerguntaTipo, string> = {
 
 const BLUE_PRICING = {
   planos: [
-    { nome: 'IR Cripto - Plano Gold', preco: 'R$ 4.497', descricao: 'Apuração ILIMITADA de carteiras/exchanges, até 25k transações/ano' },
-    { nome: 'IR Cripto - Plano Diamond', preco: 'R$ 2.997', descricao: 'Até 4 carteiras/exchanges, até 25k transações/ano' },
-    { nome: 'IR Cripto - Customizado', preco: 'R$ 998', descricao: 'Até 4 carteiras/exchanges, até 2k transações/ano (uso interno, não divulgar)' },
+    { nome: 'IR Cripto - Plano Gold', preco: 'R$ 4.497/ano-fiscal', descricao: 'Apuração ILIMITADA de carteiras/exchanges, até 25k transações POR ANO FISCAL' },
+    { nome: 'IR Cripto - Plano Diamond', preco: 'R$ 2.997/ano-fiscal', descricao: 'Até 4 carteiras/exchanges, até 25k transações POR ANO FISCAL' },
+    { nome: 'IR Cripto - Customizado', preco: 'R$ 998/ano-fiscal', descricao: 'Até 4 carteiras/exchanges, até 2k transações/ano (uso interno, não divulgar)' },
   ],
   adicionais: [
     { nome: 'Pacote +5.000 operações', preco: 'R$ 500' },
@@ -691,6 +691,15 @@ const BLUE_PRICING = {
   regras: {
     planoCustomizadoRestrito: true, // não divulgar abertamente
     naoNegociarPreco: true,
+  },
+  // REGRA CRÍTICA: Cobrança por ano fiscal
+  regrasAnuais: {
+    cobrancaPorAnoFiscal: true,
+    instrucao: 'CADA PLANO COBRE UM ANO FISCAL. Se o cliente precisa declarar 2019-2024, são 6 contratações separadas.',
+    multiplosAnos: {
+      precoEspecial: true,
+      instrucao: 'Para múltiplos anos, mencionar que podemos fazer condição especial. Cada ano pode ter plano diferente.',
+    },
   },
 };
 
@@ -1049,19 +1058,33 @@ function formatBluePricingForPrompt(): string {
   text += `- Desconto PIX/Cripto: até ${BLUE_PRICING.pagamento.descontoPix}\n`;
   text += `- Desconto Cartão: até ${BLUE_PRICING.pagamento.descontoCartao}\n`;
   
+  text += `\n### ⚠️ REGRA CRÍTICA - COBRANÇA POR ANO FISCAL:\n`;
+  text += `- **CADA PLANO COBRE APENAS 1 ANO FISCAL** (ex: declaração 2024 = 1 contratação)\n`;
+  text += `- Se o cliente precisa declarar MÚLTIPLOS ANOS (ex: 2019-2024), são 6 contratações SEPARADAS\n`;
+  text += `- Para múltiplos anos: SEMPRE mencionar "podemos fazer uma condição especial dependendo das circunstâncias"\n`;
+  text += `- Cada ano pode ter um plano diferente (ex: 2019 pode ser Diamond, 2024 pode ser Gold)\n`;
+  text += `- ❌ NÃO calcule o total automaticamente - deixe para a reunião com especialista\n`;
+  text += `- ❌ NUNCA diga que "um plano cobre todos os anos"\n`;
+  
   text += `\n### REGRAS DE PRECIFICAÇÃO:\n`;
-  text += `✅ PODE: Informar os valores dos planos Gold e Diamond\n`;
+  text += `✅ PODE: Informar os valores dos planos Gold e Diamond (sempre /ano-fiscal)\n`;
   text += `✅ PODE: Explicar diferenças entre planos\n`;
   text += `✅ PODE: Mencionar formas de pagamento e descontos padrão\n`;
+  text += `✅ PODE: Mencionar condição especial para múltiplos anos\n`;
   text += `❌ NÃO PODE: Negociar preços ou dar descontos além do padrão\n`;
   text += `❌ NÃO PODE: Divulgar o plano Customizado (uso interno)\n`;
   text += `❌ NÃO PODE: Prometer valores diferentes dos tabelados\n`;
+  text += `❌ NÃO PODE: Dizer que um plano cobre múltiplos anos\n`;
   
   text += `\n### QUANDO MENCIONAR PREÇOS:\n`;
   text += `- Se o lead perguntar diretamente "quanto custa?"\n`;
   text += `- Durante SPIN_N (Need-Payoff), após apresentar valor, vincular ao benefício\n`;
   text += `- Se intent = DUVIDA_PRECO\n`;
   text += `- Se intent = OBJECAO_PRECO, explicar o valor (não é só declaração, é tranquilidade)\n`;
+  
+  text += `\n### EXEMPLO PARA MÚLTIPLOS ANOS:\n`;
+  text += `Lead: "Preciso declarar 2019 até 2024"\n`;
+  text += `Amélia: "Entendi! São 6 anos de declaração. Cada ano é tratado separado, mas pra quem tem vários anos como você, a gente costuma fazer condições especiais. Dependendo da quantidade de exchanges e operações em cada ano, nem todos precisam ser o mesmo plano. Melhor a gente conversar pra montar a proposta ideal. Posso agendar uma call rápida?"\n`;
   
   return text;
 }
