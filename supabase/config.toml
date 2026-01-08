@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.bluechat-inbound]
 verify_jwt = false
+
+[functions.integration-health-check]
+verify_jwt = false

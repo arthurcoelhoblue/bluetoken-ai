@@ -31,6 +31,21 @@ export interface IntegrationConfig {
   sync_interval_minutes?: number;
 }
 
+export interface ModelPriority {
+  ordem: string[];
+  modelos: Record<string, string>;
+  desabilitados: string[];
+}
+
+export interface CustosIA {
+  precos_por_1k_tokens: Record<string, { input: number; output: number }>;
+}
+
+export interface WhatsAppModoTeste {
+  ativo: boolean;
+  numero_teste: string;
+}
+
 export interface IntegrationInfo {
   id: string;
   name: string;
@@ -38,6 +53,7 @@ export interface IntegrationInfo {
   icon: string;
   secrets: string[];
   settingsKey: string;
+  testable?: boolean;
 }
 
 export const INTEGRATIONS: IntegrationInfo[] = [
@@ -48,6 +64,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'MessageCircle',
     secrets: ['WHATSAPP_API_KEY', 'WHATSAPP_INBOUND_SECRET'],
     settingsKey: 'whatsapp',
+    testable: true,
   },
   {
     id: 'pipedrive',
@@ -56,6 +73,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'BarChart3',
     secrets: ['PIPEDRIVE_API_TOKEN'],
     settingsKey: 'pipedrive',
+    testable: true,
   },
   {
     id: 'email',
@@ -64,6 +82,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'Mail',
     secrets: ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'],
     settingsKey: 'email',
+    testable: true,
   },
   {
     id: 'anthropic',
@@ -72,6 +91,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'Brain',
     secrets: ['ANTHROPIC_API_KEY'],
     settingsKey: 'anthropic',
+    testable: true,
   },
   {
     id: 'sgt',
@@ -88,6 +108,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'Send',
     secrets: ['MENSAGERIA_API_KEY'],
     settingsKey: 'mensageria',
+    testable: true,
   },
   {
     id: 'bluechat',
@@ -97,6 +118,12 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     secrets: ['BLUECHAT_API_KEY'],
     settingsKey: 'bluechat',
   },
+];
+
+export const AI_PROVIDERS = [
+  { id: 'ANTHROPIC', name: 'Anthropic (Claude)', models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'] },
+  { id: 'GEMINI', name: 'Google (Gemini)', models: ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'] },
+  { id: 'GPT', name: 'OpenAI (GPT)', models: ['openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5'] },
 ];
 
 export interface WebhookInfo {
