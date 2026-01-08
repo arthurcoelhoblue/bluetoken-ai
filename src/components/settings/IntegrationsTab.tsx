@@ -2,6 +2,7 @@ import { useState } from "react";
 import { IntegrationCard } from "./IntegrationCard";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
 import {
   Dialog,
   DialogContent,
@@ -11,10 +12,13 @@ import {
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
+import { toast } from "sonner";
 
 export function IntegrationsTab() {
   const { settings, updateSetting, isLoading } = useSystemSettings("integrations");
+  const { checkHealth, getStatus } = useIntegrationHealth();
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
+  const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
 
   const getIntegrationConfig = (key: string): IntegrationConfig | null => {
     const setting = settings?.find((s) => s.key === key);
@@ -29,6 +33,22 @@ export function IntegrationsTab() {
       key: integrationKey,
       value: { ...current, enabled },
     });
+  };
+
+  const handleTest = async (integrationId: string) => {
+    setTestingIntegration(integrationId);
+    const result = await checkHealth(integrationId);
+    setTestingIntegration(null);
+
+    if (result.status === "online") {
+      toast.success(`${INTEGRATIONS.find((i) => i.id === integrationId)?.name} está online!`, {
+        description: result.latencyMs ? `Latência: ${result.latencyMs}ms` : undefined,
+      });
+    } else {
+      toast.error(`Falha ao conectar`, {
+        description: result.message || "Verifique as configurações",
+      });
+    }
   };
 
   const selectedIntegrationInfo = INTEGRATIONS.find(
@@ -53,7 +73,7 @@ export function IntegrationsTab() {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          Ative ou desative integrações conforme necessário. Secrets são gerenciados de forma segura pelo sistema.
+          Ative ou desative integrações conforme necessário. Clique em "Testar" para verificar a conectividade.
         </AlertDescription>
       </Alert>
 
@@ -67,7 +87,10 @@ export function IntegrationsTab() {
               handleToggle(integration.settingsKey, enabled)
             }
             onConfigure={() => setSelectedIntegration(integration.id)}
+            onTest={integration.testable ? () => handleTest(integration.id) : undefined}
+            healthStatus={getStatus(integration.id)}
             isUpdating={updateSetting.isPending}
+            isTesting={testingIntegration === integration.id}
           />
         ))}
       </div>
