@@ -22,6 +22,7 @@ import CadenceEditor from "./pages/CadenceEditor";
 import TokenizaOffers from "./pages/TokenizaOffers";
 import ProductKnowledgeList from "./pages/admin/ProductKnowledgeList";
 import ProductKnowledgeEditor from "./pages/admin/ProductKnowledgeEditor";
+import Settings from "./pages/admin/Settings";
 
 const queryClient = new QueryClient();
 
@@ -119,6 +120,11 @@ const App = () => (
             <Route path="/admin/produtos/:productId" element={
               <ProtectedRoute requiredRoles={['ADMIN']}>
                 <ProductKnowledgeEditor />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/settings" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <Settings />
               </ProtectedRoute>
             } />
             

@@ -80,6 +80,7 @@ const navGroups: NavGroup[] = [
     label: 'Administração',
     items: [
       { title: 'Treinamento Produtos', url: '/admin/produtos', icon: BookOpen, roles: ['ADMIN'] },
+      { title: 'Configurações', url: '/admin/settings', icon: Settings, roles: ['ADMIN'] },
     ],
     roles: ['ADMIN'],
   },
