@@ -20,11 +20,11 @@ async function checkWhatsApp(): Promise<HealthCheckResult> {
 
   const start = Date.now();
   try {
-    // Test authentication by making a minimal request
-    const response = await fetch("https://api.mensageria.io/v1/health", {
+    // URL correta da API Mensageria
+    const response = await fetch("https://dev-mensageria.grupoblue.com.br/api/health", {
       method: "GET",
       headers: {
-        "Authorization": `Bearer ${apiKey}`,
+        "X-API-Key": apiKey,
         "Content-Type": "application/json",
       },
     });

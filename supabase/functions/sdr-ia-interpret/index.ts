@@ -2814,7 +2814,7 @@ O AGENTE SEMPRE DEVE:
 
   // ========================================
   // SISTEMA DE FALLBACK DE MODELOS IA
-  // Prioridade: 1) Anthropic Claude → 2) Gemini → 3) GPT
+  // Lê configuração de prioridade do banco (system_settings)
   // ========================================
   
   type ModelProvider = 'ANTHROPIC' | 'GEMINI' | 'GPT';
@@ -2827,14 +2827,58 @@ O AGENTE SEMPRE DEVE:
     error?: string;
   }
   
-  async function tryAnthropic(systemPrompt: string, userPrompt: string): Promise<AICallResult> {
+  interface ModelPriorityConfig {
+    ordem: ModelProvider[];
+    modelos: Record<ModelProvider, string>;
+    desabilitados: ModelProvider[];
+  }
+  
+  // Buscar configuração de prioridade do banco
+  async function getModelPriority(): Promise<ModelPriorityConfig> {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    
+    const { data } = await supabaseAdmin
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'ia')
+      .eq('key', 'model_priority')
+      .maybeSingle();
+    
+    if (data?.value) {
+      const config = data.value as any;
+      return {
+        ordem: config.ordem || ['ANTHROPIC', 'GEMINI', 'GPT'],
+        modelos: config.modelos || {
+          ANTHROPIC: 'claude-sonnet-4-20250514',
+          GEMINI: 'google/gemini-2.5-flash',
+          GPT: 'openai/gpt-5-mini'
+        },
+        desabilitados: config.desabilitados || []
+      };
+    }
+    
+    // Default se não configurado
+    return {
+      ordem: ['ANTHROPIC', 'GEMINI', 'GPT'],
+      modelos: {
+        ANTHROPIC: 'claude-sonnet-4-20250514',
+        GEMINI: 'google/gemini-2.5-flash',
+        GPT: 'openai/gpt-5-mini'
+      },
+      desabilitados: []
+    };
+  }
+  
+  async function tryAnthropic(systemPrompt: string, userPrompt: string, model: string): Promise<AICallResult> {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!ANTHROPIC_API_KEY) {
       return { success: false, error: 'ANTHROPIC_API_KEY não configurada' };
     }
     
     try {
-      console.log('[IA] Tentando Anthropic Claude Sonnet 4.5...');
+      console.log(`[IA] Tentando Anthropic ${model}...`);
       
       const response = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
@@ -2844,7 +2888,7 @@ O AGENTE SEMPRE DEVE:
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
+          model: model,
           max_tokens: 1500,
           temperature: 0.3,
           system: systemPrompt,
@@ -2930,22 +2974,36 @@ O AGENTE SEMPRE DEVE:
     }
   }
   
-  // Executar fallback em ordem de prioridade
-  let aiResult: AICallResult;
+  // Buscar configuração de prioridade de modelos do banco
+  const modelPriority = await getModelPriority();
+  console.log('[IA] Configuração de modelos carregada:', {
+    ordem: modelPriority.ordem,
+    desabilitados: modelPriority.desabilitados
+  });
   
-  // 1. Tentar Anthropic Claude (modelo primário)
-  aiResult = await tryAnthropic(SYSTEM_PROMPT, userPrompt);
+  // Executar em ordem configurada (excluindo desabilitados)
+  let aiResult: AICallResult = { success: false, error: 'Nenhum provedor disponível' };
   
-  // 2. Fallback para Gemini via Lovable AI
-  if (!aiResult.success) {
-    console.log('[IA] ⚠️ Anthropic falhou, tentando Gemini...');
-    aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, 'google/gemini-2.5-flash', 'GEMINI');
-  }
-  
-  // 3. Fallback para GPT via Lovable AI
-  if (!aiResult.success) {
-    console.log('[IA] ⚠️ Gemini falhou, tentando GPT...');
-    aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, 'openai/gpt-5-mini', 'GPT');
+  for (const providerId of modelPriority.ordem) {
+    if (modelPriority.desabilitados.includes(providerId)) {
+      console.log(`[IA] ⏭️ ${providerId} desabilitado, pulando...`);
+      continue;
+    }
+    
+    const model = modelPriority.modelos[providerId];
+    
+    switch (providerId) {
+      case 'ANTHROPIC':
+        aiResult = await tryAnthropic(SYSTEM_PROMPT, userPrompt, model);
+        break;
+      case 'GEMINI':
+      case 'GPT':
+        aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, model, providerId);
+        break;
+    }
+    
+    if (aiResult.success) break;
+    console.log(`[IA] ⚠️ ${providerId} falhou, tentando próximo...`);
   }
   
   // Se todos falharam, lançar erro
@@ -3060,13 +3118,8 @@ O AGENTE SEMPRE DEVE:
     parsed.ultima_pergunta_id = proximaPergunta.tipo;
   }
 
-  // Mapear provider para nome do modelo
-  const modeloMap: Record<ModelProvider, string> = {
-    'ANTHROPIC': 'anthropic/claude-sonnet-4',
-    'GEMINI': 'google/gemini-2.5-flash',
-    'GPT': 'openai/gpt-5-mini'
-  };
-  const modeloUsado = modeloMap[aiResult.provider!] || 'unknown';
+  // Usar modelo real da configuração
+  const modeloUsado = modelPriority.modelos[aiResult.provider!] || 'unknown';
 
   return { response: parsed, tokensUsados, tempoMs, modeloUsado };
 }
