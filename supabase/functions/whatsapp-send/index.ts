@@ -14,9 +14,8 @@ const corsHeaders = {
 // Nova API do Mensageria - endpoint correto conforme documentação
 const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/send-message';
 
-// Modo de teste: se true, não envia para leads reais
-const TEST_MODE = true;
-const TEST_PHONE = '5581987580922'; // Número de teste - Vanessa Dulcine
+// Modo de teste será lido do banco (system_settings)
+const DEFAULT_TEST_PHONE = '5581987580922'; // Número de teste padrão - Vanessa Dulcine
 
 interface WhatsAppSendRequest {
   leadId: string;
@@ -75,6 +74,19 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
+
+    // Buscar configuração de modo teste do banco
+    const { data: testConfig } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'whatsapp')
+      .eq('key', 'modo_teste')
+      .maybeSingle();
+
+    const TEST_MODE = (testConfig?.value as any)?.ativo ?? true; // Default seguro: true
+    const TEST_PHONE = (testConfig?.value as any)?.numero_teste || DEFAULT_TEST_PHONE;
+    
+    console.log(`[whatsapp-send] Configuração modo teste:`, { TEST_MODE, TEST_PHONE });
 
     // PATCH 5G-C Fase 6: Verificar opt-out antes de enviar
     const { data: contact } = await supabase
