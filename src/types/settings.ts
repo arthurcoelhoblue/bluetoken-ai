@@ -96,10 +96,11 @@ export const INTEGRATIONS: IntegrationInfo[] = [
   {
     id: 'sgt',
     name: 'SGT Webhook',
-    description: 'Integração com Sistema de Gestão Tributária',
+    description: 'Integração com Sistema de Gestão de Tráfego',
     icon: 'Webhook',
     secrets: ['SGT_WEBHOOK_SECRET'],
     settingsKey: 'sgt',
+    testable: true,
   },
   {
     id: 'mensageria',
@@ -117,6 +118,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     icon: 'Headphones',
     secrets: ['BLUECHAT_API_KEY'],
     settingsKey: 'bluechat',
+    testable: true,
   },
 ];
 
@@ -158,7 +160,7 @@ export const WEBHOOKS: WebhookInfo[] = [
   {
     id: 'sgt-webhook',
     name: 'SGT Webhook',
-    description: 'Recebe eventos do Sistema de Gestão Tributária',
+    description: 'Recebe eventos do Sistema de Gestão de Tráfego',
     path: '/functions/v1/sgt-webhook',
     method: 'POST',
     authType: 'Bearer',

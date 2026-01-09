@@ -186,6 +186,24 @@ async function checkSMTP(): Promise<HealthCheckResult> {
   };
 }
 
+function checkSGT(): HealthCheckResult {
+  const secret = Deno.env.get("SGT_WEBHOOK_SECRET");
+  if (!secret) {
+    return { status: "error", message: "SGT_WEBHOOK_SECRET não configurado" };
+  }
+  // SGT é webhook inbound - só validamos se o secret existe
+  return { status: "online", message: "Secret configurado" };
+}
+
+function checkBlueChat(): HealthCheckResult {
+  const apiKey = Deno.env.get("BLUECHAT_API_KEY");
+  if (!apiKey) {
+    return { status: "error", message: "BLUECHAT_API_KEY não configurada" };
+  }
+  // Blue Chat é webhook inbound - só validamos se o secret existe
+  return { status: "online", message: "Secret configurado" };
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -214,6 +232,12 @@ serve(async (req) => {
         break;
       case "email":
         result = await checkSMTP();
+        break;
+      case "sgt":
+        result = checkSGT();
+        break;
+      case "bluechat":
+        result = checkBlueChat();
         break;
       default:
         result = { status: "error", message: `Integração desconhecida: ${integration}` };
