@@ -19,6 +19,7 @@ import { IntentChartCard } from './IntentChartCard';
 import { MessagesChartCard } from './MessagesChartCard';
 import { CadenceStatusCard } from './CadenceStatusCard';
 import { ActionsBreakdownCard } from './ActionsBreakdownCard';
+import { LeadsQuentesCard } from './LeadsQuentesCard';
 
 export function DashboardContent() {
   const { profile, roles } = useAuth();
@@ -140,6 +141,11 @@ export function DashboardContent() {
           </CardContent>
         </Card>
       )}
+
+      {/* Leads Quentes Card */}
+      <div className="animate-slide-up animation-delay-250">
+        <LeadsQuentesCard />
+      </div>
 
       {/* Quick Actions */}
       <div className="animate-slide-up animation-delay-200">

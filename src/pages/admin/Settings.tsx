@@ -4,7 +4,8 @@ import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
 import { WhatsAppDetailsTab } from "@/components/settings/WhatsAppDetailsTab";
-import { Plug, Webhook, SlidersHorizontal, Brain, MessageCircle } from "lucide-react";
+import { EmailDetailsTab } from "@/components/settings/EmailDetailsTab";
+import { Plug, Webhook, SlidersHorizontal, Brain, MessageCircle, Mail } from "lucide-react";
 
 export default function Settings() {
   return (
@@ -17,7 +18,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="integrations" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-none lg:inline-flex">
+        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-none lg:inline-flex">
           <TabsTrigger value="integrations" className="gap-2">
             <Plug className="h-4 w-4" />
             <span className="hidden sm:inline">Integrações</span>
@@ -29,6 +30,10 @@ export default function Settings() {
           <TabsTrigger value="whatsapp" className="gap-2">
             <MessageCircle className="h-4 w-4" />
             <span className="hidden sm:inline">WhatsApp</span>
+          </TabsTrigger>
+          <TabsTrigger value="email" className="gap-2">
+            <Mail className="h-4 w-4" />
+            <span className="hidden sm:inline">Email</span>
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
@@ -50,6 +55,10 @@ export default function Settings() {
 
         <TabsContent value="whatsapp">
           <WhatsAppDetailsTab />
+        </TabsContent>
+
+        <TabsContent value="email">
+          <EmailDetailsTab />
         </TabsContent>
 
         <TabsContent value="webhooks">

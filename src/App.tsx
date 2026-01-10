@@ -23,6 +23,7 @@ import TokenizaOffers from "./pages/TokenizaOffers";
 import ProductKnowledgeList from "./pages/admin/ProductKnowledgeList";
 import ProductKnowledgeEditor from "./pages/admin/ProductKnowledgeEditor";
 import Settings from "./pages/admin/Settings";
+import LeadsQuentes from "./pages/admin/LeadsQuentes";
 
 const queryClient = new QueryClient();
 
@@ -125,6 +126,11 @@ const App = () => (
             <Route path="/admin/settings" element={
               <ProtectedRoute requiredRoles={['ADMIN']}>
                 <Settings />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/leads-quentes" element={
+              <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}>
+                <LeadsQuentes />
               </ProtectedRoute>
             } />
             

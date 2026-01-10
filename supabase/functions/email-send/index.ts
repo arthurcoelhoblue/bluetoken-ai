@@ -42,9 +42,8 @@ const SMTP_USER = Deno.env.get('SMTP_USER') || '';
 const SMTP_PASS = Deno.env.get('SMTP_PASS') || '';
 const SMTP_FROM = Deno.env.get('SMTP_FROM') || '';
 
-// Modo de teste - se true, não envia de verdade
-// Modo de teste ativado - simula envio sem conectar a SMTP
-const TEST_MODE = true;
+// Modo de teste agora é lido do banco de dados
+// const TEST_MODE = true; // REMOVIDO - buscar do banco
 
 // ========================================
 // Função para enviar via SMTP usando base64 encoding
@@ -251,7 +250,6 @@ serve(async (req) => {
       subject: body.subject,
       lead_id: body.lead_id,
       empresa: body.empresa,
-      test_mode: TEST_MODE,
     });
 
     // Validações básicas
@@ -282,6 +280,22 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Buscar configuração de modo teste do banco
+    const { data: testConfig } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'email')
+      .eq('key', 'modo_teste')
+      .single();
+
+    const TEST_MODE = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.ativo ?? true;
+    const TEST_EMAIL = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.email_teste || 'admin@grupoblue.com.br';
+
+    console.log('[EmailSend] Modo teste:', TEST_MODE ? `ativo (${TEST_EMAIL})` : 'desligado');
+
+    // Se modo teste, redirecionar email
+    const finalTo = TEST_MODE ? TEST_EMAIL : body.to;
 
     // Registrar mensagem como PENDENTE
     let messageId: string | undefined;
