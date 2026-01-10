@@ -127,6 +127,42 @@ export type Database = {
         }
         Relationships: []
       }
+      closer_notifications: {
+        Row: {
+          closer_email: string | null
+          contexto: Json | null
+          created_at: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em: string | null
+          id: string
+          lead_id: string
+          motivo: string
+          visualizado_em: string | null
+        }
+        Insert: {
+          closer_email?: string | null
+          contexto?: Json | null
+          created_at?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em?: string | null
+          id?: string
+          lead_id: string
+          motivo: string
+          visualizado_em?: string | null
+        }
+        Update: {
+          closer_email?: string | null
+          contexto?: Json | null
+          created_at?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em?: string | null
+          id?: string
+          lead_id?: string
+          motivo?: string
+          visualizado_em?: string | null
+        }
+        Relationships: []
+      }
       knowledge_documents: {
         Row: {
           descricao: string | null
