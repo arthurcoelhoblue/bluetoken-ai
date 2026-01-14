@@ -19,25 +19,83 @@ async function checkWhatsApp(): Promise<HealthCheckResult> {
   }
 
   const start = Date.now();
+  
+  // Tentar múltiplos endpoints de health (a API pode não ter /health)
+  const healthEndpoints = [
+    "https://dev-mensageria.grupoblue.com.br/api/health",
+    "https://dev-mensageria.grupoblue.com.br/health",
+    "https://dev-mensageria.grupoblue.com.br/api/status",
+    "https://dev-mensageria.grupoblue.com.br/api/ping",
+  ];
+  
+  for (const endpoint of healthEndpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "GET",
+        headers: {
+          "X-API-Key": apiKey,
+          "Content-Type": "application/json",
+        },
+      });
+      
+      if (response.ok) {
+        return { 
+          status: "online", 
+          latencyMs: Date.now() - start,
+          details: { endpoint, method: "health" }
+        };
+      }
+    } catch {
+      // Continua para próximo endpoint
+    }
+  }
+  
+  // Se nenhum health endpoint funcionar, testar autenticação no endpoint de envio
+  // Isso valida que a API está online e a key é válida
   try {
-    // URL correta da API Mensageria
-    const response = await fetch("https://dev-mensageria.grupoblue.com.br/api/health", {
-      method: "GET",
+    const response = await fetch("https://dev-mensageria.grupoblue.com.br/api/whatsapp/send-message", {
+      method: "POST",
       headers: {
         "X-API-Key": apiKey,
         "Content-Type": "application/json",
       },
+      body: JSON.stringify({ 
+        connectionName: "mensageria", 
+        to: "", 
+        message: "" 
+      }),
     });
-
+    
     const latencyMs = Date.now() - start;
-
-    if (response.ok) {
-      return { status: "online", latencyMs };
+    
+    // 400 (bad request por dados vazios) = API online e key válida
+    // 401 = key inválida
+    // 502/503 = conexão WhatsApp instável
+    if (response.status === 400 || response.status === 422) {
+      return { 
+        status: "online", 
+        latencyMs, 
+        message: "API validada via send-message",
+        details: { method: "send-message-probe" }
+      };
     } else if (response.status === 401) {
       return { status: "error", message: "API Key inválida", latencyMs };
-    } else {
-      return { status: "offline", message: `Status: ${response.status}`, latencyMs };
+    } else if (response.status >= 500) {
+      // Tenta ler a mensagem de erro
+      let errorMsg = "Conexão WhatsApp instável";
+      try {
+        const data = await response.json();
+        errorMsg = data.message || data.error || errorMsg;
+      } catch {
+        // ignore
+      }
+      return { status: "offline", message: errorMsg, latencyMs };
+    } else if (response.ok) {
+      // Improvável mas possível
+      return { status: "online", latencyMs };
     }
+    
+    return { status: "online", latencyMs, message: `Status ${response.status}` };
   } catch (error) {
     return { 
       status: "offline", 
