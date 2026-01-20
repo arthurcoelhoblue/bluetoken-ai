@@ -60,7 +60,7 @@ async function checkWhatsApp(): Promise<HealthCheckResult> {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ 
-        connectionName: "mensageria", 
+        connectionName: "Arthur", 
         to: "", 
         message: "" 
       }),
