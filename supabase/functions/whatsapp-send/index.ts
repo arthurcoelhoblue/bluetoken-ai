@@ -174,8 +174,8 @@ serve(async (req) => {
 
     // Envia via nova API Mensageria - formato correto conforme documentação
     const payloadToSend = {
-      connectionName: 'mensageria',  // Obrigatório conforme docs
-      to: phoneToSend,               // Campo correto é "to", não "phone"
+      connectionName: 'Arthur',  // Nova conexão conforme configuração atualizada
+      to: phoneToSend,           // Campo correto é "to", não "phone"
       message: mensagem,
     };
     
