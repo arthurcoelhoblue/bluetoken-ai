@@ -1,78 +1,45 @@
 
+# Registrar Mensagens OUTBOUND da Amelia no Blue Chat
 
-# Reorganizar Tela de Configuracoes
+## Problema
 
-## Problema Atual
+Quando a Amelia responde via Blue Chat, a resposta e enviada de volta ao Blue Chat (via callback API) mas **nao e salva no banco** como mensagem OUTBOUND em `lead_messages`. Isso acontece porque:
 
-A tela tem 6 abas com sobreposicao de funcionalidade:
-- "Integracoes" mostra cards de WhatsApp/Email com toggle e teste
-- "WhatsApp" e "Email" sao abas separadas com detalhes dos mesmos canais
-- "Geral" e generico demais (so configura a Amelia)
-- SGT e Mensageria estao inativos, ocupando espaco sem necessidade
+1. `sdr-ia-interpret` detecta `source === 'BLUECHAT'` e pula o envio via `whatsapp-send`
+2. `whatsapp-send` e quem normalmente insere a mensagem OUTBOUND em `lead_messages`
+3. `bluechat-inbound` envia a resposta ao Blue Chat via `sendResponseToBluechat` mas tambem nao persiste a mensagem
 
-## Proposta: 4 Abas Reorganizadas
+Resultado: so as mensagens INBOUND aparecem na conversa do lead.
 
-| Aba Atual | Nova Estrutura |
-|-----------|---------------|
-| Integracoes + WhatsApp + Email | **Canais e Integracoes** - tudo junto, cada canal com sua secao expandivel |
-| IA | **IA** - mantida como esta |
-| Geral | **Amelia** - renomear para deixar claro o proposito |
-| Webhooks | **Webhooks** - mantida como esta |
+## Solucao
 
-### 1. Aba "Canais e Integracoes" (nova)
-
-Unificar a visao. Cada integracao vira uma secao com:
-- Header com toggle de ativacao, status e botao de teste (o que ja existe no IntegrationCard)
-- Conteudo expandivel (Collapsible) com os detalhes especificos:
-  - WhatsApp: modo teste, numero teste, estatisticas
-  - Email: modo teste, email teste, estatisticas  
-  - Pipedrive: configuracao de secrets
-  - Anthropic: configuracao de secrets
-  - SGT: configuracao de secrets (marcado como inativo)
-  - Blue Chat / Mensageria: config por empresa (ja existe)
-
-Assim o usuario ve tudo em um lugar so, sem precisar trocar de aba para configurar detalhes do mesmo canal.
-
-### 2. Aba "Amelia" (renomear "Geral")
-
-Trocar o nome de "Geral" para "Amelia" com icone Bot, deixando claro que configura o comportamento da IA conversacional. Conteudo permanece identico (horario, limites, tom).
-
-### 3. Remover abas "WhatsApp" e "Email"
-
-O conteudo sera absorvido pela aba "Canais e Integracoes" como secoes expandiveis dentro do card de cada canal.
-
-### 4. Reduzir para 4 abas
-
-De 6 para 4 abas: Canais, IA, Amelia, Webhooks. Melhora o layout em mobile (grid-cols-4 em vez de 6).
+Adicionar a persistencia da mensagem OUTBOUND no `bluechat-inbound`, logo apos receber a resposta da IA e antes de enviar ao Blue Chat. Isso garante que toda resposta da Amelia fique registrada no historico.
 
 ## Secao Tecnica
 
-### Arquivos modificados
+### Arquivo modificado
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `src/pages/admin/Settings.tsx` | Reduzir de 6 para 4 abas, renomear |
-| `src/components/settings/IntegrationsTab.tsx` | Refatorar para incluir detalhes inline (expandiveis) de WhatsApp e Email |
-| `src/components/settings/IntegrationCard.tsx` | Adicionar suporte a conteudo expandivel (children) via Collapsible |
+`supabase/functions/bluechat-inbound/index.ts`
 
-### Arquivos removidos (conteudo absorvido)
+### Alteracao
 
-| Arquivo | Destino |
-|---------|---------|
-| `src/components/settings/WhatsAppDetailsTab.tsx` | Conteudo movido para dentro do IntegrationCard de WhatsApp |
-| `src/components/settings/EmailDetailsTab.tsx` | Conteudo movido para dentro do IntegrationCard de Email |
-
-### Estrutura do IntegrationCard expandivel
-
-O IntegrationCard ganhara um prop opcional `children` e usara o componente Collapsible do Radix UI. Quando o card tem detalhes, um botao "Detalhes" aparece e expande a area abaixo do card header.
-
-### Settings.tsx simplificado
+Apos a linha que verifica `if (iaResult?.responseText)` (por volta da linha 831), antes de chamar `sendResponseToBluechat`, inserir um `INSERT` em `lead_messages` com:
 
 ```text
-Tabs (4):
-  - "channels"  -> Plug icon  -> "Canais"     -> IntegrationsTab (com detalhes inline)
-  - "ai"        -> Brain icon  -> "IA"         -> AISettingsTab
-  - "amelia"    -> Bot icon    -> "Amélia"     -> GeneralTab (renomeado visualmente)
-  - "webhooks"  -> Webhook icon -> "Webhooks"  -> WebhooksTab
+lead_id:     leadContact.lead_id
+empresa:     leadContact.empresa
+canal:       'WHATSAPP'
+direcao:     'OUTBOUND'
+conteudo:    iaResult.responseText
+estado:      'ENVIADO'
+template_codigo: 'BLUECHAT_PASSIVE_REPLY'
 ```
 
+Isso segue o mesmo padrao que `whatsapp-send` usa para registrar mensagens enviadas, garantindo que:
+- A conversa apareca completa no LeadDetail (ConversationView)
+- O dashboard de Atendimentos mostre `ultima_direcao: 'OUTBOUND'` apos a Amelia responder
+- O historico de mensagens do `sdr-ia-interpret` inclua as respostas anteriores da Amelia para manter contexto
+
+### Nenhuma alteracao de schema necessaria
+
+A tabela `lead_messages` ja tem todas as colunas necessarias.
