@@ -1,129 +1,117 @@
 
-# Plano de Melhorias Criticas do SDR IA
+# Controle de Integrações por Empresa (Blue Chat vs Mensageria)
 
-## 1. Retry com Backoff Exponencial nas Chamadas IA
+## Problema Atual
+As integrações são configuradas globalmente -- um único registro `enabled: true/false` para cada integração. Isso impede controlar qual empresa usa Blue Chat e qual usa Mensageria. Alem disso, nao existe regra de exclusividade entre Blue Chat e Mensageria.
 
-### Onde: `supabase/functions/sdr-ia-interpret/index.ts`
+## Solucao
 
-Atualmente, cada provedor de IA (Anthropic, Gemini, GPT) e tentado uma unica vez. Se falhar por timeout ou erro transitorio (429, 503, etc.), ja pula para o proximo provedor.
+### 1. Banco de Dados - Nova estrutura por empresa
 
-**Melhoria:** Adicionar retry com backoff exponencial DENTRO de cada provedor antes de pular para o proximo.
+Criar uma nova tabela `integration_company_config` que armazena a configuracao de integracao por empresa:
 
-- Criar funcao `withRetry(fn, maxRetries=2, baseDelayMs=1000)` que:
-  - Tenta executar a funcao
-  - Em caso de erro transitorio (429, 500, 502, 503, 504, timeout), espera `baseDelay * 2^tentativa` ms
-  - Para erros definitivos (401, 403, 402), nao faz retry
-  - Max 2 retries por provedor (total 3 tentativas por provedor)
-- Aplicar nos metodos `tryAnthropic` e `tryLovableAI` (linhas ~2874-2975)
+```text
+integration_company_config
++-----------+---------------+---------+-----------+
+| id (uuid) | empresa       | channel | enabled   |
+|           | (empresa_tipo)| (text)  | (boolean) |
++-----------+---------------+---------+-----------+
+```
 
-### Onde: `supabase/functions/whatsapp-inbound/index.ts`
+- `empresa`: TOKENIZA ou BLUE
+- `channel`: 'bluechat' ou 'mensageria' (as integracoes que sao mutuamente exclusivas)
+- `enabled`: se esta ativa para aquela empresa
+- Constraint UNIQUE em (empresa, channel)
 
-A chamada ao `sdr-ia-interpret` (linhas 574-595) tambem nao tem retry.
+Tambem adicionar uma constraint de trigger que garanta que para cada empresa, apenas uma das duas (bluechat ou mensageria) pode estar `enabled = true` ao mesmo tempo.
 
-**Melhoria:** Adicionar retry simples com 2 tentativas e delay de 2s entre elas para a chamada fetch ao sdr-ia-interpret.
+### 2. Tipos TypeScript
 
-### Onde: `supabase/functions/bluechat-inbound/index.ts`
+Atualizar `src/types/settings.ts`:
+- Adicionar interface `IntegrationCompanyConfig` com campos empresa/channel/enabled
+- Adicionar propriedade `mutuallyExclusive` na `IntegrationInfo` para marcar bluechat e mensageria como grupo exclusivo
+- Adicionar propriedade `perCompany: boolean` para identificar integrações que precisam de controle por empresa
 
-Mesma situacao na funcao `callSdrIaInterpret` (linhas ~280-310).
+### 3. Hook `useIntegrationCompanyConfig`
 
-**Melhoria:** Mesmo padrao de retry.
+Novo hook para gerenciar configs por empresa:
+- Query em `integration_company_config` 
+- Mutation de toggle que, ao ativar bluechat para empresa X, automaticamente desativa mensageria para empresa X (e vice-versa)
+- Feedback visual via toast informando que a outra integracao foi desativada
 
----
+### 4. UI - Tab de Integracoes
 
-## 2. Transacao Atomica para Estado de Conversa
+Atualizar `IntegrationsTab.tsx`:
+- Para Blue Chat e Mensageria, ao inves de um unico Switch, mostrar **dois switches** (um por empresa: TOKENIZA e BLUE)
+- Incluir alerta visual explicando a regra de exclusividade: "Blue Chat e Mensageria sao mutuamente exclusivos por empresa"
+- Ao ativar um, o outro e desativado automaticamente com toast de confirmacao
 
-### Onde: Migration SQL (nova)
+### 5. Backend - Edge Functions
 
-Criar RPC `update_conversation_with_intent` que executa em uma unica transacao:
-1. Upsert em `lead_conversation_state` (estado_funil, framework_data, perfil_disc)
-2. Insert em `lead_message_intents` (interpretacao da IA)
-3. Update em `lead_cadence_runs` (se acao for pausar/cancelar)
-
-Parametros: lead_id, empresa, canal, intent_data (JSON), state_updates (JSON), cadence_action (TEXT)
-
-### Onde: `supabase/functions/sdr-ia-interpret/index.ts`
-
-Refatorar os passos 4-7 (linhas ~3737-3878) para chamar a RPC ao inves de fazer 3 operacoes separadas. Manter fallback para o comportamento atual caso a RPC falhe.
-
----
-
-## 3. Score de Completude dos Frameworks com Alerta
-
-### Onde: `supabase/functions/sdr-ia-interpret/index.ts`
-
-Apos salvar interpretacao (passo 6), calcular score de completude do framework ativo:
-- Contar campos preenchidos vs total (4 campos por framework)
-- Se completude < 25% E numero de mensagens INBOUND do lead >= 5, registrar evento `ALERTA_FRAMEWORK_INCOMPLETO` em `lead_cadence_events`
-- Logar warning no console
-
-### Onde: `src/components/conversation/ConversationStateCard.tsx`
-
-Ja existe a barra de progresso com `getFrameworkCompleteness`. Adicionar:
-- Indicador visual de alerta quando completude < 25% (icone AlertTriangle + texto amarelo)
-- Tooltip explicando que o framework precisa de mais dados
-
----
-
-## 4. Estados de Loading e Erro Consistentes na UI
-
-### Componentes a revisar e melhorar:
-
-**`src/components/messages/ConversationView.tsx`** - Verificar se tem skeleton/error
-**`src/components/intents/IntentHistoryCard.tsx`** - Verificar se tem skeleton/error
-**`src/components/leads/ContactIssuesCard.tsx`** - Verificar se tem skeleton/error
-
-**`src/components/conversation/ConversationStateCard.tsx`** - Ja tem loading/empty state (OK)
-**`src/components/pessoa/PessoaCard.tsx`** - Ja tem loading/empty state (OK)
-
-Para cada componente que faltar, adicionar:
-- `if (isLoading) return <Skeleton />` com formato adequado
-- `if (error) return <Card com mensagem de erro e botao retry>`
+Atualizar `whatsapp-inbound`, `bluechat-inbound` e `whatsapp-send` para consultar `integration_company_config` e verificar se a integracao esta habilitada para a empresa do lead antes de processar a mensagem.
 
 ---
 
 ## Detalhes Tecnicos
 
-### Funcao de Retry (reutilizavel nas edge functions)
+### Migracao SQL
 
-```text
-async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: {
-    maxRetries?: number;      // default: 2
-    baseDelayMs?: number;     // default: 1000
-    retryableStatuses?: number[]; // default: [429, 500, 502, 503, 504]
-  }
-): Promise<T>
+```sql
+CREATE TABLE public.integration_company_config (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  empresa empresa_tipo NOT NULL,
+  channel TEXT NOT NULL CHECK (channel IN ('bluechat', 'mensageria')),
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_by UUID REFERENCES auth.users(id),
+  UNIQUE (empresa, channel)
+);
+
+ALTER TABLE public.integration_company_config ENABLE ROW LEVEL SECURITY;
+
+-- Somente admins podem ler/modificar
+CREATE POLICY "Admins can manage integration_company_config"
+  ON public.integration_company_config
+  FOR ALL TO authenticated
+  USING (public.has_role(auth.uid(), 'ADMIN'))
+  WITH CHECK (public.has_role(auth.uid(), 'ADMIN'));
+
+-- Seed inicial
+INSERT INTO integration_company_config (empresa, channel, enabled) VALUES
+  ('BLUE', 'bluechat', true),
+  ('BLUE', 'mensageria', false),
+  ('TOKENIZA', 'bluechat', false),
+  ('TOKENIZA', 'mensageria', true);
+
+-- Trigger de exclusividade
+CREATE OR REPLACE FUNCTION enforce_channel_exclusivity()
+RETURNS TRIGGER LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.enabled = true THEN
+    UPDATE integration_company_config
+    SET enabled = false, updated_at = now()
+    WHERE empresa = NEW.empresa
+      AND channel != NEW.channel
+      AND enabled = true;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_channel_exclusivity
+  AFTER INSERT OR UPDATE ON integration_company_config
+  FOR EACH ROW EXECUTE FUNCTION enforce_channel_exclusivity();
 ```
 
-### RPC SQL
+### Arquivos a criar/modificar
 
-```text
-CREATE OR REPLACE FUNCTION update_conversation_with_intent(
-  p_lead_id UUID,
-  p_empresa TEXT,
-  p_canal TEXT,
-  p_intent_data JSONB,
-  p_state_updates JSONB,
-  p_cadence_action TEXT DEFAULT NULL,
-  p_cadence_run_id UUID DEFAULT NULL
-) RETURNS JSONB
-```
-
-### Arquivos Modificados
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Retry nos provedores IA + uso da RPC atomica |
-| `supabase/functions/whatsapp-inbound/index.ts` | Retry na chamada ao sdr-ia-interpret |
-| `supabase/functions/bluechat-inbound/index.ts` | Retry na chamada ao sdr-ia-interpret |
-| Migration SQL | RPC `update_conversation_with_intent` |
-| `src/components/conversation/ConversationStateCard.tsx` | Alerta de framework incompleto |
-| `src/components/messages/ConversationView.tsx` | Loading/error states (se necessario) |
-| `src/components/intents/IntentHistoryCard.tsx` | Loading/error states (se necessario) |
-
-### Ordem de Implementacao
-
-1. Migration SQL (RPC atomica)
-2. Edge functions (retry + RPC)
-3. UI (alertas + loading/error)
+| Arquivo | Acao |
+|---------|------|
+| Migracao SQL | Criar tabela + trigger + seed |
+| `src/types/settings.ts` | Adicionar `IntegrationCompanyConfig`, marcar exclusividade |
+| `src/hooks/useIntegrationCompanyConfig.ts` | Novo hook CRUD por empresa |
+| `src/components/settings/IntegrationsTab.tsx` | UI com switches por empresa para bluechat/mensageria |
+| `src/components/settings/IntegrationCard.tsx` | Suportar modo "por empresa" |
+| `supabase/functions/bluechat-inbound/index.ts` | Checar se habilitado para empresa do lead |
+| `supabase/functions/whatsapp-inbound/index.ts` | Checar canal ativo para empresa |
+| `supabase/functions/whatsapp-send/index.ts` | Checar canal ativo antes de enviar |
