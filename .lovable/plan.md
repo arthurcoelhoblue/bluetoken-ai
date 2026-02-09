@@ -1,91 +1,115 @@
 
-# Configurar Integração com Blue Chat
+
+# Amélia como Atendente Passiva no Blue Chat
 
 ## Resumo
 
-O Blue Chat atualmente usa `WHATSAPP_INBOUND_SECRET` para autenticação, mas tem seu próprio secret (`BLUECHAT_API_KEY`) já configurado. Além disso, falta uma URL de callback para o Blue Chat receber respostas da Amélia, e a tela de configuração pode ser melhorada para mostrar o status real da integração.
+Mudar o comportamento da Amélia dentro do Blue Chat: ao invés de ser proativa (usando dados do SGT, cadências, classificações), ela será uma **atendente passiva**. A Amélia só entra em ação quando o Blue Chat **escala uma conversa para o comercial**. Toda a infraestrutura existente (webhook, callback, health check) é mantida.
 
-## Alterações
+## O que muda
 
-### 1. Corrigir autenticação do `bluechat-inbound`
+Hoje o `bluechat-inbound` recebe qualquer mensagem e tenta qualificar o lead usando cadências e SGT. Com a mudança:
 
-**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
+1. **Amélia ignora dados do SGT** - não consulta `sgt_events`, não ativa cadências automaticamente
+2. **Amélia é passiva** - responde apenas quando recebe mensagens via Blue Chat (escaladas pelo atendimento)
+3. **Sem cadência automática** - não busca nem cria `lead_cadence_runs` no fluxo do Blue Chat
+4. **Foco em atendimento** - a IA responde como uma consultora comercial conversando, sem o motor de cadências por trás
 
-A função `validateAuth` (linhas 106-127) usa `WHATSAPP_INBOUND_SECRET`. Precisa ser trocado para `BLUECHAT_API_KEY`, que já existe como secret no projeto.
+## Alterações Técnicas
 
-- Substituir `Deno.env.get('WHATSAPP_INBOUND_SECRET')` por `Deno.env.get('BLUECHAT_API_KEY')`
-- Atualizar mensagens de log correspondentes
+### 1. Modificar `bluechat-inbound/index.ts`
 
-### 2. Adicionar callback de resposta ao Blue Chat
+**Remover dependência de cadências no fluxo Blue Chat:**
 
-**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
+- Remover a chamada a `findActiveRun()` (linha 649) - não buscar cadência ativa
+- Passar `run_id: null` ao salvar mensagem (a mensagem fica vinculada ao lead mas não a uma cadência)
+- Remover o registro de `lead_cadence_events` no `saveInboundMessage` (linhas 379-392)
+- Continuar chamando `sdr-ia-interpret` mas com flag `source: 'BLUECHAT'` e novo flag `mode: 'PASSIVE_CHAT'`
 
-Após receber a resposta do `sdr-ia-interpret`, enviar a resposta de volta ao Blue Chat via API, usando uma URL configurável armazenada em `system_settings`.
+### 2. Modificar `sdr-ia-interpret/index.ts`
 
-- Criar função `sendResponseToBluechat` que:
-  - Lê a URL da API do Blue Chat de `system_settings` (chave `bluechat.api_url`)
-  - Usa `BLUECHAT_API_KEY` para autenticar
-  - Envia POST com `conversation_id`, `message_id` e `response.text`
-  - Trata erro com log (não bloqueia o fluxo)
+**Adicionar modo passivo (`PASSIVE_CHAT`):**
 
-### 3. Health check real do Blue Chat
+- Quando `mode === 'PASSIVE_CHAT'`:
+  - Usar o conversation state (lead_conversation_state) para manter contexto da conversa
+  - **NAO** consultar cadências, SGT events, ou classificação ICP para decidir o tom
+  - Manter o framework de qualificacao (SPIN/GPCT) de forma natural na conversa, mas sem forcar
+  - Manter deteccao de lead quente (PEDIDO_HUMANO, DECISAO_TOMADA) para escalar quando necessario
+  - Prompt diferente: Amelia como atendente comercial consultiva, sem urgencia de cadencia
+  - Continuar salvando intents e atualizando conversation state normalmente
 
-**Arquivo**: `supabase/functions/integration-health-check/index.ts`
+### 3. Ajustar o prompt da Amelia para modo passivo
 
-A função `checkBlueChat` (linhas 256-263) apenas verifica se o secret existe. Melhorar para:
+Quando `mode === 'PASSIVE_CHAT'`:
+- Amelia se apresenta como consultora do Grupo Blue
+- Responde perguntas de forma consultiva
+- Qualifica naturalmente durante a conversa (sem seguir script de cadencia)
+- Detecta sinais de interesse e escala para humano quando apropriado
+- Nao menciona que foi "acionada" ou "escalada"
 
-- Ler a URL da API do Blue Chat de `system_settings`
-- Tentar um GET na URL base ou `/health`
-- Retornar latência e status real da conexão
-- Fallback: se não houver URL configurada, reportar "URL não configurada"
+### 4. Atualizar payload do webhook
 
-### 4. Tela de configuração no painel
-
-**Arquivo**: `src/components/settings/WhatsAppDetailsTab.tsx` (ou novo componente)
-
-Criar uma seção (ou tab) de configuração do Blue Chat que permita:
-
-- Visualizar e editar a URL da API do Blue Chat (salva em `system_settings` com chave `bluechat.api_url`)
-- Visualizar o status da integração (Online/Offline) via health check
-- Botão "Testar Conexão"
-- Mostrar a URL do webhook (`bluechat-inbound`) que deve ser configurada no lado do Blue Chat
-
-Como já existe a tab "Integrações" com o card `CompanyChannelCard` para Blue Chat, a configuração da URL pode ser adicionada ao dialog de "Configurar" que já existe no `IntegrationsTab`.
-
-## Seção Técnica
-
-### Dados em `system_settings`
-
-Será criado/atualizado um registro:
-```
-category: 'integrations'
-key: 'bluechat'
-value: { enabled: true, api_url: 'https://...', callback_path: '/api/webhook/amelia' }
-```
-
-### Fluxo corrigido
+Adicionar campo opcional `ticket_id` ao payload do Blue Chat para rastrear o ticket original:
 
 ```text
-Blue Chat --[BLUECHAT_API_KEY]--> bluechat-inbound
-    |
-    v
-sdr-ia-interpret(source='BLUECHAT')
-    |-- Processa com IA
-    |-- NAO envia via whatsapp-send
-    |-- Retorna responseText
-    |
-    v
-bluechat-inbound --[BLUECHAT_API_KEY]--> Blue Chat API (callback)
-    |
-    v
-Blue Chat entrega ao cliente
+{
+  "conversation_id": "bc-conv-123",
+  "ticket_id": "ticket-456",        // <-- NOVO: ID do ticket no Blue Chat
+  "message_id": "bc-msg-789",
+  ...
+}
 ```
 
-### Arquivos modificados
+O `ticket_id` sera usado nos callbacks (transfer, resolve, close).
 
-| Arquivo | Alteração |
+## O que NAO muda
+
+- Autenticacao via `BLUECHAT_API_KEY` (ja corrigido)
+- Callback de resposta ao Blue Chat (POST /messages)
+- Escalacao via ticket transfer quando necessario
+- Criacao automatica de lead se nao existir
+- Salvamento de mensagens em `lead_messages`
+- Health check e tela de configuracao
+- Todo o fluxo do SGT e cadencias continua funcionando independentemente
+
+## Fluxo Atualizado
+
+```text
+Cliente envia mensagem no WhatsApp
+        |
+        v
+Blue Chat recebe e trata no atendimento geral
+        |
+        v
+Atendente escala para "comercial"
+        |
+        v
+Blue Chat envia webhook --> bluechat-inbound
+        |
+        v
+Busca/cria lead (sem cadencia)
+        |
+        v
+Salva mensagem (run_id = null)
+        |
+        v
+sdr-ia-interpret (mode: PASSIVE_CHAT)
+  - Le historico da conversa
+  - Responde como consultora
+  - Detecta sinais quentes
+        |
+        v
+Callback --> Blue Chat API /messages
+        |
+        v
+Blue Chat entrega resposta ao cliente
+```
+
+## Arquivos Modificados
+
+| Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/bluechat-inbound/index.ts` | Auth com BLUECHAT_API_KEY + callback de resposta |
-| `supabase/functions/integration-health-check/index.ts` | Health check real com URL do Blue Chat |
-| `src/components/settings/IntegrationsTab.tsx` | Dialog de configuração com campo de URL |
-| `docs/patches/PATCH-BLUECHAT_webhook-inbound.md` | Atualizar documentação de autenticação |
+| `supabase/functions/bluechat-inbound/index.ts` | Remover logica de cadencia, adicionar ticket_id, passar mode PASSIVE_CHAT |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar modo PASSIVE_CHAT com prompt consultivo |
+| `docs/patches/PATCH-BLUECHAT_webhook-inbound.md` | Documentar novo comportamento passivo |
+
