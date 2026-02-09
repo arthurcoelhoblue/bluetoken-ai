@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { IntegrationCard } from "./IntegrationCard";
 import { CompanyChannelCard } from "./CompanyChannelCard";
+import { BlueChatConfigDialog } from "./BlueChatConfigDialog";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
@@ -19,6 +20,7 @@ export function IntegrationsTab() {
   const { settings, updateSetting, isLoading } = useSystemSettings("integrations");
   const { checkHealth, getStatus } = useIntegrationHealth();
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
+  const [blueChatDialogOpen, setBlueChatDialogOpen] = useState(false);
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
 
   const globalIntegrations = INTEGRATIONS.filter((i) => !i.perCompany);
@@ -113,7 +115,13 @@ export function IntegrationsTab() {
               <CompanyChannelCard
                 key={integration.id}
                 integration={integration}
-                onConfigure={() => setSelectedIntegration(integration.id)}
+                onConfigure={() => {
+                  if (integration.id === 'bluechat') {
+                    setBlueChatDialogOpen(true);
+                  } else {
+                    setSelectedIntegration(integration.id);
+                  }
+                }}
               />
             ))}
           </div>
@@ -157,6 +165,11 @@ export function IntegrationsTab() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <BlueChatConfigDialog
+        open={blueChatDialogOpen}
+        onOpenChange={setBlueChatDialogOpen}
+      />
     </div>
   );
 }

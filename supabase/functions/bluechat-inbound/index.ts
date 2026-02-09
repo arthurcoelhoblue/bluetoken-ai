@@ -107,22 +107,21 @@ function validateAuth(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
   
-  // Usa mesmo secret que o whatsapp-inbound para simplificar
-  const inboundSecret = Deno.env.get('WHATSAPP_INBOUND_SECRET');
+  const bluechatApiKey = Deno.env.get('BLUECHAT_API_KEY');
   
-  if (!inboundSecret) {
-    console.error('[Auth] WHATSAPP_INBOUND_SECRET não configurado');
+  if (!bluechatApiKey) {
+    console.error('[Auth] BLUECHAT_API_KEY não configurada');
     return false;
   }
   
   if (authHeader) {
     const token = authHeader.replace('Bearer ', '');
-    if (token === inboundSecret) return true;
+    if (token === bluechatApiKey) return true;
   }
   
-  if (apiKeyHeader === inboundSecret) return true;
+  if (apiKeyHeader === bluechatApiKey) return true;
   
-  console.warn('[Auth] Token inválido');
+  console.warn('[Auth] Token inválido para Blue Chat');
   return false;
 }
 
@@ -457,6 +456,73 @@ async function callSdrIaInterpret(
   return null;
 }
 
+/**
+ * Envia resposta de volta ao Blue Chat via API (callback assíncrono)
+ */
+async function sendResponseToBluechat(
+  supabase: SupabaseClient,
+  data: {
+    conversation_id: string;
+    message_id: string;
+    text: string;
+    action: string;
+  }
+): Promise<void> {
+  try {
+    // Buscar URL da API do Blue Chat em system_settings
+    const { data: setting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'integrations')
+      .eq('key', 'bluechat')
+      .maybeSingle();
+
+    const apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
+    if (!apiUrl) {
+      console.warn('[Callback] URL da API Blue Chat não configurada em system_settings');
+      return;
+    }
+
+    const callbackPath = ((setting?.value as Record<string, unknown>)?.callback_path as string) || '/api/webhook/amelia';
+    const bluechatApiKey = Deno.env.get('BLUECHAT_API_KEY');
+
+    if (!bluechatApiKey) {
+      console.warn('[Callback] BLUECHAT_API_KEY não configurada');
+      return;
+    }
+
+    const callbackUrl = `${apiUrl.replace(/\/$/, '')}${callbackPath}`;
+    console.log('[Callback] Enviando resposta para Blue Chat:', callbackUrl);
+
+    const response = await fetch(callbackUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': bluechatApiKey,
+      },
+      body: JSON.stringify({
+        conversation_id: data.conversation_id,
+        message_id: data.message_id,
+        response: {
+          text: data.text,
+          action: data.action,
+        },
+        source: 'AMELIA_SDR',
+        timestamp: new Date().toISOString(),
+      }),
+    });
+
+    if (!response.ok) {
+      console.error('[Callback] Erro ao enviar para Blue Chat:', response.status, await response.text().catch(() => ''));
+    } else {
+      console.log('[Callback] Resposta enviada ao Blue Chat com sucesso');
+    }
+  } catch (error) {
+    // Não bloqueia o fluxo principal
+    console.error('[Callback] Erro ao enviar callback:', error instanceof Error ? error.message : error);
+  }
+}
+
 // ========================================
 // Handler Principal
 // ========================================
@@ -625,6 +691,16 @@ serve(async (req) => {
           ? 'Lead pronto para closer - agendar reunião' 
           : 'Continuar qualificação',
       };
+    }
+    
+    // 7. Callback: enviar resposta de volta ao Blue Chat via API
+    if (iaResult?.responseText) {
+      await sendResponseToBluechat(supabase, {
+        conversation_id: payload.conversation_id,
+        message_id: savedMessage.messageId,
+        text: iaResult.responseText,
+        action: response.action,
+      });
     }
     
     console.log('[BlueChat] Resposta:', {

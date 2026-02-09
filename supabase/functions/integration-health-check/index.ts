@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -253,13 +254,75 @@ function checkSGT(): HealthCheckResult {
   return { status: "online", message: "Secret configurado" };
 }
 
-function checkBlueChat(): HealthCheckResult {
+async function checkBlueChat(): Promise<HealthCheckResult> {
   const apiKey = Deno.env.get("BLUECHAT_API_KEY");
   if (!apiKey) {
     return { status: "error", message: "BLUECHAT_API_KEY não configurada" };
   }
-  // Blue Chat é webhook inbound - só validamos se o secret existe
-  return { status: "online", message: "Secret configurado" };
+
+  // Buscar URL da API do Blue Chat em system_settings
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const { data: setting } = await supabase
+      .from("system_settings")
+      .select("value")
+      .eq("category", "integrations")
+      .eq("key", "bluechat")
+      .maybeSingle();
+
+    const apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
+    if (!apiUrl) {
+      return { status: "error", message: "URL da API não configurada. Configure em Integrações → Blue Chat." };
+    }
+
+    const start = Date.now();
+    
+    // Tentar health check na URL configurada
+    const healthEndpoints = [
+      `${apiUrl.replace(/\/$/, "")}/health`,
+      `${apiUrl.replace(/\/$/, "")}/api/health`,
+      apiUrl,
+    ];
+
+    for (const endpoint of healthEndpoints) {
+      try {
+        const response = await fetch(endpoint, {
+          method: "GET",
+          headers: {
+            "X-API-Key": apiKey,
+            "Content-Type": "application/json",
+          },
+        });
+
+        if (response.ok || response.status === 401 || response.status === 403) {
+          // 401/403 = API existe mas auth falhou (ainda conta como online)
+          return {
+            status: response.ok ? "online" : "online",
+            latencyMs: Date.now() - start,
+            message: response.ok ? undefined : "API acessível (auth pode precisar revisão)",
+            details: { endpoint, statusCode: response.status },
+          };
+        }
+      } catch {
+        // Continua para próximo endpoint
+      }
+    }
+
+    return {
+      status: "offline",
+      message: "Não foi possível conectar à API do Blue Chat",
+      latencyMs: Date.now() - start,
+      details: { apiUrl },
+    };
+  } catch (error) {
+    return {
+      status: "error",
+      message: error instanceof Error ? error.message : "Erro ao verificar Blue Chat",
+    };
+  }
 }
 
 serve(async (req) => {
@@ -295,7 +358,7 @@ serve(async (req) => {
         result = checkSGT();
         break;
       case "bluechat":
-        result = checkBlueChat();
+        result = await checkBlueChat();
         break;
       default:
         result = { status: "error", message: `Integração desconhecida: ${integration}` };
