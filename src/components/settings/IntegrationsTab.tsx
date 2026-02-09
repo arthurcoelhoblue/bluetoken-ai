@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { IntegrationCard } from "./IntegrationCard";
+import { CompanyChannelCard } from "./CompanyChannelCard";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
@@ -11,7 +12,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Info } from "lucide-react";
+import { Info, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 
 export function IntegrationsTab() {
@@ -19,6 +20,9 @@ export function IntegrationsTab() {
   const { checkHealth, getStatus } = useIntegrationHealth();
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+
+  const globalIntegrations = INTEGRATIONS.filter((i) => !i.perCompany);
+  const perCompanyIntegrations = INTEGRATIONS.filter((i) => i.perCompany);
 
   const getIntegrationConfig = (key: string): IntegrationConfig | null => {
     const setting = settings?.find((s) => s.key === key);
@@ -78,7 +82,7 @@ export function IntegrationsTab() {
       </Alert>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {INTEGRATIONS.map((integration) => (
+        {globalIntegrations.map((integration) => (
           <IntegrationCard
             key={integration.id}
             integration={integration}
@@ -94,6 +98,27 @@ export function IntegrationsTab() {
           />
         ))}
       </div>
+
+      {perCompanyIntegrations.length > 0 && (
+        <div className="space-y-4">
+          <h3 className="text-lg font-semibold">Canais por Empresa</h3>
+          <Alert variant="destructive" className="border-yellow-500/50 bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 [&>svg]:text-yellow-600">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertDescription>
+              Blue Chat e Mensageria são mutuamente exclusivos por empresa. Ao ativar um, o outro é desativado automaticamente.
+            </AlertDescription>
+          </Alert>
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {perCompanyIntegrations.map((integration) => (
+              <CompanyChannelCard
+                key={integration.id}
+                integration={integration}
+                onConfigure={() => setSelectedIntegration(integration.id)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <Dialog
         open={!!selectedIntegration}

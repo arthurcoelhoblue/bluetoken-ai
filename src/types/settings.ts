@@ -31,6 +31,15 @@ export interface IntegrationConfig {
   sync_interval_minutes?: number;
 }
 
+export interface IntegrationCompanyConfig {
+  id: string;
+  empresa: 'TOKENIZA' | 'BLUE';
+  channel: 'bluechat' | 'mensageria';
+  enabled: boolean;
+  updated_at: string;
+  updated_by: string | null;
+}
+
 export interface ModelPriority {
   ordem: string[];
   modelos: Record<string, string>;
@@ -54,6 +63,8 @@ export interface IntegrationInfo {
   secrets: string[];
   settingsKey: string;
   testable?: boolean;
+  perCompany?: boolean;
+  mutuallyExclusiveGroup?: string;
 }
 
 export const INTEGRATIONS: IntegrationInfo[] = [
@@ -110,6 +121,8 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     secrets: ['MENSAGERIA_API_KEY'],
     settingsKey: 'mensageria',
     testable: true,
+    perCompany: true,
+    mutuallyExclusiveGroup: 'messaging',
   },
   {
     id: 'bluechat',
@@ -119,6 +132,8 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     secrets: ['BLUECHAT_API_KEY'],
     settingsKey: 'bluechat',
     testable: true,
+    perCompany: true,
+    mutuallyExclusiveGroup: 'messaging',
   },
 ];
 

@@ -163,6 +163,33 @@ export type Database = {
         }
         Relationships: []
       }
+      integration_company_config: {
+        Row: {
+          channel: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enabled: boolean
+          id: string
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          channel: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enabled?: boolean
+          id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          channel?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          enabled?: boolean
+          id?: string
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: []
+      }
       knowledge_documents: {
         Row: {
           descricao: string | null

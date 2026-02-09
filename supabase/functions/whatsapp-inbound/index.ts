@@ -550,6 +550,28 @@ serve(async (req) => {
     // 1. Buscar lead pelo telefone (com suporte a handoff)
     const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);
     
+    // 1.5 Verificar se o canal mensageria está habilitado para a empresa do lead
+    if (leadContact) {
+      const { data: channelConfig } = await supabase
+        .from('integration_company_config')
+        .select('enabled')
+        .eq('empresa', leadContact.empresa)
+        .eq('channel', 'mensageria')
+        .maybeSingle();
+
+      if (channelConfig && !channelConfig.enabled) {
+        console.log(`[Inbound] Canal mensageria desabilitado para empresa ${leadContact.empresa}`);
+        return new Response(
+          JSON.stringify({ 
+            success: false, 
+            status: 'CHANNEL_DISABLED',
+            error: `Mensageria não está habilitada para ${leadContact.empresa}`,
+          }),
+          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+    
     // 2. Buscar run ativa (se lead encontrado)
     let activeRun: LeadCadenceRun | null = null;
     if (leadContact) {
