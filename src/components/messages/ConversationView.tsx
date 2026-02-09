@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import {
   MessageSquare,
   Mail,
@@ -14,6 +15,8 @@ import {
   Bot,
   User,
   Brain,
+  AlertTriangle,
+  RefreshCw,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -24,6 +27,8 @@ import { EmailPreviewDialog } from './EmailPreviewDialog';
 interface ConversationViewProps {
   messages: LeadMessageWithContext[];
   isLoading?: boolean;
+  error?: Error | null;
+  onRetry?: () => void;
   leadNome?: string | null;
   maxHeight?: string;
   emptyMessage?: string;
@@ -265,6 +270,8 @@ function MessagesByDate({
 export function ConversationView({
   messages,
   isLoading,
+  error,
+  onRetry,
   leadNome,
   maxHeight = '500px',
   emptyMessage = 'Nenhuma mensagem registrada.',
@@ -297,6 +304,31 @@ export function ConversationView({
               <Bot className="h-5 w-5 animate-bounce" />
               Carregando conversa...
             </div>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Bot className="h-5 w-5 text-primary" />
+            Conversa com {leadNome || 'Lead'}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center gap-3 py-8 text-center">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-muted-foreground">Erro ao carregar mensagens.</p>
+            {onRetry && (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Tentar novamente
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

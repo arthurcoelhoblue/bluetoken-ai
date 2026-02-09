@@ -69,14 +69,14 @@ function LeadDetailContent() {
     useLeadDetail(leadId || '', empresa as EmpresaTipo);
 
   // Usar novo hook com realtime
-  const { data: messages = [], isLoading: messagesLoading } = useConversationMessages({
+  const { data: messages = [], isLoading: messagesLoading, error: messagesError, refetch: refetchMessages } = useConversationMessages({
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
     telefone: contact?.telefone,
     enabled: !!leadId && !!empresa,
   });
 
-  const { data: intents = [], isLoading: intentsLoading } = useLeadIntents({
+  const { data: intents = [], isLoading: intentsLoading, error: intentsError, refetch: refetchIntents } = useLeadIntents({
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
     limit: 5,
@@ -97,7 +97,7 @@ function LeadDetailContent() {
     enabled: !!leadId && !!empresa,
   });
 
-  const { data: conversationState, isLoading: conversationLoading } = useConversationState({
+  const { data: conversationState, isLoading: conversationLoading, error: conversationError, refetch: refetchConversation } = useConversationState({
     leadId: leadId || '',
     empresa: empresa as 'TOKENIZA' | 'BLUE',
     enabled: !!leadId && !!empresa,
@@ -338,6 +338,8 @@ function LeadDetailContent() {
           <ConversationView
             messages={messages}
             isLoading={messagesLoading}
+            error={messagesError as Error | null}
+            onRetry={() => refetchMessages()}
             leadNome={contact.nome || contact.primeiro_nome}
             maxHeight="500px"
             emptyMessage="Nenhuma mensagem enviada para este lead."
@@ -347,12 +349,16 @@ function LeadDetailContent() {
           <ConversationStateCard
             state={conversationState || null}
             isLoading={conversationLoading}
+            error={conversationError as Error | null}
+            onRetry={() => refetchConversation()}
           />
 
           {/* Intent History - PATCH 5G */}
           <IntentHistoryCard
             intents={intents}
             isLoading={intentsLoading}
+            error={intentsError as Error | null}
+            onRetry={() => refetchIntents()}
             maxItems={5}
             title="Interpretações IA do Lead"
           />

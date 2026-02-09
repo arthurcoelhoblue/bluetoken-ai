@@ -1066,6 +1066,18 @@ export type Database = {
         }
         Returns: boolean
       }
+      update_conversation_with_intent: {
+        Args: {
+          p_cadence_action?: string
+          p_cadence_run_id?: string
+          p_canal: string
+          p_empresa: string
+          p_intent_data: Json
+          p_lead_id: string
+          p_state_updates: Json
+        }
+        Returns: Json
+      }
     }
     Enums: {
       cadence_event_tipo:

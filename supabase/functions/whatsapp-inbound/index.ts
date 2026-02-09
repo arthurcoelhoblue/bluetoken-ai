@@ -572,26 +572,38 @@ serve(async (req) => {
     
     // 4. Disparar interpretação IA (PATCH 5G)
     if (result.success && result.messageId && result.status === 'MATCHED') {
-      try {
-        const supabaseFunctionsUrl = Deno.env.get('SUPABASE_URL')!;
-        const response = await fetch(`${supabaseFunctionsUrl}/functions/v1/sdr-ia-interpret`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
-          },
-          body: JSON.stringify({ messageId: result.messageId }),
-        });
-        
-        if (response.ok) {
-          const iaResult = await response.json();
-          console.log('[Inbound] Interpretação IA:', iaResult);
-          (result as any).iaInterpretation = iaResult;
-        } else {
-          console.error('[Inbound] Erro ao chamar SDR IA:', response.status);
+      const MAX_RETRIES = 2;
+      const RETRY_DELAY_MS = 2000;
+      
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          const supabaseFunctionsUrl = Deno.env.get('SUPABASE_URL')!;
+          const response = await fetch(`${supabaseFunctionsUrl}/functions/v1/sdr-ia-interpret`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+            },
+            body: JSON.stringify({ messageId: result.messageId }),
+          });
+          
+          if (response.ok) {
+            const iaResult = await response.json();
+            console.log('[Inbound] Interpretação IA:', iaResult);
+            (result as any).iaInterpretation = iaResult;
+            break; // Success, exit retry loop
+          } else {
+            console.error(`[Inbound] Erro ao chamar SDR IA (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, response.status);
+            if (attempt < MAX_RETRIES && [500, 502, 503, 504].includes(response.status)) {
+              await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+            }
+          }
+        } catch (iaError) {
+          console.error(`[Inbound] Erro ao disparar interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, iaError);
+          if (attempt < MAX_RETRIES) {
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+          }
         }
-      } catch (iaError) {
-        console.error('[Inbound] Erro ao disparar interpretação:', iaError);
       }
     }
     

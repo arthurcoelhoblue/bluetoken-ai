@@ -5,7 +5,8 @@
 
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Bot, Brain, Zap, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Bot, Brain, Zap, MessageSquare, CheckCircle2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { LeadMessageIntent } from '@/types/intent';
@@ -21,6 +22,8 @@ import {
 interface IntentHistoryCardProps {
   intents: LeadMessageIntent[];
   isLoading?: boolean;
+  error?: Error | null;
+  onRetry?: () => void;
   maxItems?: number;
   title?: string;
 }
@@ -28,6 +31,8 @@ interface IntentHistoryCardProps {
 export function IntentHistoryCard({
   intents,
   isLoading = false,
+  error,
+  onRetry,
   maxItems = 5,
   title = 'Interpretações IA',
 }: IntentHistoryCardProps) {
@@ -43,6 +48,31 @@ export function IntentHistoryCard({
         <CardContent>
           <div className="flex items-center justify-center py-8">
             <Bot className="h-8 w-8 animate-spin text-primary" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Brain className="h-5 w-5" />
+            {title}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-muted-foreground">Erro ao carregar interpretações.</p>
+            {onRetry && (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Tentar novamente
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>

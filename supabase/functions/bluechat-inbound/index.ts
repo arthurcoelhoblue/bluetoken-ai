@@ -407,40 +407,54 @@ async function callSdrIaInterpret(
   responseText?: string;
   escalation?: { needed: boolean; reason?: string; priority?: string };
 } | null> {
-  try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    
-    console.log('[SDR IA] Chamando interpretação para:', messageId);
-    
-    const response = await fetch(`${supabaseUrl}/functions/v1/sdr-ia-interpret`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${serviceKey}`,
-      },
-      body: JSON.stringify({ messageId }),
-    });
-    
-    if (!response.ok) {
-      console.error('[SDR IA] Erro:', response.status);
+  const MAX_RETRIES = 2;
+  const RETRY_DELAY_MS = 2000;
+  
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      
+      console.log(`[SDR IA] Chamando interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, messageId);
+      
+      const response = await fetch(`${supabaseUrl}/functions/v1/sdr-ia-interpret`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${serviceKey}`,
+        },
+        body: JSON.stringify({ messageId }),
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        console.log('[SDR IA] Resultado:', result);
+        
+        return {
+          intent: result.intent || 'OUTRO',
+          confidence: result.confidence || 0.5,
+          leadReady: result.leadReady || false,
+          responseText: result.responseText,
+          escalation: result.escalation,
+        };
+      }
+      
+      console.error(`[SDR IA] Erro (tentativa ${attempt + 1}):`, response.status);
+      if (attempt < MAX_RETRIES && [500, 502, 503, 504].includes(response.status)) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
+      return null;
+    } catch (error) {
+      console.error(`[SDR IA] Erro ao chamar (tentativa ${attempt + 1}):`, error);
+      if (attempt < MAX_RETRIES) {
+        await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
+        continue;
+      }
       return null;
     }
-    
-    const result = await response.json();
-    console.log('[SDR IA] Resultado:', result);
-    
-    return {
-      intent: result.intent || 'OUTRO',
-      confidence: result.confidence || 0.5,
-      leadReady: result.leadReady || false,
-      responseText: result.responseText,
-      escalation: result.escalation,
-    };
-  } catch (error) {
-    console.error('[SDR IA] Erro ao chamar:', error);
-    return null;
   }
+  return null;
 }
 
 // ========================================
