@@ -1,117 +1,111 @@
 
-# Controle de Integrações por Empresa (Blue Chat vs Mensageria)
+# Integracao ChatBlue 11/10 - Correcoes e Melhorias
 
-## Problema Atual
-As integrações são configuradas globalmente -- um único registro `enabled: true/false` para cada integração. Isso impede controlar qual empresa usa Blue Chat e qual usa Mensageria. Alem disso, nao existe regra de exclusividade entre Blue Chat e Mensageria.
+## Problemas Criticos Identificados
 
-## Solucao
+### 1. MENSAGEM DUPLICADA (Bug Principal)
+Hoje, quando o ChatBlue envia uma mensagem para o `bluechat-inbound`, o fluxo chama `sdr-ia-interpret`, que **sempre chama `whatsapp-send`** para enviar a resposta via Mensageria. O ChatBlue **tambem** envia a resposta ao cliente (pois recebe o `response.text` no HTTP 200). Resultado: **cliente recebe 2 mensagens, possivelmente de numeros diferentes**.
 
-### 1. Banco de Dados - Nova estrutura por empresa
+### 2. Campo `context.source` nao existe no tipo
+O ChatBlue envia `context.source: "BLUECHAT"` no payload, mas o tipo `BlueChatPayload` nao inclui esse campo. Sem ele, nao ha como distinguir mensagens vindas do ChatBlue.
 
-Criar uma nova tabela `integration_company_config` que armazena a configuracao de integracao por empresa:
+### 3. `sdr-ia-interpret` nao recebe flag de origem
+O `bluechat-inbound` chama `sdr-ia-interpret` passando apenas `{ messageId }`. Nao passa nenhuma flag indicando que a mensagem veio do ChatBlue.
 
-```text
-integration_company_config
-+-----------+---------------+---------+-----------+
-| id (uuid) | empresa       | channel | enabled   |
-|           | (empresa_tipo)| (text)  | (boolean) |
-+-----------+---------------+---------+-----------+
-```
+### 4. `responseText` nao retorna corretamente
+O `sdr-ia-interpret` retorna campos como `intent`, `confidence`, `acao`, `respostaEnviada` -- mas nao retorna `responseText` para o `bluechat-inbound` montar a `BlueChatResponse`.
 
-- `empresa`: TOKENIZA ou BLUE
-- `channel`: 'bluechat' ou 'mensageria' (as integracoes que sao mutuamente exclusivas)
-- `enabled`: se esta ativa para aquela empresa
-- Constraint UNIQUE em (empresa, channel)
+---
 
-Tambem adicionar uma constraint de trigger que garanta que para cada empresa, apenas uma das duas (bluechat ou mensageria) pode estar `enabled = true` ao mesmo tempo.
+## Solucao Proposta
 
-### 2. Tipos TypeScript
+### Etapa 1: Corrigir payload e tipos
 
-Atualizar `src/types/settings.ts`:
-- Adicionar interface `IntegrationCompanyConfig` com campos empresa/channel/enabled
-- Adicionar propriedade `mutuallyExclusive` na `IntegrationInfo` para marcar bluechat e mensageria como grupo exclusivo
-- Adicionar propriedade `perCompany: boolean` para identificar integrações que precisam de controle por empresa
+**`bluechat-inbound/index.ts`**:
+- Adicionar `source?: string` ao tipo `context` dentro de `BlueChatPayload`
+- Adicionar `video` ao tipo `message.type`
+- Detectar `isFromBluechat = payload.context?.source === 'BLUECHAT'`
 
-### 3. Hook `useIntegrationCompanyConfig`
+### Etapa 2: Passar flag `source` para `sdr-ia-interpret`
 
-Novo hook para gerenciar configs por empresa:
-- Query em `integration_company_config` 
-- Mutation de toggle que, ao ativar bluechat para empresa X, automaticamente desativa mensageria para empresa X (e vice-versa)
-- Feedback visual via toast informando que a outra integracao foi desativada
+**`bluechat-inbound/index.ts`**:
+- Na chamada `callSdrIaInterpret`, passar `source: 'BLUECHAT'` alem do `messageId`
 
-### 4. UI - Tab de Integracoes
+**`sdr-ia-interpret/index.ts`**:
+- Receber `source` no body da request
+- Na funcao `sendAutoResponse` (linha ~3943): **pular envio** quando `source === 'BLUECHAT'`
+- Retornar `responseText` (conteudo da resposta gerada) no JSON de resposta para que o `bluechat-inbound` possa montar o `BlueChatResponse`
 
-Atualizar `IntegrationsTab.tsx`:
-- Para Blue Chat e Mensageria, ao inves de um unico Switch, mostrar **dois switches** (um por empresa: TOKENIZA e BLUE)
-- Incluir alerta visual explicando a regra de exclusividade: "Blue Chat e Mensageria sao mutuamente exclusivos por empresa"
-- Ao ativar um, o outro e desativado automaticamente com toast de confirmacao
+### Etapa 3: Melhorar resposta do `bluechat-inbound`
 
-### 5. Backend - Edge Functions
+**`bluechat-inbound/index.ts`**:
+- Usar o `responseText` retornado pelo `sdr-ia-interpret` para montar `response.text` na `BlueChatResponse`
+- Mapear `acao: 'ESCALAR_HUMANO'` para `action: 'ESCALATE'` com `escalation.needed: true`
+- Mapear `deve_responder: true` + texto para `action: 'RESPOND'`
+- Mapear `deve_responder: false` para `action: 'QUALIFY_ONLY'`
 
-Atualizar `whatsapp-inbound`, `bluechat-inbound` e `whatsapp-send` para consultar `integration_company_config` e verificar se a integracao esta habilitada para a empresa do lead antes de processar a mensagem.
+### Etapa 4: Persistir `conversation_id` do ChatBlue
+
+- Salvar `conversation_id` em `lead_messages.detalhes` ou campo dedicado para permitir uso futuro da API do ChatBlue (enviar mensagens async, transferir tickets, etc.)
+
+### Etapa 5: Fallback assincrono (timeout 30s)
+
+- Adicionar tratamento para quando o processamento demora mais que ~25s
+- Se ultrapassar, retornar `action: 'QUALIFY_ONLY'` imediatamente e usar a API do ChatBlue (`POST /api/external-ai/messages`) para enviar a resposta depois
+- Requer secret `BLUECHAT_API_KEY` para chamar a API do ChatBlue
+
+### Etapa 6: Integracao com API do ChatBlue (opcional, recomendado)
+
+- Criar helper para chamar a API `https://chat.grupoblue.com.br/api/external-ai`
+- Endpoints uteis:
+  - `POST /messages` - envio assincrono de mensagens (fallback de timeout)
+  - `POST /tickets/:id/transfer` - transferencia programatica para closer
+  - `GET /tickets/:id/messages` - enriquecer historico com mensagens do ChatBlue
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migracao SQL
+### Arquivos a modificar
 
-```sql
-CREATE TABLE public.integration_company_config (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  empresa empresa_tipo NOT NULL,
-  channel TEXT NOT NULL CHECK (channel IN ('bluechat', 'mensageria')),
-  enabled BOOLEAN NOT NULL DEFAULT false,
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  updated_by UUID REFERENCES auth.users(id),
-  UNIQUE (empresa, channel)
-);
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/bluechat-inbound/index.ts` | Adicionar `source` ao tipo, passar para sdr-ia-interpret, melhorar resposta HTTP, persistir conversation_id |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Receber `source`, pular `whatsapp-send` quando `source === 'BLUECHAT'`, retornar `responseText` no JSON |
 
-ALTER TABLE public.integration_company_config ENABLE ROW LEVEL SECURITY;
+### Fluxo Correto Apos Mudancas
 
--- Somente admins podem ler/modificar
-CREATE POLICY "Admins can manage integration_company_config"
-  ON public.integration_company_config
-  FOR ALL TO authenticated
-  USING (public.has_role(auth.uid(), 'ADMIN'))
-  WITH CHECK (public.has_role(auth.uid(), 'ADMIN'));
-
--- Seed inicial
-INSERT INTO integration_company_config (empresa, channel, enabled) VALUES
-  ('BLUE', 'bluechat', true),
-  ('BLUE', 'mensageria', false),
-  ('TOKENIZA', 'bluechat', false),
-  ('TOKENIZA', 'mensageria', true);
-
--- Trigger de exclusividade
-CREATE OR REPLACE FUNCTION enforce_channel_exclusivity()
-RETURNS TRIGGER LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.enabled = true THEN
-    UPDATE integration_company_config
-    SET enabled = false, updated_at = now()
-    WHERE empresa = NEW.empresa
-      AND channel != NEW.channel
-      AND enabled = true;
-  END IF;
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER trg_channel_exclusivity
-  AFTER INSERT OR UPDATE ON integration_company_config
-  FOR EACH ROW EXECUTE FUNCTION enforce_channel_exclusivity();
+```text
+Cliente (WhatsApp)
+    |
+    v
+ChatBlue (recebe mensagem, identifica ticket IA)
+    |
+    v  POST /bluechat-inbound (source=BLUECHAT)
+    |
+bluechat-inbound
+    |-- Identifica/cria lead
+    |-- Salva mensagem (com conversation_id)
+    |-- Chama sdr-ia-interpret (messageId + source=BLUECHAT)
+    |       |
+    |       |-- Interpreta com IA
+    |       |-- NAO chama whatsapp-send (source=BLUECHAT)
+    |       |-- Retorna { responseText, intent, confidence, acao, ... }
+    |       |
+    |-- Monta BlueChatResponse com response.text
+    |-- Retorna HTTP 200
+    |
+    v
+ChatBlue (recebe resposta, envia ao cliente via WhatsApp)
 ```
 
-### Arquivos a criar/modificar
+### Secret necessario
 
-| Arquivo | Acao |
-|---------|------|
-| Migracao SQL | Criar tabela + trigger + seed |
-| `src/types/settings.ts` | Adicionar `IntegrationCompanyConfig`, marcar exclusividade |
-| `src/hooks/useIntegrationCompanyConfig.ts` | Novo hook CRUD por empresa |
-| `src/components/settings/IntegrationsTab.tsx` | UI com switches por empresa para bluechat/mensageria |
-| `src/components/settings/IntegrationCard.tsx` | Suportar modo "por empresa" |
-| `supabase/functions/bluechat-inbound/index.ts` | Checar se habilitado para empresa do lead |
-| `supabase/functions/whatsapp-inbound/index.ts` | Checar canal ativo para empresa |
-| `supabase/functions/whatsapp-send/index.ts` | Checar canal ativo antes de enviar |
+- `BLUECHAT_API_KEY` - para usar a API do ChatBlue (fallback assincrono e transferencia de tickets)
+
+### Prioridades
+
+1. **CRITICO**: Corrigir mensagem duplicada (etapas 1-3)
+2. **IMPORTANTE**: Persistir conversation_id (etapa 4)
+3. **RECOMENDADO**: Fallback assincrono (etapa 5)
+4. **BONUS**: Integracao API ChatBlue (etapa 6)
