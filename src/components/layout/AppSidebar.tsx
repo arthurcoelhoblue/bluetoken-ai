@@ -4,6 +4,7 @@ import {
   Bot,
   Home,
   Users,
+  MessageSquare,
   Zap,
   Play,
   Clock,
@@ -53,6 +54,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: 'Dashboard', url: '/', icon: Home },
       { title: 'Leads', url: '/leads', icon: Users },
+      { title: 'Atendimentos', url: '/atendimentos', icon: MessageSquare, roles: ['ADMIN', 'CLOSER'] },
     ],
   },
   {
