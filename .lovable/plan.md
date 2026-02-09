@@ -1,115 +1,106 @@
 
-
-# Amélia como Atendente Passiva no Blue Chat
+# Painel de Atendimentos Blue Chat
 
 ## Resumo
 
-Mudar o comportamento da Amélia dentro do Blue Chat: ao invés de ser proativa (usando dados do SGT, cadências, classificações), ela será uma **atendente passiva**. A Amélia só entra em ação quando o Blue Chat **escala uma conversa para o comercial**. Toda a infraestrutura existente (webhook, callback, health check) é mantida.
+Criar uma nova pagina "Atendimentos Blue Chat" que serve como central de monitoramento das conversas ativas da Amelia no modo atendente passivo. Diferente das cadencias (que tratam de outreach proativo), esta tela mostra as conversas reativas recebidas via Blue Chat.
 
-## O que muda
+## O que ja funciona sem mudancas
 
-Hoje o `bluechat-inbound` recebe qualquer mensagem e tenta qualificar o lead usando cadências e SGT. Com a mudança:
+- **Detalhe do Lead** (`/leads/:id/:empresa`): ja mostra mensagens trocadas, intents, estado de conversa (SPIN/GPCT/DISC) - tudo isso funciona independente de cadencia
+- **Leads Quentes** (`/admin/leads-quentes`): ja captura leads escalados pela IA
+- **Lista de Leads** (`/leads`): mostra todos os leads, incluindo os criados pelo Blue Chat (origem `BLUECHAT`)
 
-1. **Amélia ignora dados do SGT** - não consulta `sgt_events`, não ativa cadências automaticamente
-2. **Amélia é passiva** - responde apenas quando recebe mensagens via Blue Chat (escaladas pelo atendimento)
-3. **Sem cadência automática** - não busca nem cria `lead_cadence_runs` no fluxo do Blue Chat
-4. **Foco em atendimento** - a IA responde como uma consultora comercial conversando, sem o motor de cadências por trás
+## O que sera criado
 
-## Alterações Técnicas
+### 1. Nova pagina: Atendimentos Blue Chat (`/atendimentos`)
 
-### 1. Modificar `bluechat-inbound/index.ts`
+Uma tela dedicada que lista as conversas ativas vindas do Blue Chat, mostrando:
 
-**Remover dependência de cadências no fluxo Blue Chat:**
+- **Lista de conversas recentes**: leads que receberam mensagens INBOUND via Blue Chat (origem_telefone = 'BLUECHAT' ou mensagens com whatsapp_message_id de prefixo Blue Chat)
+- **Status por conversa**: ultima mensagem, tempo desde ultimo contato, se a Amelia ja respondeu, se foi escalado
+- **Indicadores visuais**: badge de "Aguardando resposta", "Amelia respondeu", "Escalado para humano"
+- **Filtro por empresa**: BLUE / TOKENIZA
+- **Ordenacao**: mais recentes primeiro, com destaque para conversas sem resposta
 
-- Remover a chamada a `findActiveRun()` (linha 649) - não buscar cadência ativa
-- Passar `run_id: null` ao salvar mensagem (a mensagem fica vinculada ao lead mas não a uma cadência)
-- Remover o registro de `lead_cadence_events` no `saveInboundMessage` (linhas 379-392)
-- Continuar chamando `sdr-ia-interpret` mas com flag `source: 'BLUECHAT'` e novo flag `mode: 'PASSIVE_CHAT'`
+### 2. Dados utilizados (ja existem no banco)
 
-### 2. Modificar `sdr-ia-interpret/index.ts`
+A pagina ira consultar dados que ja sao gravados pelo sistema atual:
 
-**Adicionar modo passivo (`PASSIVE_CHAT`):**
+- `lead_contacts` com `origem_telefone = 'BLUECHAT'` para identificar leads do Blue Chat
+- `lead_messages` com `direcao = 'INBOUND'` e `direcao = 'OUTBOUND'` para ver troca de mensagens
+- `lead_message_intents` para ver interpretacoes da IA
+- `lead_conversation_state` para ver estado de qualificacao
 
-- Quando `mode === 'PASSIVE_CHAT'`:
-  - Usar o conversation state (lead_conversation_state) para manter contexto da conversa
-  - **NAO** consultar cadências, SGT events, ou classificação ICP para decidir o tom
-  - Manter o framework de qualificacao (SPIN/GPCT) de forma natural na conversa, mas sem forcar
-  - Manter deteccao de lead quente (PEDIDO_HUMANO, DECISAO_TOMADA) para escalar quando necessario
-  - Prompt diferente: Amelia como atendente comercial consultiva, sem urgencia de cadencia
-  - Continuar salvando intents e atualizando conversation state normalmente
+### 3. Menu de navegacao
 
-### 3. Ajustar o prompt da Amelia para modo passivo
+Adicionar "Atendimentos" no sidebar, na secao "Principal", visivel para ADMIN e CLOSER.
 
-Quando `mode === 'PASSIVE_CHAT'`:
-- Amelia se apresenta como consultora do Grupo Blue
-- Responde perguntas de forma consultiva
-- Qualifica naturalmente durante a conversa (sem seguir script de cadencia)
-- Detecta sinais de interesse e escala para humano quando apropriado
-- Nao menciona que foi "acionada" ou "escalada"
+### 4. Card de atendimento
 
-### 4. Atualizar payload do webhook
+Cada card mostrara:
+- Nome do lead e telefone
+- Empresa (BLUE/TOKENIZA)
+- Ultima mensagem (preview truncado)
+- Tempo desde ultimo contato
+- Contagem de mensagens (inbound/outbound)
+- Intent detectado mais recente
+- Estado do funil (SAUDACAO, QUALIFICACAO, etc)
+- Botao para abrir o detalhe do lead
 
-Adicionar campo opcional `ticket_id` ao payload do Blue Chat para rastrear o ticket original:
+## Secao tecnica
 
-```text
-{
-  "conversation_id": "bc-conv-123",
-  "ticket_id": "ticket-456",        // <-- NOVO: ID do ticket no Blue Chat
-  "message_id": "bc-msg-789",
-  ...
-}
-```
-
-O `ticket_id` sera usado nos callbacks (transfer, resolve, close).
-
-## O que NAO muda
-
-- Autenticacao via `BLUECHAT_API_KEY` (ja corrigido)
-- Callback de resposta ao Blue Chat (POST /messages)
-- Escalacao via ticket transfer quando necessario
-- Criacao automatica de lead se nao existir
-- Salvamento de mensagens em `lead_messages`
-- Health check e tela de configuracao
-- Todo o fluxo do SGT e cadencias continua funcionando independentemente
-
-## Fluxo Atualizado
+### Hook: `useBlueChartAtendimentos`
 
 ```text
-Cliente envia mensagem no WhatsApp
-        |
-        v
-Blue Chat recebe e trata no atendimento geral
-        |
-        v
-Atendente escala para "comercial"
-        |
-        v
-Blue Chat envia webhook --> bluechat-inbound
-        |
-        v
-Busca/cria lead (sem cadencia)
-        |
-        v
-Salva mensagem (run_id = null)
-        |
-        v
-sdr-ia-interpret (mode: PASSIVE_CHAT)
-  - Le historico da conversa
-  - Responde como consultora
-  - Detecta sinais quentes
-        |
-        v
-Callback --> Blue Chat API /messages
-        |
-        v
-Blue Chat entrega resposta ao cliente
+Query:
+1. Buscar lead_contacts com origem_telefone = 'BLUECHAT'
+2. Para cada lead, buscar ultima mensagem de lead_messages
+3. Buscar ultimo intent de lead_message_intents
+4. Buscar estado de lead_conversation_state
+5. Ordenar por ultima mensagem mais recente
 ```
 
-## Arquivos Modificados
+Alternativa mais eficiente: uma unica query com JOINs:
+
+```text
+SELECT 
+  lc.lead_id, lc.empresa, lc.nome, lc.telefone, lc.telefone_e164,
+  -- Ultima mensagem
+  (SELECT conteudo FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultima_mensagem,
+  (SELECT created_at FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultimo_contato,
+  (SELECT direcao FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultima_direcao,
+  -- Contagem
+  (SELECT COUNT(*) FROM lead_messages lm WHERE lm.lead_id = lc.lead_id AND lm.direcao = 'INBOUND') as total_inbound,
+  (SELECT COUNT(*) FROM lead_messages lm WHERE lm.lead_id = lc.lead_id AND lm.direcao = 'OUTBOUND') as total_outbound,
+  -- Estado
+  cs.estado_funil, cs.framework_ativo, cs.perfil_disc,
+  -- Ultimo intent
+  (SELECT intent FROM lead_message_intents lmi WHERE lmi.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultimo_intent
+FROM lead_contacts lc
+LEFT JOIN lead_conversation_state cs ON cs.lead_id = lc.lead_id AND cs.empresa = lc.empresa
+WHERE lc.origem_telefone = 'BLUECHAT'
+ORDER BY ultimo_contato DESC NULLS LAST
+```
+
+### Componentes criados
+
+| Componente | Descricao |
+|------------|-----------|
+| `src/pages/Atendimentos.tsx` | Pagina principal com lista de atendimentos |
+| `src/hooks/useAtendimentos.ts` | Hook para buscar dados dos atendimentos Blue Chat |
+
+### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/bluechat-inbound/index.ts` | Remover logica de cadencia, adicionar ticket_id, passar mode PASSIVE_CHAT |
-| `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar modo PASSIVE_CHAT com prompt consultivo |
-| `docs/patches/PATCH-BLUECHAT_webhook-inbound.md` | Documentar novo comportamento passivo |
+| `src/components/layout/AppSidebar.tsx` | Adicionar link "Atendimentos" na secao Principal |
+| `src/App.tsx` | Adicionar rota `/atendimentos` |
 
+### Fluxo do usuario
+
+1. Usuario abre "Atendimentos" no menu lateral
+2. Ve lista de conversas ativas do Blue Chat, ordenadas por mais recentes
+3. Identifica conversas que precisam de atencao (sem resposta, escaladas)
+4. Clica em um lead para ver o detalhe completo (conversa, intents, estado)
+5. No detalhe do lead, ve a conversa completa no ConversationView que ja existe
