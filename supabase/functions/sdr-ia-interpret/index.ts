@@ -1338,6 +1338,12 @@ interface InterpretRequest {
   messageId: string;
   source?: 'BLUECHAT' | 'WHATSAPP' | string;
   mode?: 'PASSIVE_CHAT' | string;
+  triageSummary?: {
+    clienteNome: string | null;
+    email: string | null;
+    resumoTriagem: string | null;
+    historico: string | null;
+  };
 }
 
 interface InterpretResult {
@@ -2708,7 +2714,8 @@ async function interpretWithAI(
   classificacao?: LeadClassification,
   pessoaContext?: PessoaContext | null,
   conversationState?: ConversationState | null,
-  mode?: string
+  mode?: string,
+  triageSummary?: InterpretRequest['triageSummary']
 ): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number; modeloUsado: string }> {
   const startTime = Date.now();
   const isPassiveChat = mode === 'PASSIVE_CHAT';
@@ -2758,6 +2765,38 @@ async function interpretWithAI(
   
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome && !isPassiveChat) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
+
+  // ========================================
+  // CONTEXTO DE TRIAGEM (RESUMO DA MARIA)
+  // ========================================
+  if (triageSummary && isPassiveChat) {
+    userPrompt += `\n## 📋 CONTEXTO DA TRIAGEM ANTERIOR\n`;
+    userPrompt += `Este lead foi transferido pela triagem (MarIA) para o setor comercial.\n`;
+    userPrompt += `Você deve CONTINUAR a conversa dentro deste contexto, sem se reapresentar do zero.\n\n`;
+    
+    if (triageSummary.clienteNome) {
+      userPrompt += `NOME DO CLIENTE: ${triageSummary.clienteNome}\n`;
+    }
+    if (triageSummary.email) {
+      userPrompt += `EMAIL FORNECIDO: ${triageSummary.email}\n`;
+    }
+    
+    if (triageSummary.resumoTriagem) {
+      userPrompt += `\nRESUMO DA CONVERSA COM TRIAGEM:\n${triageSummary.resumoTriagem}\n`;
+    }
+    
+    if (triageSummary.historico) {
+      userPrompt += `\nHISTÓRICO DA CONVERSA COM TRIAGEM:\n${triageSummary.historico}\n`;
+    }
+    
+    userPrompt += `\n⚠️ INSTRUÇÕES PARA INICIAR ATENDIMENTO:\n`;
+    userPrompt += `- NÃO pergunte o nome nem email (já foram fornecidos pela triagem)\n`;
+    userPrompt += `- NÃO repita informações que a MarIA já deu ao cliente\n`;
+    userPrompt += `- Inicie de forma natural, referenciando o que o cliente já demonstrou interesse\n`;
+    userPrompt += `- Apresente-se brevemente como Amélia e entre direto no assunto\n`;
+    userPrompt += `- Sua primeira mensagem deve mostrar que você JÁ SABE o contexto\n`;
+    userPrompt += `- Exemplo: "Oi {{nome}}! Sou a Amélia, do comercial. Vi que você quer conhecer nossas ofertas de investimento. Posso te ajudar com isso!"\n`;
+  }
   
   // PATCH 9/10: Instrução especial se escalação imediata ou lead pronto
   if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {
@@ -3893,7 +3932,7 @@ serve(async (req) => {
       );
     }
     
-    const { messageId, source, mode } = body as InterpretRequest;
+    const { messageId, source, mode, triageSummary } = body as InterpretRequest;
 
     if (source) {
       console.log('[SDR-IA] Source da mensagem:', source, 'Mode:', mode || 'DEFAULT');
@@ -3986,7 +4025,8 @@ serve(async (req) => {
       classificacao,
       pessoaContext,
       conversationState,
-      mode
+      mode,
+      triageSummary
     );
 
     console.log('[SDR-IA] Interpretação:', {

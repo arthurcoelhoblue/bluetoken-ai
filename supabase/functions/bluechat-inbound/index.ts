@@ -41,6 +41,102 @@ interface BlueChatPayload {
   };
 }
 
+// ========================================
+// PARSER DE RESUMO DE TRIAGEM [NOVO ATENDIMENTO]
+// ========================================
+
+interface TriageSummary {
+  clienteNome: string | null;
+  telefone: string | null;
+  email: string | null;
+  resumoTriagem: string | null;
+  historico: string | null;
+  rawSummary: string;
+}
+
+/**
+ * Detecta e parseia o formato [NOVO ATENDIMENTO] enviado pela triagem (MarIA)
+ * Retorna null se a mensagem não é um resumo de triagem
+ */
+function parseTriageSummary(text: string): TriageSummary | null {
+  if (!text.includes('[NOVO ATENDIMENTO]')) return null;
+
+  console.log('[Triage] Resumo de triagem detectado');
+
+  let clienteNome: string | null = null;
+  let telefone: string | null = null;
+  let email: string | null = null;
+  let resumoTriagem: string | null = null;
+  let historico: string | null = null;
+
+  // Extrair nome do cliente
+  const nomeMatch = text.match(/Cliente:\s*(.+)/i);
+  if (nomeMatch) clienteNome = nomeMatch[1].trim();
+
+  // Extrair telefone
+  const telMatch = text.match(/Telefone:\s*(\+?\d[\d\s\-]+)/i);
+  if (telMatch) telefone = telMatch[1].replace(/[\s\-]/g, '').trim();
+
+  // Extrair email
+  const emailMatch = text.match(/Email:\s*(\S+@\S+)/i);
+  if (emailMatch) email = emailMatch[1].trim();
+
+  // Extrair resumo da triagem
+  const resumoMatch = text.match(/Resumo da conversa anterior[^:]*:\s*([\s\S]*?)(?=Historico:|Histórico:|$)/i);
+  if (resumoMatch) resumoTriagem = resumoMatch[1].trim();
+
+  // Extrair histórico
+  const histMatch = text.match(/Histori[cç]o:\s*([\s\S]*?)(?=Inicie o atendimento|$)/i);
+  if (histMatch) historico = histMatch[1].trim();
+
+  console.log('[Triage] Dados extraídos:', {
+    clienteNome,
+    telefone,
+    email: email ? '***' : null,
+    temResumo: !!resumoTriagem,
+    temHistorico: !!historico,
+  });
+
+  return {
+    clienteNome,
+    telefone,
+    email,
+    resumoTriagem,
+    historico,
+    rawSummary: text,
+  };
+}
+
+/**
+ * Atualiza dados do lead_contacts com informações extraídas da triagem
+ */
+async function enrichLeadFromTriage(
+  supabase: SupabaseClient,
+  leadContact: LeadContact,
+  triage: TriageSummary
+): Promise<void> {
+  const updates: Record<string, unknown> = {};
+
+  // Atualizar nome se não tinha
+  if (triage.clienteNome && !leadContact.nome) {
+    updates.nome = triage.clienteNome;
+    updates.primeiro_nome = extractFirstName(triage.clienteNome);
+  }
+
+  // Atualizar email se não tinha
+  if (triage.email && !leadContact.email) {
+    updates.email = triage.email;
+  }
+
+  if (Object.keys(updates).length > 0) {
+    console.log('[Triage] Enriquecendo lead com dados da triagem:', updates);
+    await supabase
+      .from('lead_contacts')
+      .update(updates)
+      .eq('id', leadContact.id);
+  }
+}
+
 interface LeadContact {
   id: string;
   lead_id: string;
@@ -399,7 +495,8 @@ async function saveInboundMessage(
  * Chama SDR IA para interpretar a mensagem
  */
 async function callSdrIaInterpret(
-  messageId: string
+  messageId: string,
+  triageSummary?: TriageSummary | null
 ): Promise<{
   intent: string;
   confidence: number;
@@ -415,7 +512,23 @@ async function callSdrIaInterpret(
       const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
       const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
       
-      console.log(`[SDR IA] Chamando interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, messageId);
+      console.log(`[SDR IA] Chamando interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, messageId, triageSummary ? '(com resumo triagem)' : '');
+      
+      const requestBody: Record<string, unknown> = { 
+        messageId, 
+        source: 'BLUECHAT', 
+        mode: 'PASSIVE_CHAT' 
+      };
+      
+      // Incluir resumo de triagem se disponível
+      if (triageSummary) {
+        requestBody.triageSummary = {
+          clienteNome: triageSummary.clienteNome,
+          email: triageSummary.email,
+          resumoTriagem: triageSummary.resumoTriagem,
+          historico: triageSummary.historico,
+        };
+      }
       
       const response = await fetch(`${supabaseUrl}/functions/v1/sdr-ia-interpret`, {
         method: 'POST',
@@ -423,7 +536,7 @@ async function callSdrIaInterpret(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`,
         },
-        body: JSON.stringify({ messageId, source: 'BLUECHAT', mode: 'PASSIVE_CHAT' }),
+        body: JSON.stringify(requestBody),
       });
       
       if (response.ok) {
@@ -648,11 +761,20 @@ serve(async (req) => {
       }
     }
     
-    // 3. Modo passivo: NÃO buscar cadência ativa (Amélia é atendente passiva no Blue Chat)
+    // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
+    const triageSummary = parseTriageSummary(payload.message.text);
+    
+    // 3.1 Se é resumo de triagem, enriquecer lead com dados extraídos
+    if (triageSummary) {
+      console.log('[BlueChat] Resumo de triagem detectado para lead:', leadContact.lead_id);
+      await enrichLeadFromTriage(supabase, leadContact, triageSummary);
+    }
+    
+    // 4. Modo passivo: NÃO buscar cadência ativa (Amélia é atendente passiva no Blue Chat)
     // A Amélia não se vincula a cadências quando opera via Blue Chat
     const activeRun = null;
     
-    // 4. Salvar mensagem (sem cadência vinculada)
+    // 5. Salvar mensagem (sem cadência vinculada)
     const savedMessage = await saveInboundMessage(supabase, payload, leadContact, activeRun);
     
     if (!savedMessage) {
@@ -683,8 +805,8 @@ serve(async (req) => {
       );
     }
     
-    // 5. Chamar SDR IA para interpretar
-    const iaResult = await callSdrIaInterpret(savedMessage.messageId);
+    // 6. Chamar SDR IA para interpretar (passando resumo de triagem se houver)
+    const iaResult = await callSdrIaInterpret(savedMessage.messageId, triageSummary);
     
     // 6. Montar resposta para Blue Chat
     const response: BlueChatResponse = {
