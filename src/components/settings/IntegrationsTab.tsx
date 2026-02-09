@@ -2,6 +2,8 @@ import { useState } from "react";
 import { IntegrationCard } from "./IntegrationCard";
 import { CompanyChannelCard } from "./CompanyChannelCard";
 import { BlueChatConfigDialog } from "./BlueChatConfigDialog";
+import { WhatsAppInlineDetails } from "./WhatsAppInlineDetails";
+import { EmailInlineDetails } from "./EmailInlineDetails";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
@@ -15,6 +17,11 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
+
+const DETAIL_COMPONENTS: Record<string, React.ComponentType> = {
+  whatsapp: WhatsAppInlineDetails,
+  email: EmailInlineDetails,
+};
 
 export function IntegrationsTab() {
   const { settings, updateSetting, isLoading } = useSystemSettings("integrations");
@@ -79,26 +86,31 @@ export function IntegrationsTab() {
       <Alert>
         <Info className="h-4 w-4" />
         <AlertDescription>
-          Ative ou desative integrações conforme necessário. Clique em "Testar" para verificar a conectividade.
+          Ative ou desative integrações conforme necessário. Clique em "Detalhes" para ver configurações específicas de cada canal.
         </AlertDescription>
       </Alert>
 
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {globalIntegrations.map((integration) => (
-          <IntegrationCard
-            key={integration.id}
-            integration={integration}
-            config={getIntegrationConfig(integration.settingsKey)}
-            onToggle={(enabled) =>
-              handleToggle(integration.settingsKey, enabled)
-            }
-            onConfigure={() => setSelectedIntegration(integration.id)}
-            onTest={integration.testable ? () => handleTest(integration.id) : undefined}
-            healthStatus={getStatus(integration.id)}
-            isUpdating={updateSetting.isPending}
-            isTesting={testingIntegration === integration.id}
-          />
-        ))}
+        {globalIntegrations.map((integration) => {
+          const DetailComponent = DETAIL_COMPONENTS[integration.id];
+          return (
+            <IntegrationCard
+              key={integration.id}
+              integration={integration}
+              config={getIntegrationConfig(integration.settingsKey)}
+              onToggle={(enabled) =>
+                handleToggle(integration.settingsKey, enabled)
+              }
+              onConfigure={() => setSelectedIntegration(integration.id)}
+              onTest={integration.testable ? () => handleTest(integration.id) : undefined}
+              healthStatus={getStatus(integration.id)}
+              isUpdating={updateSetting.isPending}
+              isTesting={testingIntegration === integration.id}
+            >
+              {DetailComponent ? <DetailComponent /> : undefined}
+            </IntegrationCard>
+          );
+        })}
       </div>
 
       {perCompanyIntegrations.length > 0 && (
@@ -141,7 +153,7 @@ export function IntegrationsTab() {
               Secrets necessários para esta integração
             </DialogDescription>
           </DialogHeader>
-          
+
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
               Os seguintes secrets precisam estar configurados no ambiente:

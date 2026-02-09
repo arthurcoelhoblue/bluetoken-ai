@@ -3,9 +3,7 @@ import { IntegrationsTab } from "@/components/settings/IntegrationsTab";
 import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
-import { WhatsAppDetailsTab } from "@/components/settings/WhatsAppDetailsTab";
-import { EmailDetailsTab } from "@/components/settings/EmailDetailsTab";
-import { Plug, Webhook, SlidersHorizontal, Brain, MessageCircle, Mail } from "lucide-react";
+import { Plug, Webhook, Brain, Bot } from "lucide-react";
 
 export default function Settings() {
   return (
@@ -17,35 +15,27 @@ export default function Settings() {
         </p>
       </div>
 
-      <Tabs defaultValue="integrations" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-none lg:inline-flex">
-          <TabsTrigger value="integrations" className="gap-2">
+      <Tabs defaultValue="channels" className="space-y-6">
+        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-none lg:inline-flex">
+          <TabsTrigger value="channels" className="gap-2">
             <Plug className="h-4 w-4" />
-            <span className="hidden sm:inline">Integrações</span>
+            <span className="hidden sm:inline">Canais</span>
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2">
             <Brain className="h-4 w-4" />
             <span className="hidden sm:inline">IA</span>
           </TabsTrigger>
-          <TabsTrigger value="whatsapp" className="gap-2">
-            <MessageCircle className="h-4 w-4" />
-            <span className="hidden sm:inline">WhatsApp</span>
-          </TabsTrigger>
-          <TabsTrigger value="email" className="gap-2">
-            <Mail className="h-4 w-4" />
-            <span className="hidden sm:inline">Email</span>
+          <TabsTrigger value="amelia" className="gap-2">
+            <Bot className="h-4 w-4" />
+            <span className="hidden sm:inline">Amélia</span>
           </TabsTrigger>
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
             <span className="hidden sm:inline">Webhooks</span>
           </TabsTrigger>
-          <TabsTrigger value="general" className="gap-2">
-            <SlidersHorizontal className="h-4 w-4" />
-            <span className="hidden sm:inline">Geral</span>
-          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="integrations">
+        <TabsContent value="channels">
           <IntegrationsTab />
         </TabsContent>
 
@@ -53,20 +43,12 @@ export default function Settings() {
           <AISettingsTab />
         </TabsContent>
 
-        <TabsContent value="whatsapp">
-          <WhatsAppDetailsTab />
-        </TabsContent>
-
-        <TabsContent value="email">
-          <EmailDetailsTab />
+        <TabsContent value="amelia">
+          <GeneralTab />
         </TabsContent>
 
         <TabsContent value="webhooks">
           <WebhooksTab />
-        </TabsContent>
-
-        <TabsContent value="general">
-          <GeneralTab />
         </TabsContent>
       </Tabs>
     </div>
