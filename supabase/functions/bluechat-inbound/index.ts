@@ -423,7 +423,7 @@ async function callSdrIaInterpret(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`,
         },
-        body: JSON.stringify({ messageId }),
+        body: JSON.stringify({ messageId, source: 'BLUECHAT' }),
       });
       
       if (response.ok) {

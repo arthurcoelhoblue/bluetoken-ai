@@ -1336,6 +1336,7 @@ interface MessageContext {
 
 interface InterpretRequest {
   messageId: string;
+  source?: 'BLUECHAT' | 'WHATSAPP' | string;
 }
 
 interface InterpretResult {
@@ -1346,6 +1347,7 @@ interface InterpretResult {
   acao?: SdrAcaoTipo;
   acaoAplicada?: boolean;
   respostaEnviada?: boolean;
+  responseText?: string | null;
   optOutBlocked?: boolean;
   error?: string;
 }
@@ -3796,7 +3798,11 @@ serve(async (req) => {
       );
     }
     
-    const { messageId } = body as InterpretRequest;
+    const { messageId, source } = body as InterpretRequest;
+
+    if (source) {
+      console.log('[SDR-IA] Source da mensagem:', source);
+    }
 
     if (!messageId) {
       return new Response(
@@ -3939,6 +3945,11 @@ serve(async (req) => {
         aiResponse.deve_responder = false;
         aiResponse.acao = 'ESCALAR_HUMANO';
         respostaTexto = null;
+      } else if (source === 'BLUECHAT') {
+        // PATCH: Quando a origem é BLUECHAT, NÃO enviar via whatsapp-send
+        // A resposta será retornada ao bluechat-inbound que entrega ao Blue Chat
+        console.log('[SDR-IA] 📱 Source=BLUECHAT — pulando envio via whatsapp-send, resposta será retornada ao Blue Chat');
+        respostaEnviada = false; // Não enviada via Mensageria, mas texto está disponível
       } else {
         const sendResult = await sendAutoResponse(
           supabase,
@@ -4071,6 +4082,7 @@ serve(async (req) => {
       acao: aiResponse.acao,
       acaoAplicada,
       respostaEnviada,
+      responseText: respostaTexto,
     };
 
     return new Response(
