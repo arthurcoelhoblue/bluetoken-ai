@@ -34,8 +34,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
   const { settings, updateSetting } = useSystemSettings("integrations");
   const { checkHealth } = useIntegrationHealth();
 
-  const [apiUrl, setApiUrl] = useState("");
-  const [callbackPath, setCallbackPath] = useState("/api/webhook/amelia");
+  const [apiUrl, setApiUrl] = useState("https://chat.grupoblue.com.br/api/external-ai");
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<HealthCheckResult | null>(null);
@@ -49,8 +48,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
       const bluechatSetting = settings.find((s) => s.key === "bluechat");
       if (bluechatSetting?.value) {
         const val = bluechatSetting.value as Record<string, unknown>;
-        setApiUrl((val.api_url as string) || "");
-        setCallbackPath((val.callback_path as string) || "/api/webhook/amelia");
+        if (val.api_url) setApiUrl(val.api_url as string);
       }
     }
   }, [open, settings]);
@@ -67,7 +65,6 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
         value: {
           ...current,
           api_url: apiUrl.trim(),
-          callback_path: callbackPath.trim(),
         },
       });
     } catch {
@@ -155,28 +152,12 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
             </Label>
             <Input
               id="api-url"
-              placeholder="https://api.bluechat.com.br"
+              placeholder="https://chat.grupoblue.com.br/api/external-ai"
               value={apiUrl}
               onChange={(e) => setApiUrl(e.target.value)}
             />
             <p className="text-xs text-muted-foreground">
-              URL base da API do Blue Chat para envio de respostas (callback).
-            </p>
-          </div>
-
-          {/* Callback Path */}
-          <div className="space-y-2">
-            <Label htmlFor="callback-path" className="text-sm font-medium">
-              Caminho do Callback
-            </Label>
-            <Input
-              id="callback-path"
-              placeholder="/api/webhook/amelia"
-              value={callbackPath}
-              onChange={(e) => setCallbackPath(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              Path relativo na API do Blue Chat onde as respostas da Amélia são enviadas.
+              URL base da API externa do Blue Chat. Endpoints usados: <code>/messages</code>, <code>/tickets/:id/transfer</code>.
             </p>
           </div>
 

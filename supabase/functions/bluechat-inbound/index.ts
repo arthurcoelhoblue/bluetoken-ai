@@ -483,39 +483,57 @@ async function sendResponseToBluechat(
       return;
     }
 
-    const callbackPath = ((setting?.value as Record<string, unknown>)?.callback_path as string) || '/api/webhook/amelia';
     const bluechatApiKey = Deno.env.get('BLUECHAT_API_KEY');
-
     if (!bluechatApiKey) {
       console.warn('[Callback] BLUECHAT_API_KEY não configurada');
       return;
     }
 
-    const callbackUrl = `${apiUrl.replace(/\/$/, '')}${callbackPath}`;
-    console.log('[Callback] Enviando resposta para Blue Chat:', callbackUrl);
+    const baseUrl = apiUrl.replace(/\/$/, '');
+    const headers = {
+      'Content-Type': 'application/json',
+      'X-API-Key': bluechatApiKey,
+    };
 
-    const response = await fetch(callbackUrl, {
+    // 1. Enviar mensagem de resposta via POST /messages
+    const messagesUrl = `${baseUrl}/messages`;
+    console.log('[Callback] Enviando mensagem para Blue Chat:', messagesUrl);
+
+    const msgResponse = await fetch(messagesUrl, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-API-Key': bluechatApiKey,
-      },
+      headers,
       body: JSON.stringify({
         conversation_id: data.conversation_id,
-        message_id: data.message_id,
-        response: {
-          text: data.text,
-          action: data.action,
-        },
+        content: data.text,
         source: 'AMELIA_SDR',
-        timestamp: new Date().toISOString(),
       }),
     });
 
-    if (!response.ok) {
-      console.error('[Callback] Erro ao enviar para Blue Chat:', response.status, await response.text().catch(() => ''));
+    if (!msgResponse.ok) {
+      console.error('[Callback] Erro ao enviar mensagem:', msgResponse.status, await msgResponse.text().catch(() => ''));
     } else {
-      console.log('[Callback] Resposta enviada ao Blue Chat com sucesso');
+      console.log('[Callback] Mensagem enviada ao Blue Chat com sucesso');
+    }
+
+    // 2. Se ação é ESCALATE, transferir o ticket para humano
+    if (data.action === 'ESCALATE') {
+      const transferUrl = `${baseUrl}/tickets/${data.conversation_id}/transfer`;
+      console.log('[Callback] Transferindo ticket:', transferUrl);
+
+      const transferResponse = await fetch(transferUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          reason: 'Lead qualificado - escalar para closer',
+          source: 'AMELIA_SDR',
+        }),
+      });
+
+      if (!transferResponse.ok) {
+        console.error('[Callback] Erro ao transferir ticket:', transferResponse.status);
+      } else {
+        console.log('[Callback] Ticket transferido com sucesso');
+      }
     }
   } catch (error) {
     // Não bloqueia o fluxo principal
