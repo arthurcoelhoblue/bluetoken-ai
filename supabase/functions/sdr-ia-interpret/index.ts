@@ -1664,16 +1664,86 @@ function perguntaJaRespondida(
 }
 
 /**
- * PATCH 6G Gap Fix: Gera instrução de tom baseada no DISC
+ * PATCH DISC+: Gera instrução detalhada de tom e estratégia baseada no DISC
  */
 function getDiscToneInstruction(disc: PerfilDISC | null | undefined): string | null {
   if (!disc) return null;
   
   const instrucoes: Record<PerfilDISC, string> = {
-    'D': '🎯 ADAPTE SEU TOM: Seja DIRETO e objetivo. Sem rodeios. Foco em resultados e ação.',
-    'I': '🎯 ADAPTE SEU TOM: Seja LEVE e conversado. Use entusiasmo. Conte exemplos e histórias.',
-    'S': '🎯 ADAPTE SEU TOM: Seja CALMO e acolhedor. Gere confiança. Seja paciente e empático.',
-    'C': '🎯 ADAPTE SEU TOM: Seja ESTRUTURADO e lógico. Use dados. Seja preciso e detalhado.',
+    'D': `## 🎯 PERFIL DISC DETECTADO: D (DOMINANTE)
+COMO FALAR:
+- Seja DIRETO e objetivo. Sem rodeios. Vá ao ponto.
+- Foque em RESULTADOS, ganhos, eficiência e controle.
+- Mensagens CURTAS. Ele não quer explicações longas.
+- Dê opções e deixe ELE decidir. Nunca pressione.
+- Use números concretos: "rendimento de X%", "em Y meses".
+
+EVITE:
+- Papo social prolongado (ele quer resolver logo)
+- Detalhes técnicos excessivos (só se ele pedir)
+- Linguagem hesitante ("talvez", "pode ser que")
+
+EXEMPLO:
+Lead: "Quanto rende?"
+✅ "Depende da oferta. A Sunset Tower tá pagando 18% ao ano, prazo de 36 meses. Quer que eu te passe os detalhes?"
+❌ "Olha, é uma boa pergunta... existem várias ofertas com diferentes rentabilidades..."`,
+
+    'I': `## 🎯 PERFIL DISC DETECTADO: I (INFLUENTE)  
+COMO FALAR:
+- Seja AMIGÁVEL, leve, com entusiasmo genuíno.
+- Use HISTÓRIAS e exemplos de outros investidores (sem nomes).
+- Conecte-se emocionalmente antes de ir pros dados.
+- Ele gosta de conversar — permita trocas breves de assunto.
+- Use 1-2 emojis, tom de conversa entre amigos.
+- Valide as ideias dele: "faz total sentido", "é por aí mesmo".
+
+EVITE:
+- Ser muito técnico ou frio logo de cara
+- Respostas secas de 1 linha (ele quer interação)
+- Ignorar comentários pessoais dele
+
+EXEMPLO:
+Lead: "Tô pensando em investir"
+✅ "Que legal! Muita gente que converso aqui tava nessa mesma fase e acabou curtindo bastante. Você tá buscando algo mais pra longo prazo ou quer algo com liquidez?"
+❌ "Ok. Temos ofertas com rentabilidade de 15-20% ao ano."`,
+
+    'S': `## 🎯 PERFIL DISC DETECTADO: S (ESTÁVEL)
+COMO FALAR:
+- Seja CALMO, paciente e acolhedor. Gere confiança.
+- Enfatize SEGURANÇA, garantias e estabilidade.
+- Não apresse a decisão. Dê tempo pra ele processar.
+- Use frases de tranquilidade: "sem pressa", "pode pensar com calma".
+- Mostre que existe SUPORTE contínuo: "a equipe acompanha tudo".
+- Reforce que outras pessoas confiaram e estão satisfeitas.
+
+EVITE:
+- Pressão por decisão rápida
+- Foco excessivo em ganhos/rentabilidade (prefere segurança)
+- Mudanças bruscas de assunto
+
+EXEMPLO:
+Lead: "Tenho medo de perder dinheiro"
+✅ "Entendo totalmente, é normal ter essa preocupação. As ofertas da Tokeniza têm lastro real em imóvel, então tem uma camada de proteção. E a equipe acompanha tudo de perto. Quer que eu explique como funciona essa garantia?"
+❌ "Os rendimentos são de 18% ao ano, super atrativos."`,
+
+    'C': `## 🎯 PERFIL DISC DETECTADO: C (CAUTELOSO/ANALÍTICO)
+COMO FALAR:
+- Seja PRECISO, estruturado e lógico. Use dados concretos.
+- Forneça NÚMEROS, prazos, taxas, comparativos.
+- Organize informações em tópicos quando possível.
+- Antecipe dúvidas técnicas com proatividade.
+- Mencione regulamentação, compliance, processos formais.
+- Ofereça materiais de apoio: "posso te enviar o documento".
+
+EVITE:
+- Respostas vagas ("mais ou menos", "depende")
+- Tom excessivamente emocional ou informal
+- Prometer sem embasamento
+
+EXEMPLO:
+Lead: "Como funciona a tributação?"
+✅ "Na tokenização, os rendimentos são tributados como renda fixa: 22,5% até 180 dias, 20% de 181 a 360, 17,5% de 361 a 720, e 15% acima de 720 dias. A Tokeniza já gera o informe de rendimentos automaticamente."
+❌ "Ah tranquilo, a tributação é simples. Não precisa se preocupar muito com isso."`,
   };
   
   return instrucoes[disc] || null;
@@ -2329,6 +2399,53 @@ AJUSTAR_TEMPERATURA, MARCAR_OPT_OUT, ESCALAR_HUMANO, NENHUMA
 PROIBIDO: prometer retorno, recomendar ativo específico, negociar preço, pressionar, divulgar plano Customizado, INVENTAR INFORMAÇÕES
 PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com especialista, dizer "vou confirmar com a equipe"
 
+## 🧠 ANÁLISE DISC - COMO DETECTAR O PERFIL DO LEAD
+
+Analise TODAS as mensagens do lead (histórico + atual) para inferir o perfil DISC.
+Retorne em "disc_estimado" SOMENTE quando tiver confiança razoável (2+ indicadores).
+Se não houver indicadores suficientes, NÃO retorne disc_estimado (deixe null).
+
+### INDICADORES POR PERFIL:
+
+**D (Dominante)** - Quer resultados RÁPIDO:
+- Mensagens curtas e diretas ("Quanto?", "Manda aí", "Quero")
+- Usa imperativos e comandos
+- Foco em resultados, números, prazos
+- Pouca paciência com explicações longas
+- Pede para ir direto ao ponto
+- Exemplo: "Quanto rende? Qual o prazo?" / "Me manda isso logo"
+
+**I (Influente)** - Quer CONEXÃO:
+- Usa emojis, exclamações, reticências
+- Conta histórias pessoais, compartilha experiências
+- Tom entusiasta e amigável
+- Faz perguntas pessoais / comenta assuntos sociais
+- Fala bastante, mensagens mais longas
+- Exemplo: "Que legal!! Vi uma matéria sobre isso ontem..." / "Aaah sim, eu tava conversando com um amigo sobre isso 😊"
+
+**S (Estável)** - Quer SEGURANÇA:
+- Tom calmo, educado, usa "por favor", "obrigado"
+- Expressa preocupação com riscos e garantias
+- Mensagens equilibradas, nem longas nem curtas demais
+- Busca consenso, evita conflito
+- Pede tempo para pensar: "vou analisar", "preciso conversar com minha esposa"
+- Exemplo: "Obrigado pela explicação. Tem como eu ter certeza de que é seguro?" / "Preciso pensar com calma..."
+
+**C (Cauteloso/Analítico)** - Quer DADOS:
+- Faz perguntas técnicas e detalhadas
+- Pede documentos, contratos, regulamentação
+- Questiona inconsistências, pede fontes
+- Mensagens estruturadas, às vezes com tópicos
+- Compara com outras opções do mercado
+- Exemplo: "Qual a regulamentação que ampara isso? Posso ver o contrato antes?" / "Como se compara com CDB/LCI em termos de risco?"
+
+### REGRAS DE DETECÇÃO:
+1. NÃO detecte com base em "oi" ou cumprimentos simples
+2. Analise o PADRÃO ao longo do histórico, não uma frase isolada
+3. Se já existe perfil detectado, NÃO sobrescreva (mantenha o anterior)
+4. Na dúvida entre 2 perfis, NÃO retorne — espere mais dados
+5. Priorize indicadores linguísticos (como a pessoa escreve) sobre o conteúdo
+
 ## FORMATO RESPOSTA
 
 {
@@ -2341,7 +2458,7 @@ PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com espec
   "resposta_sugerida": "...",
   "novo_estado_funil": "...",
   "frameworks_atualizados": {},
-  "disc_estimado": "D",
+  "disc_estimado": "D ou I ou S ou C (null se incerto)",
   "ultima_pergunta_id": "..."
 }
 
@@ -3901,8 +4018,17 @@ serve(async (req) => {
         };
       }
       
-      if (aiResponse.disc_estimado) {
-        stateUpdates.perfil_disc = aiResponse.disc_estimado;
+      // Só atualiza DISC se não existir um perfil anterior (evita sobrescrita)
+      if (aiResponse.disc_estimado && !conversationState?.perfil_disc) {
+        const validDisc: PerfilDISC[] = ['D', 'I', 'S', 'C'];
+        if (validDisc.includes(aiResponse.disc_estimado)) {
+          stateUpdates.perfil_disc = aiResponse.disc_estimado;
+          console.log('[DISC] Novo perfil detectado pela IA:', aiResponse.disc_estimado);
+        } else {
+          console.warn('[DISC] Valor inválido retornado pela IA, ignorando:', aiResponse.disc_estimado);
+        }
+      } else if (aiResponse.disc_estimado && conversationState?.perfil_disc) {
+        console.log('[DISC] Perfil já existe, mantendo:', conversationState.perfil_disc, '(IA sugeriu:', aiResponse.disc_estimado, ')');
       }
       
       if (aiResponse.ultima_pergunta_id) {
