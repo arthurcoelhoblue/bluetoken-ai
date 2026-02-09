@@ -1,56 +1,65 @@
 
 
-# Limpeza para Produção - Soft Launch Amélia
+# Corrigir Duplicidade: Blue Chat vs Mensageria
 
-## Situação Atual
+## Problema Identificado
 
-| Tabela | Registros | Observação |
-|--------|-----------|------------|
-| lead_cadence_runs | 368 ATIVAS | 269 Blue + 99 Tokeniza - todas pendentes de disparo |
-| lead_cadence_events | 391 | Logs de eventos das cadencias |
-| lead_messages | 449 | 51 ERRO, 75 ENVIADO, 208 UNMATCHED, 115 RECEBIDO |
-| lead_message_intents | 100 | Interpretacoes da IA |
-| lead_contacts | 1.523 | Cadastro de contatos (MANTER) |
-| lead_classifications | 1.522 | Classificacoes (MANTER) |
-| sgt_events | 790.249 | Eventos historicos do SGT (MANTER) |
-| closer_notifications | 0 | Vazio |
+Quando uma mensagem chega pelo Blue Chat, o fluxo atual e:
 
-## O que sera limpo
+1. `bluechat-inbound` recebe a mensagem e chama `sdr-ia-interpret`
+2. `sdr-ia-interpret` processa e chama `whatsapp-send` (Mensageria) para enviar a resposta
+3. `bluechat-inbound` tambem retorna a resposta de volta ao Blue Chat
 
-Dados operacionais que poderiam disparar mensagens indesejadas:
+Resultado: a resposta e enviada DUAS vezes -- uma pelo Blue Chat e outra pela Mensageria. O `whatsapp-send` ja bloqueia quando `mensageria=false` na `integration_company_config`, mas isso gera erro 403 desnecessario nos logs, e o fluxo nao esta semanticamente correto.
 
-1. **lead_message_intents** - 100 registros (interpretacoes antigas)
-2. **lead_cadence_events** - 391 registros (logs de steps)
-3. **lead_cadence_runs** - 368 runs ATIVAS (evita disparos do cadence-runner)
-4. **lead_messages** - 449 mensagens (historico de teste)
+## Solucao
 
-## O que sera mantido
+Adicionar um parametro `source` ao `sdr-ia-interpret` para que ele saiba a origem da mensagem e pule o envio via `whatsapp-send` quando a origem for BLUECHAT.
 
-Dados cadastrais que nao disparam acoes:
+### Alteracoes
 
-- **lead_contacts** (1.523) - cadastro dos leads
-- **lead_classifications** (1.522) - classificacoes comerciais
-- **sgt_events** (790.249) - historico de ingestao
-- **cadences** e **cadence_steps** - moldes das cadencias (nao disparam nada sozinhos)
+**1. `bluechat-inbound/index.ts`** (linha ~420-428)
+- Ao chamar `sdr-ia-interpret`, incluir `source: 'BLUECHAT'` no body do request, alem do `messageId`
 
-## Ordem de execucao (respeitando foreign keys)
+**2. `sdr-ia-interpret/index.ts`** (2 pontos)
+- No handler principal: ler o campo `source` do body da requisicao
+- Na secao de envio de resposta automatica (~linha 3915-3957): se `source === 'BLUECHAT'`, pular a chamada a `sendAutoResponse` e apenas registrar o texto da resposta sem enviar. A resposta sera retornada ao `bluechat-inbound` que a entrega ao Blue Chat.
+
+### Fluxo Corrigido
 
 ```text
-1. DELETE lead_message_intents
-2. DELETE lead_cadence_events
-3. DELETE lead_cadence_runs
-4. DELETE lead_messages
+Blue Chat envia mensagem
+    |
+    v
+bluechat-inbound recebe
+    |
+    v
+sdr-ia-interpret(messageId, source='BLUECHAT')
+    |-- Processa com IA
+    |-- NAO chama whatsapp-send (porque source=BLUECHAT)
+    |-- Retorna responseText
+    |
+    v
+bluechat-inbound retorna responseText ao Blue Chat
+    |
+    v
+Blue Chat entrega a resposta ao cliente
 ```
 
-## Resultado esperado
+### O que NAO muda
 
-Apos a limpeza, o sistema estara com:
-- Zero cadencias pendentes (cadence-runner nao tera nada para disparar)
-- Zero mensagens no historico
-- Leads cadastrados e classificados prontos para novos fluxos
-- Novos leads que entrarem via SGT webhook iniciarao cadencias limpas
+- Fluxo do `whatsapp-inbound` (mensagens diretas) continua igual
+- Verificacao de `integration_company_config` no `whatsapp-send` permanece como segunda camada de seguranca
+- Tabela `integration_company_config` e trigger de exclusividade mutua permanecem intactos
 
 ## Secao Tecnica
 
-Uma unica migration SQL executara os 4 DELETEs na ordem correta. Nao ha risco de perda de dados cadastrais - apenas dados operacionais de teste serao removidos.
+### Arquivo: `supabase/functions/bluechat-inbound/index.ts`
+- Funcao `callSdrIaInterpret`: adicionar campo `source: 'BLUECHAT'` ao JSON body enviado ao endpoint `sdr-ia-interpret`
+
+### Arquivo: `supabase/functions/sdr-ia-interpret/index.ts`
+- Handler principal (`serve`): extrair `body.source` da requisicao
+- Condicional de envio (~linha 3915): adicionar `&& source !== 'BLUECHAT'` para pular `sendAutoResponse`
+- Garantir que `respostaTexto` ainda e populado para que o retorno inclua o texto (usado pelo `bluechat-inbound`)
+- Incluir log indicando que o envio foi pulado por ser origem BLUECHAT
 
