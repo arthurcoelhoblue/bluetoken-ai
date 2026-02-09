@@ -432,7 +432,8 @@ async function saveInboundMessage(
   supabase: SupabaseClient,
   payload: BlueChatPayload,
   leadContact: LeadContact,
-  activeRun: LeadCadenceRun | null
+  activeRun: LeadCadenceRun | null,
+  empresaContexto: EmpresaTipo
 ): Promise<{ messageId: string } | null> {
   // Verificar duplicata
   if (await isDuplicate(supabase, payload.message_id)) {
@@ -440,9 +441,11 @@ async function saveInboundMessage(
     return null;
   }
   
+  // IMPORTANTE: Usa empresaContexto (do payload) em vez de leadContact.empresa
+  // para garantir isolamento de contexto entre empresas
   const messageRecord = {
     lead_id: leadContact.lead_id,
-    empresa: leadContact.empresa,
+    empresa: empresaContexto,
     run_id: activeRun?.id || null,
     canal: payload.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
     direcao: 'INBOUND',
@@ -761,6 +764,16 @@ serve(async (req) => {
       }
     }
     
+    // Log de alerta se lead foi encontrado em empresa diferente da do payload
+    if (leadContact.empresa !== empresa) {
+      console.warn('[BlueChat] ⚠️ Empresa do lead difere do payload:', {
+        leadEmpresa: leadContact.empresa,
+        payloadEmpresa: empresa,
+        leadId: leadContact.lead_id,
+        acao: 'Usando empresa do payload para contexto da conversa',
+      });
+    }
+    
     // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
     const triageSummary = parseTriageSummary(payload.message.text);
     
@@ -775,7 +788,8 @@ serve(async (req) => {
     const activeRun = null;
     
     // 5. Salvar mensagem (sem cadência vinculada)
-    const savedMessage = await saveInboundMessage(supabase, payload, leadContact, activeRun);
+    // Passa 'empresa' do payload para garantir isolamento de contexto
+    const savedMessage = await saveInboundMessage(supabase, payload, leadContact, activeRun, empresa);
     
     if (!savedMessage) {
       // Mensagem duplicada
@@ -844,7 +858,7 @@ serve(async (req) => {
           .from('lead_messages')
           .insert({
             lead_id: leadContact.lead_id,
-            empresa: leadContact.empresa,
+            empresa: empresa, // Usa empresa do payload, não do leadContact
             canal: payload.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
             direcao: 'OUTBOUND',
             conteudo: iaResult.responseText,
