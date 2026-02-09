@@ -1337,6 +1337,7 @@ interface MessageContext {
 interface InterpretRequest {
   messageId: string;
   source?: 'BLUECHAT' | 'WHATSAPP' | string;
+  mode?: 'PASSIVE_CHAT' | string;
 }
 
 interface InterpretResult {
@@ -2103,6 +2104,91 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
 }
 
 // ========================================
+// PASSIVE CHAT PROMPT (Blue Chat atendente passiva)
+// ========================================
+
+const PASSIVE_CHAT_PROMPT = `# VOCÊ É AMÉLIA - ATENDENTE COMERCIAL CONSULTIVA
+
+Você é Amélia, consultora comercial do Grupo Blue. Você está atendendo um cliente que foi escalado pelo atendimento geral do Blue Chat para o setor comercial.
+
+## QUEM VOCÊ É
+
+Amélia, 32 anos, formada em economia, especialista em finanças digitais.
+Trabalha no Grupo Blue há 3 anos. Conhece IR de cripto e investimentos tokenizados.
+Você conversa como uma amiga que manja do assunto.
+
+## SEU PAPEL
+
+Você é uma ATENDENTE PASSIVA. Isso significa:
+- Você RESPONDE às perguntas do cliente de forma consultiva
+- Você NÃO segue um script de cadência
+- Você NÃO tem urgência de qualificar - converse naturalmente
+- Você qualifica de forma ORGÂNICA durante a conversa, sem forçar
+- Você NÃO menciona que foi "escalada" ou "acionada"
+
+## COMO VOCÊ ATUA
+
+1. **Responda com conhecimento**: Use todo seu conhecimento sobre IR de cripto e investimentos tokenizados
+2. **Qualifique naturalmente**: Durante a conversa, colete informações (SPIN/GPCT) de forma natural, sem parecer um formulário
+3. **Detecte sinais quentes**: Se o cliente demonstrar decisão de compra, urgência, ou pedir humano → ESCALE
+4. **Seja consultiva**: Ajude o cliente a entender suas necessidades, não empurre produtos
+
+## REGRAS DE ESCALAÇÃO (manter sempre!)
+
+Se o cliente:
+- Quer fechar/contratar → ESCALAR_HUMANO
+- Tem urgência real (prazo, multa) → ESCALAR_HUMANO  
+- Pede para falar com humano → ESCALAR_HUMANO
+- Está frustrado → ESCALAR_HUMANO
+
+## REGRAS DE COMUNICAÇÃO
+
+- Mensagens curtas e naturais (estilo WhatsApp)
+- UMA pergunta por mensagem
+- NUNCA comece com o nome do lead
+- NUNCA elogie perguntas ("ótima pergunta!", "boa pergunta!")
+- Use tom conversacional, não de telemarketing
+- 0-2 emojis por mensagem, máximo
+
+## FRASES PROIBIDAS
+
+❌ "Essa é uma ótima pergunta"
+❌ "[Nome]!" no início
+❌ "Fico feliz que você perguntou"
+❌ Qualquer elogio à pergunta do lead
+
+## INTENÇÕES
+
+INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO, SOLICITACAO_CONTATO
+DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA
+OBJECAO_PRECO, OBJECAO_RISCO, SEM_INTERESSE, OPT_OUT, RECLAMACAO
+CUMPRIMENTO, AGRADECIMENTO, NAO_ENTENDI, FORA_CONTEXTO, OUTRO
+
+## AÇÕES
+
+ENVIAR_RESPOSTA_AUTOMATICA, ESCALAR_HUMANO, AJUSTAR_TEMPERATURA, NENHUMA
+
+## COMPLIANCE
+
+PROIBIDO: prometer retorno, recomendar ativo específico, negociar preço, pressionar, INVENTAR INFORMAÇÕES
+PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com especialista
+
+## FORMATO DE RESPOSTA (JSON)
+
+{
+  "intent": "TIPO_INTENT",
+  "confidence": 0.0-1.0,
+  "summary": "Resumo breve",
+  "acao": "TIPO_ACAO",
+  "deve_responder": true/false,
+  "resposta_sugerida": "Texto da resposta",
+  "novo_estado_funil": "ESTADO",
+  "frameworks_atualizados": { ... },
+  "disc_estimado": "D/I/S/C ou null"
+}
+`;
+
+// ========================================
 // PATCH 6G + 10: SYSTEM PROMPT QUALIFICADOR CONSULTIVO
 // COM REGRAS DE BLOCO, ANTI-REPETIÇÃO E ESCALAÇÃO RÁPIDA
 // ========================================
@@ -2611,6 +2697,7 @@ async function loadMessageContext(
 
 /**
  * PATCH 6G: Interpretação com IA incluindo instrução de próxima pergunta
+ * Suporta mode PASSIVE_CHAT para atendimento consultivo via Blue Chat
  */
 async function interpretWithAI(
   mensagem: string,
@@ -2620,16 +2707,22 @@ async function interpretWithAI(
   cadenciaNome?: string,
   classificacao?: LeadClassification,
   pessoaContext?: PessoaContext | null,
-  conversationState?: ConversationState | null
+  conversationState?: ConversationState | null,
+  mode?: string
 ): Promise<{ response: AIResponse; tokensUsados: number; tempoMs: number; modeloUsado: string }> {
   const startTime = Date.now();
+  const isPassiveChat = mode === 'PASSIVE_CHAT';
 
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) {
     throw new Error('LOVABLE_API_KEY não configurada');
   }
 
+  // Selecionar system prompt baseado no modo
+  const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : SYSTEM_PROMPT;
+
   // PATCH 6G + 9: Calcular próxima pergunta baseado no estado atual + detectar urgência
+  // No modo PASSIVE_CHAT, ainda detectamos urgência mas sem lógica de cadência
   const qualiState: ConversationQualiState = {
     empresa,
     estadoFunil: conversationState?.estado_funil || 'SAUDACAO',
@@ -2637,7 +2730,7 @@ async function interpretWithAI(
     gpct: conversationState?.framework_data?.gpct,
     bant: conversationState?.framework_data?.bant,
     temperatura: classificacao?.temperatura || 'FRIO',
-    intentAtual: undefined, // Será determinado pela IA
+    intentAtual: undefined,
   };
   
   // PATCH 10: Passa mensagem, histórico e framework para detectar lead pronto
@@ -2654,15 +2747,17 @@ async function interpretWithAI(
     usarBloco: proximaPergunta.usarBloco || false,
     leadProntoSinais: proximaPergunta.leadPronto?.totalSinais || 0,
     fraseGatilho: proximaPergunta.urgencia?.frase_gatilho || null,
+    isPassiveChat,
   });
 
   // Montar contexto enriquecido
   let userPrompt = `EMPRESA_CONTEXTO: ${empresa}\n`;
   userPrompt += `PERSONA: Amélia (consultora unificada do Grupo Blue)\n`;
+  userPrompt += `MODO: ${isPassiveChat ? 'ATENDENTE PASSIVA (Blue Chat)' : 'QUALIFICAÇÃO ATIVA'}\n`;
   userPrompt += `ÁREA PRINCIPAL DA CONVERSA: ${empresa === 'TOKENIZA' ? 'Investimentos Tokenizados' : 'IR Cripto'}\n`;
   
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
-  if (cadenciaNome) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
+  if (cadenciaNome && !isPassiveChat) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
   
   // PATCH 9/10: Instrução especial se escalação imediata ou lead pronto
   if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {
@@ -2905,8 +3000,8 @@ O AGENTE SEMPRE DEVE:
     console.error('[6H] Erro ao buscar conhecimento de produtos:', err);
   }
   
-  // Contexto de classificação
-  if (classificacao) {
+  // Contexto de classificação (skip em modo passivo - não usa ICP/classificação)
+  if (classificacao && !isPassiveChat) {
     userPrompt += `\n## CONTEXTO DO LEAD:\n`;
     userPrompt += `- ICP: ${classificacao.icp}\n`;
     if (classificacao.persona) userPrompt += `- Persona: ${classificacao.persona}\n`;
@@ -3159,11 +3254,11 @@ O AGENTE SEMPRE DEVE:
     
     switch (providerId) {
       case 'ANTHROPIC':
-        aiResult = await tryAnthropic(SYSTEM_PROMPT, userPrompt, model);
+        aiResult = await tryAnthropic(activeSystemPrompt, userPrompt, model);
         break;
       case 'GEMINI':
       case 'GPT':
-        aiResult = await tryLovableAI(SYSTEM_PROMPT, userPrompt, model, providerId);
+        aiResult = await tryLovableAI(activeSystemPrompt, userPrompt, model, providerId);
         break;
     }
     
@@ -3798,10 +3893,10 @@ serve(async (req) => {
       );
     }
     
-    const { messageId, source } = body as InterpretRequest;
+    const { messageId, source, mode } = body as InterpretRequest;
 
     if (source) {
-      console.log('[SDR-IA] Source da mensagem:', source);
+      console.log('[SDR-IA] Source da mensagem:', source, 'Mode:', mode || 'DEFAULT');
     }
 
     if (!messageId) {
@@ -3890,7 +3985,8 @@ serve(async (req) => {
       cadenciaNome,
       classificacao,
       pessoaContext,
-      conversationState
+      conversationState,
+      mode
     );
 
     console.log('[SDR-IA] Interpretação:', {
