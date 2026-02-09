@@ -2,7 +2,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MessageSquare, CheckCircle2, Circle } from 'lucide-react';
+import { MessageSquare, CheckCircle2, Circle, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { ConversationState } from '@/types/conversation';
@@ -17,6 +24,8 @@ import {
 interface ConversationStateCardProps {
   state: ConversationState | null;
   isLoading?: boolean;
+  error?: Error | null;
+  onRetry?: () => void;
 }
 
 // Labels para campos dos frameworks
@@ -41,7 +50,7 @@ const SPIN_FIELD_LABELS = {
   n: 'Need-payoff (Benefício)',
 };
 
-export function ConversationStateCard({ state, isLoading }: ConversationStateCardProps) {
+export function ConversationStateCard({ state, isLoading, error, onRetry }: ConversationStateCardProps) {
   if (isLoading) {
     return (
       <Card>
@@ -55,6 +64,31 @@ export function ConversationStateCard({ state, isLoading }: ConversationStateCar
           <Skeleton className="h-6 w-24" />
           <Skeleton className="h-4 w-full" />
           <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <MessageSquare className="h-5 w-5" />
+            Estado da Conversa
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-col items-center gap-3 py-4 text-center">
+            <AlertTriangle className="h-8 w-8 text-destructive" />
+            <p className="text-sm text-muted-foreground">Erro ao carregar estado da conversa.</p>
+            {onRetry && (
+              <Button variant="outline" size="sm" onClick={onRetry}>
+                <RefreshCw className="h-4 w-4 mr-1" />
+                Tentar novamente
+              </Button>
+            )}
+          </div>
         </CardContent>
       </Card>
     );
@@ -79,6 +113,7 @@ export function ConversationStateCard({ state, isLoading }: ConversationStateCar
   }
 
   const completeness = getFrameworkCompleteness(state.framework_ativo, state.framework_data);
+  const isLowCompleteness = completeness.percentage < 25 && state.framework_ativo !== 'NONE';
   
   // Selecionar labels corretas baseado no framework
   const getFieldLabels = () => {
@@ -136,12 +171,38 @@ export function ConversationStateCard({ state, isLoading }: ConversationStateCar
         {state.framework_ativo !== 'NONE' && (
           <div className="space-y-2">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">{FRAMEWORK_LABELS[state.framework_ativo]}</p>
+              <div className="flex items-center gap-2">
+                <p className="text-sm font-medium">{FRAMEWORK_LABELS[state.framework_ativo]}</p>
+                {isLowCompleteness && (
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger>
+                        <AlertTriangle className="h-4 w-4 text-warning" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p className="max-w-xs text-sm">
+                          Framework com menos de 25% de completude. A IA precisa coletar mais dados do lead para qualificar adequadamente.
+                        </p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                )}
+              </div>
               <span className="text-xs text-muted-foreground">
                 {completeness.filled}/{completeness.total} campos
               </span>
             </div>
             <Progress value={completeness.percentage} className="h-2" />
+            
+            {/* Alerta de framework incompleto */}
+            {isLowCompleteness && (
+              <div className="flex items-center gap-2 p-2 rounded bg-warning/10 border border-warning/20">
+                <AlertTriangle className="h-4 w-4 text-warning shrink-0" />
+                <p className="text-xs text-warning">
+                  Framework incompleto — a IA precisa coletar mais informações para qualificação adequada.
+                </p>
+              </div>
+            )}
             
             {/* Campos do Framework */}
             <div className="grid grid-cols-2 gap-2 mt-3">

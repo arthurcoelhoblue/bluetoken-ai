@@ -2871,6 +2871,38 @@ O AGENTE SEMPRE DEVE:
     };
   }
   
+  // ========================================
+  // RETRY COM BACKOFF EXPONENCIAL
+  // ========================================
+  const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+  const NON_RETRYABLE_STATUSES = [401, 402, 403];
+
+  async function withRetry<T>(
+    fn: () => Promise<T>,
+    label: string,
+    maxRetries = 2,
+    baseDelayMs = 1000
+  ): Promise<T> {
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (err: unknown) {
+        lastError = err;
+        // Check if error has a status that's non-retryable
+        const errMsg = String(err);
+        const isNonRetryable = NON_RETRYABLE_STATUSES.some(s => errMsg.includes(String(s)));
+        if (isNonRetryable || attempt === maxRetries) {
+          throw err;
+        }
+        const delay = baseDelayMs * Math.pow(2, attempt);
+        console.log(`[Retry] ${label} tentativa ${attempt + 1}/${maxRetries + 1} falhou, aguardando ${delay}ms...`);
+        await new Promise(r => setTimeout(r, delay));
+      }
+    }
+    throw lastError;
+  }
+
   async function tryAnthropic(systemPrompt: string, userPrompt: string, model: string): Promise<AICallResult> {
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!ANTHROPIC_API_KEY) {
@@ -2880,40 +2912,47 @@ O AGENTE SEMPRE DEVE:
     try {
       console.log(`[IA] Tentando Anthropic ${model}...`);
       
-      const response = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: model,
-          max_tokens: 1500,
-          temperature: 0.3,
-          system: systemPrompt,
-          messages: [{ role: 'user', content: userPrompt }],
-        }),
-      });
+      const makeCall = async () => {
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: model,
+            max_tokens: 1500,
+            temperature: 0.3,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userPrompt }],
+          }),
+        });
+        
+        if (!response.ok) {
+          const errText = await response.text();
+          // Throw for retryable, return error for non-retryable
+          if (RETRYABLE_STATUSES.includes(response.status)) {
+            throw new Error(`Anthropic ${response.status}: ${errText}`);
+          }
+          return { success: false as const, error: `Anthropic ${response.status}: ${errText}` };
+        }
+        
+        const data = await response.json();
+        const content = data.content?.[0]?.text;
+        const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+        
+        if (!content) {
+          return { success: false as const, error: 'Resposta vazia do Anthropic' };
+        }
+        
+        console.log('[IA] ✅ Anthropic respondeu:', { tokens, contentPreview: content.substring(0, 100) });
+        return { success: true as const, content, tokensUsados: tokens, provider: 'ANTHROPIC' as ModelProvider };
+      };
       
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error('[IA] Anthropic falhou:', response.status, errText);
-        return { success: false, error: `Anthropic ${response.status}: ${errText}` };
-      }
-      
-      const data = await response.json();
-      const content = data.content?.[0]?.text;
-      const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
-      
-      if (!content) {
-        return { success: false, error: 'Resposta vazia do Anthropic' };
-      }
-      
-      console.log('[IA] ✅ Anthropic respondeu:', { tokens, contentPreview: content.substring(0, 100) });
-      return { success: true, content, tokensUsados: tokens, provider: 'ANTHROPIC' };
+      return await withRetry(makeCall, 'Anthropic');
     } catch (err) {
-      console.error('[IA] Erro Anthropic:', err);
+      console.error('[IA] Erro Anthropic (após retries):', err);
       return { success: false, error: String(err) };
     }
   }
@@ -2927,49 +2966,56 @@ O AGENTE SEMPRE DEVE:
     try {
       console.log(`[IA] Tentando ${provider} (${model}) via Lovable AI...`);
       
-      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          temperature: 0.3,
-        }),
-      });
-      
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[IA] ${provider} falhou:`, response.status, errText);
+      const makeCall = async () => {
+        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userPrompt },
+            ],
+            temperature: 0.3,
+          }),
+        });
         
-        // Erros específicos do Lovable AI
-        if (response.status === 429) {
-          return { success: false, error: 'Rate limit Lovable AI excedido' };
-        }
-        if (response.status === 402) {
-          return { success: false, error: 'Créditos Lovable AI insuficientes' };
+        if (!response.ok) {
+          const errText = await response.text();
+          
+          if (RETRYABLE_STATUSES.includes(response.status)) {
+            throw new Error(`${provider} ${response.status}: ${errText}`);
+          }
+          
+          // Non-retryable errors
+          if (response.status === 429) {
+            return { success: false as const, error: 'Rate limit Lovable AI excedido' };
+          }
+          if (response.status === 402) {
+            return { success: false as const, error: 'Créditos Lovable AI insuficientes' };
+          }
+          
+          return { success: false as const, error: `${provider} ${response.status}: ${errText}` };
         }
         
-        return { success: false, error: `${provider} ${response.status}: ${errText}` };
-      }
+        const data = await response.json();
+        const content = data.choices?.[0]?.message?.content;
+        const tokens = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+        
+        if (!content) {
+          return { success: false as const, error: `Resposta vazia do ${provider}` };
+        }
+        
+        console.log(`[IA] ✅ ${provider} respondeu:`, { tokens, contentPreview: content.substring(0, 100) });
+        return { success: true as const, content, tokensUsados: tokens, provider };
+      };
       
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
-      const tokens = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
-      
-      if (!content) {
-        return { success: false, error: `Resposta vazia do ${provider}` };
-      }
-      
-      console.log(`[IA] ✅ ${provider} respondeu:`, { tokens, contentPreview: content.substring(0, 100) });
-      return { success: true, content, tokensUsados: tokens, provider };
+      return await withRetry(makeCall, provider);
     } catch (err) {
-      console.error(`[IA] Erro ${provider}:`, err);
+      console.error(`[IA] Erro ${provider} (após retries):`, err);
       return { success: false, error: String(err) };
     }
   }
