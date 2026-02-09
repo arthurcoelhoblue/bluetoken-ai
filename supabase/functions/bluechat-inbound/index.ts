@@ -837,7 +837,35 @@ serve(async (req) => {
       };
     }
     
-    // 7. Callback: enviar resposta de volta ao Blue Chat via API
+    // 7. Persistir mensagem OUTBOUND da Amélia no banco
+    if (iaResult?.responseText) {
+      try {
+        const { data: outboundMsg, error: outboundError } = await supabase
+          .from('lead_messages')
+          .insert({
+            lead_id: leadContact.lead_id,
+            empresa: leadContact.empresa,
+            canal: payload.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
+            direcao: 'OUTBOUND',
+            conteudo: iaResult.responseText,
+            estado: 'ENVIADO',
+            template_codigo: 'BLUECHAT_PASSIVE_REPLY',
+            enviado_em: new Date().toISOString(),
+          })
+          .select('id')
+          .single();
+
+        if (outboundError) {
+          console.error('[Outbound] Erro ao persistir mensagem OUTBOUND:', outboundError);
+        } else {
+          console.log('[Outbound] Mensagem OUTBOUND persistida:', (outboundMsg as { id: string }).id);
+        }
+      } catch (err) {
+        console.error('[Outbound] Erro inesperado ao persistir:', err);
+      }
+    }
+
+    // 8. Callback: enviar resposta de volta ao Blue Chat via API
     if (iaResult?.responseText) {
       await sendResponseToBluechat(supabase, {
         conversation_id: payload.conversation_id,
