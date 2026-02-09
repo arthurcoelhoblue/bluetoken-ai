@@ -1,106 +1,78 @@
 
-# Painel de Atendimentos Blue Chat
 
-## Resumo
+# Reorganizar Tela de Configuracoes
 
-Criar uma nova pagina "Atendimentos Blue Chat" que serve como central de monitoramento das conversas ativas da Amelia no modo atendente passivo. Diferente das cadencias (que tratam de outreach proativo), esta tela mostra as conversas reativas recebidas via Blue Chat.
+## Problema Atual
 
-## O que ja funciona sem mudancas
+A tela tem 6 abas com sobreposicao de funcionalidade:
+- "Integracoes" mostra cards de WhatsApp/Email com toggle e teste
+- "WhatsApp" e "Email" sao abas separadas com detalhes dos mesmos canais
+- "Geral" e generico demais (so configura a Amelia)
+- SGT e Mensageria estao inativos, ocupando espaco sem necessidade
 
-- **Detalhe do Lead** (`/leads/:id/:empresa`): ja mostra mensagens trocadas, intents, estado de conversa (SPIN/GPCT/DISC) - tudo isso funciona independente de cadencia
-- **Leads Quentes** (`/admin/leads-quentes`): ja captura leads escalados pela IA
-- **Lista de Leads** (`/leads`): mostra todos os leads, incluindo os criados pelo Blue Chat (origem `BLUECHAT`)
+## Proposta: 4 Abas Reorganizadas
 
-## O que sera criado
+| Aba Atual | Nova Estrutura |
+|-----------|---------------|
+| Integracoes + WhatsApp + Email | **Canais e Integracoes** - tudo junto, cada canal com sua secao expandivel |
+| IA | **IA** - mantida como esta |
+| Geral | **Amelia** - renomear para deixar claro o proposito |
+| Webhooks | **Webhooks** - mantida como esta |
 
-### 1. Nova pagina: Atendimentos Blue Chat (`/atendimentos`)
+### 1. Aba "Canais e Integracoes" (nova)
 
-Uma tela dedicada que lista as conversas ativas vindas do Blue Chat, mostrando:
+Unificar a visao. Cada integracao vira uma secao com:
+- Header com toggle de ativacao, status e botao de teste (o que ja existe no IntegrationCard)
+- Conteudo expandivel (Collapsible) com os detalhes especificos:
+  - WhatsApp: modo teste, numero teste, estatisticas
+  - Email: modo teste, email teste, estatisticas  
+  - Pipedrive: configuracao de secrets
+  - Anthropic: configuracao de secrets
+  - SGT: configuracao de secrets (marcado como inativo)
+  - Blue Chat / Mensageria: config por empresa (ja existe)
 
-- **Lista de conversas recentes**: leads que receberam mensagens INBOUND via Blue Chat (origem_telefone = 'BLUECHAT' ou mensagens com whatsapp_message_id de prefixo Blue Chat)
-- **Status por conversa**: ultima mensagem, tempo desde ultimo contato, se a Amelia ja respondeu, se foi escalado
-- **Indicadores visuais**: badge de "Aguardando resposta", "Amelia respondeu", "Escalado para humano"
-- **Filtro por empresa**: BLUE / TOKENIZA
-- **Ordenacao**: mais recentes primeiro, com destaque para conversas sem resposta
+Assim o usuario ve tudo em um lugar so, sem precisar trocar de aba para configurar detalhes do mesmo canal.
 
-### 2. Dados utilizados (ja existem no banco)
+### 2. Aba "Amelia" (renomear "Geral")
 
-A pagina ira consultar dados que ja sao gravados pelo sistema atual:
+Trocar o nome de "Geral" para "Amelia" com icone Bot, deixando claro que configura o comportamento da IA conversacional. Conteudo permanece identico (horario, limites, tom).
 
-- `lead_contacts` com `origem_telefone = 'BLUECHAT'` para identificar leads do Blue Chat
-- `lead_messages` com `direcao = 'INBOUND'` e `direcao = 'OUTBOUND'` para ver troca de mensagens
-- `lead_message_intents` para ver interpretacoes da IA
-- `lead_conversation_state` para ver estado de qualificacao
+### 3. Remover abas "WhatsApp" e "Email"
 
-### 3. Menu de navegacao
+O conteudo sera absorvido pela aba "Canais e Integracoes" como secoes expandiveis dentro do card de cada canal.
 
-Adicionar "Atendimentos" no sidebar, na secao "Principal", visivel para ADMIN e CLOSER.
+### 4. Reduzir para 4 abas
 
-### 4. Card de atendimento
+De 6 para 4 abas: Canais, IA, Amelia, Webhooks. Melhora o layout em mobile (grid-cols-4 em vez de 6).
 
-Cada card mostrara:
-- Nome do lead e telefone
-- Empresa (BLUE/TOKENIZA)
-- Ultima mensagem (preview truncado)
-- Tempo desde ultimo contato
-- Contagem de mensagens (inbound/outbound)
-- Intent detectado mais recente
-- Estado do funil (SAUDACAO, QUALIFICACAO, etc)
-- Botao para abrir o detalhe do lead
-
-## Secao tecnica
-
-### Hook: `useBlueChartAtendimentos`
-
-```text
-Query:
-1. Buscar lead_contacts com origem_telefone = 'BLUECHAT'
-2. Para cada lead, buscar ultima mensagem de lead_messages
-3. Buscar ultimo intent de lead_message_intents
-4. Buscar estado de lead_conversation_state
-5. Ordenar por ultima mensagem mais recente
-```
-
-Alternativa mais eficiente: uma unica query com JOINs:
-
-```text
-SELECT 
-  lc.lead_id, lc.empresa, lc.nome, lc.telefone, lc.telefone_e164,
-  -- Ultima mensagem
-  (SELECT conteudo FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultima_mensagem,
-  (SELECT created_at FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultimo_contato,
-  (SELECT direcao FROM lead_messages lm WHERE lm.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultima_direcao,
-  -- Contagem
-  (SELECT COUNT(*) FROM lead_messages lm WHERE lm.lead_id = lc.lead_id AND lm.direcao = 'INBOUND') as total_inbound,
-  (SELECT COUNT(*) FROM lead_messages lm WHERE lm.lead_id = lc.lead_id AND lm.direcao = 'OUTBOUND') as total_outbound,
-  -- Estado
-  cs.estado_funil, cs.framework_ativo, cs.perfil_disc,
-  -- Ultimo intent
-  (SELECT intent FROM lead_message_intents lmi WHERE lmi.lead_id = lc.lead_id ORDER BY created_at DESC LIMIT 1) as ultimo_intent
-FROM lead_contacts lc
-LEFT JOIN lead_conversation_state cs ON cs.lead_id = lc.lead_id AND cs.empresa = lc.empresa
-WHERE lc.origem_telefone = 'BLUECHAT'
-ORDER BY ultimo_contato DESC NULLS LAST
-```
-
-### Componentes criados
-
-| Componente | Descricao |
-|------------|-----------|
-| `src/pages/Atendimentos.tsx` | Pagina principal com lista de atendimentos |
-| `src/hooks/useAtendimentos.ts` | Hook para buscar dados dos atendimentos Blue Chat |
+## Secao Tecnica
 
 ### Arquivos modificados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `src/components/layout/AppSidebar.tsx` | Adicionar link "Atendimentos" na secao Principal |
-| `src/App.tsx` | Adicionar rota `/atendimentos` |
+| `src/pages/admin/Settings.tsx` | Reduzir de 6 para 4 abas, renomear |
+| `src/components/settings/IntegrationsTab.tsx` | Refatorar para incluir detalhes inline (expandiveis) de WhatsApp e Email |
+| `src/components/settings/IntegrationCard.tsx` | Adicionar suporte a conteudo expandivel (children) via Collapsible |
 
-### Fluxo do usuario
+### Arquivos removidos (conteudo absorvido)
 
-1. Usuario abre "Atendimentos" no menu lateral
-2. Ve lista de conversas ativas do Blue Chat, ordenadas por mais recentes
-3. Identifica conversas que precisam de atencao (sem resposta, escaladas)
-4. Clica em um lead para ver o detalhe completo (conversa, intents, estado)
-5. No detalhe do lead, ve a conversa completa no ConversationView que ja existe
+| Arquivo | Destino |
+|---------|---------|
+| `src/components/settings/WhatsAppDetailsTab.tsx` | Conteudo movido para dentro do IntegrationCard de WhatsApp |
+| `src/components/settings/EmailDetailsTab.tsx` | Conteudo movido para dentro do IntegrationCard de Email |
+
+### Estrutura do IntegrationCard expandivel
+
+O IntegrationCard ganhara um prop opcional `children` e usara o componente Collapsible do Radix UI. Quando o card tem detalhes, um botao "Detalhes" aparece e expande a area abaixo do card header.
+
+### Settings.tsx simplificado
+
+```text
+Tabs (4):
+  - "channels"  -> Plug icon  -> "Canais"     -> IntegrationsTab (com detalhes inline)
+  - "ai"        -> Brain icon  -> "IA"         -> AISettingsTab
+  - "amelia"    -> Bot icon    -> "Amélia"     -> GeneralTab (renomeado visualmente)
+  - "webhooks"  -> Webhook icon -> "Webhooks"  -> WebhooksTab
+```
+
