@@ -19,6 +19,7 @@ type ChannelType = 'WHATSAPP' | 'EMAIL' | 'SMS';
 
 interface BlueChatPayload {
   conversation_id: string;       // ID da conversa no Blue Chat
+  ticket_id?: string;            // ID do ticket no Blue Chat (para callbacks)
   message_id: string;            // ID da mensagem
   timestamp: string;             // ISO timestamp
   channel: ChannelType;          // Canal de origem
@@ -422,7 +423,7 @@ async function callSdrIaInterpret(
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${serviceKey}`,
         },
-        body: JSON.stringify({ messageId, source: 'BLUECHAT' }),
+        body: JSON.stringify({ messageId, source: 'BLUECHAT', mode: 'PASSIVE_CHAT' }),
       });
       
       if (response.ok) {
@@ -463,6 +464,7 @@ async function sendResponseToBluechat(
   supabase: SupabaseClient,
   data: {
     conversation_id: string;
+    ticket_id?: string;
     message_id: string;
     text: string;
     action: string;
@@ -516,8 +518,8 @@ async function sendResponseToBluechat(
     }
 
     // 2. Se ação é ESCALATE, transferir o ticket para humano
-    if (data.action === 'ESCALATE') {
-      const transferUrl = `${baseUrl}/tickets/${data.conversation_id}/transfer`;
+    if (data.action === 'ESCALATE' && data.ticket_id) {
+      const transferUrl = `${baseUrl}/tickets/${data.ticket_id}/transfer`;
       console.log('[Callback] Transferindo ticket:', transferUrl);
 
       const transferResponse = await fetch(transferUrl, {
@@ -570,8 +572,9 @@ serve(async (req) => {
   try {
     const payload: BlueChatPayload = await req.json();
     
-    console.log('[BlueChat] Webhook recebido:', {
+  console.log('[BlueChat] Webhook recebido:', {
       conversation_id: payload.conversation_id,
+      ticket_id: payload.ticket_id,
       message_id: payload.message_id,
       channel: payload.channel,
       phone: payload.contact?.phone,
@@ -645,10 +648,11 @@ serve(async (req) => {
       }
     }
     
-    // 3. Buscar run ativa
-    const activeRun = await findActiveRun(supabase, leadContact.lead_id, leadContact.empresa);
+    // 3. Modo passivo: NÃO buscar cadência ativa (Amélia é atendente passiva no Blue Chat)
+    // A Amélia não se vincula a cadências quando opera via Blue Chat
+    const activeRun = null;
     
-    // 4. Salvar mensagem
+    // 4. Salvar mensagem (sem cadência vinculada)
     const savedMessage = await saveInboundMessage(supabase, payload, leadContact, activeRun);
     
     if (!savedMessage) {
@@ -715,6 +719,7 @@ serve(async (req) => {
     if (iaResult?.responseText) {
       await sendResponseToBluechat(supabase, {
         conversation_id: payload.conversation_id,
+        ticket_id: payload.ticket_id,
         message_id: savedMessage.messageId,
         text: iaResult.responseText,
         action: response.action,

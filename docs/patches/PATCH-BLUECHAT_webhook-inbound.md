@@ -1,20 +1,21 @@
-# PATCH Blue Chat – Webhook Inbound
+# PATCH Blue Chat – Webhook Inbound (Atendente Passiva)
 
 ## Metadados
-- **Data**: 2025-12-24
+- **Data**: 2026-02-09
 - **Épico**: Integração Blue Chat
-- **Status**: ✅ Implementado
+- **Status**: ✅ Implementado (v2 - Modo Passivo)
 - **Dependências**: PATCH 5F (WhatsApp Inbound), PATCH 5G (SDR IA Interpret)
 
 ---
 
 ## 1. Objetivo
 
-Integrar o Blue Chat (plataforma central de comunicação) com a Amélia (SDR IA) para:
-1. Receber mensagens de leads comerciais identificados pelo Blue Chat
+Integrar o Blue Chat (plataforma central de comunicação) com a Amélia (SDR IA) como **atendente passiva**:
+1. Receber mensagens de leads comerciais escalados pelo atendimento do Blue Chat
 2. Criar leads automaticamente se não existirem
-3. Interpretar mensagens via SDR IA
-4. Retornar resposta/qualificação para o Blue Chat
+3. Interpretar mensagens via SDR IA em **modo PASSIVE_CHAT** (sem cadências, sem SGT)
+4. Retornar resposta consultiva para o Blue Chat
+5. Escalar para humano quando detectar sinais quentes
 
 ---
 
@@ -48,6 +49,7 @@ POST /functions/v1/bluechat-inbound
 ```json
 {
   "conversation_id": "bc-conv-123",
+  "ticket_id": "ticket-456",
   "message_id": "bc-msg-456",
   "timestamp": "2025-01-10T14:23:00Z",
   "channel": "WHATSAPP",
@@ -132,10 +134,10 @@ POST /functions/v1/bluechat-inbound
 
 ---
 
-## 6. Fluxo de Processamento
+## 6. Fluxo de Processamento (Modo Passivo)
 
 ```
-1. Validar autenticação
+1. Validar autenticação (BLUECHAT_API_KEY)
    ↓
 2. Normalizar telefone (+5561998317422 → 5561998317422)
    ↓
@@ -143,13 +145,15 @@ POST /functions/v1/bluechat-inbound
    ↓
 4. Se não encontrar → CRIAR lead automaticamente
    ↓
-5. Buscar run ativa em lead_cadence_runs
+5. NÃO buscar cadência (run_id = null)
    ↓
-6. Salvar mensagem em lead_messages
+6. Salvar mensagem em lead_messages (sem vínculo a cadência)
    ↓
-7. Chamar sdr-ia-interpret para análise
+7. Chamar sdr-ia-interpret com mode=PASSIVE_CHAT
    ↓
-8. Retornar resposta formatada para Blue Chat
+8. Retornar resposta consultiva para Blue Chat
+   ↓
+9. Se ESCALATE e ticket_id → transferir ticket via API
 ```
 
 ---
