@@ -511,6 +511,27 @@ serve(async (req) => {
 
     const phoneInfo = normalizePhone(payload.contact.phone);
     const empresa: EmpresaTipo = payload.context?.empresa || 'BLUE';
+
+    // Verificar se bluechat está habilitado para esta empresa
+    const { data: channelConfig } = await supabase
+      .from('integration_company_config')
+      .select('enabled')
+      .eq('empresa', empresa)
+      .eq('channel', 'bluechat')
+      .maybeSingle();
+
+    if (!channelConfig?.enabled) {
+      console.log(`[BlueChat] Canal bluechat desabilitado para empresa ${empresa}`);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Blue Chat não está habilitado para ${empresa}`,
+          conversation_id: payload.conversation_id,
+          action: 'ESCALATE',
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
     
     // 1. Buscar lead existente
     let leadContact = await findLeadByPhone(supabase, phoneInfo.normalized, phoneInfo.e164, empresa);

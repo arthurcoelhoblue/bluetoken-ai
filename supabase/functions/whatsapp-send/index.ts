@@ -75,6 +75,25 @@ serve(async (req) => {
       );
     }
 
+    // Verificar se o canal mensageria está habilitado para esta empresa
+    const { data: channelConfig } = await supabase
+      .from('integration_company_config')
+      .select('enabled')
+      .eq('empresa', empresa)
+      .eq('channel', 'mensageria')
+      .maybeSingle();
+
+    if (channelConfig && !channelConfig.enabled) {
+      console.log(`[whatsapp-send] Canal mensageria desabilitado para empresa ${empresa}`);
+      return new Response(
+        JSON.stringify({ 
+          success: false, 
+          error: `Mensageria não está habilitada para ${empresa}`,
+        }),
+        { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // Buscar configuração de modo teste do banco
     const { data: testConfig } = await supabase
       .from('system_settings')
