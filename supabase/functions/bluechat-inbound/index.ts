@@ -218,11 +218,23 @@ function validateAuth(req: Request): { valid: boolean; empresaFromKey?: EmpresaT
   
   const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
   
-  if (token && bluechatApiKeyTokeniza && token === bluechatApiKeyTokeniza) {
+  // DEBUG temporário - remover após resolver autenticação
+  console.log('[Auth DEBUG] Headers recebidos:', {
+    hasAuth: !!authHeader,
+    hasApiKey: !!apiKeyHeader,
+    tokenPreview: token ? `${token.substring(0, 8)}...${token.substring(token.length - 4)}` : 'NENHUM',
+    tokenLength: token?.length || 0,
+    tokenizaKeyPreview: bluechatApiKeyTokeniza ? `${bluechatApiKeyTokeniza.substring(0, 8)}...` : 'NÃO CONFIGURADO',
+    tokenizaKeyLength: bluechatApiKeyTokeniza?.length || 0,
+    blueKeyPreview: bluechatApiKeyBlue ? `${bluechatApiKeyBlue.substring(0, 8)}...` : 'NÃO CONFIGURADO',
+    blueKeyLength: bluechatApiKeyBlue?.length || 0,
+  });
+  
+  if (token && bluechatApiKeyTokeniza && token.trim() === bluechatApiKeyTokeniza.trim()) {
     return { valid: true, empresaFromKey: 'TOKENIZA' };
   }
   
-  if (token && bluechatApiKeyBlue && token === bluechatApiKeyBlue) {
+  if (token && bluechatApiKeyBlue && token.trim() === bluechatApiKeyBlue.trim()) {
     return { valid: true, empresaFromKey: 'BLUE' };
   }
   
