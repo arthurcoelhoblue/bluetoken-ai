@@ -159,7 +159,7 @@ interface BlueChatResponse {
   conversation_id: string;
   message_id?: string;
   lead_id?: string | null;
-  action: 'RESPOND' | 'ESCALATE' | 'QUALIFY_ONLY';
+  action: 'RESPOND' | 'ESCALATE' | 'QUALIFY_ONLY' | 'RESOLVE';
   response?: {
     text: string;
     suggested_next?: string;
@@ -173,6 +173,10 @@ interface BlueChatResponse {
     needed: boolean;
     reason?: string;
     priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  };
+  resolution?: {
+    summary: string;
+    reason: string;
   };
   error?: string;
 }
@@ -584,6 +588,7 @@ async function sendResponseToBluechat(
     message_id: string;
     text: string;
     action: string;
+    resolution?: { summary: string; reason: string };
   }
 ): Promise<void> {
   try {
@@ -651,6 +656,28 @@ async function sendResponseToBluechat(
         console.error('[Callback] Erro ao transferir ticket:', transferResponse.status);
       } else {
         console.log('[Callback] Ticket transferido com sucesso');
+      }
+    }
+
+    // 3. Se ação é RESOLVE, resolver o ticket no Blue Chat
+    if (data.action === 'RESOLVE' && data.ticket_id && data.resolution) {
+      const resolveUrl = `${baseUrl}/tickets/${data.ticket_id}/resolve`;
+      console.log('[Callback] Resolvendo ticket:', resolveUrl);
+
+      const resolveResponse = await fetch(resolveUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          summary: data.resolution.summary,
+          reason: data.resolution.reason,
+          source: 'AMELIA_SDR',
+        }),
+      });
+
+      if (!resolveResponse.ok) {
+        console.error('[Callback] Erro ao resolver ticket:', resolveResponse.status);
+      } else {
+        console.log('[Callback] Ticket resolvido com sucesso');
       }
     }
   } catch (error) {
@@ -822,13 +849,60 @@ serve(async (req) => {
     // 6. Chamar SDR IA para interpretar (passando resumo de triagem se houver)
     const iaResult = await callSdrIaInterpret(savedMessage.messageId, triageSummary);
     
-    // 6. Montar resposta para Blue Chat
+    // 6. Detectar intenção de encerramento da conversa
+    const closingKeywords = ['obrigado', 'obrigada', 'valeu', 'até mais', 'tchau', 'era isso', 'resolvido', 'era só isso', 'muito obrigado', 'muito obrigada', 'falou', 'flw', 'vlw', 'brigado', 'brigada'];
+    const closingIntents = ['AGRADECIMENTO', 'CUMPRIMENTO'];
+    const messageText = payload.message.text.toLowerCase().trim();
+    
+    const isClosingIntent = closingIntents.includes(iaResult?.intent || '');
+    const hasClosingKeyword = closingKeywords.some(kw => messageText.includes(kw));
+    const isClosingFunnel = false; // Será true se estado_funil for POS_VENDA ou FECHAMENTO (checado abaixo)
+    
+    // Verificar estado do funil para contexto de encerramento
+    let funnelClosing = false;
+    if (iaResult && (isClosingIntent || hasClosingKeyword)) {
+      const { data: convState } = await supabase
+        .from('lead_conversation_state')
+        .select('estado_funil')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+      
+      funnelClosing = ['POS_VENDA', 'FECHAMENTO'].includes(convState?.estado_funil || '');
+    }
+    
+    // Decidir se é encerramento: intent de despedida + (keyword OU funil avançado)
+    const isConversationEnding = isClosingIntent && (hasClosingKeyword || funnelClosing);
+    
+    // Gerar resolution se for encerramento
+    let resolution: { summary: string; reason: string } | undefined;
+    if (isConversationEnding) {
+      const leadName = leadContact.nome || payload.contact.name || 'Lead';
+      resolution = {
+        summary: `Atendimento de ${leadName} (${empresa}) concluído. Intent: ${iaResult?.intent || 'N/A'}. Qualificação via Amélia SDR.`,
+        reason: `Lead encerrou a conversa (${iaResult?.intent || 'despedida'}). Palavra-chave detectada na mensagem.`,
+      };
+      console.log('[BlueChat] 🔚 Encerramento detectado:', resolution);
+    }
+    
+    // 7. Montar resposta para Blue Chat
+    let action: BlueChatResponse['action'];
+    if (isConversationEnding) {
+      action = 'RESOLVE';
+    } else if (iaResult?.escalation?.needed) {
+      action = 'ESCALATE';
+    } else if (iaResult?.responseText) {
+      action = 'RESPOND';
+    } else {
+      action = 'QUALIFY_ONLY';
+    }
+    
     const response: BlueChatResponse = {
       success: true,
       conversation_id: payload.conversation_id,
       message_id: savedMessage.messageId,
       lead_id: leadContact.lead_id,
-      action: iaResult?.escalation?.needed ? 'ESCALATE' : (iaResult?.responseText ? 'RESPOND' : 'QUALIFY_ONLY'),
+      action,
       intent: {
         detected: iaResult?.intent || 'OUTRO',
         confidence: iaResult?.confidence || 0.5,
@@ -841,24 +915,31 @@ serve(async (req) => {
       },
     };
     
+    // Adicionar resolution se for encerramento
+    if (resolution) {
+      response.resolution = resolution;
+    }
+    
     // Adicionar resposta se a IA gerou uma
     if (iaResult?.responseText) {
       response.response = {
         text: iaResult.responseText,
-        suggested_next: iaResult.leadReady 
-          ? 'Lead pronto para closer - agendar reunião' 
-          : 'Continuar qualificação',
+        suggested_next: isConversationEnding 
+          ? 'Conversa encerrada - ticket resolvido'
+          : iaResult.leadReady 
+            ? 'Lead pronto para closer - agendar reunião' 
+            : 'Continuar qualificação',
       };
     }
     
-    // 7. Persistir mensagem OUTBOUND da Amélia no banco
+    // 8. Persistir mensagem OUTBOUND da Amélia no banco
     if (iaResult?.responseText) {
       try {
         const { data: outboundMsg, error: outboundError } = await supabase
           .from('lead_messages')
           .insert({
             lead_id: leadContact.lead_id,
-            empresa: empresa, // Usa empresa do payload, não do leadContact
+            empresa: empresa,
             canal: payload.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
             direcao: 'OUTBOUND',
             conteudo: iaResult.responseText,
@@ -879,7 +960,7 @@ serve(async (req) => {
       }
     }
 
-    // 8. Callback: enviar resposta de volta ao Blue Chat via API
+    // 9. Callback: enviar resposta de volta ao Blue Chat via API
     if (iaResult?.responseText) {
       await sendResponseToBluechat(supabase, {
         conversation_id: payload.conversation_id,
@@ -887,6 +968,7 @@ serve(async (req) => {
         message_id: savedMessage.messageId,
         text: iaResult.responseText,
         action: response.action,
+        resolution,
       });
     }
     
