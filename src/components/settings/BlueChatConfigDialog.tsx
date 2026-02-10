@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Info,
   CheckCircle2,
@@ -30,56 +31,76 @@ interface BlueChatConfigDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type EmpresaTab = 'TOKENIZA' | 'BLUE';
+
+interface CompanyConfig {
+  apiUrl: string;
+  saving: boolean;
+  testing: boolean;
+  testResult: HealthCheckResult | null;
+}
+
 export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialogProps) {
   const { settings, updateSetting } = useSystemSettings("integrations");
   const { checkHealth } = useIntegrationHealth();
 
-  const [apiUrl, setApiUrl] = useState("https://chat.grupoblue.com.br/api/external-ai");
-  const [saving, setSaving] = useState(false);
-  const [testing, setTesting] = useState(false);
-  const [testResult, setTestResult] = useState<HealthCheckResult | null>(null);
+  const [configs, setConfigs] = useState<Record<EmpresaTab, CompanyConfig>>({
+    TOKENIZA: { apiUrl: "https://chat.grupoblue.com.br/api/external-ai", saving: false, testing: false, testResult: null },
+    BLUE: { apiUrl: "", saving: false, testing: false, testResult: null },
+  });
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
   const webhookUrl = `${supabaseUrl}/functions/v1/bluechat-inbound`;
 
-  // Load existing config
   useEffect(() => {
     if (open && settings) {
-      const bluechatSetting = settings.find((s) => s.key === "bluechat");
-      if (bluechatSetting?.value) {
-        const val = bluechatSetting.value as Record<string, unknown>;
-        if (val.api_url) setApiUrl(val.api_url as string);
-      }
+      const tokenizaSetting = settings.find((s) => s.key === "bluechat_tokeniza");
+      const blueSetting = settings.find((s) => s.key === "bluechat_blue");
+      // Fallback para config legada
+      const legacySetting = settings.find((s) => s.key === "bluechat");
+
+      setConfigs(prev => ({
+        TOKENIZA: {
+          ...prev.TOKENIZA,
+          apiUrl: (tokenizaSetting?.value as Record<string, unknown>)?.api_url as string
+            || (legacySetting?.value as Record<string, unknown>)?.api_url as string
+            || prev.TOKENIZA.apiUrl,
+        },
+        BLUE: {
+          ...prev.BLUE,
+          apiUrl: (blueSetting?.value as Record<string, unknown>)?.api_url as string || prev.BLUE.apiUrl,
+        },
+      }));
     }
   }, [open, settings]);
 
-  const handleSave = async () => {
-    setSaving(true);
+  const updateConfig = (empresa: EmpresaTab, updates: Partial<CompanyConfig>) => {
+    setConfigs(prev => ({ ...prev, [empresa]: { ...prev[empresa], ...updates } }));
+  };
+
+  const handleSave = async (empresa: EmpresaTab) => {
+    updateConfig(empresa, { saving: true });
     try {
-      const bluechatSetting = settings?.find((s) => s.key === "bluechat");
-      const current = (bluechatSetting?.value as Record<string, unknown>) || {};
+      const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+      const existing = settings?.find((s) => s.key === settingsKey);
+      const current = (existing?.value as Record<string, unknown>) || {};
 
       await updateSetting.mutateAsync({
         category: "integrations",
-        key: "bluechat",
-        value: {
-          ...current,
-          api_url: apiUrl.trim(),
-        },
+        key: settingsKey,
+        value: { ...current, api_url: configs[empresa].apiUrl.trim() },
       });
     } catch {
       // Error handled by hook
     } finally {
-      setSaving(false);
+      updateConfig(empresa, { saving: false });
     }
   };
 
-  const handleTest = async () => {
-    setTesting(true);
-    setTestResult(null);
+  const handleTest = async (empresa: EmpresaTab) => {
+    updateConfig(empresa, { testing: true, testResult: null });
     const result = await checkHealth("bluechat");
-    setTestResult(result);
-    setTesting(false);
+    updateConfig(empresa, { testing: false, testResult: result });
   };
 
   const copyToClipboard = (text: string) => {
@@ -113,95 +134,103 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
     }
   };
 
+  const secretNames: Record<EmpresaTab, string> = {
+    TOKENIZA: 'BLUECHAT_API_KEY',
+    BLUE: 'BLUECHAT_API_KEY_BLUE',
+  };
+
+  const renderCompanyTab = (empresa: EmpresaTab) => {
+    const config = configs[empresa];
+    return (
+      <div className="space-y-4">
+        {/* Webhook URL (read-only) */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">
+            URL do Webhook (configurar no Blue Chat)
+          </Label>
+          <div className="flex gap-2">
+            <Input value={webhookUrl} readOnly className="font-mono text-xs" />
+            <Button variant="outline" size="icon" onClick={() => copyToClipboard(webhookUrl)}>
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Mesmo endpoint para ambas. A empresa é identificada pela API key usada no header <code>X-API-Key</code>.
+          </p>
+        </div>
+
+        {/* API URL */}
+        <div className="space-y-2">
+          <Label htmlFor={`api-url-${empresa}`} className="text-sm font-medium">
+            URL da API do Blue Chat ({empresa})
+          </Label>
+          <Input
+            id={`api-url-${empresa}`}
+            placeholder="https://chat.grupoblue.com.br/api/external-ai"
+            value={config.apiUrl}
+            onChange={(e) => updateConfig(empresa, { apiUrl: e.target.value })}
+          />
+        </div>
+
+        {/* Secret info */}
+        <Alert>
+          <Info className="h-4 w-4" />
+          <AlertDescription>
+            Secret utilizado: <code>{secretNames[empresa]}</code>. Usado para autenticação bidirecional.
+          </AlertDescription>
+        </Alert>
+
+        {/* Test Result */}
+        {config.testResult && (
+          <div className="rounded-lg border p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Resultado do Teste</span>
+              {getStatusBadge(config.testResult)}
+            </div>
+            {config.testResult.message && (
+              <p className="text-xs text-muted-foreground">{config.testResult.message}</p>
+            )}
+          </div>
+        )}
+
+        <div className="flex gap-2 justify-end">
+          <Button variant="outline" onClick={() => handleTest(empresa)} disabled={config.testing}>
+            {config.testing ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <ExternalLink className="mr-1 h-4 w-4" />}
+            Testar
+          </Button>
+          <Button onClick={() => handleSave(empresa)} disabled={config.saving}>
+            {config.saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
+            Salvar
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Configurar Blue Chat</DialogTitle>
           <DialogDescription>
-            Configure a integração com o Blue Chat para que a Amélia receba e responda mensagens.
+            Configure as conexões do Blue Chat por empresa. Cada empresa tem sua própria instância.
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          {/* Webhook URL (read-only) */}
-          <div className="space-y-2">
-            <Label className="text-sm font-medium">
-              URL do Webhook (configurar no Blue Chat)
-            </Label>
-            <div className="flex gap-2">
-              <Input value={webhookUrl} readOnly className="font-mono text-xs" />
-              <Button
-                variant="outline"
-                size="icon"
-                onClick={() => copyToClipboard(webhookUrl)}
-              >
-                <Copy className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Configure esta URL no painel do Blue Chat como endpoint de webhook.
-              Autenticação via header <code>X-API-Key</code>.
-            </p>
-          </div>
+        <Tabs defaultValue="TOKENIZA" className="space-y-4">
+          <TabsList className="grid w-full grid-cols-2">
+            <TabsTrigger value="TOKENIZA">Tokeniza</TabsTrigger>
+            <TabsTrigger value="BLUE">Blue</TabsTrigger>
+          </TabsList>
 
-          {/* API URL */}
-          <div className="space-y-2">
-            <Label htmlFor="api-url" className="text-sm font-medium">
-              URL da API do Blue Chat
-            </Label>
-            <Input
-              id="api-url"
-              placeholder="https://chat.grupoblue.com.br/api/external-ai"
-              value={apiUrl}
-              onChange={(e) => setApiUrl(e.target.value)}
-            />
-            <p className="text-xs text-muted-foreground">
-              URL base da API externa do Blue Chat. Endpoints usados: <code>/messages</code>, <code>/tickets/:id/transfer</code>.
-            </p>
-          </div>
+          <TabsContent value="TOKENIZA">
+            {renderCompanyTab('TOKENIZA')}
+          </TabsContent>
 
-          {/* Secrets info */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              O secret <code>BLUECHAT_API_KEY</code> é usado tanto para autenticar chamadas recebidas
-              quanto para enviar callbacks. Gerenciado no ambiente de deploy.
-            </AlertDescription>
-          </Alert>
-
-          {/* Test Result */}
-          {testResult && (
-            <div className="rounded-lg border p-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-medium">Resultado do Teste</span>
-                {getStatusBadge(testResult)}
-              </div>
-              {testResult.message && (
-                <p className="text-xs text-muted-foreground">{testResult.message}</p>
-              )}
-            </div>
-          )}
-        </div>
-
-        <DialogFooter className="flex gap-2 sm:gap-0">
-          <Button
-            variant="outline"
-            onClick={handleTest}
-            disabled={testing}
-          >
-            {testing ? (
-              <Loader2 className="mr-1 h-4 w-4 animate-spin" />
-            ) : (
-              <ExternalLink className="mr-1 h-4 w-4" />
-            )}
-            Testar Conexão
-          </Button>
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : null}
-            Salvar
-          </Button>
-        </DialogFooter>
+          <TabsContent value="BLUE">
+            {renderCompanyTab('BLUE')}
+          </TabsContent>
+        </Tabs>
       </DialogContent>
     </Dialog>
   );
