@@ -400,7 +400,7 @@ async function createLead(
     empresa,
     icp: empresa === 'BLUE' ? 'BLUE_NAO_CLASSIFICADO' : 'TOKENIZA_NAO_CLASSIFICADO',
     temperatura: 'MORNO',
-    prioridade: 5,
+    prioridade: 2,
     origem: 'AUTOMATICA',
   });
   
@@ -826,14 +826,75 @@ serve(async (req) => {
       }
     }
     
-    // Log de alerta se lead foi encontrado em empresa diferente da do payload
+    // Se lead foi encontrado em empresa diferente, criar lead_contacts espelho
     if (leadContact.empresa !== empresa) {
-      console.warn('[BlueChat] ⚠️ Empresa do lead difere do payload:', {
+      console.warn('[BlueChat] ⚠️ Lead encontrado em outra empresa, criando registro espelho:', {
         leadEmpresa: leadContact.empresa,
         payloadEmpresa: empresa,
         leadId: leadContact.lead_id,
-        acao: 'Usando empresa do payload para contexto da conversa',
       });
+
+      // Verificar se já existe lead_contacts para esta empresa
+      const { data: existingContact } = await supabase
+        .from('lead_contacts')
+        .select('id')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      if (!existingContact) {
+        // Criar lead_contacts espelho na empresa do contexto atual
+        const mirrorContact = {
+          id: crypto.randomUUID(),
+          lead_id: leadContact.lead_id,
+          empresa,
+          nome: leadContact.nome || payload.contact.name || null,
+          primeiro_nome: extractFirstName(leadContact.nome || payload.contact.name),
+          email: leadContact.email || payload.contact.email || null,
+          telefone: leadContact.telefone,
+          telefone_e164: leadContact.telefone_e164,
+          telefone_valido: true,
+          ddi: '55',
+          origem_telefone: 'BLUECHAT',
+          opt_out: false,
+          pessoa_id: (leadContact as Record<string, unknown>).pessoa_id as string | null || null,
+        };
+
+        const { data: newContact, error: mirrorErr } = await supabase
+          .from('lead_contacts')
+          .insert(mirrorContact)
+          .select()
+          .single();
+
+        if (mirrorErr) {
+          console.error('[BlueChat] Erro ao criar lead_contacts espelho:', mirrorErr);
+        } else {
+          console.log('[BlueChat] Lead_contacts espelho criado para', empresa);
+          // Usar o novo contact como referência
+          leadContact = newContact as LeadContact;
+        }
+
+        // Criar classificação inicial para a nova empresa
+        await supabase.from('lead_classifications').insert({
+          lead_id: leadContact.lead_id,
+          empresa,
+          icp: empresa === 'BLUE' ? 'BLUE_NAO_CLASSIFICADO' : 'TOKENIZA_NAO_CLASSIFICADO',
+          temperatura: 'MORNO',
+          prioridade: 2,
+          origem: 'AUTOMATICA',
+        });
+      } else {
+        // Já existe, buscar o contact da empresa correta
+        const { data: correctContact } = await supabase
+          .from('lead_contacts')
+          .select('*')
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa)
+          .single();
+        if (correctContact) {
+          leadContact = correctContact as LeadContact;
+        }
+      }
     }
     
     // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
