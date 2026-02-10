@@ -54,10 +54,14 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
       if (leadIds.length === 0) return [];
 
       // 2. Fetch contact info for these leads
-      const { data: contacts, error: contactsError } = await supabase
+      let contactsQuery = supabase
         .from('lead_contacts')
         .select('lead_id, empresa, nome, telefone, telefone_e164')
         .in('lead_id', leadIds);
+      if (empresaFilter) {
+        contactsQuery = contactsQuery.eq('empresa', empresaFilter);
+      }
+      const { data: contacts, error: contactsError } = await contactsQuery;
       if (contactsError) throw contactsError;
 
       // 2. Fetch latest messages, conversation states, and intents in parallel
