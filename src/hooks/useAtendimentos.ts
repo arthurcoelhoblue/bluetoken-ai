@@ -26,21 +26,39 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
   return useQuery({
     queryKey: ['atendimentos', empresaFilter],
     queryFn: async (): Promise<Atendimento[]> => {
-      // 1. Fetch blue chat contacts
-      let contactsQuery = supabase
-        .from('lead_contacts')
-        .select('lead_id, empresa, nome, telefone, telefone_e164')
-        .eq('origem_telefone', 'BLUECHAT');
+      // 1. Find leads with passive-mode messages (run_id IS NULL = Blue Chat / passive)
+      let intentsQuery = supabase
+        .from('lead_message_intents')
+        .select('lead_id, empresa')
+        .is('run_id', null);
 
       if (empresaFilter) {
-        contactsQuery = contactsQuery.eq('empresa', empresaFilter);
+        intentsQuery = intentsQuery.eq('empresa', empresaFilter);
       }
 
-      const { data: contacts, error: contactsError } = await contactsQuery;
-      if (contactsError) throw contactsError;
-      if (!contacts || contacts.length === 0) return [];
+      const { data: passiveIntents, error: intentsErr } = await intentsQuery;
+      if (intentsErr) throw intentsErr;
+      if (!passiveIntents || passiveIntents.length === 0) return [];
 
-      const leadIds = contacts.map(c => c.lead_id);
+      // Deduplicate lead_id + empresa pairs
+      const uniqueKeys = new Set<string>();
+      const leadIds: string[] = [];
+      for (const pi of passiveIntents) {
+        if (!pi.lead_id) continue;
+        const key = `${pi.lead_id}_${pi.empresa}`;
+        if (!uniqueKeys.has(key)) {
+          uniqueKeys.add(key);
+          leadIds.push(pi.lead_id);
+        }
+      }
+      if (leadIds.length === 0) return [];
+
+      // 2. Fetch contact info for these leads
+      const { data: contacts, error: contactsError } = await supabase
+        .from('lead_contacts')
+        .select('lead_id, empresa, nome, telefone, telefone_e164')
+        .in('lead_id', leadIds);
+      if (contactsError) throw contactsError;
 
       // 2. Fetch latest messages, conversation states, and intents in parallel
       const [messagesRes, statesRes, intentsRes] = await Promise.all([
