@@ -202,28 +202,32 @@ function normalizePhone(raw: string): { normalized: string; e164: string } {
 }
 
 /**
- * Valida autenticação do webhook
+ * Valida autenticação do webhook e retorna a empresa associada à chave
  */
-function validateAuth(req: Request): boolean {
+function validateAuth(req: Request): { valid: boolean; empresaFromKey?: EmpresaTipo } {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
   
-  const bluechatApiKey = Deno.env.get('BLUECHAT_API_KEY');
+  const bluechatApiKeyTokeniza = Deno.env.get('BLUECHAT_API_KEY');
+  const bluechatApiKeyBlue = Deno.env.get('BLUECHAT_API_KEY_BLUE');
   
-  if (!bluechatApiKey) {
-    console.error('[Auth] BLUECHAT_API_KEY não configurada');
-    return false;
+  if (!bluechatApiKeyTokeniza && !bluechatApiKeyBlue) {
+    console.error('[Auth] Nenhuma BLUECHAT_API_KEY configurada');
+    return { valid: false };
   }
   
-  if (authHeader) {
-    const token = authHeader.replace('Bearer ', '');
-    if (token === bluechatApiKey) return true;
+  const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
+  
+  if (token && bluechatApiKeyTokeniza && token === bluechatApiKeyTokeniza) {
+    return { valid: true, empresaFromKey: 'TOKENIZA' };
   }
   
-  if (apiKeyHeader === bluechatApiKey) return true;
+  if (token && bluechatApiKeyBlue && token === bluechatApiKeyBlue) {
+    return { valid: true, empresaFromKey: 'BLUE' };
+  }
   
   console.warn('[Auth] Token inválido para Blue Chat');
-  return false;
+  return { valid: false };
 }
 
 /**
@@ -589,26 +593,42 @@ async function sendResponseToBluechat(
     text: string;
     action: string;
     resolution?: { summary: string; reason: string };
+    empresa: EmpresaTipo;
   }
 ): Promise<void> {
   try {
-    // Buscar URL da API do Blue Chat em system_settings
+    // Buscar URL da API do Blue Chat por empresa em system_settings
+    const settingsKey = data.empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
     const { data: setting } = await supabase
       .from('system_settings')
       .select('value')
       .eq('category', 'integrations')
-      .eq('key', 'bluechat')
+      .eq('key', settingsKey)
       .maybeSingle();
 
-    const apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
+    // Fallback para config legada 'bluechat' se não encontrar config por empresa
+    let apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
     if (!apiUrl) {
-      console.warn('[Callback] URL da API Blue Chat não configurada em system_settings');
+      const { data: legacySetting } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('category', 'integrations')
+        .eq('key', 'bluechat')
+        .maybeSingle();
+      apiUrl = (legacySetting?.value as Record<string, unknown>)?.api_url as string | undefined;
+    }
+    
+    if (!apiUrl) {
+      console.warn(`[Callback] URL da API Blue Chat não configurada para ${data.empresa}`);
       return;
     }
 
-    const bluechatApiKey = Deno.env.get('BLUECHAT_API_KEY');
+    // Usar API key correta por empresa
+    const bluechatApiKey = data.empresa === 'BLUE' 
+      ? Deno.env.get('BLUECHAT_API_KEY_BLUE') 
+      : Deno.env.get('BLUECHAT_API_KEY');
     if (!bluechatApiKey) {
-      console.warn('[Callback] BLUECHAT_API_KEY não configurada');
+      console.warn(`[Callback] BLUECHAT_API_KEY não configurada para ${data.empresa}`);
       return;
     }
 
@@ -703,14 +723,15 @@ serve(async (req) => {
     );
   }
 
-  // Validar autenticação
-  if (!validateAuth(req)) {
-    console.error('[BlueChat] Acesso não autorizado');
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized' }),
-      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
+    // Validar autenticação
+    const authResult = validateAuth(req);
+    if (!authResult.valid) {
+      console.error('[BlueChat] Acesso não autorizado');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
   try {
     const payload: BlueChatPayload = await req.json();
@@ -740,7 +761,9 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
     const phoneInfo = normalizePhone(payload.contact.phone);
-    const empresa: EmpresaTipo = payload.context?.empresa || 'BLUE';
+    // Determinar empresa: priorizar payload, fallback pela API key usada
+    const empresa: EmpresaTipo = payload.context?.empresa || authResult.empresaFromKey || 'BLUE';
+    console.log('[BlueChat] Empresa determinada:', empresa, '(payload:', payload.context?.empresa, '| key:', authResult.empresaFromKey, ')');
 
     // Verificar se bluechat está habilitado para esta empresa
     const { data: channelConfig } = await supabase
@@ -969,6 +992,7 @@ serve(async (req) => {
         text: iaResult.responseText,
         action: response.action,
         resolution,
+        empresa,
       });
     }
     
