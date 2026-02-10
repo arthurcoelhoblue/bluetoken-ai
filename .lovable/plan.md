@@ -1,45 +1,59 @@
 
-# Registrar Mensagens OUTBOUND da Amelia no Blue Chat
 
-## Problema
+# Acao RESOLVE para Encerramento de Conversa no Blue Chat
 
-Quando a Amelia responde via Blue Chat, a resposta e enviada de volta ao Blue Chat (via callback API) mas **nao e salva no banco** como mensagem OUTBOUND em `lead_messages`. Isso acontece porque:
+## Resumo
 
-1. `sdr-ia-interpret` detecta `source === 'BLUECHAT'` e pula o envio via `whatsapp-send`
-2. `whatsapp-send` e quem normalmente insere a mensagem OUTBOUND em `lead_messages`
-3. `bluechat-inbound` envia a resposta ao Blue Chat via `sendResponseToBluechat` mas tambem nao persiste a mensagem
+Quando a Amelia detectar que a conversa esta sendo encerrada (despedida, agradecimento final, confirmacao de conclusao), o sistema enviara a acao `RESOLVE` ao Blue Chat com um resumo automatico do atendimento, em vez da acao `RESPOND` padrao.
 
-Resultado: so as mensagens INBOUND aparecem na conversa do lead.
+## O que muda para o usuario
 
-## Solucao
-
-Adicionar a persistencia da mensagem OUTBOUND no `bluechat-inbound`, logo apos receber a resposta da IA e antes de enviar ao Blue Chat. Isso garante que toda resposta da Amelia fique registrada no historico.
+- Quando um lead se despede ou confirma que foi atendido, o Blue Chat recebera a acao `RESOLVE` automaticamente
+- O ticket no Blue Chat sera resolvido sem intervencao manual
+- Um resumo do atendimento sera incluido na resposta
 
 ## Secao Tecnica
 
-### Arquivo modificado
+### 1. Atualizar tipo `BlueChatResponse` (bluechat-inbound)
 
-`supabase/functions/bluechat-inbound/index.ts`
-
-### Alteracao
-
-Apos a linha que verifica `if (iaResult?.responseText)` (por volta da linha 831), antes de chamar `sendResponseToBluechat`, inserir um `INSERT` em `lead_messages` com:
+Adicionar `RESOLVE` como acao valida e incluir campo `resolution`:
 
 ```text
-lead_id:     leadContact.lead_id
-empresa:     leadContact.empresa
-canal:       'WHATSAPP'
-direcao:     'OUTBOUND'
-conteudo:    iaResult.responseText
-estado:      'ENVIADO'
-template_codigo: 'BLUECHAT_PASSIVE_REPLY'
+action: 'RESPOND' | 'ESCALATE' | 'QUALIFY_ONLY' | 'RESOLVE'
+
+resolution?: {
+  summary: string;   // Resumo do atendimento
+  reason: string;    // Motivo do encerramento
+}
 ```
 
-Isso segue o mesmo padrao que `whatsapp-send` usa para registrar mensagens enviadas, garantindo que:
-- A conversa apareca completa no LeadDetail (ConversationView)
-- O dashboard de Atendimentos mostre `ultima_direcao: 'OUTBOUND'` apos a Amelia responder
-- O historico de mensagens do `sdr-ia-interpret` inclua as respostas anteriores da Amelia para manter contexto
+### 2. Detectar intencao de encerramento (bluechat-inbound)
 
-### Nenhuma alteracao de schema necessaria
+Na logica de montagem da resposta (linha ~831), apos receber o resultado da IA, verificar se o intent indica encerramento:
 
-A tabela `lead_messages` ja tem todas as colunas necessarias.
+- Intents de encerramento: `AGRADECIMENTO`, `CUMPRIMENTO` (quando no contexto de despedida)
+- Estado do funil: `POS_VENDA` ou `FECHAMENTO`
+- Heuristica adicional: palavras-chave na mensagem do lead como "obrigado", "ate mais", "tchau", "era isso", "resolvido"
+
+Quando detectar encerramento:
+- Definir `action = 'RESOLVE'`
+- Gerar `resolution.summary` a partir do historico (intent detectado + empresa + nome do lead)
+- Gerar `resolution.reason` a partir do contexto
+
+### 3. Chamar endpoint de resolucao no Blue Chat (sendResponseToBluechat)
+
+Adicionar logica na funcao `sendResponseToBluechat` para quando `action === 'RESOLVE'`:
+
+- Enviar a mensagem de despedida via `POST /messages` (como ja faz)
+- Chamar `POST /tickets/{ticket_id}/resolve` com o resumo e motivo
+
+### 4. Arquivos modificados
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `supabase/functions/bluechat-inbound/index.ts` | Adicionar tipo RESOLVE, deteccao de encerramento, chamada ao endpoint /resolve |
+
+### 5. Sem alteracao de schema
+
+Nenhuma tabela ou coluna nova necessaria.
+
