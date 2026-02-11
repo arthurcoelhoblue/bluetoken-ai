@@ -1,7 +1,9 @@
 import { SidebarProvider, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { useAuth } from '@/contexts/AuthContext';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate, useLocation } from 'react-router-dom';
+import { ArrowLeft } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -10,6 +12,8 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
   // Show loading state
   if (isLoading) {
@@ -38,6 +42,12 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
           {/* Top bar with trigger */}
           <header className="flex h-12 shrink-0 items-center gap-2 border-b px-4 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
             <SidebarTrigger className="-ml-1" />
+            {location.pathname !== '/' && (
+              <Button variant="ghost" size="sm" onClick={() => navigate(-1)} className="gap-1">
+                <ArrowLeft className="h-4 w-4" />
+                Voltar
+              </Button>
+            )}
           </header>
           {/* Main content */}
           <div className="flex-1 overflow-auto">
