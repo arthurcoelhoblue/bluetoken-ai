@@ -4034,9 +4034,13 @@ serve(async (req) => {
       confidence: aiResponse.confidence,
       acao: aiResponse.acao,
       deve_responder: aiResponse.deve_responder,
+      tem_resposta_sugerida: !!aiResponse.resposta_sugerida,
+      resposta_preview: aiResponse.resposta_sugerida?.substring(0, 80) || null,
       novo_estado_funil: aiResponse.novo_estado_funil,
       disc_estimado: aiResponse.disc_estimado,
       ultima_pergunta: aiResponse.ultima_pergunta_id,
+      source,
+      telefone: telefone ? 'SIM' : 'NAO',
     });
 
     // 4. Aplicar ação
@@ -4054,12 +4058,23 @@ serve(async (req) => {
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
-    if (
-      aiResponse.deve_responder &&
-      aiResponse.resposta_sugerida &&
-      telefone &&
-      aiResponse.intent !== 'OPT_OUT'
-    ) {
+    // PATCH: Para BLUECHAT, telefone NÃO é obrigatório (resposta retorna via HTTP, não WhatsApp)
+    const canRespond = source === 'BLUECHAT'
+      ? (aiResponse.deve_responder && aiResponse.resposta_sugerida && aiResponse.intent !== 'OPT_OUT')
+      : (aiResponse.deve_responder && aiResponse.resposta_sugerida && telefone && aiResponse.intent !== 'OPT_OUT');
+
+    // PATCH: Para BLUECHAT com triagem, forçar resposta se IA não gerou
+    // Mensagens [NOVO ATENDIMENTO] são resumos de triagem - Amélia DEVE responder
+    if (source === 'BLUECHAT' && !canRespond && triageSummary && aiResponse.resposta_sugerida) {
+      console.log('[SDR-IA] 📋 Triagem detectada mas deve_responder=false, forçando resposta para BLUECHAT');
+      aiResponse.deve_responder = true;
+    }
+
+    const shouldRespond = source === 'BLUECHAT'
+      ? (aiResponse.deve_responder && aiResponse.resposta_sugerida && aiResponse.intent !== 'OPT_OUT')
+      : (aiResponse.deve_responder && aiResponse.resposta_sugerida && telefone && aiResponse.intent !== 'OPT_OUT');
+
+    if (shouldRespond) {
       let respostaOriginal = aiResponse.resposta_sugerida;
       const isRobotic = detectRoboticPattern(respostaOriginal, leadNome);
       
