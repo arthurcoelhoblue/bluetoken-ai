@@ -1027,16 +1027,46 @@ serve(async (req) => {
       console.log('[BlueChat] 🔚 Encerramento detectado:', resolution);
     }
     
-    // 7. Montar resposta para Blue Chat
+    // 7. PATCH ANTI-LIMBO: Determinar ação e mensagem, nunca deixar no limbo
     let action: BlueChatResponse['action'];
-    if (isConversationEnding) {
-      action = 'RESOLVE';
-    } else if (iaResult?.escalation?.needed) {
+    let responseText: string | null = iaResult?.responseText || null;
+
+    // ANTI-LIMBO: Se IA retornou null (falha total), escalar automaticamente
+    if (!iaResult) {
       action = 'ESCALATE';
-    } else if (iaResult?.responseText) {
+      responseText = 'Estamos com um problema técnico. Vou te conectar com um atendente agora!';
+      console.log('[BlueChat] ⚠️ IA retornou null → ESCALATE automático');
+    } else if (isConversationEnding) {
+      action = 'RESOLVE';
+    } else if (iaResult.escalation?.needed) {
+      action = 'ESCALATE';
+      // Se escalação necessária mas sem texto, usar mensagem padrão
+      if (!responseText) {
+        responseText = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
+        console.log('[BlueChat] 🔄 ESCALATE sem responseText → mensagem padrão');
+      }
+    } else if (responseText) {
       action = 'RESPOND';
     } else {
-      action = 'QUALIFY_ONLY';
+      // ANTI-LIMBO: Mesmo sem resposta da IA, nunca deixar sem ação
+      // Verificar se tem contexto prévio para decidir
+      const { count: msgCount } = await supabase
+        .from('lead_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa);
+      
+      if ((msgCount || 0) <= 2) {
+        // Pouco contexto: perguntar o que o lead precisa
+        action = 'RESPOND';
+        responseText = 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
+        console.log('[BlueChat] 🔄 Sem resposta IA + pouco contexto → pergunta de contexto');
+      } else {
+        // Tem contexto mas IA não respondeu: escalar
+        action = 'ESCALATE';
+        responseText = 'Hmm, deixa eu pedir ajuda de alguém da equipe pra te atender melhor. Já já entram em contato!';
+        console.log('[BlueChat] 🔄 Sem resposta IA + contexto existente → ESCALATE');
+      }
     }
     
     const response: BlueChatResponse = {
@@ -1051,9 +1081,9 @@ serve(async (req) => {
         lead_ready: iaResult?.leadReady || false,
       },
       escalation: {
-        needed: iaResult?.escalation?.needed || false,
-        reason: iaResult?.escalation?.reason,
-        priority: (iaResult?.escalation?.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') || undefined,
+        needed: action === 'ESCALATE',
+        reason: iaResult?.escalation?.reason || (action === 'ESCALATE' ? 'Escalação automática anti-limbo' : undefined),
+        priority: (iaResult?.escalation?.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') || (action === 'ESCALATE' ? 'MEDIUM' : undefined),
       },
     };
     
@@ -1062,20 +1092,22 @@ serve(async (req) => {
       response.resolution = resolution;
     }
     
-    // Adicionar resposta se a IA gerou uma
-    if (iaResult?.responseText) {
+    // Adicionar resposta ao response
+    if (responseText) {
       response.response = {
-        text: iaResult.responseText,
+        text: responseText,
         suggested_next: isConversationEnding 
           ? 'Conversa encerrada - ticket resolvido'
-          : iaResult.leadReady 
-            ? 'Lead pronto para closer - agendar reunião' 
-            : 'Continuar qualificação',
+          : action === 'ESCALATE'
+            ? 'Ticket transferido para atendimento humano'
+            : iaResult?.leadReady 
+              ? 'Lead pronto para closer - agendar reunião' 
+              : 'Continuar qualificação',
       };
     }
     
-    // 8. Persistir mensagem OUTBOUND da Amélia no banco
-    if (iaResult?.responseText) {
+    // 8. Persistir mensagem OUTBOUND da Amélia no banco (SEMPRE que houver texto)
+    if (responseText) {
       try {
         const { data: outboundMsg, error: outboundError } = await supabase
           .from('lead_messages')
@@ -1084,7 +1116,7 @@ serve(async (req) => {
             empresa: empresa,
             canal: payload.channel === 'EMAIL' ? 'EMAIL' : 'WHATSAPP',
             direcao: 'OUTBOUND',
-            conteudo: iaResult.responseText,
+            conteudo: responseText,
             estado: 'ENVIADO',
             template_codigo: 'BLUECHAT_PASSIVE_REPLY',
             enviado_em: new Date().toISOString(),
@@ -1102,13 +1134,13 @@ serve(async (req) => {
       }
     }
 
-    // 9. Callback: enviar resposta de volta ao Blue Chat via API
-    if (iaResult?.responseText) {
+    // 9. Callback: enviar resposta/escalação de volta ao Blue Chat via API (SEMPRE que houver texto)
+    if (responseText) {
       await sendResponseToBluechat(supabase, {
         conversation_id: payload.conversation_id,
         ticket_id: payload.ticket_id,
         message_id: savedMessage.messageId,
-        text: iaResult.responseText,
+        text: responseText,
         action: response.action,
         resolution,
         empresa,

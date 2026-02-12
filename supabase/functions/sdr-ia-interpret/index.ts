@@ -1381,6 +1381,8 @@ interface InterpretResult {
   respostaEnviada?: boolean;
   responseText?: string | null;
   optOutBlocked?: boolean;
+  leadReady?: boolean;
+  escalation?: { needed: boolean; reason?: string; priority?: string };
   error?: string;
 }
 
@@ -3831,7 +3833,12 @@ async function applyAction(
             },
           });
           
-          console.log('[Ação] Escalado para humano:', leadId);
+          console.log('[Ação] Escalado para humano (com cadência):', leadId);
+          return true;
+        } else {
+          // PATCH ANTI-LIMBO: Modo passivo (Blue Chat) - runId é null
+          // Registrar escalação mesmo sem cadência vinculada
+          console.log('[Ação] Escalado para humano (modo passivo, sem cadência):', leadId);
           return true;
         }
         break;
@@ -4291,6 +4298,33 @@ serve(async (req) => {
     let respostaEnviada = false;
     let respostaTexto: string | null = null;
 
+    // PATCH ANTI-LIMBO: Para BLUECHAT + NAO_ENTENDI, forçar resposta contextual
+    if (source === 'BLUECHAT' && aiResponse.intent === 'NAO_ENTENDI') {
+      const hasContext = historico.length >= 2;
+      if (!hasContext) {
+        // Sem contexto prévio: perguntar o que o lead precisa
+        console.log('[SDR-IA] 🔄 NAO_ENTENDI sem contexto → forçando pergunta de contexto');
+        aiResponse.deve_responder = true;
+        aiResponse.resposta_sugerida = aiResponse.resposta_sugerida || 
+          'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
+        aiResponse.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+      } else {
+        // Com contexto prévio: escalar para humano com mensagem de transição
+        console.log('[SDR-IA] 🔄 NAO_ENTENDI com contexto → escalando para humano');
+        aiResponse.deve_responder = true;
+        aiResponse.resposta_sugerida = aiResponse.resposta_sugerida ||
+          'Hmm, deixa eu pedir ajuda de alguém da equipe pra te atender melhor. Já já entram em contato!';
+        aiResponse.acao = 'ESCALAR_HUMANO';
+      }
+    }
+
+    // PATCH ANTI-LIMBO: Para BLUECHAT + ESCALAR_HUMANO sem resposta, forçar mensagem de transição
+    if (source === 'BLUECHAT' && aiResponse.acao === 'ESCALAR_HUMANO' && !aiResponse.resposta_sugerida) {
+      console.log('[SDR-IA] 🔄 ESCALAR_HUMANO sem resposta → forçando mensagem de transição');
+      aiResponse.deve_responder = true;
+      aiResponse.resposta_sugerida = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
+    }
+
     // PATCH: Para BLUECHAT, telefone NÃO é obrigatório (resposta retorna via HTTP, não WhatsApp)
     const canRespond = source === 'BLUECHAT'
       ? (aiResponse.deve_responder && aiResponse.resposta_sugerida && aiResponse.intent !== 'OPT_OUT')
@@ -4458,6 +4492,15 @@ serve(async (req) => {
       ).catch(err => console.error('[Pipedrive] Erro em background:', err));
     }
 
+    // Determinar se precisa escalar para humano
+    const needsEscalation = aiResponse.acao === 'ESCALAR_HUMANO' || aiResponse.acao === 'CRIAR_TAREFA_CLOSER';
+    const escalationReason = needsEscalation 
+      ? (aiResponse.acao === 'CRIAR_TAREFA_CLOSER' ? 'Lead qualificado para closer' : 'Situação requer atenção humana')
+      : undefined;
+    const escalationPriority = needsEscalation
+      ? (aiResponse.acao === 'CRIAR_TAREFA_CLOSER' ? 'HIGH' : 'MEDIUM')
+      : undefined;
+
     const result: InterpretResult = {
       success: true,
       intentId,
@@ -4467,6 +4510,12 @@ serve(async (req) => {
       acaoAplicada,
       respostaEnviada,
       responseText: respostaTexto,
+      leadReady: aiResponse.acao === 'CRIAR_TAREFA_CLOSER',
+      escalation: {
+        needed: needsEscalation,
+        reason: escalationReason,
+        priority: escalationPriority,
+      },
     };
 
     return new Response(
