@@ -1,120 +1,147 @@
 
-# Transferencia Inteligente com Departamentos no Blue Chat
 
-## Problema Atual
+# Blue CRM -- Patch 0: Reorganizacao UX + Estrutura Base
 
-A Amelia escala para humano de forma generica -- nao informa ao Blue Chat PARA QUAL SETOR transferir. O payload de transferencia envia apenas:
+## Resumo
 
-```json
-{
-  "reason": "Lead qualificado - escalar para closer",
-  "source": "AMELIA_SDR"
-}
-```
+Transformar o Bluetoken AI (SDR IA) em **Blue CRM** reorganizando a navegacao, visual e estrutura de paginas. Tudo que funciona hoje continua funcionando -- nenhuma edge function, banco de dados, hook ou componente existente sera alterado. O patch e 100% frontend.
 
-Falta o campo `department` (ou equivalente) para o Blue Chat rotear o ticket corretamente.
+## O que muda
 
-## O que sera feito
+1. **Nova sidebar** com 4 grupos: Principal, Comercial, Automacao, Configuracao
+2. **TopBar** com titulo da pagina, busca (visual), notificacoes, toggle dark/light e avatar
+3. **Company Switcher** na sidebar para alternar entre Blue Consult, Tokeniza e Todas
+4. **Dark/Light mode** com ThemeProvider
+5. **9 novas paginas shell** (placeholder) para funcionalidades futuras
+6. **Landing page** atualizada com branding "Blue CRM"
+7. **Novas rotas** no App.tsx mantendo todas as existentes
 
-1. A IA vai decidir o departamento correto com base no contexto da conversa
-2. O departamento vai ser enviado no payload de transferencia ao Blue Chat
-3. As regras de roteamento serao claras nos prompts
+## O que NAO muda
 
-## Departamentos disponiveis
+- Nenhuma edge function (sdr-ia-interpret, bluechat-inbound, cadence-runner, etc.)
+- Nenhuma tabela do banco de dados (zero migrations)
+- AuthContext, ProtectedRoute, RBAC
+- Todas as paginas existentes: LeadDetail, CadencesList, Settings, AIBenchmark, etc.
+- Todos os hooks e componentes existentes
 
-| Departamento | Quando usar |
-|---|---|
-| Comercial | Lead nao e cliente e quer comprar, conhecer planos ou fechar negocio |
-| Sucesso do Cliente | Cliente ativo com duvida, suporte, uso do produto ou problema de atendimento |
-| Operacao | Cliente que precisa enviar documento ou tratar servico com especialista |
-| Financeiro | Cobranca ou problema de pagamento |
+## Sequencia de implementacao
+
+### Fase 1 -- Novos contextos (sem impacto visual)
+
+| # | Arquivo | Acao |
+|---|---------|------|
+| 1 | `src/contexts/ThemeContext.tsx` | Criar -- gerencia dark/light mode com localStorage |
+| 2 | `src/contexts/CompanyContext.tsx` | Criar -- gerencia empresa ativa (blue, tokeniza, all) |
+
+### Fase 2 -- Novos componentes de layout
+
+| # | Arquivo | Acao |
+|---|---------|------|
+| 3 | `src/components/layout/CompanySwitcher.tsx` | Criar -- dropdown de selecao de empresa na sidebar |
+| 4 | `src/components/layout/TopBar.tsx` | Criar -- barra superior com titulo, busca, notificacoes, theme toggle, avatar |
+| 5 | `src/components/layout/PageShell.tsx` | Criar -- componente reutilizavel para paginas placeholder |
+
+### Fase 3 -- Paginas shell (placeholders para patches futuros)
+
+| # | Arquivo | Descricao |
+|---|---------|-----------|
+| 6 | `src/pages/PipelinePage.tsx` | Shell -- Pipeline Kanban (Patch 1) |
+| 7 | `src/pages/ContatosPage.tsx` | Shell -- Contatos unificados (Patch 2) |
+| 8 | `src/pages/ConversasPage.tsx` | Shell -- Conversas integradas (Patch 3) |
+| 9 | `src/pages/MetasPage.tsx` | Shell -- Metas e Comissoes (Patch 5) |
+| 10 | `src/pages/RenovacaoPage.tsx` | Shell -- Renovacao e Churn (Patch 8) |
+| 11 | `src/pages/CockpitPage.tsx` | Shell -- Cockpit Executivo (Patch 7) |
+| 12 | `src/pages/AmeliaPage.tsx` | Shell -- Amelia IA Central (adaptar) |
+| 13 | `src/pages/TemplatesPage.tsx` | Shell -- Templates de mensagem |
+| 14 | `src/pages/IntegracoesPage.tsx` | Shell -- Integracoes |
+
+### Fase 4 -- Reescrever layout (momento critico)
+
+| # | Arquivo | Acao |
+|---|---------|------|
+| 15 | `src/components/layout/AppSidebar.tsx` | Reescrever -- nova estrutura de 4 grupos com Company Switcher, branding Blue CRM, badges e live dots |
+| 16 | `src/components/layout/AppLayout.tsx` | Reescrever -- integrar ThemeProvider, CompanyProvider e TopBar |
+
+### Fase 5 -- Rotas e pagina inicial
+
+| # | Arquivo | Acao |
+|---|---------|------|
+| 17 | `src/App.tsx` | Atualizar -- adicionar 9 novas rotas mantendo todas as existentes |
+| 18 | `src/pages/Index.tsx` | Atualizar -- landing page com branding Blue CRM, dashboard permanece igual para usuarios autenticados |
 
 ## Detalhes tecnicos
 
-### 1. `sdr-ia-interpret/index.ts` -- Novo campo no JSON de resposta da IA
+### ThemeContext
+- Armazena preferencia em `localStorage` com chave `bluecrm-theme`
+- Default: `dark`
+- Aplica classe `dark`/`light` no `document.documentElement`
+- Expoe: `theme`, `toggleTheme`, `setTheme`
 
-Adicionar `departamento_destino` ao formato de resposta JSON nos dois prompts (passivo e qualificador consultivo):
+### CompanyContext
+- Armazena empresa ativa em `localStorage` com chave `bluecrm-company`
+- Valores: `blue`, `tokeniza`, `all`
+- Default: `blue`
+- Expoe: `activeCompany`, `setActiveCompany`, `companyLabel`
+
+### TopBar
+- Titulo dinamico baseado na rota atual (mapa rota -> titulo)
+- Busca visual (sem funcionalidade neste patch -- apenas UI)
+- Notificacoes (icone com dot vermelho -- sem funcionalidade neste patch)
+- Toggle dark/light usando ThemeContext
+- Avatar do usuario com fallback para iniciais
+
+### AppSidebar -- Nova estrutura de navegacao
 
 ```text
-## FORMATO DE RESPOSTA (JSON)
-{
-  "intent": "...",
-  ...
-  "departamento_destino": "Comercial" | "Sucesso do Cliente" | "Operação" | "Financeiro" | null
-}
+PRINCIPAL
+  Meu Dia          /               ALL
+  Pipeline          /pipeline       ALL
+  Contatos          /contatos       ALL
+  Conversas         /conversas      ALL
+
+COMERCIAL
+  Metas & Comissoes /metas          ALL
+  Renovacao         /renovacao      ALL
+  Cockpit           /cockpit        ADMIN, CLOSER
+
+AUTOMACAO
+  Amelia IA         /amelia         ADMIN        (live dot)
+  Cadencias         /cadences       ADMIN, MKT
+  Leads em Cadencia /cadences/runs  ADMIN, CLOSER, MKT
+  Prox. Acoes       /cadences/next  ADMIN, CLOSER
+  Templates         /templates      ADMIN, MKT
+
+CONFIGURACAO
+  Knowledge Base    /admin/produtos ADMIN
+  Integracoes       /integracoes    ADMIN
+  Benchmark IA      /admin/ai-bench ADMIN
+  Monitor SGT       /monitor/sgt    ADMIN, AUDITOR
+  Leads Quentes     /admin/leads-q  ADMIN, CLOSER
+  Configuracoes     /admin/settings ADMIN
 ```
 
-Adicionar instrucoes nos prompts explicando quando usar cada departamento:
+### PageShell (componente reutilizavel)
+- Icone centralizado com fundo `primary/10`
+- Titulo e descricao do que vira no patch futuro
+- Badge informativo com numero do patch
 
-```text
-## DEPARTAMENTOS PARA TRANSFERENCIA
-Quando a acao for ESCALAR_HUMANO, indique o departamento correto:
-- "Comercial": pessoa que NAO e cliente e quer comprar/conhecer planos/fechar negocio
-- "Sucesso do Cliente": cliente ativo com duvida, suporte, uso do produto
-- "Operação": cliente que precisa enviar documento ou tratar servico com especialista
-- "Financeiro": cobranca ou problema de pagamento
+### Estrategia anti-quebra
+- Todas as rotas existentes (`/leads`, `/cadences/*`, `/admin/*`, `/monitor/*`, `/tokeniza/*`, `/me`, `/auth`) sao mantidas intactas
+- Paginas existentes nao sao modificadas internamente
+- AppLayout mantem a mesma interface `{ children, requireAuth }` -- nenhuma pagina existente precisa ser alterada
+- Edge functions e banco de dados intocados
 
-Se nao souber qual departamento, use "Comercial" como padrao.
-```
+## Roadmap futuro (para contexto, NAO implementado agora)
 
-### 2. `sdr-ia-interpret/index.ts` -- Propagar departamento no resultado
+| Patch | Nome | Escopo |
+|-------|------|--------|
+| 1 | Pipeline Kanban | Tabelas deals/stages/pipelines, drag-drop, CRUD |
+| 2 | Contatos Unificados | Merge pessoas + leads, busca, timeline |
+| 3 | Conversas Integradas | Chat WhatsApp/Email dentro do CRM |
+| 4 | Meu Dia (Workbench) | KPIs vendedor, SLA, acoes, comissao |
+| 5 | Metas & Comissoes | Metas por vendedor, projecao, simulador |
+| 6 | Amelia Acao em Massa | Selecionar leads e acionar Amelia |
+| 7 | Cockpit & Dashboards | Cockpit 30s, funil, export |
+| 8 | Renovacao & Churn | Pipeline renovacao, alertas, tracking |
+| 9 | Eliminar Pipedrive | Migracao final, CRM como source of truth |
 
-Atualizar a interface `InterpretResult` para incluir `departamento_destino: string | null` e propagar o valor vindo do JSON da IA.
-
-### 3. `bluechat-inbound/index.ts` -- Enviar departamento na transferencia
-
-Atualizar o payload de transferencia de ticket para incluir o departamento:
-
-De:
-```json
-{
-  "reason": "Lead qualificado - escalar para closer",
-  "source": "AMELIA_SDR"
-}
-```
-
-Para:
-```json
-{
-  "reason": "Lead qualificado - escalar para closer",
-  "source": "AMELIA_SDR",
-  "department": "Comercial"
-}
-```
-
-O `department` vem de `iaResult.departamento_destino` ou fallback para `"Comercial"`.
-
-### 4. `bluechat-inbound/index.ts` -- Incluir departamento na resposta da API
-
-Adicionar o departamento na resposta do webhook para que o Blue Chat saiba o destino:
-
-```json
-{
-  "escalation": {
-    "needed": true,
-    "reason": "...",
-    "priority": "HIGH",
-    "department": "Comercial"
-  }
-}
-```
-
-### 5. Fallbacks anti-limbo com departamento
-
-Nos cenarios de fallback (IA falhou, NAO_ENTENDI com contexto), usar `"Comercial"` como departamento padrao, ja que a Amelia e do comercial e a maioria dos escalamentos sao para esse setor.
-
-## Arquivos a modificar
-
-| Arquivo | Mudanca |
-|---|---|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar departamentos nos prompts, novo campo no resultado, propagar valor |
-| `supabase/functions/bluechat-inbound/index.ts` | Enviar department no transfer, incluir na resposta da API |
-
-## Sequencia
-
-1. Atualizar prompts da IA com instrucoes de departamento e campo no JSON
-2. Atualizar interface e logica de resultado no sdr-ia-interpret
-3. Atualizar payload de transferencia no bluechat-inbound
-4. Atualizar resposta da API com department
-5. Deploy das duas funcoes
-6. Testar cenarios de escalacao verificando se o departamento correto chega ao Blue Chat
