@@ -1,15 +1,15 @@
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { Plug } from 'lucide-react';
+import { Webhook } from 'lucide-react';
 
 export default function IntegracoesPage() {
   return (
     <AppLayout>
       <PageShell
-        icon={Plug}
+        icon={Webhook}
         title="Integrações"
-        description="Configure e monitore integrações com WhatsApp, Email, Pipedrive, SGT e outras plataformas."
-        patchLabel="Em breve"
+        description="Status e configuração de SGT, Pipedrive (legado), WhatsApp Cloud API, Email SMTP, Mautic, Tokeniza, Notion, Chatwoot, GA4."
+        patchInfo="Evolução contínua"
       />
     </AppLayout>
   );

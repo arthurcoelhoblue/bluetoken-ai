@@ -8,8 +8,8 @@ export default function MetasPage() {
       <PageShell
         icon={Target}
         title="Metas & Comissões"
-        description="Acompanhe metas por vendedor, projeções de resultado e simulador de comissões em tempo real."
-        patchLabel="Patch 5 — Metas & Comissões"
+        description="Comissão acumulada em tempo real. Projeção por etapa do funil com seleção de stages. Simulador de cenários."
+        patchInfo="Patch 5 — Metas & Comissões"
       />
     </AppLayout>
   );

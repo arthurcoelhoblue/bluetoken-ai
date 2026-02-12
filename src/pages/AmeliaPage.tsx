@@ -8,8 +8,8 @@ export default function AmeliaPage() {
       <PageShell
         icon={Bot}
         title="Amélia IA"
-        description="Central da Amélia com ações em massa, qualificação automática e monitoramento de performance da IA."
-        patchLabel="Patch 6 — Amélia Ação em Massa"
+        description="Central de operações da SDR IA. Métricas, conversas ativas. Ação em massa: selecionar leads e acionar Amélia com modelos ou campanhas ad-hoc."
+        patchInfo="Patch 6 — Amélia Ação em Massa"
       />
     </AppLayout>
   );
