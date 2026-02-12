@@ -18,6 +18,7 @@ export interface PipelineStage {
   is_won: boolean;
   is_lost: boolean;
   sla_minutos: number | null;
+  tempo_minimo_minutos: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -80,6 +81,9 @@ export interface Deal {
   score_intencao: number;
   score_valor: number;
   score_urgencia: number;
+  stage_origem_id: string | null;
+  stage_fechamento_id: string | null;
+  status: 'ABERTO' | 'GANHO' | 'PERDIDO';
   created_at: string;
   updated_at: string;
 }
