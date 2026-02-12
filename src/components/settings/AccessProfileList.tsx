@@ -81,9 +81,12 @@ export function AccessProfileList() {
                   <div className="flex items-center gap-2">
                     <span className="font-medium">{p.nome}</span>
                     {p.is_system && (
-                      <Badge variant="secondary" className="gap-1 text-xs">
+                      <Badge 
+                        variant={p.nome === 'Super Admin' ? 'default' : 'secondary'} 
+                        className="gap-1 text-xs"
+                      >
                         <Lock className="h-3 w-3" />
-                        Sistema
+                        {p.nome === 'Super Admin' ? 'Super Admin' : 'Sistema'}
                       </Badge>
                     )}
                   </div>
