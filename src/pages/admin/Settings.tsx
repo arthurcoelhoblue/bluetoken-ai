@@ -3,7 +3,8 @@ import { IntegrationsTab } from "@/components/settings/IntegrationsTab";
 import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
-import { Plug, Webhook, Brain, Bot } from "lucide-react";
+import { AccessControlTab } from "@/components/settings/AccessControlTab";
+import { Plug, Webhook, Brain, Bot, Shield } from "lucide-react";
 
 export default function Settings() {
   return (
@@ -16,7 +17,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="channels" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:grid-cols-none lg:inline-flex">
+        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-none lg:inline-flex">
           <TabsTrigger value="channels" className="gap-2">
             <Plug className="h-4 w-4" />
             <span className="hidden sm:inline">Canais</span>
@@ -32,6 +33,10 @@ export default function Settings() {
           <TabsTrigger value="webhooks" className="gap-2">
             <Webhook className="h-4 w-4" />
             <span className="hidden sm:inline">Webhooks</span>
+          </TabsTrigger>
+          <TabsTrigger value="access" className="gap-2">
+            <Shield className="h-4 w-4" />
+            <span className="hidden sm:inline">Acesso</span>
           </TabsTrigger>
         </TabsList>
 
@@ -49,6 +54,10 @@ export default function Settings() {
 
         <TabsContent value="webhooks">
           <WebhooksTab />
+        </TabsContent>
+
+        <TabsContent value="access">
+          <AccessControlTab />
         </TabsContent>
       </Tabs>
     </div>

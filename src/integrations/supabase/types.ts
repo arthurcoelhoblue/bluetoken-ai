@@ -14,6 +14,47 @@ export type Database = {
   }
   public: {
     Tables: {
+      access_profiles: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          id: string
+          is_system: boolean
+          nome: string
+          permissions: Json
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          is_system?: boolean
+          nome: string
+          permissions?: Json
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          id?: string
+          is_system?: boolean
+          nome?: string
+          permissions?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "access_profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_model_benchmarks: {
         Row: {
           acao_recomendada: string | null
@@ -1100,6 +1141,58 @@ export type Database = {
             foreignKeyName: "system_settings_updated_by_fkey"
             columns: ["updated_by"]
             isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_access_assignments: {
+        Row: {
+          access_profile_id: string
+          assigned_by: string | null
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_profile_id: string
+          assigned_by?: string | null
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_profile_id?: string
+          assigned_by?: string | null
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_access_assignments_access_profile_id_fkey"
+            columns: ["access_profile_id"]
+            isOneToOne: false
+            referencedRelation: "access_profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },

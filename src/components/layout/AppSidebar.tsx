@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
@@ -21,6 +22,7 @@ import {
   Settings,
   LogOut,
   ChevronRight,
+  ChevronDown,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -36,15 +38,18 @@ import {
   SidebarSeparator,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/auth/RoleBadge';
 import { CompanySwitcher } from './CompanySwitcher';
+import { useScreenPermissions } from '@/hooks/useScreenPermissions';
 import type { UserRole } from '@/types/auth';
 
 interface NavItem {
   title: string;
   url: string;
   icon: React.ElementType;
+  screenKey?: string;
   roles?: UserRole[];
   liveDot?: boolean;
 }
@@ -59,41 +64,40 @@ const navGroups: NavGroup[] = [
   {
     label: 'Principal',
     items: [
-      { title: 'Meu Dia', url: '/', icon: CalendarCheck },
-      { title: 'Pipeline', url: '/pipeline', icon: Columns3 },
-      { title: 'Contatos', url: '/contatos', icon: ContactRound },
-      { title: 'Conversas', url: '/conversas', icon: MessagesSquare },
+      { title: 'Meu Dia', url: '/', icon: CalendarCheck, screenKey: 'dashboard' },
+      { title: 'Pipeline', url: '/pipeline', icon: Columns3, screenKey: 'pipeline' },
+      { title: 'Contatos', url: '/contatos', icon: ContactRound, screenKey: 'contatos' },
+      { title: 'Conversas', url: '/conversas', icon: MessagesSquare, screenKey: 'conversas' },
     ],
   },
   {
     label: 'Comercial',
     items: [
-      { title: 'Metas & Comissões', url: '/metas', icon: Target },
-      { title: 'Renovação', url: '/renovacao', icon: RefreshCcw },
-      { title: 'Cockpit', url: '/cockpit', icon: Gauge, roles: ['ADMIN', 'CLOSER'] },
+      { title: 'Metas & Comissões', url: '/metas', icon: Target, screenKey: 'metas' },
+      { title: 'Renovação', url: '/renovacao', icon: RefreshCcw, screenKey: 'renovacao' },
+      { title: 'Cockpit', url: '/cockpit', icon: Gauge, screenKey: 'cockpit' },
     ],
   },
   {
     label: 'Automação',
     items: [
-      { title: 'Amélia IA', url: '/amelia', icon: Bot, roles: ['ADMIN'], liveDot: true },
-      { title: 'Cadências', url: '/cadences', icon: Zap, roles: ['ADMIN', 'MARKETING'] },
-      { title: 'Leads em Cadência', url: '/cadences/runs', icon: Play, roles: ['ADMIN', 'CLOSER', 'MARKETING'] },
-      { title: 'Próx. Ações', url: '/cadences/next-actions', icon: Clock, roles: ['ADMIN', 'CLOSER'] },
-      { title: 'Templates', url: '/templates', icon: FileText, roles: ['ADMIN', 'MARKETING'] },
+      { title: 'Amélia IA', url: '/amelia', icon: Bot, screenKey: 'amelia', liveDot: true },
+      { title: 'Cadências', url: '/cadences', icon: Zap, screenKey: 'cadencias' },
+      { title: 'Leads em Cadência', url: '/cadences/runs', icon: Play, screenKey: 'leads_cadencia' },
+      { title: 'Próx. Ações', url: '/cadences/next-actions', icon: Clock, screenKey: 'proximas_acoes' },
+      { title: 'Templates', url: '/templates', icon: FileText, screenKey: 'templates' },
     ],
   },
   {
     label: 'Configuração',
     items: [
-      { title: 'Knowledge Base', url: '/admin/produtos', icon: BookOpen, roles: ['ADMIN'] },
-      { title: 'Integrações', url: '/integracoes', icon: Plug, roles: ['ADMIN'] },
-      { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, roles: ['ADMIN'] },
-      { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, roles: ['ADMIN', 'AUDITOR'] },
-      { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, roles: ['ADMIN', 'CLOSER'] },
-      { title: 'Configurações', url: '/admin/settings', icon: Settings, roles: ['ADMIN'] },
+      { title: 'Knowledge Base', url: '/admin/produtos', icon: BookOpen, screenKey: 'knowledge_base' },
+      { title: 'Integrações', url: '/integracoes', icon: Plug, screenKey: 'integracoes' },
+      { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, screenKey: 'benchmark_ia' },
+      { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, screenKey: 'monitor_sgt' },
+      { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, screenKey: 'leads_quentes' },
+      { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
-    roles: ['ADMIN', 'AUDITOR', 'CLOSER'],
   },
 ];
 
@@ -102,16 +106,34 @@ export function AppSidebar() {
   const location = useLocation();
   const navigate = useNavigate();
   const { profile, roles, signOut } = useAuth();
+  const { data: permissions } = useScreenPermissions();
   const collapsed = state === 'collapsed';
+  const isAdmin = roles.includes('ADMIN');
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';
     return location.pathname.startsWith(path);
   };
 
-  const hasAccess = (itemRoles?: UserRole[]) => {
-    if (!itemRoles || itemRoles.length === 0) return true;
-    return roles.some(role => itemRoles.includes(role));
+  const hasAccess = (item: NavItem) => {
+    if (isAdmin) return true;
+    // New permission system
+    if (permissions && item.screenKey) {
+      return permissions[item.screenKey]?.view ?? false;
+    }
+    // Legacy fallback
+    if (item.roles && item.roles.length > 0) {
+      return roles.some(role => item.roles!.includes(role));
+    }
+    return true;
+  };
+
+  const hasGroupAccess = (group: NavGroup) => {
+    if (isAdmin) return true;
+    if (group.roles && group.roles.length > 0 && !roles.some(r => group.roles!.includes(r))) {
+      // Check if at least one item is visible
+    }
+    return group.items.some(item => hasAccess(item));
   };
 
   const getInitials = (name: string | null, email: string) => {
@@ -145,35 +167,74 @@ export function AppSidebar() {
       {/* Navigation */}
       <SidebarContent>
         {navGroups.map((group) => {
-          if (!hasAccess(group.roles)) return null;
-          const visibleItems = group.items.filter(item => hasAccess(item.roles));
+          if (!hasGroupAccess(group)) return null;
+          const visibleItems = group.items.filter(item => hasAccess(item));
           if (visibleItems.length === 0) return null;
 
+          const groupHasActiveRoute = visibleItems.some(item => isActive(item.url));
+
+          if (collapsed) {
+            return (
+              <SidebarGroup key={group.label}>
+                <SidebarGroupContent>
+                  <SidebarMenu>
+                    {visibleItems.map((item) => (
+                      <SidebarMenuItem key={item.url}>
+                        <SidebarMenuButton
+                          asChild
+                          isActive={isActive(item.url)}
+                          tooltip={item.title}
+                        >
+                          <button onClick={() => navigate(item.url)} className="relative">
+                            <item.icon className="h-4 w-4" />
+                            <span>{item.title}</span>
+                            {item.liveDot && (
+                              <span className="absolute right-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-success animate-pulse" />
+                            )}
+                          </button>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    ))}
+                  </SidebarMenu>
+                </SidebarGroupContent>
+              </SidebarGroup>
+            );
+          }
+
           return (
-            <SidebarGroup key={group.label}>
-              <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {visibleItems.map((item) => (
-                    <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={isActive(item.url)}
-                        tooltip={item.title}
-                      >
-                        <button onClick={() => navigate(item.url)} className="relative">
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                          {item.liveDot && (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-success animate-pulse" />
-                          )}
-                        </button>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
+            <Collapsible key={group.label} defaultOpen={groupHasActiveRoute} className="group/collapsible">
+              <SidebarGroup>
+                <CollapsibleTrigger asChild>
+                  <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent/50 rounded-md transition-colors select-none">
+                    <span className="flex-1">{group.label}</span>
+                    <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/collapsible:-rotate-90" />
+                  </SidebarGroupLabel>
+                </CollapsibleTrigger>
+                <CollapsibleContent>
+                  <SidebarGroupContent>
+                    <SidebarMenu>
+                      {visibleItems.map((item) => (
+                        <SidebarMenuItem key={item.url}>
+                          <SidebarMenuButton
+                            asChild
+                            isActive={isActive(item.url)}
+                            tooltip={item.title}
+                          >
+                            <button onClick={() => navigate(item.url)} className="relative">
+                              <item.icon className="h-4 w-4" />
+                              <span>{item.title}</span>
+                              {item.liveDot && (
+                                <span className="absolute right-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-success animate-pulse" />
+                              )}
+                            </button>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      ))}
+                    </SidebarMenu>
+                  </SidebarGroupContent>
+                </CollapsibleContent>
+              </SidebarGroup>
+            </Collapsible>
           );
         })}
       </SidebarContent>
