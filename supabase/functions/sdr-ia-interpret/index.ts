@@ -54,7 +54,8 @@ type SdrAcaoTipo =
   | 'MARCAR_OPT_OUT'
   | 'NENHUMA'
   | 'ESCALAR_HUMANO'
-  | 'ENVIAR_RESPOSTA_AUTOMATICA';
+  | 'ENVIAR_RESPOSTA_AUTOMATICA'
+  | 'DESQUALIFICAR_LEAD';
 
 // ========================================
 // PATCH 6: TIPOS DE ESTADO DE CONVERSA
@@ -1378,14 +1379,33 @@ interface AIResponse {
 // ========================================
 
 /**
- * PATCH 10: Decide próxima pergunta para BLUE usando SPIN
- * COM MODO BLOCO DE 3 PERGUNTAS
+ * PATCH 10 + FASE 2: Decide próxima pergunta para BLUE usando SPIN
+ * COM MODO BLOCO DE 3 PERGUNTAS + DETECÇÃO DE CONTEXTO
  */
 function decidirProximaPerguntaBLUE(
   state: ConversationQualiState,
-  historicoLength: number = 0
+  historicoLength: number = 0,
+  triageContext?: string | null
 ): { tipo: ProximaPerguntaTipo; usarBloco?: boolean } {
   const spin = state.spin || {};
+
+  // FASE 2: Antes de ativar bloco, verificar se o contexto da triagem
+  // indica que o lead quer algo específico (não qualificação)
+  if (triageContext) {
+    const ctxLower = triageContext.toLowerCase();
+    const skipBlocoPatterns = [
+      'material', 'live', 'gravação', 'gravacao', 'link',
+      'renovação', 'renovacao', 'renovar', 'renov',
+      'falar com', 'conversar com', 'gabriel', 'atendente',
+      'plano gold', 'plano diamond', 'contratar', 'fechar',
+      'já sou cliente', 'ja sou cliente', 'cliente ativo',
+    ];
+    
+    if (skipBlocoPatterns.some(p => ctxLower.includes(p))) {
+      console.log('[FASE2] Contexto triagem indica pedido específico, NÃO ativando bloco:', ctxLower.substring(0, 80));
+      return { tipo: 'NENHUMA', usarBloco: false };
+    }
+  }
 
   // PATCH 10: Se estamos no início (SAUDACAO ou DIAGNOSTICO) e poucas mensagens
   // Ativar modo BLOCO de 3 perguntas
@@ -1589,7 +1609,7 @@ function decidirProximaPergunta(
   const historicoLength = historico?.length || 0;
   
   if (state.empresa === 'BLUE') {
-    const resultado = decidirProximaPerguntaBLUE(state, historicoLength);
+    const resultado = decidirProximaPerguntaBLUE(state, historicoLength, (state as any)._triageContext);
     tipo = resultado.tipo;
     usarBloco = resultado.usarBloco;
   } else {
@@ -2047,8 +2067,12 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
   
   let cleaned = resposta;
   
-  // Remover expressões genéricas no início - EXPANDIDO
+  // Remover expressões genéricas no início - EXPANDIDO + FASE 1 PATCH
   const patternProibidos = [
+    // FASE 1: Remover palavras-muleta ISOLADAS no início (sem nome depois)
+    /^(Perfeito|Entendi|Entendido|Excelente|Ótimo|Ótima|Legal|Maravilha|Show|Certo|Claro|Com certeza|Que bom|Beleza|Fantástico|Incrível|Sensacional|Bacana|Perfeita|Entendida)[!.]?\s*/i,
+    
+    // Padrão original: "[Expressão], [Nome]!" 
     /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza|Fantástico|Incrível|Show|Sensacional|Bacana|Perfeita|Entendida),?\s+\w+[!.]?\s*/i,
     /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]?\s*/i,
     /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]?\s*/i,
@@ -2172,12 +2196,24 @@ CUMPRIMENTO, AGRADECIMENTO, NAO_ENTENDI, FORA_CONTEXTO, OUTRO
 
 ## AÇÕES
 
-ENVIAR_RESPOSTA_AUTOMATICA, ESCALAR_HUMANO, AJUSTAR_TEMPERATURA, NENHUMA
+ENVIAR_RESPOSTA_AUTOMATICA, ESCALAR_HUMANO, AJUSTAR_TEMPERATURA, NENHUMA, DESQUALIFICAR_LEAD
+
+## ⛔ DESQUALIFICAÇÃO DE LEAD
+Se o lead CLARAMENTE não se encaixa no perfil (sem dinheiro, sem interesse, repetidamente diz que não se encaixa):
+- Use ação DESQUALIFICAR_LEAD
+- Encerre com mensagem amigável: "Entendo! Se no futuro fizer sentido, estou por aqui. Sucesso pra você! 👍"
+- NÃO insista em qualificar alguém que já disse que não tem perfil
 
 ## COMPLIANCE
 
 PROIBIDO: prometer retorno, recomendar ativo específico, negociar preço, pressionar, INVENTAR INFORMAÇÕES
+PROIBIDO: fabricar serviços, processos internos, departamentos ou prazos que não existem
+Se não sabe se um serviço/encaminhamento existe: "Vou verificar com a equipe se temos algo nessa linha."
 PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com especialista
+
+## 🚫 PALAVRAS-MULETA PROIBIDAS NO INÍCIO
+NUNCA comece com: "Perfeito!", "Entendi!", "Ótimo!", "Excelente!", "Certo!", "Legal!"
+Ir direto ao assunto ou usar variação natural.
 
 ## FORMATO DE RESPOSTA (JSON)
 
@@ -2258,6 +2294,10 @@ EXEMPLOS:
 
 ## 🚫 FRASES ABSOLUTAMENTE PROIBIDAS (NUNCA USE!)
 
+PALAVRAS-MULETA PROIBIDAS NO INÍCIO:
+❌ "Perfeito!" / "Entendi!" / "Ótimo!" / "Excelente!" / "Certo!" / "Legal!" / "Show!" / "Maravilha!"
+Essas palavras no início são marca de robô. NUNCA comece uma mensagem com elas.
+USE: ir direto ao assunto ou variação natural.
 
 ❌ "Essa é uma ótima pergunta" / "Boa pergunta" / "Excelente pergunta"
 ❌ "Essa é uma dúvida bem comum" / "Essa pergunta é muito boa"
@@ -2266,6 +2306,14 @@ EXEMPLOS:
 ❌ "[Qualquer frase], [Nome]!" no início
 ❌ "Olha, [Nome]," ou "Então, [Nome],"
 ❌ Qualquer elogio à pergunta do lead
+
+## 🚫 NUNCA FABRIQUE SERVIÇOS OU PROCESSOS
+
+NUNCA PROMETA SERVIÇOS QUE VOCÊ NÃO TEM CERTEZA QUE EXISTEM.
+Se o lead pede algo fora do escopo (indicação, networking, encaminhamento para parceiros):
+"Vou verificar com a equipe se temos algo nessa linha. Te retorno, tá?"
+NÃO invente departamentos, redes de parceiros, processos internos ou prazos de retorno.
+NÃO prometa "retorno em 48h", "encaminhar para rede de parceiros", "conectar com investidores" etc.
 
 SUBSTITUA POR RESPOSTAS DIRETAS:
 Lead: "Quais tipos de garantia real?"
@@ -2421,6 +2469,26 @@ LEAD: "Qual a garantia dessa oferta?"
 Qualificar de forma consultiva usando frameworks:
 - IR CRIPTO → SPIN (Situação, Problema, Implicação, Necessidade)
 - INVESTIMENTOS → GPCT (Goals, Plans, Challenges, Timeline) + BANT
+
+## ⛔ DESQUALIFICAÇÃO DE LEAD
+
+Se o lead CLARAMENTE não se encaixa no perfil após múltiplas interações:
+- Sem dinheiro para investir / com dificuldades financeiras graves
+- Repetidamente diz que "não se encaixa" ou "não é para mim"
+- Sem interesse real após várias tentativas
+- Perfil completamente incompatível com os produtos
+
+AÇÃO: DESQUALIFICAR_LEAD
+MENSAGEM: Encerre de forma amigável, sem insistir.
+Exemplo: "Entendo! Se no futuro fizer sentido, estou por aqui. Sucesso pra você! 👍"
+NÃO INSISTA em qualificar alguém que já disse que não tem perfil.
+
+## 🔄 CLIENTES DE RENOVAÇÃO
+
+Se o nome do lead contém "[Renovação]" ou se é um CLIENTE_IR existente:
+- NÃO qualifique - ele já é nosso cliente
+- ESCALE imediatamente para humano
+- Mensagem: "Vi que você já é nosso cliente! Vou te conectar com a equipe que cuida da sua conta."
 
 Você NÃO é agendadora. Você constrói relacionamento.
 Só sugere reunião quando faz sentido e você receber instrução CTA_REUNIAO.
@@ -2728,9 +2796,55 @@ async function interpretWithAI(
   // Selecionar system prompt baseado no modo
   const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : SYSTEM_PROMPT;
 
+  // FASE 6: Detectar cliente de renovação pelo nome
+  if (leadNome) {
+    const nomeLower = leadNome.toLowerCase();
+    if (nomeLower.includes('renovação') || nomeLower.includes('renovacao') || nomeLower.includes('renov')) {
+      console.log('[FASE6] Cliente de RENOVAÇÃO detectado:', leadNome);
+      const tempoMs = Date.now() - startTime;
+      return {
+        response: {
+          intent: 'SOLICITACAO_CONTATO',
+          confidence: 0.95,
+          summary: 'Cliente de renovação detectado - escalar direto para humano',
+          acao: 'ESCALAR_HUMANO',
+          deve_responder: true,
+          resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe que cuida da sua conta pra agilizar esse processo de renovação. Já já alguém te chama! 👍',
+          novo_estado_funil: 'FECHAMENTO',
+        },
+        tokensUsados: 0,
+        tempoMs,
+        modeloUsado: 'rule-based-renovation',
+      };
+    }
+  }
+
+  // FASE 6: Detectar relacionamento CLIENTE_IR e tratar como renovação
+  if (pessoaContext?.relacionamentos) {
+    const isClienteIR = pessoaContext.relacionamentos.some(r => r.tipo_relacao === 'CLIENTE_IR' && r.empresa === empresa);
+    if (isClienteIR && conversationState?.estado_funil === 'SAUDACAO') {
+      console.log('[FASE6] Cliente IR existente detectado, escalando para humano');
+      const tempoMs = Date.now() - startTime;
+      return {
+        response: {
+          intent: 'SOLICITACAO_CONTATO',
+          confidence: 0.90,
+          summary: 'Cliente existente (CLIENTE_IR) - escalar para atendimento',
+          acao: 'ESCALAR_HUMANO',
+          deve_responder: true,
+          resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe que cuida da sua conta. Já já alguém te chama! 👍',
+          novo_estado_funil: 'FECHAMENTO',
+        },
+        tokensUsados: 0,
+        tempoMs,
+        modeloUsado: 'rule-based-existing-client',
+      };
+    }
+  }
+
   // PATCH 6G + 9: Calcular próxima pergunta baseado no estado atual + detectar urgência
   // No modo PASSIVE_CHAT, ainda detectamos urgência mas sem lógica de cadência
-  const qualiState: ConversationQualiState = {
+  const qualiState: ConversationQualiState & { _triageContext?: string | null } = {
     empresa,
     estadoFunil: conversationState?.estado_funil || 'SAUDACAO',
     spin: conversationState?.framework_data?.spin,
@@ -2738,6 +2852,7 @@ async function interpretWithAI(
     bant: conversationState?.framework_data?.bant,
     temperatura: classificacao?.temperatura || 'FRIO',
     intentAtual: undefined,
+    _triageContext: triageSummary?.resumoTriagem || triageSummary?.historico || null,
   };
   
   // PATCH 10: Passa mensagem, histórico e framework para detectar lead pronto
@@ -3350,7 +3465,7 @@ O AGENTE SEMPRE DEVE:
   const validAcoes: SdrAcaoTipo[] = [
     'PAUSAR_CADENCIA', 'CANCELAR_CADENCIA', 'RETOMAR_CADENCIA',
     'AJUSTAR_TEMPERATURA', 'CRIAR_TAREFA_CLOSER', 'MARCAR_OPT_OUT',
-    'NENHUMA', 'ESCALAR_HUMANO', 'ENVIAR_RESPOSTA_AUTOMATICA'
+    'NENHUMA', 'ESCALAR_HUMANO', 'ENVIAR_RESPOSTA_AUTOMATICA', 'DESQUALIFICAR_LEAD'
   ];
 
   if (!validIntents.includes(parsed.intent)) {
@@ -3631,6 +3746,38 @@ async function applyAction(
           });
           
           console.log('[Ação] Escalado para humano:', leadId);
+          return true;
+        }
+        break;
+
+      // FASE 3: DESQUALIFICAR_LEAD - Marca lead como frio e encerra
+      case 'DESQUALIFICAR_LEAD':
+        if (leadId) {
+          const now = new Date().toISOString();
+          
+          // Marcar temperatura como FRIO
+          await supabase
+            .from('lead_classifications')
+            .update({ temperatura: 'FRIO', updated_at: now })
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa);
+          
+          // Cancelar cadências ativas
+          const { data: activeRunsDQ } = await supabase
+            .from('lead_cadence_runs')
+            .select('id')
+            .eq('lead_id', leadId)
+            .in('status', ['ATIVA', 'PAUSADA']);
+          
+          if (activeRunsDQ && activeRunsDQ.length > 0) {
+            const runIdsDQ = activeRunsDQ.map((r: any) => r.id);
+            await supabase
+              .from('lead_cadence_runs')
+              .update({ status: 'CANCELADA', updated_at: now })
+              .in('id', runIdsDQ);
+          }
+          
+          console.log('[Ação] Lead desqualificado:', leadId);
           return true;
         }
         break;
