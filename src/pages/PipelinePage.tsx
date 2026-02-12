@@ -8,7 +8,7 @@ import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { Kanban } from 'lucide-react';
 
-export default function PipelinePage() {
+function PipelineContent() {
   const { activeCompany } = useCompany();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
 
@@ -16,7 +16,6 @@ export default function PipelinePage() {
   const [temperatura, setTemperatura] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
 
-  // Auto-select default pipeline
   useEffect(() => {
     if (pipelines && pipelines.length > 0) {
       const defaultPipeline = pipelines.find(p => p.is_default) ?? pipelines[0];
@@ -26,7 +25,6 @@ export default function PipelinePage() {
     }
   }, [pipelines]);
 
-  // Reset when company changes
   useEffect(() => {
     setSelectedPipelineId(null);
     setTemperatura('all');
@@ -42,48 +40,54 @@ export default function PipelinePage() {
   const { columns, wonLost } = useKanbanData(deals, selectedPipeline?.pipeline_stages);
 
   return (
-    <AppLayout>
-      <div className="flex flex-col h-full p-4 md:p-6 gap-4">
-        <div className="flex items-center gap-3">
-          <Kanban className="h-6 w-6 text-primary" />
-          <h1 className="text-2xl font-bold">Pipeline</h1>
-        </div>
-
-        {pipelinesLoading ? (
-          <div className="text-sm text-muted-foreground">Carregando pipelines...</div>
-        ) : !pipelines || pipelines.length === 0 ? (
-          <div className="flex flex-col items-center justify-center min-h-[40vh] text-center gap-2">
-            <Kanban className="h-12 w-12 text-muted-foreground/40" />
-            <p className="text-muted-foreground">Nenhum pipeline encontrado para esta empresa.</p>
-          </div>
-        ) : (
-          <>
-            <PipelineFilters
-              pipelines={pipelines}
-              selectedPipelineId={selectedPipelineId}
-              onPipelineChange={setSelectedPipelineId}
-              temperatura={temperatura}
-              onTemperaturaChange={setTemperatura}
-              onNewDeal={() => setShowCreateDeal(true)}
-            />
-
-            <KanbanBoard
-              columns={columns}
-              wonLost={wonLost}
-              isLoading={dealsLoading}
-            />
-
-            {selectedPipeline && (
-              <CreateDealDialog
-                open={showCreateDeal}
-                onOpenChange={setShowCreateDeal}
-                pipelineId={selectedPipeline.id}
-                stages={selectedPipeline.pipeline_stages}
-              />
-            )}
-          </>
-        )}
+    <div className="flex flex-col h-full p-4 md:p-6 gap-4">
+      <div className="flex items-center gap-3">
+        <Kanban className="h-6 w-6 text-primary" />
+        <h1 className="text-2xl font-bold">Pipeline</h1>
       </div>
+
+      {pipelinesLoading ? (
+        <div className="text-sm text-muted-foreground">Carregando pipelines...</div>
+      ) : !pipelines || pipelines.length === 0 ? (
+        <div className="flex flex-col items-center justify-center min-h-[40vh] text-center gap-2">
+          <Kanban className="h-12 w-12 text-muted-foreground/40" />
+          <p className="text-muted-foreground">Nenhum pipeline encontrado para esta empresa.</p>
+        </div>
+      ) : (
+        <>
+          <PipelineFilters
+            pipelines={pipelines}
+            selectedPipelineId={selectedPipelineId}
+            onPipelineChange={setSelectedPipelineId}
+            temperatura={temperatura}
+            onTemperaturaChange={setTemperatura}
+            onNewDeal={() => setShowCreateDeal(true)}
+          />
+
+          <KanbanBoard
+            columns={columns}
+            wonLost={wonLost}
+            isLoading={dealsLoading}
+          />
+
+          {selectedPipeline && (
+            <CreateDealDialog
+              open={showCreateDeal}
+              onOpenChange={setShowCreateDeal}
+              pipelineId={selectedPipeline.id}
+              stages={selectedPipeline.pipeline_stages}
+            />
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+export default function PipelinePage() {
+  return (
+    <AppLayout>
+      <PipelineContent />
     </AppLayout>
   );
 }
