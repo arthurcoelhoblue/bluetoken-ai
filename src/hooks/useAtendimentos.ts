@@ -27,28 +27,31 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
     queryKey: ['atendimentos', empresaFilter],
     queryFn: async (): Promise<Atendimento[]> => {
       // 1. Find leads with passive-mode messages (run_id IS NULL = Blue Chat / passive)
-      let intentsQuery = supabase
-        .from('lead_message_intents')
+      // Use lead_messages directly instead of lead_message_intents to catch ALL passive conversations
+      // (some leads may have messages but no intents if sdr-ia-interpret failed)
+      let passiveQuery = supabase
+        .from('lead_messages')
         .select('lead_id, empresa')
-        .is('run_id', null);
+        .is('run_id', null)
+        .not('lead_id', 'is', null);
 
       if (empresaFilter) {
-        intentsQuery = intentsQuery.eq('empresa', empresaFilter);
+        passiveQuery = passiveQuery.eq('empresa', empresaFilter);
       }
 
-      const { data: passiveIntents, error: intentsErr } = await intentsQuery;
-      if (intentsErr) throw intentsErr;
-      if (!passiveIntents || passiveIntents.length === 0) return [];
+      const { data: passiveMessages, error: passiveErr } = await passiveQuery;
+      if (passiveErr) throw passiveErr;
+      if (!passiveMessages || passiveMessages.length === 0) return [];
 
       // Deduplicate lead_id + empresa pairs
       const uniqueKeys = new Set<string>();
       const leadIds: string[] = [];
-      for (const pi of passiveIntents) {
-        if (!pi.lead_id) continue;
-        const key = `${pi.lead_id}_${pi.empresa}`;
+      for (const pm of passiveMessages) {
+        if (!pm.lead_id) continue;
+        const key = `${pm.lead_id}_${pm.empresa}`;
         if (!uniqueKeys.has(key)) {
           uniqueKeys.add(key);
-          leadIds.push(pi.lead_id);
+          leadIds.push(pm.lead_id);
         }
       }
       if (leadIds.length === 0) return [];
