@@ -1,15 +1,15 @@
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { ContactRound } from 'lucide-react';
+import { Users } from 'lucide-react';
 
 export default function ContatosPage() {
   return (
     <AppLayout>
       <PageShell
-        icon={ContactRound}
+        icon={Users}
         title="Contatos"
-        description="Central unificada de contatos com merge de pessoas, busca inteligente e timeline completa de interações."
-        patchLabel="Patch 2 — Contatos Unificados"
+        description="Visão unificada de pessoas e contatos. Busca, filtros, deduplicação. Timeline de interações. Vinculação deal-contato."
+        patchInfo="Patch 2 — Contatos Unificados"
       />
     </AppLayout>
   );

@@ -8,8 +8,8 @@ export default function TemplatesPage() {
       <PageShell
         icon={FileText}
         title="Templates"
-        description="Gerencie templates de mensagens para WhatsApp e Email com preview, variáveis e versionamento."
-        patchLabel="Em breve"
+        description="Biblioteca de templates de mensagens por canal (WhatsApp, Email), empresa e contexto. Placeholders dinâmicos."
+        patchInfo="Incluso no Patch 3"
       />
     </AppLayout>
   );
