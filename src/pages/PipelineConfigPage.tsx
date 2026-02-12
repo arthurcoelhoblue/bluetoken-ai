@@ -101,121 +101,146 @@ function PipelineConfigContent() {
   if (isLoading) return <div className="p-8 text-muted-foreground">Carregando...</div>;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div />
-        <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
-          <DialogTrigger asChild>
-            <Button><Plus className="h-4 w-4 mr-2" />Novo Funil</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Novo Pipeline</DialogTitle></DialogHeader>
-            <div className="space-y-4">
-              <Input placeholder="Nome do funil" value={newName} onChange={e => setNewName(e.target.value)} />
-              <Select value={newEmpresa} onValueChange={v => setNewEmpresa(v as 'BLUE' | 'TOKENIZA')}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="BLUE">Blue</SelectItem>
-                  <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-                </SelectContent>
-              </Select>
-              <Button onClick={handleCreatePipeline} className="w-full" disabled={createPipeline.isPending}>Criar</Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {(pipelines ?? []).map(pipeline => (
-        <Collapsible key={pipeline.id} defaultOpen>
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CollapsibleTrigger className="flex items-center gap-3 cursor-pointer hover:opacity-80">
-                  <CardTitle className="text-lg">{pipeline.nome}</CardTitle>
-                  <Badge variant="outline">{pipeline.empresa}</Badge>
-                  {pipeline.is_default && <Badge variant="secondary">Padrão</Badge>}
-                </CollapsibleTrigger>
-                <div className="flex gap-2">
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        variant="ghost" size="icon"
-                        onClick={() => handleDeletePipeline(pipeline.id)}
-                        disabled={pipelineHasDeals(pipeline.id)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>{pipelineHasDeals(pipeline.id) ? 'Tem deals vinculados' : 'Excluir pipeline'}</TooltipContent>
-                  </Tooltip>
-                </div>
+    <TooltipProvider delayDuration={300}>
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div />
+          <Dialog open={newDialogOpen} onOpenChange={setNewDialogOpen}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DialogTrigger asChild>
+                  <Button><Plus className="h-4 w-4 mr-2" />Novo Funil</Button>
+                </DialogTrigger>
+              </TooltipTrigger>
+              <TooltipContent>Criar novo pipeline</TooltipContent>
+            </Tooltip>
+            <DialogContent>
+              <DialogHeader><DialogTitle>Novo Pipeline</DialogTitle></DialogHeader>
+              <div className="space-y-4">
+                <Input placeholder="Nome do funil" value={newName} onChange={e => setNewName(e.target.value)} />
+                <Select value={newEmpresa} onValueChange={v => setNewEmpresa(v as 'BLUE' | 'TOKENIZA')}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="BLUE">Blue</SelectItem>
+                    <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleCreatePipeline} className="w-full" disabled={createPipeline.isPending}>Criar</Button>
               </div>
-            </CardHeader>
-            <CollapsibleContent>
-              <CardContent>
-                <div className="space-y-2">
-                  {pipeline.pipeline_stages.map(stage => (
-                    <div key={stage.id} className="flex items-center gap-3 p-2 rounded-md border bg-card">
-                      <GripVertical className="h-4 w-4 text-muted-foreground" />
-                      <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: stage.cor }} />
-                      <span className="flex-1 text-sm font-medium">{stage.nome}</span>
-                      <span className="text-xs text-muted-foreground">#{stage.posicao}</span>
-                      {stage.sla_minutos && (
-                        <Badge variant="outline" className="text-xs">SLA {stage.sla_minutos}min</Badge>
-                      )}
-                      <Button
-                        variant={stage.is_won ? 'default' : 'ghost'}
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleToggleStageFlag(stage, 'is_won')}
-                        title="Marcar como Won"
-                      >
-                        <Trophy className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant={stage.is_lost ? 'destructive' : 'ghost'}
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleToggleStageFlag(stage, 'is_lost')}
-                        title="Marcar como Lost"
-                      >
-                        <XCircle className="h-3.5 w-3.5" />
-                      </Button>
-                      <Button
-                        variant="ghost" size="icon" className="h-7 w-7"
-                        onClick={async () => {
-                          try {
-                            await deleteStage.mutateAsync(stage.id);
-                            toast.success('Stage removido');
-                          } catch (e: any) { toast.error(e.message); }
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
+            </DialogContent>
+          </Dialog>
+        </div>
 
-                <Dialog open={newStageDialogOpen === pipeline.id} onOpenChange={open => setNewStageDialogOpen(open ? pipeline.id : null)}>
-                  <DialogTrigger asChild>
-                    <Button variant="outline" size="sm" className="mt-3">
-                      <Plus className="h-3.5 w-3.5 mr-1" />Adicionar Stage
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent>
-                    <DialogHeader><DialogTitle>Novo Stage</DialogTitle></DialogHeader>
-                    <div className="space-y-4">
-                      <Input placeholder="Nome do stage" value={newStageName} onChange={e => setNewStageName(e.target.value)} />
-                      <Button onClick={() => handleAddStage(pipeline.id)} className="w-full">Adicionar</Button>
-                    </div>
-                  </DialogContent>
-                </Dialog>
-              </CardContent>
-            </CollapsibleContent>
-          </Card>
-        </Collapsible>
-      ))}
-    </div>
+        {(pipelines ?? []).map(pipeline => (
+          <Collapsible key={pipeline.id} defaultOpen>
+            <Card>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CollapsibleTrigger className="flex items-center gap-3 cursor-pointer hover:opacity-80">
+                    <CardTitle className="text-lg">{pipeline.nome}</CardTitle>
+                    <Badge variant="outline">{pipeline.empresa}</Badge>
+                    {pipeline.is_default && <Badge variant="secondary">Padrão</Badge>}
+                  </CollapsibleTrigger>
+                  <div className="flex gap-2">
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Button
+                          variant="ghost" size="icon"
+                          onClick={() => handleDeletePipeline(pipeline.id)}
+                          disabled={pipelineHasDeals(pipeline.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </TooltipTrigger>
+                      <TooltipContent>{pipelineHasDeals(pipeline.id) ? 'Tem deals vinculados' : 'Excluir pipeline'}</TooltipContent>
+                    </Tooltip>
+                  </div>
+                </div>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <div className="space-y-2">
+                    {pipeline.pipeline_stages.map(stage => (
+                      <div key={stage.id} className="flex items-center gap-3 p-2 rounded-md border bg-card">
+                        <GripVertical className="h-4 w-4 text-muted-foreground" />
+                        <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: stage.cor }} />
+                        <span className="flex-1 text-sm font-medium">{stage.nome}</span>
+                        <span className="text-xs text-muted-foreground">#{stage.posicao}</span>
+                        {stage.sla_minutos && (
+                          <Badge variant="outline" className="text-xs">SLA {stage.sla_minutos}min</Badge>
+                        )}
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant={stage.is_won ? 'default' : 'ghost'}
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleToggleStageFlag(stage, 'is_won')}
+                            >
+                              <Trophy className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Marcar como Won</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant={stage.is_lost ? 'destructive' : 'ghost'}
+                              size="icon"
+                              className="h-7 w-7"
+                              onClick={() => handleToggleStageFlag(stage, 'is_lost')}
+                            >
+                              <XCircle className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Marcar como Lost</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              variant="ghost" size="icon" className="h-7 w-7"
+                              onClick={async () => {
+                                try {
+                                  await deleteStage.mutateAsync(stage.id);
+                                  toast.success('Stage removido');
+                                } catch (e: any) { toast.error(e.message); }
+                              }}
+                            >
+                              <Trash2 className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Excluir stage</TooltipContent>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+
+                  <Dialog open={newStageDialogOpen === pipeline.id} onOpenChange={open => setNewStageDialogOpen(open ? pipeline.id : null)}>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <DialogTrigger asChild>
+                          <Button variant="outline" size="sm" className="mt-3">
+                            <Plus className="h-3.5 w-3.5 mr-1" />Adicionar Stage
+                          </Button>
+                        </DialogTrigger>
+                      </TooltipTrigger>
+                      <TooltipContent>Adicionar novo stage ao pipeline</TooltipContent>
+                    </Tooltip>
+                    <DialogContent>
+                      <DialogHeader><DialogTitle>Novo Stage</DialogTitle></DialogHeader>
+                      <div className="space-y-4">
+                        <Input placeholder="Nome do stage" value={newStageName} onChange={e => setNewStageName(e.target.value)} />
+                        <Button onClick={() => handleAddStage(pipeline.id)} className="w-full">Adicionar</Button>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        ))}
+      </div>
+    </TooltipProvider>
   );
 }
 
