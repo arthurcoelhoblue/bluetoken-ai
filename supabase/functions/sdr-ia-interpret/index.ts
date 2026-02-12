@@ -3349,6 +3349,58 @@ O AGENTE SEMPRE DEVE:
     }
   }
   
+  async function tryGoogleDirect(systemPrompt: string, userPrompt: string, model: string): Promise<AICallResult> {
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    if (!GOOGLE_API_KEY) {
+      return { success: false, error: 'GOOGLE_API_KEY não configurada' };
+    }
+    
+    try {
+      // Extrair nome do modelo sem prefixo "google/"
+      const modelName = model.startsWith('google/') ? model.replace('google/', '') : model;
+      console.log(`[IA] Tentando Google Direct ${modelName}...`);
+      
+      const makeCall = async () => {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GOOGLE_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: systemPrompt }] },
+            contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
+            generationConfig: {
+              temperature: 0.3,
+              maxOutputTokens: 1500,
+            },
+          }),
+        });
+        
+        if (!response.ok) {
+          const errText = await response.text();
+          if (RETRYABLE_STATUSES.includes(response.status)) {
+            throw new Error(`Google Direct ${response.status}: ${errText}`);
+          }
+          return { success: false as const, error: `Google Direct ${response.status}: ${errText}` };
+        }
+        
+        const data = await response.json();
+        const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        const tokens = (data.usageMetadata?.promptTokenCount || 0) + (data.usageMetadata?.candidatesTokenCount || 0);
+        
+        if (!content) {
+          return { success: false as const, error: 'Resposta vazia do Google Direct' };
+        }
+        
+        console.log('[IA] ✅ Google Direct respondeu:', { tokens, contentPreview: content.substring(0, 100) });
+        return { success: true as const, content, tokensUsados: tokens, provider: 'GEMINI' as ModelProvider };
+      };
+      
+      return await withRetry(makeCall, 'Google Direct');
+    } catch (err) {
+      console.error('[IA] Erro Google Direct (após retries):', err);
+      return { success: false, error: String(err) };
+    }
+  }
+
   async function tryLovableAI(systemPrompt: string, userPrompt: string, model: string, provider: ModelProvider): Promise<AICallResult> {
     const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
     if (!LOVABLE_API_KEY) {
@@ -3434,7 +3486,17 @@ O AGENTE SEMPRE DEVE:
       case 'ANTHROPIC':
         aiResult = await tryAnthropic(activeSystemPrompt, userPrompt, model);
         break;
-      case 'GEMINI':
+      case 'GEMINI': {
+        // Tentar Google Direct primeiro se GOOGLE_API_KEY configurada
+        const googleKey = Deno.env.get('GOOGLE_API_KEY');
+        if (googleKey) {
+          aiResult = await tryGoogleDirect(activeSystemPrompt, userPrompt, model);
+          if (aiResult.success) break;
+          console.log('[IA] Google Direct falhou, tentando Lovable AI Gateway...');
+        }
+        aiResult = await tryLovableAI(activeSystemPrompt, userPrompt, model, providerId);
+        break;
+      }
       case 'GPT':
         aiResult = await tryLovableAI(activeSystemPrompt, userPrompt, model, providerId);
         break;

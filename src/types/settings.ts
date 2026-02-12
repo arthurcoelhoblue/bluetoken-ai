@@ -139,7 +139,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
 
 export const AI_PROVIDERS = [
   { id: 'ANTHROPIC', name: 'Anthropic (Claude)', models: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-20241022'] },
-  { id: 'GEMINI', name: 'Google (Gemini)', models: ['google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'] },
+  { id: 'GEMINI', name: 'Google (Gemini)', models: ['google/gemini-3-pro-preview', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'] },
   { id: 'GPT', name: 'OpenAI (GPT)', models: ['openai/gpt-5-mini', 'openai/gpt-5-nano', 'openai/gpt-5'] },
 ];
 
