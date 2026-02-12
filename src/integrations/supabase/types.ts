@@ -542,7 +542,10 @@ export type Database = {
           score_intencao: number | null
           score_urgencia: number | null
           score_valor: number | null
+          stage_fechamento_id: string | null
           stage_id: string
+          stage_origem_id: string | null
+          status: string
           temperatura: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at: string
@@ -573,7 +576,10 @@ export type Database = {
           score_intencao?: number | null
           score_urgencia?: number | null
           score_valor?: number | null
+          stage_fechamento_id?: string | null
           stage_id: string
+          stage_origem_id?: string | null
+          status?: string
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at?: string
@@ -604,7 +610,10 @@ export type Database = {
           score_intencao?: number | null
           score_urgencia?: number | null
           score_valor?: number | null
+          stage_fechamento_id?: string | null
           stage_id?: string
+          stage_origem_id?: string | null
+          status?: string
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo?: string
           updated_at?: string
@@ -645,8 +654,22 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
             isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
@@ -1448,6 +1471,7 @@ export type Database = {
           pipeline_id: string
           posicao: number
           sla_minutos: number | null
+          tempo_minimo_minutos: number | null
           updated_at: string
         }
         Insert: {
@@ -1460,6 +1484,7 @@ export type Database = {
           pipeline_id: string
           posicao: number
           sla_minutos?: number | null
+          tempo_minimo_minutos?: number | null
           updated_at?: string
         }
         Update: {
@@ -1472,6 +1497,7 @@ export type Database = {
           pipeline_id?: string
           posicao?: number
           sla_minutos?: number | null
+          tempo_minimo_minutos?: number | null
           updated_at?: string
         }
         Relationships: [

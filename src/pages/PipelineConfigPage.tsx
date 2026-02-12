@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { Settings, Plus, Copy, Trash2, GripVertical, Trophy, XCircle } from 'lucide-react';
+import { Settings, Plus, Trash2, GripVertical, Clock } from 'lucide-react';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage } from '@/hooks/usePipelineConfig';
 import { useQuery } from '@tanstack/react-query';
@@ -87,12 +87,11 @@ function PipelineConfigContent() {
     }
   };
 
-  const handleToggleStageFlag = async (stage: PipelineStage, flag: 'is_won' | 'is_lost') => {
+  const handleUpdateTempoMinimo = async (stage: PipelineStage, value: string) => {
+    const parsed = value === '' ? null : parseInt(value, 10);
+    if (parsed !== null && isNaN(parsed)) return;
     try {
-      const update = flag === 'is_won'
-        ? { is_won: !stage.is_won, is_lost: false }
-        : { is_lost: !stage.is_lost, is_won: false };
-      await updateStage.mutateAsync({ id: stage.id, ...update } as any);
+      await updateStage.mutateAsync({ id: stage.id, tempo_minimo_minutos: parsed } as any);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -171,29 +170,19 @@ function PipelineConfigContent() {
                         )}
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            <Button
-                              variant={stage.is_won ? 'default' : 'ghost'}
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleToggleStageFlag(stage, 'is_won')}
-                            >
-                              <Trophy className="h-3.5 w-3.5" />
-                            </Button>
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                              <Input
+                                type="number"
+                                min={0}
+                                className="h-7 w-20 text-xs"
+                                placeholder="min"
+                                defaultValue={stage.tempo_minimo_minutos ?? ''}
+                                onBlur={e => handleUpdateTempoMinimo(stage, e.target.value)}
+                              />
+                            </div>
                           </TooltipTrigger>
-                          <TooltipContent>Marcar como Won</TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant={stage.is_lost ? 'destructive' : 'ghost'}
-                              size="icon"
-                              className="h-7 w-7"
-                              onClick={() => handleToggleStageFlag(stage, 'is_lost')}
-                            >
-                              <XCircle className="h-3.5 w-3.5" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Marcar como Lost</TooltipContent>
+                          <TooltipContent>Tempo mínimo (minutos) para ganhar/perder deal neste stage</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>

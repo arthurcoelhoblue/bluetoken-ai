@@ -41,9 +41,7 @@ export function useKanbanData(
 ): { columns: KanbanColumn[]; wonLost: KanbanColumn[] } {
   if (!stages || !deals) return { columns: [], wonLost: [] };
 
-  const activeStages = stages.filter(s => !s.is_won && !s.is_lost);
-  const terminalStages = stages.filter(s => s.is_won || s.is_lost);
-
+  // All stages are now active columns (no more is_won/is_lost separation)
   const buildColumns = (stageList: PipelineStage[]): KanbanColumn[] =>
     stageList.map(stage => {
       const stageDeals = deals.filter(d => d.stage_id === stage.id);
@@ -55,8 +53,8 @@ export function useKanbanData(
     });
 
   return {
-    columns: buildColumns(activeStages),
-    wonLost: buildColumns(terminalStages),
+    columns: buildColumns(stages),
+    wonLost: [],
   };
 }
 
@@ -75,6 +73,8 @@ export function useCreateDeal() {
           owner_id: data.owner_id ?? null,
           temperatura: data.temperatura ?? 'FRIO',
           posicao_kanban: 0,
+          stage_origem_id: data.stage_id,
+          status: 'ABERTO',
         })
         .select()
         .single();
@@ -122,6 +122,36 @@ export function useDeleteDeal() {
   return useMutation({
     mutationFn: async (id: string) => {
       const { error } = await supabase.from('deals').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['deals'] }),
+  });
+}
+
+export interface CloseDealData {
+  dealId: string;
+  status: 'GANHO' | 'PERDIDO';
+  stageId: string;
+  motivo_perda?: string;
+}
+
+export function useCloseDeal() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ dealId, status, stageId, motivo_perda }: CloseDealData) => {
+      const now = new Date().toISOString();
+      const updates: Record<string, unknown> = {
+        status,
+        stage_fechamento_id: stageId,
+        fechado_em: now,
+      };
+      if (status === 'GANHO') {
+        updates.data_ganho = now;
+      } else {
+        updates.data_perda = now;
+        updates.motivo_perda = motivo_perda ?? null;
+      }
+      const { error } = await supabase.from('deals').update(updates).eq('id', dealId);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['deals'] }),
