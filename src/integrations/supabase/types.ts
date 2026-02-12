@@ -261,6 +261,211 @@ export type Database = {
         }
         Relationships: []
       }
+      contacts: {
+        Row: {
+          canal_origem: string | null
+          created_at: string
+          email: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          legacy_lead_id: string | null
+          nome: string
+          notas: string | null
+          owner_id: string | null
+          pessoa_id: string | null
+          tags: string[] | null
+          telefone: string | null
+          tipo: string | null
+          updated_at: string
+        }
+        Insert: {
+          canal_origem?: string | null
+          created_at?: string
+          email?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          legacy_lead_id?: string | null
+          nome: string
+          notas?: string | null
+          owner_id?: string | null
+          pessoa_id?: string | null
+          tags?: string[] | null
+          telefone?: string | null
+          tipo?: string | null
+          updated_at?: string
+        }
+        Update: {
+          canal_origem?: string | null
+          created_at?: string
+          email?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          legacy_lead_id?: string | null
+          nome?: string
+          notas?: string | null
+          owner_id?: string | null
+          pessoa_id?: string | null
+          tags?: string[] | null
+          telefone?: string | null
+          tipo?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deal_stage_history: {
+        Row: {
+          created_at: string
+          deal_id: string
+          from_stage_id: string | null
+          id: string
+          moved_by: string | null
+          tempo_no_stage_anterior_ms: number | null
+          to_stage_id: string
+        }
+        Insert: {
+          created_at?: string
+          deal_id: string
+          from_stage_id?: string | null
+          id?: string
+          moved_by?: string | null
+          tempo_no_stage_anterior_ms?: number | null
+          to_stage_id: string
+        }
+        Update: {
+          created_at?: string
+          deal_id?: string
+          from_stage_id?: string | null
+          id?: string
+          moved_by?: string | null
+          tempo_no_stage_anterior_ms?: number | null
+          to_stage_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_stage_history_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_moved_by_fkey"
+            columns: ["moved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deals: {
+        Row: {
+          contact_id: string
+          created_at: string
+          fechado_em: string | null
+          id: string
+          moeda: string
+          motivo_perda: string | null
+          owner_id: string | null
+          pipeline_id: string
+          posicao_kanban: number
+          stage_id: string
+          temperatura: Database["public"]["Enums"]["temperatura_tipo"] | null
+          titulo: string
+          updated_at: string
+          valor: number | null
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          fechado_em?: string | null
+          id?: string
+          moeda?: string
+          motivo_perda?: string | null
+          owner_id?: string | null
+          pipeline_id: string
+          posicao_kanban?: number
+          stage_id: string
+          temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
+          titulo: string
+          updated_at?: string
+          valor?: number | null
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          fechado_em?: string | null
+          id?: string
+          moeda?: string
+          motivo_perda?: string | null
+          owner_id?: string | null
+          pipeline_id?: string
+          posicao_kanban?: number
+          stage_id?: string
+          temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
+          titulo?: string
+          updated_at?: string
+          valor?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integration_company_config: {
         Row: {
           channel: string
@@ -961,6 +1166,86 @@ export type Database = {
           perfil_disc?: string | null
           telefone_base?: string | null
           telefone_e164?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      pipeline_stages: {
+        Row: {
+          cor: string
+          created_at: string
+          id: string
+          is_lost: boolean
+          is_won: boolean
+          nome: string
+          pipeline_id: string
+          posicao: number
+          sla_minutos: number | null
+          updated_at: string
+        }
+        Insert: {
+          cor?: string
+          created_at?: string
+          id?: string
+          is_lost?: boolean
+          is_won?: boolean
+          nome: string
+          pipeline_id: string
+          posicao: number
+          sla_minutos?: number | null
+          updated_at?: string
+        }
+        Update: {
+          cor?: string
+          created_at?: string
+          id?: string
+          is_lost?: boolean
+          is_won?: boolean
+          nome?: string
+          pipeline_id?: string
+          posicao?: number
+          sla_minutos?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pipelines: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          is_default: boolean
+          nome: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_default?: boolean
+          nome: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_default?: boolean
+          nome?: string
           updated_at?: string
         }
         Relationships: []
