@@ -4,7 +4,8 @@ import { PageShell } from '@/components/layout/PageShell';
 import { Settings, Plus, Copy, Trash2, GripVertical, Trophy, XCircle } from 'lucide-react';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage } from '@/hooks/usePipelineConfig';
-import { useDeals } from '@/hooks/useDeals';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -17,7 +18,14 @@ import type { PipelineStage } from '@/types/deal';
 
 function PipelineConfigContent() {
   const { data: pipelines, isLoading } = usePipelines();
-  const { data: deals } = useDeals(null);
+  const { data: deals } = useQuery({
+    queryKey: ['deals_existence_check'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('deals').select('pipeline_id').limit(500);
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   const createPipeline = useCreatePipeline();
   const updatePipeline = useUpdatePipeline();
   const deletePipeline = useDeletePipeline();
