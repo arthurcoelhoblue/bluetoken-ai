@@ -4,10 +4,12 @@ import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
 import { AccessControlTab } from "@/components/settings/AccessControlTab";
+import { AppLayout } from "@/components/layout/AppLayout";
 import { Plug, Webhook, Brain, Bot, Shield } from "lucide-react";
 
 export default function Settings() {
   return (
+    <AppLayout>
     <div className="container max-w-6xl space-y-6 py-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Configurações</h1>
@@ -61,5 +63,6 @@ export default function Settings() {
         </TabsContent>
       </Tabs>
     </div>
+    </AppLayout>
   );
 }

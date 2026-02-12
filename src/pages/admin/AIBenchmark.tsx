@@ -8,6 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Play, BarChart3, CheckCircle2, XCircle, Trash2 } from 'lucide-react';
 import { toast } from '@/hooks/use-toast';
+import { AppLayout } from '@/components/layout/AppLayout';
 
 interface BenchmarkRow {
   id: string;
@@ -176,6 +177,7 @@ export default function AIBenchmark() {
   })();
 
   return (
+    <AppLayout>
     <div className="container max-w-7xl space-y-6 py-6">
       <div>
         <h1 className="text-3xl font-bold tracking-tight">Benchmark IA</h1>
@@ -382,5 +384,6 @@ export default function AIBenchmark() {
         </CardContent>
       </Card>
     </div>
+    </AppLayout>
   );
 }
