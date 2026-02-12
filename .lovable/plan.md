@@ -1,104 +1,108 @@
 
+# Eliminar Atendimentos no Limbo: Escalacao e Devolucao Inteligente
 
-# Avaliacao de Qualidade: Gemini 3 Pro Preview vs Claude Sonnet 4
+## Problema Identificado
 
-## Situacao Atual
+Existem 3 falhas criticas que deixam atendimentos "no limbo":
 
-- 100% das 346 interpretacoes usam `claude-sonnet-4-20250514`
-- Confianca media: 85.9%
-- Tempo medio: 8.488ms
-- Tokens medios: 7.775
-- Nenhuma chamada Gemini ainda registrada
+1. **ESCALAR_HUMANO sem efeito no modo passivo**: A acao `ESCALAR_HUMANO` no `sdr-ia-interpret` so registra evento se houver `runId`. No Blue Chat (modo passivo), `runId` e sempre `null`, entao a escalacao nao faz nada.
 
-## Proposta: Teste de Reprocessamento (Shadow Test)
+2. **Callback so acontece com resposta**: O envio de callback ao Blue Chat (incluindo transferencia de ticket) so executa se `iaResult?.responseText` existir. Quando a IA nao gera resposta (ex: `NAO_ENTENDI`), nenhum callback e disparado - nem a transferencia do ticket.
 
-Criar uma edge function dedicada que reprocessa mensagens historicas com o Gemini 3 Pro Preview e salva os resultados em uma tabela separada para comparacao, sem afetar a operacao real.
+3. **`NAO_ENTENDI` sem acao definida**: Quando a IA retorna `NAO_ENTENDI`, a acao e `ESCALAR_HUMANO` mas sem resposta, o resultado final no Blue Chat e `QUALIFY_ONLY` - nada acontece e o lead fica sem atendimento.
 
-### 1. Criar tabela de benchmark
+## Solucao Proposta
 
-Nova tabela `ai_model_benchmarks` com colunas:
-- `id` (uuid)
-- `original_intent_id` (referencia ao lead_message_intents original)
-- `modelo_ia` (modelo testado)
-- `intent` (intent detectado pelo modelo de teste)
-- `intent_confidence` (confianca do modelo de teste)
-- `acao_recomendada` (acao sugerida)
-- `resposta_automatica_texto` (resposta gerada)
-- `tokens_usados`, `tempo_processamento_ms`
-- `created_at`
-
-### 2. Criar edge function `ai-benchmark`
-
-Funcao que:
-- Recebe parametros: quantidade de mensagens a testar, modelo alvo
-- Busca N mensagens recentes do `lead_messages` (INBOUND)
-- Para cada mensagem, monta o mesmo contexto que o `sdr-ia-interpret` usaria
-- Chama o modelo via `tryGoogleDirect()` com o mesmo prompt
-- Salva o resultado na tabela de benchmark
-- Retorna um resumo comparativo
-
-### 3. Criar pagina de comparacao na UI
-
-Nova pagina `/admin/ai-benchmark` com:
-- Botao para iniciar benchmark (selecionar modelo e quantidade)
-- Tabela comparativa mostrando lado a lado:
-  - Mensagem original do lead
-  - Intent detectado (Claude vs Gemini)
-  - Confianca (Claude vs Gemini)
-  - Acao recomendada (comparacao)
-  - Resposta gerada (comparacao)
-  - Tempo e tokens (comparacao)
-- Metricas agregadas:
-  - Taxa de concordancia de intent
-  - Diferenca media de confianca
-  - Diferenca de tempo e custo
-- Destaque em vermelho quando os modelos discordam no intent ou na acao
-
-### 4. Alternativa mais simples (recomendada para comecar)
-
-Se preferir algo mais rapido, posso criar apenas:
-- Uma query que busca as ultimas 20 mensagens inbound
-- Reprocessa com Gemini 3 Pro via a edge function existente (modo dry-run)
-- Exibe os resultados em uma tabela simples na tela de Settings > IA
-
-## Detalhes Tecnicos
-
-### Tabela SQL
+### Regra de Negocio
 
 ```text
-CREATE TABLE ai_model_benchmarks (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  original_intent_id uuid REFERENCES lead_message_intents(id),
-  message_id uuid REFERENCES lead_messages(id),
-  modelo_ia text NOT NULL,
-  intent text,
-  intent_confidence numeric(4,2),
-  acao_recomendada text,
-  resposta_automatica_texto text,
-  tokens_usados integer,
-  tempo_processamento_ms integer,
-  created_at timestamptz DEFAULT now()
-);
+Se NAO_ENTENDI (sem contexto previo):
+  -> Gerar pergunta de contexto ("Em que posso te ajudar?")
+  -> action = RESPOND
+
+Se NAO_ENTENDI (com contexto previo):
+  -> Escalar para humano COM transferencia de ticket
+  -> action = ESCALATE
+
+Se ESCALAR_HUMANO (qualquer cenario):
+  -> SEMPRE gerar mensagem de transicao pro lead
+  -> SEMPRE transferir ticket no Blue Chat
+  -> action = ESCALATE
 ```
 
-### Edge function `ai-benchmark`
+### Mudancas Tecnicas
 
-- Reutiliza a logica de montagem de contexto do `sdr-ia-interpret`
-- Chama apenas o modelo alvo (sem fallback)
-- Nao aplica acoes (modo somente leitura)
-- Retorna array de resultados + metricas agregadas
+#### 1. `bluechat-inbound/index.ts` - Tratar respostas vazias com escalacao
 
-### Pagina UI
+Alterar a logica de decisao de action (linhas ~1030-1040) para:
 
-- Acessivel apenas para ADMIN
-- Rota: `/admin/ai-benchmark`
-- Componentes: tabela comparativa, cards de metricas, botao de execucao
+- Se `iaResult?.escalation?.needed` e verdadeiro mas nao ha `responseText`, gerar uma mensagem padrao de transicao (ex: "Vou te conectar com alguem da equipe que pode te ajudar melhor com isso!")
+- Se `iaResult` retornou `null` (falha total na IA), tratar como `ESCALATE` automatico com mensagem padrao
+- Se `intent === NAO_ENTENDI` e nao ha contexto previo (historico vazio ou < 2 mensagens), forcar `RESPOND` com pergunta de contexto
 
-## Sequencia de Execucao
+#### 2. `bluechat-inbound/index.ts` - Callback independente de resposta
 
-1. Criar tabela `ai_model_benchmarks` via migration
-2. Criar edge function `ai-benchmark`
-3. Criar pagina UI com tabela comparativa
-4. Adicionar rota no App.tsx e link no sidebar
-5. Executar benchmark com 20-30 mensagens e avaliar resultados
+Mover a logica de callback para que:
 
+- Se `action === 'ESCALATE'`, SEMPRE chamar `sendResponseToBluechat` com a mensagem de transicao e executar transferencia de ticket, mesmo que a IA nao tenha gerado texto
+- Persistir a mensagem OUTBOUND de transicao no `lead_messages`
+
+#### 3. `sdr-ia-interpret/index.ts` - ESCALAR_HUMANO no modo passivo
+
+Na funcao `applyAction`, adicionar tratamento para quando `runId` e `null`:
+
+- Registrar a escalacao como evento independente (log no console)
+- Retornar `true` para indicar que a acao foi aplicada
+- O resultado `escalation.needed = true` ja e propagado para o `bluechat-inbound` corretamente
+
+#### 4. `sdr-ia-interpret/index.ts` - NAO_ENTENDI deve gerar resposta
+
+No prompt da IA ou na logica pos-interpretacao:
+
+- Quando `intent === NAO_ENTENDI` e `source === BLUECHAT`, forcar `deve_responder = true` e gerar resposta de contextualizacao
+- Exemplo: "Oi! Sou a Amelia, do comercial. Como posso te ajudar?"
+
+### Fluxo Corrigido
+
+```text
+Mensagem chega no bluechat-inbound
+        |
+   sdr-ia-interpret processa
+        |
+   +---------+---------+---------+
+   |         |         |         |
+NAO_ENTENDI  ESCALAR   RESPOND   RESOLVE
+(sem ctx)   HUMANO
+   |         |         |         |
+Pergunta   Mensagem   Resposta  Encerra
+contexto   transicao  normal    ticket
+   |         |
+RESPOND    ESCALATE
+   |         |
+Callback   Callback + Transfer ticket
+```
+
+### Mensagens Padrao
+
+| Cenario | Mensagem |
+|---------|----------|
+| NAO_ENTENDI sem contexto | "Oi! Sou a Amelia, do comercial do Grupo Blue. Em que posso te ajudar?" |
+| NAO_ENTENDI com contexto | "Hmm, deixa eu pedir ajuda de alguem da equipe pra te atender melhor. Ja ja entram em contato!" |
+| ESCALAR_HUMANO sem resposta | "Vou te conectar com alguem da equipe que pode te ajudar melhor com isso!" |
+| Falha total na IA (null) | "Estamos com um problema tecnico. Vou te conectar com um atendente agora!" |
+
+### Arquivos a Modificar
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/bluechat-inbound/index.ts` | Tratar escalacao sem resposta, callback independente, mensagens padrao |
+| `supabase/functions/sdr-ia-interpret/index.ts` | ESCALAR_HUMANO sem runId, NAO_ENTENDI gerar resposta para BLUECHAT |
+
+### Sequencia de Execucao
+
+1. Modificar `sdr-ia-interpret` para gerar resposta em cenarios NAO_ENTENDI + BLUECHAT
+2. Modificar `sdr-ia-interpret` para tratar ESCALAR_HUMANO sem runId
+3. Modificar `bluechat-inbound` para nunca deixar atendimento sem acao
+4. Modificar `bluechat-inbound` para callback de escalacao independente de responseText
+5. Deploy das duas edge functions
+6. Testar cenario do IVAN (NAO_ENTENDI com triagem)
