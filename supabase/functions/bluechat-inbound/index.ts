@@ -798,6 +798,31 @@ serve(async (req) => {
       );
     }
     
+    // FASE 4: Deduplicação por conteúdo (mesma mensagem do mesmo telefone nos últimos 30s)
+    {
+      const thirtySecsAgo = new Date(Date.now() - 30000).toISOString();
+      const { data: recentDup } = await supabase
+        .from('lead_messages')
+        .select('id')
+        .eq('conteudo', payload.message.text)
+        .gte('created_at', thirtySecsAgo)
+        .limit(1)
+        .maybeSingle();
+      
+      if (recentDup) {
+        console.log('[FASE4] Mensagem duplicada detectada (mesmo conteúdo em <30s), ignorando');
+        return new Response(
+          JSON.stringify({
+            success: true,
+            conversation_id: payload.conversation_id,
+            action: 'QUALIFY_ONLY',
+            deduplicated: true,
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // 1. Buscar lead existente
     let leadContact = await findLeadByPhone(supabase, phoneInfo.normalized, phoneInfo.e164, empresa);
     
@@ -900,10 +925,31 @@ serve(async (req) => {
     // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
     const triageSummary = parseTriageSummary(payload.message.text);
     
-    // 3.1 Se é resumo de triagem, enriquecer lead com dados extraídos
+    // FASE 5: Verificar se é lead retornando (interação recente < 2h)
+    let isReturningLead = false;
     if (triageSummary) {
+      const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+      const { data: recentInteraction } = await supabase
+        .from('lead_messages')
+        .select('id')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .gte('created_at', twoHoursAgo)
+        .limit(1)
+        .maybeSingle();
+      
+      if (recentInteraction) {
+        isReturningLead = true;
+        console.log('[FASE5] Lead retornando detectado (interação < 2h), tratando como continuação');
+      }
+    }
+    
+    // 3.1 Se é resumo de triagem, enriquecer lead com dados extraídos
+    if (triageSummary && !isReturningLead) {
       console.log('[BlueChat] Resumo de triagem detectado para lead:', leadContact.lead_id);
       await enrichLeadFromTriage(supabase, leadContact, triageSummary);
+    } else if (triageSummary && isReturningLead) {
+      console.log('[BlueChat] Lead retornando - NÃO tratando como novo atendimento');
     }
     
     // 4. Modo passivo: NÃO buscar cadência ativa (Amélia é atendente passiva no Blue Chat)
