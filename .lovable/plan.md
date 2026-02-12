@@ -1,117 +1,68 @@
 
-# Correcao do Bug de Coleta SPIN/GPCT/BANT
 
-## Problema Identificado
+# Mudanca de Prioridade: Gemini 3 Pro Preview como Modelo Principal
 
-A IA retorna os dados de framework com chaves MAIUSCULAS (`SPIN`, `GPCT`, `BANT`) no JSON de resposta, mas todo o codigo le e faz merge usando chaves minusculas (`spin`, `gpct`, `bant`). Resultado: os dois existem no banco ao mesmo tempo.
+## Contexto Atual
 
-Exemplo real do lead Pedro (d642d7c1) no banco:
+- Ordem atual: ANTHROPIC (1o) -> GEMINI (2o) -> GPT (3o)
+- Modelo Gemini atual: `google/gemini-2.5-flash`
+- Gemini e GPT passam pelo Lovable AI Gateway (LOVABLE_API_KEY)
+- Anthropic vai direto na API com ANTHROPIC_API_KEY
+
+## O que sera feito
+
+### 1. Adicionar modelo `google/gemini-3-pro-preview` a lista de modelos disponiveis
+
+**Arquivo:** `src/types/settings.ts`
+
+Adicionar `google/gemini-3-pro-preview` na lista de modelos do provider GEMINI.
+
+### 2. Atualizar a ordem de prioridade no banco
+
+Executar SQL para alterar `system_settings.ia.model_priority`:
+- Ordem: `["GEMINI", "ANTHROPIC", "GPT"]`
+- Modelo GEMINI: `google/gemini-3-pro-preview`
+
+### 3. Adicionar suporte a Google API Key direta (opcional)
+
+Atualmente o Gemini passa pelo Lovable AI Gateway. Para usar a API do Google diretamente (como e feito com Anthropic), sera necessario:
+
+- Solicitar ao usuario o secret `GOOGLE_API_KEY`
+- Criar funcao `tryGoogleDirect()` no `sdr-ia-interpret/index.ts` que chama `https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent`
+- No switch de providers, quando `GEMINI` e o modelo comeca com `google/gemini-3`, usar a API direta; senao, manter o Lovable AI Gateway como fallback
+
+### 4. Campo de API Key na UI
+
+**Arquivo:** `src/components/settings/AISettingsTab.tsx`
+
+Nao sera necessario criar um campo customizado na UI. O sistema ja gerencia secrets de forma segura. A chave sera solicitada via ferramenta de secrets do Lovable Cloud.
+
+## Detalhes Tecnicos
+
+### Mudanca em `src/types/settings.ts` (linha 142)
+
+Adicionar o novo modelo na lista GEMINI:
 ```text
-SPIN: { S: "Nunca declarou cripto...", P: "Cálculo manual complexo...", I: "Precisa regularizar 3 anos...", N: "Condições especiais..." }
-spin: {}   <-- VAZIO - é isso que o código lê
+{ id: 'GEMINI', name: 'Google (Gemini)', models: ['google/gemini-3-pro-preview', 'google/gemini-2.5-flash', 'google/gemini-2.5-flash-lite', 'google/gemini-2.5-pro'] }
 ```
 
-O SPIN foi preenchido pela IA com chaves maiusculas, mas:
-- `decidirProximaPerguntaBLUE()` le `state.spin` (minusculo) → acha que esta vazio → pergunta de novo
-- A listagem "DADOS JA COLETADOS" no prompt le `fd.spin` (minusculo) → nao mostra nada → IA nao sabe que ja coletou
-- `getFrameworkCompleteness()` na UI le `data.spin` → mostra 0% preenchido
+### Mudanca em `supabase/functions/sdr-ia-interpret/index.ts`
 
-## Causa Raiz
+Adicionar funcao `tryGoogleDirect()` similar a `tryAnthropic()` mas usando a API do Google Generative AI. No loop de providers, se `GEMINI` e ha `GOOGLE_API_KEY` configurada, usar chamada direta; senao, cair no Lovable AI Gateway.
 
-No merge (linha ~4319-4327), o spread `...aiResponse.frameworks_atualizados` copia a chave `SPIN` (maiuscula) da IA para o banco. Depois, a linha `spin: { ...(existingData.spin || {}), ... }` cria uma chave `spin` (minuscula) SEPARADA, vazia (porque ambos os lados do spread sao vazios — dados reais estao em `SPIN` maiusculo).
-
-## Correcao
-
-**Arquivo:** `supabase/functions/sdr-ia-interpret/index.ts`
-
-### 1. Normalizar chaves da resposta da IA (apos parse do JSON)
-
-Criar funcao `normalizeFrameworkKeys()` que converte qualquer chave MAIUSCULA para minuscula:
-```text
-function normalizeFrameworkKeys(data: any): FrameworkData {
-  return {
-    spin: data?.spin || data?.SPIN || data?.Spin || {},
-    gpct: data?.gpct || data?.GPCT || data?.Gpct || {},
-    bant: data?.bant || data?.BANT || data?.Bant || {},
-  };
-}
-```
-
-Aplicar imediatamente apos parse da resposta da IA:
-```text
-if (aiResponse.frameworks_atualizados) {
-  aiResponse.frameworks_atualizados = normalizeFrameworkKeys(aiResponse.frameworks_atualizados);
-}
-```
-
-### 2. Normalizar chaves ao LER do banco (existingData)
-
-Na secao de merge (linha ~4319), tambem normalizar o `existingData`:
-```text
-const existingData = normalizeFrameworkKeys(conversationState?.framework_data || {});
-```
-
-### 3. Normalizar ao construir qualiState (linha ~2847)
-
-Garantir que `qualiState.spin`, `qualiState.gpct`, `qualiState.bant` leem os dados corretos:
-```text
-const normalizedFD = normalizeFrameworkKeys(conversationState?.framework_data);
-spin: normalizedFD.spin,
-gpct: normalizedFD.gpct,
-bant: normalizedFD.bant,
-```
-
-### 4. Normalizar na listagem "DADOS JA COLETADOS" (linha ~2988)
+### SQL de atualizacao
 
 ```text
-const fd = normalizeFrameworkKeys(conversationState.framework_data);
+UPDATE system_settings 
+SET value = '{"ordem":["GEMINI","ANTHROPIC","GPT"],"modelos":{"ANTHROPIC":"claude-sonnet-4-20250514","GEMINI":"google/gemini-3-pro-preview","GPT":"openai/gpt-5-mini"},"desabilitados":[]}'::jsonb
+WHERE category = 'ia' AND key = 'model_priority';
 ```
 
-### 5. Corrigir dados existentes no banco
+## Sequencia de Execucao
 
-Apos deploy da funcao, executar SQL para migrar dados existentes que tem chaves maiusculas:
-```text
-UPDATE lead_conversation_state 
-SET framework_data = jsonb_build_object(
-  'spin', COALESCE(framework_data->'spin', '{}') || COALESCE(framework_data->'SPIN', '{}'),
-  'gpct', COALESCE(framework_data->'gpct', '{}') || COALESCE(framework_data->'GPCT', '{}'),
-  'bant', COALESCE(framework_data->'bant', '{}') || COALESCE(framework_data->'BANT', '{}')
-)
-WHERE framework_data ? 'SPIN' OR framework_data ? 'GPCT' OR framework_data ? 'BANT';
-```
+1. Solicitar `GOOGLE_API_KEY` ao usuario
+2. Atualizar `AI_PROVIDERS` em `src/types/settings.ts`
+3. Implementar `tryGoogleDirect()` no edge function
+4. Atualizar prioridade no banco via SQL
+5. Deploy da edge function
 
-### 6. Normalizar tambem as sub-chaves (S/P/I/N vs s/p/i/n)
-
-A IA pode retornar `{ SPIN: { S: "...", P: "..." } }` com sub-chaves maiusculas tambem. Expandir o normalizador:
-```text
-function normalizeSubKeys(obj: any): Record<string, string | null> {
-  if (!obj) return {};
-  const result: Record<string, string | null> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    result[key.toLowerCase()] = value as string | null;
-  }
-  return result;
-}
-
-function normalizeFrameworkKeys(data: any): FrameworkData {
-  return {
-    spin: normalizeSubKeys(data?.spin || data?.SPIN || data?.Spin),
-    gpct: normalizeSubKeys(data?.gpct || data?.GPCT || data?.Gpct),
-    bant: normalizeSubKeys(data?.bant || data?.BANT || data?.Bant),
-  };
-}
-```
-
-## Resumo de Mudancas
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Funcao `normalizeFrameworkKeys()` + aplicar em 4 pontos |
-| Migration SQL | Corrigir dados existentes no banco |
-
-## Impacto
-
-- Todas as conversas futuras terao SPIN/GPCT/BANT coletados corretamente
-- As conversas existentes com dados em chaves maiusculas serao migradas
-- A decisao de proxima pergunta vai funcionar corretamente (nao repetir perguntas ja respondidas)
-- A UI vai mostrar o percentual de completude correto
