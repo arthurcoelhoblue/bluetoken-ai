@@ -14,6 +14,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { toast } from 'sonner';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { PipelineStage } from '@/types/deal';
 
 function PipelineConfigContent() {
@@ -135,14 +136,18 @@ function PipelineConfigContent() {
                   {pipeline.is_default && <Badge variant="secondary">Padrão</Badge>}
                 </CollapsibleTrigger>
                 <div className="flex gap-2">
-                  <Button
-                    variant="ghost" size="icon"
-                    onClick={() => handleDeletePipeline(pipeline.id)}
-                    disabled={pipelineHasDeals(pipeline.id)}
-                    title={pipelineHasDeals(pipeline.id) ? 'Tem deals vinculados' : 'Excluir'}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost" size="icon"
+                        onClick={() => handleDeletePipeline(pipeline.id)}
+                        disabled={pipelineHasDeals(pipeline.id)}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent>{pipelineHasDeals(pipeline.id) ? 'Tem deals vinculados' : 'Excluir pipeline'}</TooltipContent>
+                  </Tooltip>
                 </div>
               </div>
             </CardHeader>
