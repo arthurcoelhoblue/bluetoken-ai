@@ -27,6 +27,17 @@ import LeadsQuentes from "./pages/admin/LeadsQuentes";
 import AIBenchmark from "./pages/admin/AIBenchmark";
 import Atendimentos from "./pages/Atendimentos";
 
+// Shell pages (Patch 0)
+import PipelinePage from "./pages/PipelinePage";
+import ContatosPage from "./pages/ContatosPage";
+import ConversasPage from "./pages/ConversasPage";
+import MetasPage from "./pages/MetasPage";
+import RenovacaoPage from "./pages/RenovacaoPage";
+import CockpitPage from "./pages/CockpitPage";
+import AmeliaPage from "./pages/AmeliaPage";
+import TemplatesPage from "./pages/TemplatesPage";
+import IntegracoesPage from "./pages/IntegracoesPage";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -42,111 +53,52 @@ const App = () => (
             <Route path="/unauthorized" element={<Unauthorized />} />
             
             {/* Protected routes */}
-            <Route path="/" element={
-              <Index />
-            } />
-            <Route path="/me" element={
-              <ProtectedRoute>
-                <Me />
-              </ProtectedRoute>
-            } />
+            <Route path="/" element={<Index />} />
+            <Route path="/me" element={<ProtectedRoute><Me /></ProtectedRoute>} />
+            
+            {/* Shell pages — Patch 0 */}
+            <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
+            <Route path="/contatos" element={<ProtectedRoute><ContatosPage /></ProtectedRoute>} />
+            <Route path="/conversas" element={<ProtectedRoute><ConversasPage /></ProtectedRoute>} />
+            <Route path="/metas" element={<ProtectedRoute><MetasPage /></ProtectedRoute>} />
+            <Route path="/renovacao" element={<ProtectedRoute><RenovacaoPage /></ProtectedRoute>} />
+            <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><CockpitPage /></ProtectedRoute>} />
+            <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><AmeliaPage /></ProtectedRoute>} />
+            <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
+            <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
             
             {/* Admin/Auditor routes */}
             <Route path="/monitor/sgt-events" element={
-              <ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}>
-                <MonitorSgtEvents />
-              </ProtectedRoute>
+              <ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}><MonitorSgtEvents /></ProtectedRoute>
             } />
             
             {/* Atendimentos Blue Chat */}
             <Route path="/atendimentos" element={
-              <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}>
-                <Atendimentos />
-              </ProtectedRoute>
+              <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><Atendimentos /></ProtectedRoute>
             } />
             
             {/* Leads routes */}
-            <Route path="/leads" element={
-              <ProtectedRoute>
-                <LeadsList />
-              </ProtectedRoute>
-            } />
-            <Route path="/leads/:leadId/:empresa" element={
-              <ProtectedRoute>
-                <LeadDetail />
-              </ProtectedRoute>
-            } />
+            <Route path="/leads" element={<ProtectedRoute><LeadsList /></ProtectedRoute>} />
+            <Route path="/leads/:leadId/:empresa" element={<ProtectedRoute><LeadDetail /></ProtectedRoute>} />
             
-            {/* Cadences routes - ÉPICO 4 */}
-            <Route path="/cadences/new" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <CadenceEditor />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences/:cadenceId/edit" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <CadenceEditor />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences/runs/:runId" element={
-              <ProtectedRoute>
-                <CadenceRunDetail />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences/runs" element={
-              <ProtectedRoute>
-                <CadenceRunsList />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences/next-actions" element={
-              <ProtectedRoute>
-                <CadenceNextActions />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences/:cadenceId" element={
-              <ProtectedRoute>
-                <CadenceDetail />
-              </ProtectedRoute>
-            } />
-            <Route path="/cadences" element={
-              <ProtectedRoute>
-                <CadencesList />
-              </ProtectedRoute>
-            } />
+            {/* Cadences routes */}
+            <Route path="/cadences/new" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenceEditor /></ProtectedRoute>} />
+            <Route path="/cadences/:cadenceId/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenceEditor /></ProtectedRoute>} />
+            <Route path="/cadences/runs/:runId" element={<ProtectedRoute><CadenceRunDetail /></ProtectedRoute>} />
+            <Route path="/cadences/runs" element={<ProtectedRoute><CadenceRunsList /></ProtectedRoute>} />
+            <Route path="/cadences/next-actions" element={<ProtectedRoute><CadenceNextActions /></ProtectedRoute>} />
+            <Route path="/cadences/:cadenceId" element={<ProtectedRoute><CadenceDetail /></ProtectedRoute>} />
+            <Route path="/cadences" element={<ProtectedRoute><CadencesList /></ProtectedRoute>} />
             
             {/* Tokeniza routes */}
-            <Route path="/tokeniza/offers" element={
-              <ProtectedRoute>
-                <TokenizaOffers />
-              </ProtectedRoute>
-            } />
+            <Route path="/tokeniza/offers" element={<ProtectedRoute><TokenizaOffers /></ProtectedRoute>} />
             
             {/* Admin routes */}
-            <Route path="/admin/produtos" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <ProductKnowledgeList />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/produtos/:productId" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <ProductKnowledgeEditor />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/settings" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <Settings />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/leads-quentes" element={
-              <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}>
-                <LeadsQuentes />
-              </ProtectedRoute>
-            } />
-            <Route path="/admin/ai-benchmark" element={
-              <ProtectedRoute requiredRoles={['ADMIN']}>
-                <AIBenchmark />
-              </ProtectedRoute>
-            } />
+            <Route path="/admin/produtos" element={<ProtectedRoute requiredRoles={['ADMIN']}><ProductKnowledgeList /></ProtectedRoute>} />
+            <Route path="/admin/produtos/:productId" element={<ProtectedRoute requiredRoles={['ADMIN']}><ProductKnowledgeEditor /></ProtectedRoute>} />
+            <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
+            <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><LeadsQuentes /></ProtectedRoute>} />
+            <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><AIBenchmark /></ProtectedRoute>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />

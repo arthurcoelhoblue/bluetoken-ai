@@ -9,7 +9,6 @@ export default function Index() {
   const { isAuthenticated, isLoading } = useAuth();
   const navigate = useNavigate();
 
-  // Show loading
   if (isLoading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
@@ -18,7 +17,6 @@ export default function Index() {
     );
   }
 
-  // Landing page for non-authenticated users
   if (!isAuthenticated) {
     return (
       <div className="min-h-screen bg-gradient-hero flex items-center justify-center p-6">
@@ -28,15 +26,15 @@ export default function Index() {
           </div>
           
           <h1 className="text-4xl font-bold text-primary-foreground mb-4">
-            SDR IA
+            Blue CRM
           </h1>
           
           <p className="text-primary-foreground/80 mb-2 text-xl">
-            Tokeniza & Blue Consult
+            Grupo Blue
           </p>
           
           <p className="text-primary-foreground/60 mb-8">
-            Sistema de Pré-Vendas Automatizado com Inteligência Artificial
+            CRM Inteligente com IA — Vendas, Automação e Relacionamento
           </p>
 
           <Button
@@ -53,7 +51,6 @@ export default function Index() {
     );
   }
 
-  // Dashboard for authenticated users
   return (
     <AppLayout requireAuth={false}>
       <DashboardContent />
