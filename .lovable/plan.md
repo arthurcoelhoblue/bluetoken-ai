@@ -1,191 +1,117 @@
 
-# Avaliacao da Amelia - Problemas e Melhorias
+# Correcao do Bug de Coleta SPIN/GPCT/BANT
 
-## Analise das Conversas Reais (ultimos 7 dias)
+## Problema Identificado
 
-Analisei todas as conversas recentes da Amelia com leads reais. Aqui estao os problemas identificados e as melhorias propostas.
+A IA retorna os dados de framework com chaves MAIUSCULAS (`SPIN`, `GPCT`, `BANT`) no JSON de resposta, mas todo o codigo le e faz merge usando chaves minusculas (`spin`, `gpct`, `bant`). Resultado: os dois existem no banco ao mesmo tempo.
 
----
+Exemplo real do lead Pedro (d642d7c1) no banco:
+```text
+SPIN: { S: "Nunca declarou cripto...", P: "Cálculo manual complexo...", I: "Precisa regularizar 3 anos...", N: "Condições especiais..." }
+spin: {}   <-- VAZIO - é isso que o código lê
+```
 
-## PROBLEMAS CRITICOS DE COMUNICACAO
+O SPIN foi preenchido pela IA com chaves maiusculas, mas:
+- `decidirProximaPerguntaBLUE()` le `state.spin` (minusculo) → acha que esta vazio → pergunta de novo
+- A listagem "DADOS JA COLETADOS" no prompt le `fd.spin` (minusculo) → nao mostra nada → IA nao sabe que ja coletou
+- `getFrameworkCompleteness()` na UI le `data.spin` → mostra 0% preenchido
 
-### 1. "Perfeito!" ainda escapa do filtro de sanitizacao
-Apesar do filtro extenso, a palavra **"Perfeito!"** aparece em praticamente TODAS as respostas da Amelia como inicio de frase. Exemplos reais:
-- "Perfeito! Com 20-40 operacoes..."
-- "Perfeito! Pode buscar essas informacoes..."
-- "Perfeito! Renda extra e o foco..."
-- "Perfeito! Primeiro estruturar..."
-- "Perfeito! Vou encaminhar..."
-- "Perfeito! Projeto bem estruturado..."
+## Causa Raiz
 
-**Causa raiz:** O sanitizador so remove "Perfeito, [Nome]!" mas NAO remove "Perfeito!" sozinho no inicio. A IA continua usando "Perfeito!" como muleta.
+No merge (linha ~4319-4327), o spread `...aiResponse.frameworks_atualizados` copia a chave `SPIN` (maiuscula) da IA para o banco. Depois, a linha `spin: { ...(existingData.spin || {}), ... }` cria uma chave `spin` (minuscula) SEPARADA, vazia (porque ambos os lados do spread sao vazios — dados reais estao em `SPIN` maiusculo).
 
-**Correcao:** Adicionar regex para remover "Perfeito!", "Entendi!", "Otimo!" isolados no inicio da resposta E adicionar instrucao explicita no prompt proibindo essas muletas.
+## Correcao
 
-### 2. Bloco de 3 perguntas disparado em contexto ERRADO
-Quando o lead do Blue Chat chega via handoff da MarIA, a Amelia frequentemente dispara o bloco de 3 perguntas de qualificacao mesmo quando o contexto nao pede isso:
-
-- Lead "Cliente" pede material de live → Amelia responde com bloco de 3 perguntas sobre IR
-- Lead "Deus Seja Louvado" pede plano Gold → Amelia responde com bloco de 3 perguntas
-- Lead "Alessandro" quer falar com Gabriel (renovacao) → Amelia responde com bloco de 3 perguntas
-
-**Causa raiz:** O bloco e ativado sempre que `estadoFunil === 'SAUDACAO'` e `historicoLength <= 3`, sem analisar o contexto real da conversa (triagem). Ele ignora o que o lead REALMENTE quer.
-
-**Correcao:** Antes de ativar o bloco, analisar o conteudo do handoff. Se o lead esta pedindo algo especifico (material, renovacao, falar com pessoa especifica), NAO disparar o bloco.
-
-### 3. Amelia promete coisas que nao pode cumprir
-No caso do Fernando (Tokeniza), a Amelia:
-- Prometeu "encaminhar para rede de parceiros de Venture Capital, Family Offices" - algo que a Tokeniza NAO FAZ
-- Prometeu "retorno em 48h" da equipe de relacionamento
-- Disse que tinha "rede de investidores que buscam oportunidades" para conectar
-
-**Causa raiz:** A regra de "nao inventar informacoes" se aplica a dados tecnicos (garantias, prazos), mas a IA inventa PROCESSOS e SERVICOS que nao existem. O prompt nao proibe fabricar capacidades operacionais.
-
-**Correcao:** Adicionar regra explicita: "NUNCA prometa servicos, encaminhamentos ou processos que voce nao tem certeza que existem. Se nao sabe se o servico existe, diga: 'vou verificar com a equipe se temos algo nessa linha.'"
-
-### 4. Amelia nao sabe quando desqualificar um lead
-O Fernando (Tokeniza) nao era investidor, nao tinha dinheiro, nao tinha empresa, e repetidamente disse "nao me encaixo na Tokeniza". Mesmo assim a Amelia:
-- Continuou qualificando por dezenas de mensagens
-- Tentou empurrar investimento de R$1-2k para quem esta com aluguel atrasado
-- Recomecou a conversa MULTIPLAS vezes (reaberturas de ticket)
-- Nunca sinalizou ao sistema que o lead era desqualificado
-
-**Causa raiz:** Nao existe uma acao `DESQUALIFICAR_LEAD` ou `ENCERRAR_ATENDIMENTO`. A Amelia fica presa em loop de qualificacao.
-
-**Correcao:** Criar nova acao `DESQUALIFICAR_LEAD` que marca o lead como frio e encerra o atendimento graciosamente. Adicionar instrucao no prompt para detectar leads claramente fora do perfil.
-
-### 5. Mensagens duplicadas no Blue Chat
-Varias conversas mostram a mesma resposta enviada 2x (mesma resposta com timestamps diferentes, segundos de diferenca).
-
-**Causa raiz:** O webhook `bluechat-inbound` recebe o mesmo handoff 2x (timestamps mostram 4s de diferenca). Nao ha deduplicacao.
-
-**Correcao:** Implementar deduplicacao por `conversation_id` + `message_id` ou hash do conteudo com janela de 30s.
-
-### 6. Falta de "memoria de sessao" no Blue Chat
-Quando um ticket e reaberto, a Amelia recebe todo o historico do ticket NOVAMENTE como `[NOVO ATENDIMENTO]` e trata como um atendimento novo. Resultado: repete apresentacao, repete perguntas ja respondidas.
-
-**Causa raiz:** O `bluechat-inbound` nao verifica se ja existe conversa recente com aquele lead. Cada handoff cria um novo ciclo.
-
-**Correcao:** Antes de processar um `[NOVO ATENDIMENTO]`, verificar se ja existe mensagem recente (ultimas 2h) do mesmo lead/empresa. Se sim, tratar como continuacao, nao novo atendimento.
-
----
-
-## PROBLEMAS DE LOGICA/NEGOCIO
-
-### 7. Amelia nao sabe lidar com clientes de RENOVACAO
-O caso "Alessandro [Renovacao 2026]" mostra que o lead ja e cliente e quer renovar - ele quer falar com Gabriel, nao ser qualificado. A Amelia deveria:
-- Detectar "[Renovacao]" no nome
-- Saber que e um cliente existente
-- Escalar direto para o atendente responsavel, sem qualificacao
-
-**Correcao:** Adicionar deteccao de "Renovacao" no nome do lead e tratar como `ESCALAR_HUMANO` imediato com mensagem tipo "Vi que voce ja e nosso cliente! Vou te conectar com a equipe que cuida da sua conta."
-
-### 8. Cross-selling Blue->Tokeniza em leads BLUE nao faz sentido neste contexto
-Na conversa do Arthur (Tokeniza), quando ele perguntou sobre IR, a transicao funcionou bem. Mas na logica atual, leads que sao claramente da Blue e querem IR podem receber mencoes sobre investimentos sem contexto.
-
----
-
-## PLANO DE IMPLEMENTACAO
-
-### Fase 1: Sanitizacao de Resposta (prompt + filtro)
 **Arquivo:** `supabase/functions/sdr-ia-interpret/index.ts`
 
-1. Expandir `sanitizeRoboticResponse()` para remover "Perfeito!", "Entendi!", "Otimo!", "Excelente!" isolados no inicio
-2. Adicionar ao SYSTEM_PROMPT e PASSIVE_CHAT_PROMPT:
-   - Proibir "Perfeito!" como inicio de frase
-   - Adicionar regra contra fabricar servicos/processos inexistentes
-3. Adicionar variacao forcada: se a resposta comeca com palavra proibida, substituir por abertura aleatoria das `VARIACOES_TRANSICAO`
+### 1. Normalizar chaves da resposta da IA (apos parse do JSON)
 
-### Fase 2: Logica de Bloco Inteligente
-**Arquivo:** `supabase/functions/sdr-ia-interpret/index.ts`
-
-1. Na funcao `decidirProximaPerguntaBLUE()`, antes de ativar bloco:
-   - Verificar se ha triageSummary e se o lead pediu algo especifico
-   - Se o lead mencionou "material", "renovacao", "falar com [nome]" → NAO ativar bloco
-   - Se o lead e renovacao → escalar direto
-
-### Fase 3: Acao DESQUALIFICAR_LEAD
-**Arquivo:** `supabase/functions/sdr-ia-interpret/index.ts`
-
-1. Adicionar ao enum de acoes
-2. Adicionar instrucao no prompt para identificar leads fora do perfil
-3. Quando ativada: marcar temperatura FRIO, encerrar conversa com mensagem amigavel
-
-### Fase 4: Deduplicacao de Mensagens Blue Chat
-**Arquivo:** `supabase/functions/bluechat-inbound/index.ts`
-
-1. Antes de salvar mensagem, verificar se ja existe mensagem com mesmo conteudo do mesmo lead nos ultimos 30s
-2. Se duplicada, retornar 200 sem processar
-
-### Fase 5: Deteccao de Continuacao de Conversa
-**Arquivo:** `supabase/functions/bluechat-inbound/index.ts`
-
-1. Verificar se existe interacao recente (< 2h) com o lead
-2. Se sim, nao enviar como `[NOVO ATENDIMENTO]` - tratar como continuacao
-3. Incluir flag `isReturningLead: true` no context para sdr-ia-interpret
-
-### Fase 6: Deteccao de Cliente Renovacao
-**Arquivo:** `supabase/functions/sdr-ia-interpret/index.ts`
-
-1. Se nome do lead contem "[Renovacao]" ou tipo_relacao = "CLIENTE_IR":
-   - Pular qualificacao
-   - Escalar direto para humano
-   - Mensagem: "Vi que voce ja e nosso cliente! Vou te conectar com a equipe que cuida da sua conta."
-
----
-
-## RESUMO DAS PRIORIDADES
-
-| Prioridade | Problema | Impacto |
-|------------|----------|---------|
-| Alta | "Perfeito!" repetitivo | Quebra naturalidade em TODA conversa |
-| Alta | Bloco 3 perguntas em contexto errado | Lead insatisfeito na primeira interacao |
-| Alta | Promessas falsas de servicos | Risco de credibilidade |
-| Alta | Mensagens duplicadas | Experiencia ruim e confusa |
-| Media | Falta de desqualificacao | Gasta recursos com leads sem potencial |
-| Media | Renovacao nao detectada | Clientes existentes tratados como novos |
-| Media | Continuacao de conversa | Repetir apresentacao irrita o lead |
-
----
-
-## DETALHES TECNICOS
-
-### Alteracoes no sanitizador (Fase 1)
-Adicionar ao array de patterns na funcao `sanitizeRoboticResponse`:
+Criar funcao `normalizeFrameworkKeys()` que converte qualquer chave MAIUSCULA para minuscula:
 ```text
-/^(Perfeito|Entendi|Entendido|Excelente|Ótimo|Ótima|Legal|Maravilha|Show|Certo|Claro)[!.]?\s*/i
-```
-Isso remove essas palavras-muleta quando usadas sozinhas no inicio (sem nome depois).
-
-### Prompt: novas regras (Fase 1)
-Adicionar secao ao SYSTEM_PROMPT:
-```text
-PALAVRAS-MULETA PROIBIDAS NO INICIO:
-"Perfeito!", "Entendi!", "Otimo!", "Excelente!", "Certo!", "Legal!"
-Essas palavras no inicio sao marca de robo. 
-USE: ir direto ao assunto ou variacao natural.
+function normalizeFrameworkKeys(data: any): FrameworkData {
+  return {
+    spin: data?.spin || data?.SPIN || data?.Spin || {},
+    gpct: data?.gpct || data?.GPCT || data?.Gpct || {},
+    bant: data?.bant || data?.BANT || data?.Bant || {},
+  };
+}
 ```
 
-E regra contra fabricar processos:
+Aplicar imediatamente apos parse da resposta da IA:
 ```text
-NUNCA PROMETA SERVICOS QUE VOCE NAO TEM CERTEZA QUE EXISTEM.
-Se o lead pede algo fora do escopo (indicacao, networking, encaminhamento):
-"Vou verificar com a equipe se temos algo nessa linha. Te retorno, tá?"
-NAO invente departamentos, redes de parceiros ou processos.
+if (aiResponse.frameworks_atualizados) {
+  aiResponse.frameworks_atualizados = normalizeFrameworkKeys(aiResponse.frameworks_atualizados);
+}
 ```
 
-### Deduplicacao Blue Chat (Fase 4)
-Na funcao principal do `bluechat-inbound`, antes de salvar:
+### 2. Normalizar chaves ao LER do banco (existingData)
+
+Na secao de merge (linha ~4319), tambem normalizar o `existingData`:
 ```text
-1. Buscar lead_messages WHERE lead_id = X AND conteudo = hash AND created_at > now()-30s
-2. Se encontrou → return 200 { deduplicated: true }
+const existingData = normalizeFrameworkKeys(conversationState?.framework_data || {});
 ```
 
-### Continuacao de conversa (Fase 5)
-No `bluechat-inbound`:
+### 3. Normalizar ao construir qualiState (linha ~2847)
+
+Garantir que `qualiState.spin`, `qualiState.gpct`, `qualiState.bant` leem os dados corretos:
 ```text
-1. Buscar lead_messages WHERE lead_id = X AND created_at > now()-2h
-2. Se encontrou → isReturningLead = true
-3. Passar flag para sdr-ia-interpret
-4. No interpret, se isReturningLead: pular apresentacao, usar historico existente
+const normalizedFD = normalizeFrameworkKeys(conversationState?.framework_data);
+spin: normalizedFD.spin,
+gpct: normalizedFD.gpct,
+bant: normalizedFD.bant,
 ```
+
+### 4. Normalizar na listagem "DADOS JA COLETADOS" (linha ~2988)
+
+```text
+const fd = normalizeFrameworkKeys(conversationState.framework_data);
+```
+
+### 5. Corrigir dados existentes no banco
+
+Apos deploy da funcao, executar SQL para migrar dados existentes que tem chaves maiusculas:
+```text
+UPDATE lead_conversation_state 
+SET framework_data = jsonb_build_object(
+  'spin', COALESCE(framework_data->'spin', '{}') || COALESCE(framework_data->'SPIN', '{}'),
+  'gpct', COALESCE(framework_data->'gpct', '{}') || COALESCE(framework_data->'GPCT', '{}'),
+  'bant', COALESCE(framework_data->'bant', '{}') || COALESCE(framework_data->'BANT', '{}')
+)
+WHERE framework_data ? 'SPIN' OR framework_data ? 'GPCT' OR framework_data ? 'BANT';
+```
+
+### 6. Normalizar tambem as sub-chaves (S/P/I/N vs s/p/i/n)
+
+A IA pode retornar `{ SPIN: { S: "...", P: "..." } }` com sub-chaves maiusculas tambem. Expandir o normalizador:
+```text
+function normalizeSubKeys(obj: any): Record<string, string | null> {
+  if (!obj) return {};
+  const result: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key.toLowerCase()] = value as string | null;
+  }
+  return result;
+}
+
+function normalizeFrameworkKeys(data: any): FrameworkData {
+  return {
+    spin: normalizeSubKeys(data?.spin || data?.SPIN || data?.Spin),
+    gpct: normalizeSubKeys(data?.gpct || data?.GPCT || data?.Gpct),
+    bant: normalizeSubKeys(data?.bant || data?.BANT || data?.Bant),
+  };
+}
+```
+
+## Resumo de Mudancas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Funcao `normalizeFrameworkKeys()` + aplicar em 4 pontos |
+| Migration SQL | Corrigir dados existentes no banco |
+
+## Impacto
+
+- Todas as conversas futuras terao SPIN/GPCT/BANT coletados corretamente
+- As conversas existentes com dados em chaves maiusculas serao migradas
+- A decisao de proxima pergunta vai funcionar corretamente (nao repetir perguntas ja respondidas)
+- A UI vai mostrar o percentual de completude correto
