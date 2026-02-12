@@ -24,6 +24,7 @@ import ProductKnowledgeList from "./pages/admin/ProductKnowledgeList";
 import ProductKnowledgeEditor from "./pages/admin/ProductKnowledgeEditor";
 import Settings from "./pages/admin/Settings";
 import LeadsQuentes from "./pages/admin/LeadsQuentes";
+import AIBenchmark from "./pages/admin/AIBenchmark";
 import Atendimentos from "./pages/Atendimentos";
 
 const queryClient = new QueryClient();
@@ -139,6 +140,11 @@ const App = () => (
             <Route path="/admin/leads-quentes" element={
               <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}>
                 <LeadsQuentes />
+              </ProtectedRoute>
+            } />
+            <Route path="/admin/ai-benchmark" element={
+              <ProtectedRoute requiredRoles={['ADMIN']}>
+                <AIBenchmark />
               </ProtectedRoute>
             } />
             

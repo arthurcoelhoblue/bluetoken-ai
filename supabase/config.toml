@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.integration-health-check]
 verify_jwt = false
+
+[functions.ai-benchmark]
+verify_jwt = false

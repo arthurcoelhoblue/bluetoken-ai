@@ -14,6 +14,63 @@ export type Database = {
   }
   public: {
     Tables: {
+      ai_model_benchmarks: {
+        Row: {
+          acao_recomendada: string | null
+          created_at: string | null
+          id: string
+          intent: string | null
+          intent_confidence: number | null
+          message_id: string | null
+          modelo_ia: string
+          original_intent_id: string | null
+          resposta_automatica_texto: string | null
+          tempo_processamento_ms: number | null
+          tokens_usados: number | null
+        }
+        Insert: {
+          acao_recomendada?: string | null
+          created_at?: string | null
+          id?: string
+          intent?: string | null
+          intent_confidence?: number | null
+          message_id?: string | null
+          modelo_ia: string
+          original_intent_id?: string | null
+          resposta_automatica_texto?: string | null
+          tempo_processamento_ms?: number | null
+          tokens_usados?: number | null
+        }
+        Update: {
+          acao_recomendada?: string | null
+          created_at?: string | null
+          id?: string
+          intent?: string | null
+          intent_confidence?: number | null
+          message_id?: string | null
+          modelo_ia?: string
+          original_intent_id?: string | null
+          resposta_automatica_texto?: string | null
+          tempo_processamento_ms?: number | null
+          tokens_usados?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_model_benchmarks_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "lead_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_model_benchmarks_original_intent_id_fkey"
+            columns: ["original_intent_id"]
+            isOneToOne: false
+            referencedRelation: "lead_message_intents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cadence_runner_logs: {
         Row: {
           details: Json | null
