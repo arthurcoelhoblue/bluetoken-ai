@@ -44,7 +44,7 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
                 <SelectValue placeholder="Selecione um perfil" />
               </SelectTrigger>
               <SelectContent>
-                {profiles.map(p => (
+                {profiles.filter(p => p.nome !== 'Super Admin').map(p => (
                   <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
                 ))}
               </SelectContent>

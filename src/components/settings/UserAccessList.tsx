@@ -3,9 +3,10 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserPlus, X } from 'lucide-react';
+import { UserPlus, Plus, X } from 'lucide-react';
 import { useUsersWithProfiles, useRemoveAssignment } from '@/hooks/useAccessControl';
 import { AssignProfileDialog } from './AssignProfileDialog';
+import { CreateUserDialog } from './CreateUserDialog';
 import type { UserWithAccess } from '@/types/accessControl';
 
 export function UserAccessList() {
@@ -13,6 +14,7 @@ export function UserAccessList() {
   const removeMutation = useRemoveAssignment();
 
   const [assignTarget, setAssignTarget] = useState<UserWithAccess | null>(null);
+  const [createOpen, setCreateOpen] = useState(false);
 
   const getInitials = (nome: string | null, email: string) => {
     if (nome) return nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
@@ -25,11 +27,17 @@ export function UserAccessList() {
 
   return (
     <div className="space-y-4">
-      <div>
-        <h3 className="text-lg font-semibold">Usuários</h3>
-        <p className="text-sm text-muted-foreground">
-          Atribua perfis de acesso e empresa a cada usuário
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-semibold">Usuários</h3>
+          <p className="text-sm text-muted-foreground">
+            Atribua perfis de acesso e empresa a cada usuário
+          </p>
+        </div>
+        <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-2">
+          <Plus className="h-4 w-4" />
+          Novo Usuário
+        </Button>
       </div>
 
       <div className="rounded-lg border">
@@ -118,6 +126,8 @@ export function UserAccessList() {
           currentEmpresa={assignTarget.assignment?.empresa}
         />
       )}
+
+      <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
     </div>
   );
 }
