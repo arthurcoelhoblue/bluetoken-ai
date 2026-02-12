@@ -75,6 +75,30 @@ interface FrameworkData {
   spin?: { s?: string | null; p?: string | null; i?: string | null; n?: string | null };
 }
 
+// ========================================
+// NORMALIZAÇÃO DE CHAVES DE FRAMEWORK
+// A IA pode retornar SPIN/GPCT/BANT em maiúsculas ou minúsculas
+// Todo o código lê em minúsculas, então normalizamos aqui
+// ========================================
+
+function normalizeSubKeys(obj: any): Record<string, string | null> {
+  if (!obj || typeof obj !== 'object') return {};
+  const result: Record<string, string | null> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    result[key.toLowerCase()] = value as string | null;
+  }
+  return result;
+}
+
+function normalizeFrameworkKeys(data: any): FrameworkData {
+  if (!data || typeof data !== 'object') return {};
+  return {
+    spin: normalizeSubKeys(data?.spin || data?.SPIN || data?.Spin),
+    gpct: normalizeSubKeys(data?.gpct || data?.GPCT || data?.Gpct),
+    bant: normalizeSubKeys(data?.bant || data?.BANT || data?.Bant),
+  };
+}
+
 interface ConversationState {
   id: string;
   lead_id: string;
@@ -2847,9 +2871,9 @@ async function interpretWithAI(
   const qualiState: ConversationQualiState & { _triageContext?: string | null } = {
     empresa,
     estadoFunil: conversationState?.estado_funil || 'SAUDACAO',
-    spin: conversationState?.framework_data?.spin,
-    gpct: conversationState?.framework_data?.gpct,
-    bant: conversationState?.framework_data?.bant,
+    spin: normalizeFrameworkKeys(conversationState?.framework_data).spin,
+    gpct: normalizeFrameworkKeys(conversationState?.framework_data).gpct,
+    bant: normalizeFrameworkKeys(conversationState?.framework_data).bant,
     temperatura: classificacao?.temperatura || 'FRIO',
     intentAtual: undefined,
     _triageContext: triageSummary?.resumoTriagem || triageSummary?.historico || null,
@@ -2985,7 +3009,7 @@ async function interpretWithAI(
     // PATCH 6G Gap Fix: Listar dados JÁ coletados para evitar repetição
     if (conversationState.framework_data && Object.keys(conversationState.framework_data).length > 0) {
       userPrompt += `\n## DADOS JÁ COLETADOS (NÃO PERGUNTE NOVAMENTE):\n`;
-      const fd = conversationState.framework_data;
+      const fd = normalizeFrameworkKeys(conversationState.framework_data);
       
       // SPIN
       if (fd.spin) {
@@ -4317,13 +4341,13 @@ serve(async (req) => {
       }
       
       if (aiResponse.frameworks_atualizados) {
-        const existingData = conversationState?.framework_data || {};
+        // Normalizar AMBOS os lados: dados existentes E resposta da IA
+        const existingData = normalizeFrameworkKeys(conversationState?.framework_data || {});
+        const newData = normalizeFrameworkKeys(aiResponse.frameworks_atualizados);
         stateUpdates.framework_data = {
-          ...existingData,
-          ...aiResponse.frameworks_atualizados,
-          gpct: { ...(existingData.gpct || {}), ...(aiResponse.frameworks_atualizados.gpct || {}) },
-          bant: { ...(existingData.bant || {}), ...(aiResponse.frameworks_atualizados.bant || {}) },
-          spin: { ...(existingData.spin || {}), ...(aiResponse.frameworks_atualizados.spin || {}) },
+          gpct: { ...(existingData.gpct || {}), ...(newData.gpct || {}) },
+          bant: { ...(existingData.bant || {}), ...(newData.bant || {}) },
+          spin: { ...(existingData.spin || {}), ...(newData.spin || {}) },
         };
       }
       
