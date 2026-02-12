@@ -1383,6 +1383,7 @@ interface InterpretResult {
   optOutBlocked?: boolean;
   leadReady?: boolean;
   escalation?: { needed: boolean; reason?: string; priority?: string };
+  departamento_destino?: string | null;
   error?: string;
 }
 
@@ -1398,6 +1399,7 @@ interface AIResponse {
   frameworks_atualizados?: FrameworkData;
   disc_estimado?: PerfilDISC;
   ultima_pergunta_id?: string;
+  departamento_destino?: string | null;
 }
 
 // ========================================
@@ -2197,6 +2199,15 @@ Se o cliente:
 - Pede para falar com humano → ESCALAR_HUMANO
 - Está frustrado → ESCALAR_HUMANO
 
+## DEPARTAMENTOS PARA TRANSFERÊNCIA
+Quando a ação for ESCALAR_HUMANO, indique o departamento correto no campo "departamento_destino":
+- "Comercial": pessoa que NÃO é cliente e quer comprar/conhecer planos/fechar negócio
+- "Sucesso do Cliente": cliente ativo com dúvida, suporte, uso do produto ou problema de atendimento
+- "Operação": cliente que precisa enviar documento ou tratar serviço com especialista
+- "Financeiro": cobrança ou problema de pagamento
+
+Se não souber qual departamento, use "Comercial" como padrão.
+
 ## REGRAS DE COMUNICAÇÃO
 
 - Mensagens curtas e naturais (estilo WhatsApp)
@@ -2252,7 +2263,8 @@ Ir direto ao assunto ou usar variação natural.
   "resposta_sugerida": "Texto da resposta",
   "novo_estado_funil": "ESTADO",
   "frameworks_atualizados": { ... },
-  "disc_estimado": "D/I/S/C ou null"
+  "disc_estimado": "D/I/S/C ou null",
+  "departamento_destino": "Comercial" | "Sucesso do Cliente" | "Operação" | "Financeiro" | null
 }
 `;
 
@@ -2634,6 +2646,15 @@ Se não houver indicadores suficientes, NÃO retorne disc_estimado (deixe null).
 4. Na dúvida entre 2 perfis, NÃO retorne — espere mais dados
 5. Priorize indicadores linguísticos (como a pessoa escreve) sobre o conteúdo
 
+## DEPARTAMENTOS PARA TRANSFERÊNCIA
+Quando a ação for ESCALAR_HUMANO ou CRIAR_TAREFA_CLOSER, indique o departamento correto no campo "departamento_destino":
+- "Comercial": pessoa que NÃO é cliente e quer comprar/conhecer planos/fechar negócio
+- "Sucesso do Cliente": cliente ativo com dúvida, suporte, uso do produto ou problema de atendimento
+- "Operação": cliente que precisa enviar documento ou tratar serviço com especialista
+- "Financeiro": cobrança ou problema de pagamento
+
+Se não souber qual departamento, use "Comercial" como padrão.
+
 ## FORMATO RESPOSTA
 
 {
@@ -2647,7 +2668,8 @@ Se não houver indicadores suficientes, NÃO retorne disc_estimado (deixe null).
   "novo_estado_funil": "...",
   "frameworks_atualizados": {},
   "disc_estimado": "D ou I ou S ou C (null se incerto)",
-  "ultima_pergunta_id": "..."
+  "ultima_pergunta_id": "...",
+  "departamento_destino": "Comercial" | "Sucesso do Cliente" | "Operação" | "Financeiro" | null
 }
 
 LEMBRE: Você É Amélia. VÁ DIRETO AO PONTO. Não elogie perguntas. Se não souber, diga que vai buscar. UMA PERGUNTA POR VEZ.`;
@@ -4501,6 +4523,11 @@ serve(async (req) => {
       ? (aiResponse.acao === 'CRIAR_TAREFA_CLOSER' ? 'HIGH' : 'MEDIUM')
       : undefined;
 
+    // Determinar departamento destino: usar valor da IA ou fallback "Comercial"
+    const departamentoDestino = needsEscalation
+      ? (aiResponse.departamento_destino || 'Comercial')
+      : (aiResponse.departamento_destino || null);
+
     const result: InterpretResult = {
       success: true,
       intentId,
@@ -4516,6 +4543,7 @@ serve(async (req) => {
         reason: escalationReason,
         priority: escalationPriority,
       },
+      departamento_destino: departamentoDestino,
     };
 
     return new Response(

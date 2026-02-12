@@ -173,6 +173,7 @@ interface BlueChatResponse {
     needed: boolean;
     reason?: string;
     priority?: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+    department?: string;
   };
   resolution?: {
     summary: string;
@@ -526,6 +527,7 @@ async function callSdrIaInterpret(
   leadReady: boolean;
   responseText?: string;
   escalation?: { needed: boolean; reason?: string; priority?: string };
+  departamento_destino?: string | null;
 } | null> {
   const MAX_RETRIES = 2;
   const RETRY_DELAY_MS = 2000;
@@ -572,6 +574,7 @@ async function callSdrIaInterpret(
           leadReady: result.leadReady || false,
           responseText: result.responseText,
           escalation: result.escalation,
+          departamento_destino: result.departamento_destino || null,
         };
       }
       
@@ -606,6 +609,7 @@ async function sendResponseToBluechat(
     action: string;
     resolution?: { summary: string; reason: string };
     empresa: EmpresaTipo;
+    department?: string | null;
   }
 ): Promise<void> {
   try {
@@ -673,7 +677,7 @@ async function sendResponseToBluechat(
     // 2. Se ação é ESCALATE, transferir o ticket para humano
     if (data.action === 'ESCALATE' && data.ticket_id) {
       const transferUrl = `${baseUrl}/tickets/${data.ticket_id}/transfer`;
-      console.log('[Callback] Transferindo ticket:', transferUrl);
+      console.log('[Callback] Transferindo ticket:', transferUrl, '| Departamento:', data.department || 'Comercial');
 
       const transferResponse = await fetch(transferUrl, {
         method: 'POST',
@@ -681,13 +685,14 @@ async function sendResponseToBluechat(
         body: JSON.stringify({
           reason: 'Lead qualificado - escalar para closer',
           source: 'AMELIA_SDR',
+          department: data.department || 'Comercial',
         }),
       });
 
       if (!transferResponse.ok) {
         console.error('[Callback] Erro ao transferir ticket:', transferResponse.status);
       } else {
-        console.log('[Callback] Ticket transferido com sucesso');
+        console.log('[Callback] Ticket transferido com sucesso para departamento:', data.department || 'Comercial');
       }
     }
 
@@ -1030,12 +1035,15 @@ serve(async (req) => {
     // 7. PATCH ANTI-LIMBO: Determinar ação e mensagem, nunca deixar no limbo
     let action: BlueChatResponse['action'];
     let responseText: string | null = iaResult?.responseText || null;
+    // Departamento destino: vem da IA ou fallback "Comercial"
+    let departamentoDestino: string = iaResult?.departamento_destino || 'Comercial';
 
     // ANTI-LIMBO: Se IA retornou null (falha total), escalar automaticamente
     if (!iaResult) {
       action = 'ESCALATE';
       responseText = 'Estamos com um problema técnico. Vou te conectar com um atendente agora!';
-      console.log('[BlueChat] ⚠️ IA retornou null → ESCALATE automático');
+      departamentoDestino = 'Comercial';
+      console.log('[BlueChat] ⚠️ IA retornou null → ESCALATE automático → Comercial');
     } else if (isConversationEnding) {
       action = 'RESOLVE';
     } else if (iaResult.escalation?.needed) {
@@ -1064,8 +1072,9 @@ serve(async (req) => {
       } else {
         // Tem contexto mas IA não respondeu: escalar
         action = 'ESCALATE';
+        departamentoDestino = 'Comercial';
         responseText = 'Hmm, deixa eu pedir ajuda de alguém da equipe pra te atender melhor. Já já entram em contato!';
-        console.log('[BlueChat] 🔄 Sem resposta IA + contexto existente → ESCALATE');
+        console.log('[BlueChat] 🔄 Sem resposta IA + contexto existente → ESCALATE → Comercial');
       }
     }
     
@@ -1084,6 +1093,7 @@ serve(async (req) => {
         needed: action === 'ESCALATE',
         reason: iaResult?.escalation?.reason || (action === 'ESCALATE' ? 'Escalação automática anti-limbo' : undefined),
         priority: (iaResult?.escalation?.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') || (action === 'ESCALATE' ? 'MEDIUM' : undefined),
+        department: action === 'ESCALATE' ? departamentoDestino : undefined,
       },
     };
     
@@ -1144,6 +1154,7 @@ serve(async (req) => {
         action: response.action,
         resolution,
         empresa,
+        department: action === 'ESCALATE' ? departamentoDestino : undefined,
       });
     }
     
