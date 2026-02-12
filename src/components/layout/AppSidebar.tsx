@@ -16,6 +16,7 @@ import {
   PlusCircle,
   Coins,
   BookOpen,
+  FlaskConical,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -82,6 +83,7 @@ const navGroups: NavGroup[] = [
     label: 'Administração',
     items: [
       { title: 'Treinamento Produtos', url: '/admin/produtos', icon: BookOpen, roles: ['ADMIN'] },
+      { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, roles: ['ADMIN'] },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, roles: ['ADMIN'] },
     ],
     roles: ['ADMIN'],
