@@ -1,116 +1,152 @@
 
 
-# Patch 1: Pipeline Kanban + Modelo de Dados CRM
+# Patch 2: Contatos, Organizacoes, Campos Customizaveis, Pipelines Reais
 
 ## Resumo
 
-Implementar o Pipeline Kanban completo com modelo de dados CRM de 3 camadas (Pessoa > Contact > Deal), drag-and-drop entre stages, filtros por pipeline/vendedor/temperatura, e seed data para Blue e Tokeniza.
+Evoluir o modelo de dados do CRM com organizacoes (pessoa juridica), novos campos em contacts e deals, sistema EAV de campos customizaveis, 5 pipelines reais (substituindo os genericos do Patch 1), ~55 campos custom seedados, e 2 telas de configuracao admin.
 
 ---
 
-## Parte 1: Banco de Dados (5 novas tabelas)
+## Parte 1: Migration SQL (uma unica migration)
 
-### Migration SQL
+### 1.1 Nova tabela: organizations
+- Pessoa juridica com CNPJ, setor, porte, endereco, owner_id, tags
+- Index trigram para busca por nome (extensao pg_trgm)
+- Index unico em (cnpj, empresa)
+- RLS: SELECT para autenticados, ALL para ADMIN/CLOSER
 
-Criar em uma unica migration:
+### 1.2 Evolucao: contacts (novos campos via ALTER TABLE)
+- organization_id (FK para organizations)
+- primeiro_nome, sobrenome, cpf, rg, telegram, endereco, foto_url
+- is_cliente (BOOLEAN DEFAULT false)
+- Indexes: organization_id, is_cliente, nome trigram
 
-1. **pipelines** -- Pipelines configuraveis por empresa (Blue, Tokeniza). Cada empresa pode ter multiplos pipelines com um default.
-2. **pipeline_stages** -- Stages configuraveis por pipeline com posicao, cor, is_won, is_lost, sla_minutos. Constraint UNIQUE(pipeline_id, posicao) e CHECK NOT(is_won AND is_lost).
-3. **contacts** -- Evolucao do lead_contacts. Relacao pessoa-empresa com owner, tags, tipo, canal_origem. Mantém retrocompatibilidade com legacy_lead_id.
-4. **deals** -- Oportunidade de venda vinculada a 1 contact, 1 pipeline, 1 stage. Campos: titulo, valor, moeda, owner_id, temperatura, posicao_kanban, fechado_em.
-5. **deal_stage_history** -- Log automatico de movimentacao entre stages com tempo no stage anterior calculado.
+### 1.3 Evolucao: deals (novos campos via ALTER TABLE)
+- organization_id (FK para organizations)
+- etiqueta, data_ganho, data_perda
+- UTM tracking: utm_source, utm_medium, utm_campaign, utm_content, utm_term, gclid, fbclid
+- Scores IA: score_engajamento, score_intencao, score_valor, score_urgencia (0-100)
+- Nota: os scores usarao validation triggers em vez de CHECK constraints para evitar problemas de imutabilidade
 
-### Trigger automatico
+### 1.4 Nova tabela: custom_field_definitions (EAV)
+- Tipos de entidade: CONTACT, ORGANIZATION, DEAL (novo ENUM)
+- Tipos de valor: TEXT, TEXTAREA, NUMBER, CURRENCY, DATE, DATETIME, BOOLEAN, SELECT, MULTISELECT, EMAIL, PHONE, URL, PERCENT, TAG (novo ENUM)
+- Campos: slug, label, value_type, options_json, is_required, is_visible, is_system, grupo, posicao
+- Indexes unicos em slug+entity_type+empresa
+- RLS: SELECT para autenticados, ALL para ADMIN
 
-Function `log_deal_stage_change()` -- trigger AFTER UPDATE em deals que detecta mudanca de stage_id e insere automaticamente em deal_stage_history com calculo de tempo.
+### 1.5 Nova tabela: custom_field_values
+- Valores EAV: field_id, entity_type, entity_id
+- Colunas tipadas: value_text, value_number, value_boolean, value_date, value_json
+- UNIQUE(field_id, entity_id)
+- RLS: SELECT para autenticados, ALL para ADMIN/CLOSER
 
-### RLS
+### 1.6 Seed: 5 Pipelines Reais (substituem os genericos do Patch 1)
+Limpar pipelines sem deals vinculados, depois inserir:
 
-- pipelines, pipeline_stages: SELECT para autenticados, ALL para ADMIN
-- contacts: SELECT para autenticados, ALL para ADMIN e CLOSER
-- deals: SELECT para autenticados, ALL para ADMIN e CLOSER
-- deal_stage_history: SELECT para autenticados, INSERT para autenticados
+| Pipeline | Empresa | Stages | Default? |
+|----------|---------|--------|----------|
+| Pipeline Comercial | BLUE | MQL, Levantada de mao, Atacar agora!, Contato Iniciado, Negociacao, Aguardando pagamento, Vendido (won), Perdido (lost) | Sim |
+| Implantacao | BLUE | Aberto (comercial), Implantacao Iniciada, Atendimento Agendado, Aguard. Retorno do cliente, Docs recebidos Parcial, Docs recebidos Total, Implantacao Finalizada (won), Cancelado (lost) | Nao |
+| Novos Negocios | TOKENIZA | Stand by, Leads Site, Contatado, Fase negociacao, Fase contratual, Oferta em estruturacao, Lancada (won), Perdido (lost) | Sim |
+| Ofertas Publicas | TOKENIZA | Lead, Contato Iniciado, Contato estabelecido, Apresentacao, Cadastrado na Plataforma, Forecasting, Carteira (won), Perdido (lost) | Nao |
+| Carteira Private | TOKENIZA | Base de clientes, Priorizados, Atendimento iniciado, Analise de Perfil, Definir estrategia, Relacionamento recorrente (won), Perdido (lost) | Nao |
 
-### Seed Data
-
-| Pipeline | Empresa | Stages |
-|----------|---------|--------|
-| Novos Negocios | BLUE | Lead, Contato Iniciado, Negociacao, Aguardando Pagamento, Vendido (won), Perdido (lost) |
-| Novos Negocios | TOKENIZA | Prospect, Analise de Perfil, Apresentacao de Oferta, Due Diligence, Contrato Assinado (won), Perdido (lost) |
-
-### Indexes
-
-Indexes otimizados para as queries mais frequentes: deals abertos por empresa+pipeline+stage, contacts por empresa/nome/email/telefone.
-
----
-
-## Parte 2: Dependencia npm
-
-Instalar `@dnd-kit/core`, `@dnd-kit/sortable`, `@dnd-kit/utilities` para o drag-and-drop do kanban.
-
----
-
-## Parte 3: Frontend
-
-### Tipos -- `src/types/deal.ts`
-
-Interfaces para Pipeline, PipelineStage, PipelineWithStages, Contact, Deal, DealWithRelations, DealStageHistory, DealFormData, DealMoveData, KanbanColumn.
-
-### Hooks
-
-| Hook | Arquivo | Funcao |
-|------|---------|--------|
-| usePipelines | `src/hooks/usePipelines.ts` | Lista pipelines com stages, filtrado por empresa ativa |
-| usePipelineStages | `src/hooks/usePipelines.ts` | Stages de um pipeline especifico |
-| useDeals | `src/hooks/useDeals.ts` | Lista deals com joins (contact, stage, owner), filtros por pipeline/owner/temperatura |
-| useKanbanData | `src/hooks/useDeals.ts` | Transforma deals em KanbanColumn[] agrupados por stage, separa won/lost |
-| useCreateDeal | `src/hooks/useDeals.ts` | Mutation para criar deal + log inicial em history |
-| useUpdateDeal | `src/hooks/useDeals.ts` | Mutation para atualizar deal |
-| useMoveDeal | `src/hooks/useDeals.ts` | Mutation para mover deal entre stages (trigger cuida do history) |
-| useDeleteDeal | `src/hooks/useDeals.ts` | Mutation para deletar deal |
-| useContacts | `src/hooks/useContacts.ts` | Lista contacts filtrados por empresa, com busca por nome/email/telefone |
-| useCreateContact | `src/hooks/useContacts.ts` | Mutation para criar contact |
-
-### Componentes Pipeline
-
-| Componente | Descricao |
-|-----------|-----------|
-| `src/components/pipeline/DealCard.tsx` | Card draggable com titulo, valor formatado (BRL), badges de empresa/temperatura/canal, owner e dias no stage. Usa `useSortable` do dnd-kit. |
-| `src/components/pipeline/KanbanColumn.tsx` | Coluna droppable com header (nome do stage, contagem, total R$), lista de DealCards, placeholder "Arraste deals aqui" quando vazia. |
-| `src/components/pipeline/KanbanBoard.tsx` | Board principal com DndContext, sensores Pointer+Keyboard, DragOverlay para feedback visual durante arraste, skeleton loading. |
-| `src/components/pipeline/PipelineFilters.tsx` | Barra de filtros: select de pipeline, select de vendedor, select de temperatura, botao "Novo Deal". |
-
-### Pagina -- `src/pages/PipelinePage.tsx`
-
-Substituir o shell atual por pagina funcional:
-- Auto-seleciona pipeline default quando carrega
-- Reseta selecao quando empresa ativa muda
-- Barra de filtros no topo
-- KanbanBoard ocupando area principal com scroll horizontal
-- Mensagem quando nenhum pipeline encontrado
+### 1.7 Seed: ~55 Custom Fields
+Campos categorizados por grupo: Comercial, Perfil, Cripto, Tokeniza, Blue CS, Marketing, Scores, Integracoes, Atividade, Dados PJ.
 
 ---
 
-## Sequencia de implementacao
+## Parte 2: Tipos TypeScript
 
-| # | Acao |
-|---|------|
-| 1 | Migration SQL: criar 5 tabelas + trigger + seed + RLS + indexes |
-| 2 | Instalar @dnd-kit/core, @dnd-kit/sortable, @dnd-kit/utilities |
-| 3 | Criar `src/types/deal.ts` |
-| 4 | Criar `src/hooks/usePipelines.ts` |
-| 5 | Criar `src/hooks/useDeals.ts` |
-| 6 | Criar `src/hooks/useContacts.ts` |
-| 7 | Criar `src/components/pipeline/DealCard.tsx` |
-| 8 | Criar `src/components/pipeline/KanbanColumn.tsx` |
-| 9 | Criar `src/components/pipeline/KanbanBoard.tsx` |
-| 10 | Criar `src/components/pipeline/PipelineFilters.tsx` |
-| 11 | Substituir `src/pages/PipelinePage.tsx` |
+### Novo arquivo: `src/types/customFields.ts`
+- CustomFieldEntityType, CustomFieldValueType
+- SelectOption, CustomFieldDefinition, CustomFieldValue, ResolvedCustomField
+- Organization (completa com todos os campos)
+- PipelineFormData, StageFormData, PipelineConfigData, DuplicatePipelineData
 
-## Impacto
+### Atualizar: `src/types/deal.ts`
+- Adicionar campos novos ao Contact: organization_id, primeiro_nome, sobrenome, cpf, rg, telegram, endereco, foto_url, is_cliente
+- Adicionar campos novos ao Deal: organization_id, etiqueta, data_ganho, data_perda, UTMs, scores
 
-- Zero alteracao em tabelas existentes (lead_contacts, pessoas, etc. continuam intactos)
-- Novas tabelas com foreign keys para pessoas e profiles
-- Pipeline page substitui o shell placeholder
-- Demais paginas e funcionalidades nao sao afetadas
+---
+
+## Parte 3: Hooks
+
+### Novo: `src/hooks/useCustomFields.ts`
+- useCustomFieldDefinitions(entityType) -- filtrado por empresa ativa
+- useAllFieldDefinitions() -- todas, para tela admin
+- useCreateFieldDefinition(), useUpdateFieldDefinition(), useDeleteFieldDefinition()
+- useCustomFieldValues(entityType, entityId)
+- useUpsertFieldValue()
+- useResolvedFields(entityType, entityId) -- definitions + values combinados com formatacao
+
+### Novo: `src/hooks/useOrganizations.ts`
+- useOrganizations(options) -- busca por nome/cnpj/nome_fantasia, filtro empresa
+- useCreateOrganization(), useUpdateOrganization()
+
+### Novo: `src/hooks/usePipelineConfig.ts`
+- useCreatePipeline(), useUpdatePipeline(), useDeletePipeline()
+- useCreateStage(), useUpdateStage(), useDeleteStage(), useReorderStages()
+- useDuplicatePipeline()
+
+---
+
+## Parte 4: Paginas Admin
+
+### Nova pagina: `src/pages/PipelineConfigPage.tsx`
+- Lista todos os pipelines (todas empresas) como cards expansiveis
+- Cada card mostra stages ordenados com drag para reordenar
+- Inline editing de nome/cor/SLA de cada stage
+- Badges para is_won/is_lost
+- Botoes: novo funil, duplicar, excluir (com protecao se tem deals)
+- Dialog para criar novo funil e duplicar existente
+
+### Nova pagina: `src/pages/CustomFieldsConfigPage.tsx`
+- Tabela com todos os campos custom definidos
+- Filtros por entidade (CONTACT/ORGANIZATION/DEAL) e por grupo
+- CRUD via dialog: label, slug (auto-gerado), tipo, grupo, empresa, obrigatorio, visivel
+- Campos is_system nao podem ser excluidos (icone de cadeado)
+- Contagem no rodape
+
+---
+
+## Parte 5: Rotas e Navegacao
+
+### Atualizar: `src/App.tsx`
+- Adicionar imports de PipelineConfigPage e CustomFieldsConfigPage
+- Rotas protegidas (ADMIN): `/settings/pipelines` e `/settings/custom-fields`
+
+### Atualizar: `src/components/layout/AppSidebar.tsx`
+- No grupo Configuracao, adicionar:
+  - "Funis" -> /settings/pipelines (icone Kanban)
+  - "Campos" -> /settings/custom-fields (icone SlidersHorizontal)
+
+---
+
+## Sequencia de Implementacao
+
+| # | Acao | Descricao |
+|---|------|-----------|
+| 1 | Migration SQL | organizations + ALTER contacts + ALTER deals + EAV tables + seed pipelines + seed campos |
+| 2 | Criar src/types/customFields.ts | Tipos do EAV, Organization, PipelineConfig |
+| 3 | Atualizar src/types/deal.ts | Novos campos em Contact e Deal |
+| 4 | Criar src/hooks/useCustomFields.ts | CRUD definitions + values + resolved |
+| 5 | Criar src/hooks/useOrganizations.ts | CRUD organizations |
+| 6 | Criar src/hooks/usePipelineConfig.ts | CRUD pipelines + stages + duplicate |
+| 7 | Criar src/pages/PipelineConfigPage.tsx | Editor de funis |
+| 8 | Criar src/pages/CustomFieldsConfigPage.tsx | Editor de campos |
+| 9 | Atualizar App.tsx | Novas rotas |
+| 10 | Atualizar AppSidebar.tsx | Links Funis e Campos |
+
+---
+
+## Impacto e Notas
+
+- Tabelas existentes (contacts, deals) recebem ALTER TABLE ADD COLUMN -- zero breaking change
+- Pipelines genericos do Patch 1 sem deals sao removidos e substituidos pelos 5 reais
+- Os scores usarao validation triggers (nao CHECK constraints) conforme guidelines
+- Nenhuma dependencia npm nova necessaria (usa shadcn/ui existente)
+- Os hooks existentes (usePipelines, useDeals, useContacts) continuam funcionando -- os novos campos sao opcionais
 
