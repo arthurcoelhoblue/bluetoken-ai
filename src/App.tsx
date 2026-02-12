@@ -37,6 +37,8 @@ import CockpitPage from "./pages/CockpitPage";
 import AmeliaPage from "./pages/AmeliaPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import IntegracoesPage from "./pages/IntegracoesPage";
+import PipelineConfigPage from "./pages/PipelineConfigPage";
+import CustomFieldsConfigPage from "./pages/CustomFieldsConfigPage";
 
 const queryClient = new QueryClient();
 
@@ -99,6 +101,8 @@ const App = () => (
             <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
             <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><LeadsQuentes /></ProtectedRoute>} />
             <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><AIBenchmark /></ProtectedRoute>} />
+            <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><PipelineConfigPage /></ProtectedRoute>} />
+            <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><CustomFieldsConfigPage /></ProtectedRoute>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
