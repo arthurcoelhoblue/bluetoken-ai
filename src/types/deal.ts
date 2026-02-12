@@ -39,6 +39,15 @@ export interface Contact {
   canal_origem: string | null;
   legacy_lead_id: string | null;
   notas: string | null;
+  organization_id: string | null;
+  primeiro_nome: string | null;
+  sobrenome: string | null;
+  cpf: string | null;
+  rg: string | null;
+  telegram: string | null;
+  endereco: string | null;
+  foto_url: string | null;
+  is_cliente: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -56,6 +65,21 @@ export interface Deal {
   posicao_kanban: number;
   fechado_em: string | null;
   motivo_perda: string | null;
+  organization_id: string | null;
+  etiqueta: string | null;
+  data_ganho: string | null;
+  data_perda: string | null;
+  utm_source: string | null;
+  utm_medium: string | null;
+  utm_campaign: string | null;
+  utm_content: string | null;
+  utm_term: string | null;
+  gclid: string | null;
+  fbclid: string | null;
+  score_engajamento: number;
+  score_intencao: number;
+  score_valor: number;
+  score_urgencia: number;
   created_at: string;
   updated_at: string;
 }

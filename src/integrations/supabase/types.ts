@@ -264,53 +264,87 @@ export type Database = {
       contacts: {
         Row: {
           canal_origem: string | null
+          cpf: string | null
           created_at: string
           email: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          endereco: string | null
+          foto_url: string | null
           id: string
+          is_cliente: boolean
           legacy_lead_id: string | null
           nome: string
           notas: string | null
+          organization_id: string | null
           owner_id: string | null
           pessoa_id: string | null
+          primeiro_nome: string | null
+          rg: string | null
+          sobrenome: string | null
           tags: string[] | null
           telefone: string | null
+          telegram: string | null
           tipo: string | null
           updated_at: string
         }
         Insert: {
           canal_origem?: string | null
+          cpf?: string | null
           created_at?: string
           email?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          endereco?: string | null
+          foto_url?: string | null
           id?: string
+          is_cliente?: boolean
           legacy_lead_id?: string | null
           nome: string
           notas?: string | null
+          organization_id?: string | null
           owner_id?: string | null
           pessoa_id?: string | null
+          primeiro_nome?: string | null
+          rg?: string | null
+          sobrenome?: string | null
           tags?: string[] | null
           telefone?: string | null
+          telegram?: string | null
           tipo?: string | null
           updated_at?: string
         }
         Update: {
           canal_origem?: string | null
+          cpf?: string | null
           created_at?: string
           email?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          endereco?: string | null
+          foto_url?: string | null
           id?: string
+          is_cliente?: boolean
           legacy_lead_id?: string | null
           nome?: string
           notas?: string | null
+          organization_id?: string | null
           owner_id?: string | null
           pessoa_id?: string | null
+          primeiro_nome?: string | null
+          rg?: string | null
+          sobrenome?: string | null
           tags?: string[] | null
           telefone?: string | null
+          telegram?: string | null
           tipo?: string | null
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "contacts_owner_id_fkey"
             columns: ["owner_id"]
@@ -323,6 +357,107 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      custom_field_definitions: {
+        Row: {
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type: Database["public"]["Enums"]["custom_field_entity_type"]
+          grupo: string
+          id: string
+          is_required: boolean
+          is_system: boolean
+          is_visible: boolean
+          label: string
+          options_json: Json | null
+          posicao: number
+          slug: string
+          updated_at: string
+          value_type: Database["public"]["Enums"]["custom_field_value_type"]
+        }
+        Insert: {
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type: Database["public"]["Enums"]["custom_field_entity_type"]
+          grupo?: string
+          id?: string
+          is_required?: boolean
+          is_system?: boolean
+          is_visible?: boolean
+          label: string
+          options_json?: Json | null
+          posicao?: number
+          slug: string
+          updated_at?: string
+          value_type: Database["public"]["Enums"]["custom_field_value_type"]
+        }
+        Update: {
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type?: Database["public"]["Enums"]["custom_field_entity_type"]
+          grupo?: string
+          id?: string
+          is_required?: boolean
+          is_system?: boolean
+          is_visible?: boolean
+          label?: string
+          options_json?: Json | null
+          posicao?: number
+          slug?: string
+          updated_at?: string
+          value_type?: Database["public"]["Enums"]["custom_field_value_type"]
+        }
+        Relationships: []
+      }
+      custom_field_values: {
+        Row: {
+          created_at: string
+          entity_id: string
+          entity_type: Database["public"]["Enums"]["custom_field_entity_type"]
+          field_id: string
+          id: string
+          updated_at: string
+          value_boolean: boolean | null
+          value_date: string | null
+          value_json: Json | null
+          value_number: number | null
+          value_text: string | null
+        }
+        Insert: {
+          created_at?: string
+          entity_id: string
+          entity_type: Database["public"]["Enums"]["custom_field_entity_type"]
+          field_id: string
+          id?: string
+          updated_at?: string
+          value_boolean?: boolean | null
+          value_date?: string | null
+          value_json?: Json | null
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Update: {
+          created_at?: string
+          entity_id?: string
+          entity_type?: Database["public"]["Enums"]["custom_field_entity_type"]
+          field_id?: string
+          id?: string
+          updated_at?: string
+          value_boolean?: boolean | null
+          value_date?: string | null
+          value_json?: Json | null
+          value_number?: number | null
+          value_text?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "custom_field_values_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "custom_field_definitions"
             referencedColumns: ["id"]
           },
         ]
@@ -390,49 +525,94 @@ export type Database = {
         Row: {
           contact_id: string
           created_at: string
+          data_ganho: string | null
+          data_perda: string | null
+          etiqueta: string | null
+          fbclid: string | null
           fechado_em: string | null
+          gclid: string | null
           id: string
           moeda: string
           motivo_perda: string | null
+          organization_id: string | null
           owner_id: string | null
           pipeline_id: string
           posicao_kanban: number
+          score_engajamento: number | null
+          score_intencao: number | null
+          score_urgencia: number | null
+          score_valor: number | null
           stage_id: string
           temperatura: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
           valor: number | null
         }
         Insert: {
           contact_id: string
           created_at?: string
+          data_ganho?: string | null
+          data_perda?: string | null
+          etiqueta?: string | null
+          fbclid?: string | null
           fechado_em?: string | null
+          gclid?: string | null
           id?: string
           moeda?: string
           motivo_perda?: string | null
+          organization_id?: string | null
           owner_id?: string | null
           pipeline_id: string
           posicao_kanban?: number
+          score_engajamento?: number | null
+          score_intencao?: number | null
+          score_urgencia?: number | null
+          score_valor?: number | null
           stage_id: string
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           valor?: number | null
         }
         Update: {
           contact_id?: string
           created_at?: string
+          data_ganho?: string | null
+          data_perda?: string | null
+          etiqueta?: string | null
+          fbclid?: string | null
           fechado_em?: string | null
+          gclid?: string | null
           id?: string
           moeda?: string
           motivo_perda?: string | null
+          organization_id?: string | null
           owner_id?: string | null
           pipeline_id?: string
           posicao_kanban?: number
+          score_engajamento?: number | null
+          score_intencao?: number | null
+          score_urgencia?: number | null
+          score_valor?: number | null
           stage_id?: string
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo?: string
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
           valor?: number | null
         }
         Relationships: [
@@ -441,6 +621,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
           {
@@ -1131,6 +1318,86 @@ export type Database = {
         }
         Relationships: []
       }
+      organizations: {
+        Row: {
+          ativo: boolean
+          cep: string | null
+          cidade: string | null
+          cnpj: string | null
+          created_at: string
+          email: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          endereco: string | null
+          estado: string | null
+          id: string
+          nome: string
+          nome_fantasia: string | null
+          notas: string | null
+          owner_id: string | null
+          pais: string | null
+          porte: string | null
+          setor: string | null
+          tags: string[] | null
+          telefone: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          ativo?: boolean
+          cep?: string | null
+          cidade?: string | null
+          cnpj?: string | null
+          created_at?: string
+          email?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome: string
+          nome_fantasia?: string | null
+          notas?: string | null
+          owner_id?: string | null
+          pais?: string | null
+          porte?: string | null
+          setor?: string | null
+          tags?: string[] | null
+          telefone?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          ativo?: boolean
+          cep?: string | null
+          cidade?: string | null
+          cnpj?: string | null
+          created_at?: string
+          email?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          endereco?: string | null
+          estado?: string | null
+          id?: string
+          nome?: string
+          nome_fantasia?: string | null
+          notas?: string | null
+          owner_id?: string | null
+          pais?: string | null
+          porte?: string | null
+          setor?: string | null
+          tags?: string[] | null
+          telefone?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pessoas: {
         Row: {
           created_at: string
@@ -1528,6 +1795,8 @@ export type Database = {
         }
         Returns: boolean
       }
+      show_limit: { Args: never; Returns: number }
+      show_trgm: { Args: { "": string }; Returns: string[] }
       update_conversation_with_intent: {
         Args: {
           p_cadence_action?: string
@@ -1550,6 +1819,22 @@ export type Database = {
       cadence_run_status: "ATIVA" | "CONCLUIDA" | "CANCELADA" | "PAUSADA"
       canal_tipo: "WHATSAPP" | "EMAIL" | "SMS"
       classificacao_origem: "AUTOMATICA" | "MANUAL"
+      custom_field_entity_type: "CONTACT" | "ORGANIZATION" | "DEAL"
+      custom_field_value_type:
+        | "TEXT"
+        | "TEXTAREA"
+        | "NUMBER"
+        | "CURRENCY"
+        | "DATE"
+        | "DATETIME"
+        | "BOOLEAN"
+        | "SELECT"
+        | "MULTISELECT"
+        | "EMAIL"
+        | "PHONE"
+        | "URL"
+        | "PERCENT"
+        | "TAG"
       empresa_tipo: "TOKENIZA" | "BLUE"
       estado_funil_tipo:
         | "SAUDACAO"
@@ -1778,6 +2063,23 @@ export const Constants = {
       cadence_run_status: ["ATIVA", "CONCLUIDA", "CANCELADA", "PAUSADA"],
       canal_tipo: ["WHATSAPP", "EMAIL", "SMS"],
       classificacao_origem: ["AUTOMATICA", "MANUAL"],
+      custom_field_entity_type: ["CONTACT", "ORGANIZATION", "DEAL"],
+      custom_field_value_type: [
+        "TEXT",
+        "TEXTAREA",
+        "NUMBER",
+        "CURRENCY",
+        "DATE",
+        "DATETIME",
+        "BOOLEAN",
+        "SELECT",
+        "MULTISELECT",
+        "EMAIL",
+        "PHONE",
+        "URL",
+        "PERCENT",
+        "TAG",
+      ],
       empresa_tipo: ["TOKENIZA", "BLUE"],
       estado_funil_tipo: [
         "SAUDACAO",
