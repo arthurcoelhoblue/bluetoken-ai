@@ -30,17 +30,38 @@ export function useContacts(search?: string) {
   });
 }
 
+export interface CreateContactData {
+  nome: string;
+  primeiro_nome?: string;
+  sobrenome?: string;
+  email?: string;
+  telefone?: string;
+  empresa: 'BLUE' | 'TOKENIZA';
+  organization_id?: string;
+  tipo?: string;
+  cpf?: string;
+  tags?: string[];
+  notas?: string;
+}
+
 export function useCreateContact() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (data: { nome: string; email?: string; telefone?: string; empresa: 'BLUE' | 'TOKENIZA' }) => {
+    mutationFn: async (data: CreateContactData) => {
       const { data: contact, error } = await supabase
         .from('contacts')
         .insert({
           nome: data.nome,
+          primeiro_nome: data.primeiro_nome ?? null,
+          sobrenome: data.sobrenome ?? null,
           email: data.email ?? null,
           telefone: data.telefone ?? null,
           empresa: data.empresa,
+          organization_id: data.organization_id ?? null,
+          tipo: data.tipo ?? null,
+          cpf: data.cpf ?? null,
+          tags: data.tags ?? [],
+          notas: data.notas ?? null,
         })
         .select()
         .single();
