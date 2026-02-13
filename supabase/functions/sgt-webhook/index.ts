@@ -16,6 +16,7 @@ const corsHeaders = {
 // ========================================
 type SGTEventoTipo = 'LEAD_NOVO' | 'ATUALIZACAO' | 'CARRINHO_ABANDONADO' | 'MQL' | 'SCORE_ATUALIZADO' | 'CLIQUE_OFERTA' | 'FUNIL_ATUALIZADO';
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+type PrioridadeMarketing = 'URGENTE' | 'QUENTE' | 'MORNO' | 'FRIO';
 type LeadStage = 'Lead' | 'Contato Iniciado' | 'Negociação' | 'Perdido' | 'Cliente';
 type OrigemTipo = 'INBOUND' | 'OUTBOUND' | 'REFERRAL' | 'PARTNER';
 type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
@@ -89,22 +90,40 @@ interface DadosBlue {
 }
 
 interface DadosMautic {
-  contact_id?: number;
+  contact_id?: number | string;
   score?: number;
   page_hits?: number;
   email_opens?: number;
   email_clicks?: number;
   last_active?: string;
-  tags?: string[];
-  segments?: string[];
+  first_visit?: string;
+  tags?: unknown;
+  segments?: unknown;
+  cidade?: string;
+  estado?: string;
 }
 
 interface DadosChatwoot {
   contact_id?: number;
   mensagens_total?: number;
+  conversas_total?: number;
   ultima_mensagem_em?: string;
+  ultima_conversa?: string;
   status_conversa?: string;
+  status_atendimento?: string;
+  tempo_resposta_medio?: number;
+  agente_atual?: string;
+  inbox?: string;
   canal?: string;
+}
+
+interface DadosLinkedin {
+  url?: string;
+  cargo?: string;
+  empresa?: string;
+  setor?: string;
+  senioridade?: string;
+  conexoes?: number;
 }
 
 interface DadosNotion {
@@ -130,7 +149,10 @@ interface SGTPayload {
   evento: SGTEventoTipo;
   empresa: EmpresaTipo;
   timestamp: string;
+  score_temperatura?: number;
+  prioridade?: PrioridadeMarketing;
   dados_lead: DadosLead;
+  dados_linkedin?: DadosLinkedin;
   dados_tokeniza?: DadosTokeniza;
   dados_blue?: DadosBlue;
   dados_mautic?: DadosMautic;
@@ -1226,6 +1248,21 @@ async function classificarLead(
 
   console.log('[Classificação] Resultado:', classification);
 
+  // Calcular score_composto: (score_interno * 0.6) + (min(score_marketing, 100) * 0.4)
+  let scoreComposto: number | null = null;
+  const { data: leadContactData } = await supabase
+    .from('lead_contacts')
+    .select('score_marketing')
+    .eq('lead_id', lead.lead_id)
+    .eq('empresa', lead.empresa)
+    .maybeSingle();
+
+  if (leadContactData?.score_marketing !== null && leadContactData?.score_marketing !== undefined) {
+    const scoreMarketing = Math.min(leadContactData.score_marketing, 100);
+    scoreComposto = Math.round((scoreBreakdown.total * 0.6) + (scoreMarketing * 0.4));
+    console.log('[Classificação] Score composto:', { score_interno: scoreBreakdown.total, score_marketing: leadContactData.score_marketing, score_composto: scoreComposto });
+  }
+
   const { error: upsertError } = await supabase
     .from('lead_classifications')
     .upsert({
@@ -1236,6 +1273,7 @@ async function classificarLead(
       temperatura: temperaturaResult.temperatura,
       prioridade: prioridadeResult.prioridade,
       score_interno: scoreBreakdown.total,
+      score_composto: scoreComposto,
       fonte_evento_id: eventId,
       fonte_evento_tipo: lead.evento,
       classificado_em: new Date().toISOString(),
@@ -1529,7 +1567,8 @@ serve(async (req) => {
       payloadAny.pipedrive_deal_id ||
       null;
     
-    await supabase.from('lead_contacts').upsert({
+    // Build upsert data with new fields (score_marketing, prioridade_marketing, LinkedIn, Mautic extras, Chatwoot extras)
+    const leadContactUpsert: Record<string, unknown> = {
       lead_id: payload.lead_id,
       empresa: payload.empresa,
       nome: leadNormalizado.nome,
@@ -1537,10 +1576,46 @@ serve(async (req) => {
       telefone: leadNormalizado.telefone,
       primeiro_nome: primeiroNome,
       pipedrive_deal_id: pipedriveDealeId,
-    }, {
+    };
+
+    // Score de marketing do SGT
+    if (payload.score_temperatura !== undefined) {
+      leadContactUpsert.score_marketing = payload.score_temperatura;
+    }
+    if (payload.prioridade) {
+      leadContactUpsert.prioridade_marketing = payload.prioridade;
+    }
+
+    // LinkedIn
+    if (payload.dados_linkedin) {
+      if (payload.dados_linkedin.url) leadContactUpsert.linkedin_url = payload.dados_linkedin.url;
+      if (payload.dados_linkedin.cargo) leadContactUpsert.linkedin_cargo = payload.dados_linkedin.cargo;
+      if (payload.dados_linkedin.empresa) leadContactUpsert.linkedin_empresa = payload.dados_linkedin.empresa;
+      if (payload.dados_linkedin.setor) leadContactUpsert.linkedin_setor = payload.dados_linkedin.setor;
+      if (payload.dados_linkedin.senioridade) leadContactUpsert.linkedin_senioridade = payload.dados_linkedin.senioridade;
+      if (payload.dados_linkedin.conexoes !== undefined) leadContactUpsert.linkedin_conexoes = payload.dados_linkedin.conexoes;
+    }
+
+    // Mautic extras
+    if (payload.dados_mautic) {
+      if (payload.dados_mautic.first_visit) leadContactUpsert.mautic_first_visit = payload.dados_mautic.first_visit;
+      if (payload.dados_mautic.cidade) leadContactUpsert.mautic_cidade = payload.dados_mautic.cidade;
+      if (payload.dados_mautic.estado) leadContactUpsert.mautic_estado = payload.dados_mautic.estado;
+    }
+
+    // Chatwoot extras
+    if (payload.dados_chatwoot) {
+      if (payload.dados_chatwoot.conversas_total !== undefined) leadContactUpsert.chatwoot_conversas_total = payload.dados_chatwoot.conversas_total;
+      if (payload.dados_chatwoot.tempo_resposta_medio !== undefined) leadContactUpsert.chatwoot_tempo_resposta_medio = payload.dados_chatwoot.tempo_resposta_medio;
+      if (payload.dados_chatwoot.agente_atual) leadContactUpsert.chatwoot_agente_atual = payload.dados_chatwoot.agente_atual;
+      if (payload.dados_chatwoot.inbox) leadContactUpsert.chatwoot_inbox = payload.dados_chatwoot.inbox;
+      if (payload.dados_chatwoot.status_atendimento) leadContactUpsert.chatwoot_status_atendimento = payload.dados_chatwoot.status_atendimento;
+    }
+
+    await supabase.from('lead_contacts').upsert(leadContactUpsert, {
       onConflict: 'lead_id,empresa',
     });
-    console.log('[SGT Webhook] Lead contact upserted:', payload.lead_id, 'pipedrive_deal_id:', pipedriveDealeId);
+    console.log('[SGT Webhook] Lead contact upserted com dados enriquecidos:', payload.lead_id);
 
     // PATCH 5H-PLUS: Sanitização de dados de contato
     const sanitization = sanitizeLeadContact({
@@ -1589,6 +1664,72 @@ serve(async (req) => {
       .update(updateData)
       .eq('lead_id', payload.lead_id)
       .eq('empresa', payload.empresa);
+
+    // ========================================
+    // AUTO-CRIAÇÃO / MERGE DE CONTATO CRM
+    // ========================================
+    if (pessoaId) {
+      try {
+        // Verificar se já existe contact para essa pessoa + empresa
+        const { data: existingContact } = await supabase
+          .from('contacts')
+          .select('id, nome, email, telefone')
+          .eq('pessoa_id', pessoaId)
+          .eq('empresa', payload.empresa)
+          .maybeSingle();
+
+        if (!existingContact) {
+          // Criar novo contact CRM
+          const { data: newContact, error: contactError } = await supabase
+            .from('contacts')
+            .insert({
+              pessoa_id: pessoaId,
+              empresa: payload.empresa,
+              nome: leadNormalizado.nome,
+              primeiro_nome: primeiroNome,
+              email: leadNormalizado.email || null,
+              telefone: sanitization.phoneInfo?.e164 || leadNormalizado.telefone || null,
+              canal_origem: 'SGT',
+              tipo: 'LEAD',
+              tags: ['sgt-inbound'],
+              legacy_lead_id: payload.lead_id,
+              is_active: true,
+              is_cliente: false,
+            })
+            .select('id')
+            .single();
+
+          if (contactError) {
+            console.error('[SGT Webhook] Erro ao criar contact CRM:', contactError);
+          } else {
+            console.log('[SGT Webhook] Contact CRM criado:', newContact.id);
+          }
+        } else {
+          // Merge: atualizar campos nulos sem sobrescrever dados manuais
+          const mergeData: Record<string, unknown> = {};
+          if (!existingContact.email && leadNormalizado.email) {
+            mergeData.email = leadNormalizado.email;
+          }
+          if (!existingContact.telefone && (sanitization.phoneInfo?.e164 || leadNormalizado.telefone)) {
+            mergeData.telefone = sanitization.phoneInfo?.e164 || leadNormalizado.telefone;
+          }
+
+          if (Object.keys(mergeData).length > 0) {
+            mergeData.updated_at = new Date().toISOString();
+            await supabase
+              .from('contacts')
+              .update(mergeData)
+              .eq('id', existingContact.id);
+            console.log('[SGT Webhook] Contact CRM atualizado (merge):', existingContact.id, Object.keys(mergeData));
+          } else {
+            console.log('[SGT Webhook] Contact CRM já existe, sem campos para merge:', existingContact.id);
+          }
+        }
+      } catch (contactErr) {
+        console.error('[SGT Webhook] Erro no fluxo de contacts:', contactErr);
+        // Não interrompe o fluxo principal
+      }
+    }
 
     // Registrar issues de contato (evitar duplicatas)
     if (sanitization.issues.length > 0) {
