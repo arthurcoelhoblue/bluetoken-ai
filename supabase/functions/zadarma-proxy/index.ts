@@ -1,4 +1,6 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { encodeHex } from 'https://deno.land/std@0.224.0/encoding/hex.ts';
+import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,43 +9,52 @@ const corsHeaders = {
 
 const ZADARMA_API_URL = 'https://api.zadarma.com';
 
-// HMAC-SHA1 signing for Zadarma API
-async function signRequest(method: string, path: string, params: Record<string, string>, secret: string): Promise<string> {
-  const sorted = Object.keys(params).sort().map(k => `${k}=${params[k]}`).join('&');
-  const toSign = `${path}${sorted}${await md5(sorted)}`;
+// Real MD5 implementation for Zadarma signing (SubtleCrypto doesn't support MD5)
+async function md5(input: string): Promise<string> {
+  // Use a simple MD5 from Deno std
+  const { crypto: stdCrypto } = await import('https://deno.land/std@0.224.0/crypto/mod.ts');
+  const data = new TextEncoder().encode(input);
+  const hash = await stdCrypto.subtle.digest('MD5', data);
+  return encodeHex(new Uint8Array(hash));
+}
+
+// HMAC-SHA1 signing for Zadarma API (matches official Python SDK)
+async function signRequest(apiPath: string, params: Record<string, string>, secret: string): Promise<string> {
+  const sorted = Object.keys(params).sort().map(k => `${encodeURIComponent(k)}=${encodeURIComponent(params[k])}`).join('&');
+  const md5Hash = await md5(sorted);
+  const toSign = `${apiPath}${sorted}${md5Hash}`;
   const encoder = new TextEncoder();
   const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
   const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(toSign));
-  return btoa(String.fromCharCode(...new Uint8Array(sig)));
-}
-
-// Simple MD5 using SubtleCrypto (SHA-256 fallback — Zadarma accepts both in practice)
-async function md5(input: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(input);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return Array.from(new Uint8Array(hash)).map(b => b.toString(16).padStart(2, '0')).join('');
+  // Zadarma expects: base64(hex_string_of_hmac), NOT base64(raw_bytes)
+  const hexDigest = encodeHex(new Uint8Array(sig));
+  return encodeBase64(new TextEncoder().encode(hexDigest));
 }
 
 async function zadarmaRequest(apiKey: string, apiSecret: string, apiPath: string, params: Record<string, string> = {}): Promise<any> {
-  const signature = await signRequest('GET', apiPath, params, apiSecret);
-  const queryString = Object.keys(params).length > 0
-    ? '?' + new URLSearchParams(params).toString()
-    : '';
+  // Zadarma SDK always adds format param
+  const allParams = { ...params, format: 'json' };
+  const signature = await signRequest(apiPath, allParams, apiSecret);
+  const queryString = new URLSearchParams(
+    Object.keys(allParams).sort().reduce((acc, k) => { acc[k] = allParams[k]; return acc; }, {} as Record<string, string>)
+  ).toString();
   
-  const response = await fetch(`${ZADARMA_API_URL}${apiPath}${queryString}`, {
+  const response = await fetch(`${ZADARMA_API_URL}${apiPath}?${queryString}`, {
     method: 'GET',
     headers: {
       'Authorization': `${apiKey}:${signature}`,
     },
   });
 
-  if (!response.ok) {
-    const text = await response.text();
-    throw new Error(`Zadarma API error [${response.status}]: ${text}`);
+  const text = await response.text();
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { parsed = { raw: text }; }
+  
+  if (parsed.status === 'error') {
+    throw new Error(`Zadarma API error: ${parsed.message || text}`);
   }
 
-  return response.json();
+  return parsed;
 }
 
 Deno.serve(async (req) => {
