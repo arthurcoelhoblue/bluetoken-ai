@@ -4039,6 +4039,7 @@ export type Database = {
       }
     }
     Functions: {
+      get_user_empresa: { Args: { _user_id: string }; Returns: string }
       get_user_roles: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"][]
