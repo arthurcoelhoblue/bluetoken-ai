@@ -1,0 +1,222 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// Zadarma IP whitelist: 185.45.152.40/29 (185.45.152.40 - 185.45.152.47)
+function isZadarmaIP(ip: string): boolean {
+  if (!ip) return false;
+  const clean = ip.split(',')[0].trim();
+  const parts = clean.split('.').map(Number);
+  if (parts.length !== 4) return false;
+  return parts[0] === 185 && parts[1] === 45 && parts[2] === 152 && parts[3] >= 40 && parts[3] <= 47;
+}
+
+// HMAC-SHA1 signature validation
+async function validateSignature(body: string, signature: string, secret: string): Promise<boolean> {
+  if (!signature || !secret) return false;
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+  const hexSig = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
+  return hexSig === signature.toLowerCase();
+}
+
+function normalizePhone(phone: string | null): string | null {
+  if (!phone) return null;
+  return phone.replace(/\D/g, '').replace(/^0+/, '');
+}
+
+Deno.serve(async (req) => {
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+  try {
+    // IP validation
+    const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || '';
+    // In production, uncomment: if (!isZadarmaIP(clientIP)) return new Response('Forbidden', { status: 403 });
+
+    const rawBody = await req.text();
+    const params = new URLSearchParams(rawBody);
+    const eventType = params.get('event') || params.get('zd_echo') || '';
+
+    // Zadarma echo test
+    if (params.has('zd_echo')) {
+      return new Response(params.get('zd_echo')!, { headers: { ...corsHeaders, 'Content-Type': 'text/plain' } });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Parse common fields
+    const pbxCallId = params.get('pbx_call_id') || params.get('call_id_with_rec') || '';
+    const callerNumber = params.get('caller_id') || params.get('caller_number') || '';
+    const destinationNumber = params.get('called_did') || params.get('destination') || '';
+    const duration = parseInt(params.get('duration') || '0', 10);
+    const internalNumber = params.get('internal') || '';
+
+    // Find empresa from extension mapping
+    let empresa: string | null = null;
+    let userId: string | null = null;
+    if (internalNumber) {
+      const { data: ext } = await supabase
+        .from('zadarma_extensions')
+        .select('empresa, user_id')
+        .eq('extension_number', internalNumber)
+        .eq('is_active', true)
+        .maybeSingle();
+      if (ext) {
+        empresa = ext.empresa;
+        userId = ext.user_id;
+      }
+    }
+
+    // Fallback: try first config
+    if (!empresa) {
+      const { data: configs } = await supabase.from('zadarma_config').select('empresa').limit(1);
+      if (configs && configs.length > 0) empresa = configs[0].empresa;
+    }
+
+    if (!empresa) {
+      console.error('No Zadarma config found');
+      return new Response(JSON.stringify({ error: 'no_config' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Auto-link contact by phone
+    let contactId: string | null = null;
+    const phoneToSearch = normalizePhone(eventType.includes('OUT') ? destinationNumber : callerNumber);
+    if (phoneToSearch && phoneToSearch.length >= 8) {
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('empresa', empresa)
+        .or(`telefone.ilike.%${phoneToSearch.slice(-9)}%`)
+        .limit(1);
+      if (contacts && contacts.length > 0) contactId = contacts[0].id;
+    }
+
+    // Auto-link deal (most recent open deal for contact)
+    let dealId: string | null = null;
+    if (contactId) {
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id')
+        .eq('contact_id', contactId)
+        .eq('status', 'ABERTO')
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (deals && deals.length > 0) dealId = deals[0].id;
+    }
+
+    const direcao = eventType.includes('OUT') ? 'OUTBOUND' : 'INBOUND';
+
+    // Process events
+    if (eventType === 'NOTIFY_START' || eventType === 'NOTIFY_OUT_START') {
+      const { data: call, error } = await supabase.from('calls').insert({
+        empresa,
+        deal_id: dealId,
+        contact_id: contactId,
+        user_id: userId,
+        direcao,
+        status: 'RINGING',
+        pbx_call_id: pbxCallId,
+        caller_number: callerNumber,
+        destination_number: destinationNumber,
+        started_at: new Date().toISOString(),
+      }).select('id').single();
+
+      if (call) {
+        await supabase.from('call_events').insert({
+          call_id: call.id,
+          event_type: eventType,
+          payload: Object.fromEntries(params),
+        });
+      }
+    } else if (eventType === 'NOTIFY_ANSWER') {
+      const { data: existing } = await supabase
+        .from('calls')
+        .select('id')
+        .eq('pbx_call_id', pbxCallId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from('calls').update({
+          status: 'ANSWERED',
+          answered_at: new Date().toISOString(),
+        }).eq('id', existing.id);
+
+        await supabase.from('call_events').insert({
+          call_id: existing.id,
+          event_type: eventType,
+          payload: Object.fromEntries(params),
+        });
+      }
+    } else if (eventType === 'NOTIFY_END' || eventType === 'NOTIFY_OUT_END') {
+      const disposition = params.get('disposition') || '';
+      let finalStatus = 'MISSED';
+      if (disposition === 'answered') finalStatus = 'ANSWERED';
+      else if (disposition === 'busy') finalStatus = 'BUSY';
+      else if (disposition === 'failed' || disposition === 'no answer') finalStatus = 'MISSED';
+
+      const { data: existing } = await supabase
+        .from('calls')
+        .select('id, status')
+        .eq('pbx_call_id', pbxCallId)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from('calls').update({
+          status: existing.status === 'ANSWERED' ? 'ANSWERED' : finalStatus,
+          duracao_segundos: duration,
+          ended_at: new Date().toISOString(),
+        }).eq('id', existing.id);
+
+        await supabase.from('call_events').insert({
+          call_id: existing.id,
+          event_type: eventType,
+          payload: Object.fromEntries(params),
+        });
+      }
+    } else if (eventType === 'NOTIFY_RECORD') {
+      const recordingUrl = params.get('call_id_with_rec') || '';
+      const callIdForRec = params.get('pbx_call_id') || pbxCallId;
+
+      const { data: existing } = await supabase
+        .from('calls')
+        .select('id')
+        .eq('pbx_call_id', callIdForRec)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from('calls').update({
+          recording_url: recordingUrl,
+        }).eq('id', existing.id);
+
+        await supabase.from('call_events').insert({
+          call_id: existing.id,
+          event_type: eventType,
+          payload: Object.fromEntries(params),
+        });
+      }
+    } else {
+      // Unknown event — log it
+      await supabase.from('call_events').insert({
+        event_type: eventType,
+        payload: Object.fromEntries(params),
+      });
+    }
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  } catch (err) {
+    console.error('Zadarma webhook error:', err);
+    return new Response(JSON.stringify({ error: String(err) }), {
+      status: 200, // Zadarma expects 200
+      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    });
+  }
+});

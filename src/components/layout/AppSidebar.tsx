@@ -29,6 +29,7 @@ import {
   ChevronRight,
   ChevronDown,
   Upload,
+  PhoneCall,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -110,6 +111,7 @@ const navGroups: NavGroup[] = [
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
+      { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },
