@@ -1,29 +1,30 @@
 
 
-## Patch 9 — Checklist de Validacao (Resultado)
+## Patch 10 — Checklist de Validacao (Resultado)
 
 | # | Item | Status |
 |---|------|--------|
-| 1 | Tabelas `deal_cadence_runs` e `cadence_stage_triggers` criadas | OK |
-| 2 | Views `cadencias_crm` e `deal_cadencia_status` funcionam | OK |
-| 3 | Trigger `check_cadence_stage_trigger` existe | OK |
-| 4 | Rota `/cadencias-crm` acessivel | OK |
-| 5 | CadenciasPage lista cadencias com stats CRM | OK |
-| 6 | Criar trigger automatico (pipeline + stage + cadencia) | OK |
-| 7 | DealCadenceCard visivel no DealDetailSheet | OK |
-| 8 | Iniciar cadencia manualmente no DealCadenceCard | OK |
-| 9 | Pausar, retomar e cancelar cadencia | OK |
-| 10 | Trigger SQL auto-start ao mover deal | OK |
+| 1 | Tabelas `metas_vendedor`, `comissao_regras`, `comissao_lancamentos` criadas | OK |
+| 2 | Views `meta_progresso` e `comissao_resumo_mensal` funcionam | OK |
+| 3 | Trigger `calc_comissao_deal` existe | OK |
+| 4 | Seed data inserido (2 regras de comissao) | OK |
+| 5 | Rota `/metas` acessivel com requiredRoles | OK |
+| 6 | Pagina MetasPage renderiza com KPIs | OK |
+| 7 | Tab Ranking mostra vendedores (ou vazio) | OK |
+| 8 | Tab Comissoes mostra lancamentos | OK |
+| 9 | Tab Regras mostra regras de comissao | OK |
+| 10 | Navegar entre meses funciona | OK |
+| 11 | Dialog de editar meta funciona (admin) | OK |
 
-**Resultado: 10/10 aprovados.**
+**Resultado: 11/11 aprovados.**
 
 ---
 
-## Patch 10: Metas e Comissoes
+## Patch 11: Importacao Pipedrive
 
 ### Resumo
 
-Sistema completo de metas mensais e comissoes automatizadas. Admin define metas por vendedor e regras de comissao (percentual, fixo ou escalonada). Trigger SQL calcula comissao automaticamente ao ganhar deal. Dashboard com ranking, barras de progresso e workflow de aprovacao PENDENTE, APROVADO, PAGO.
+Wizard de importacao completa para migrar dados do Pipedrive para o CRM. Upload de 3 JSONs (deals, persons, orgs), mapeamento pipeline/stage, execucao sequencial (Orgs, Contacts, Deals resolvendo FKs), log detalhado e historico.
 
 ---
 
@@ -31,12 +32,11 @@ Sistema completo de metas mensais e comissoes automatizadas. Admin define metas 
 
 | PDF assume | Schema real | Correcao |
 |------------|------------|----------|
-| `NEW.empresa` no trigger `calc_comissao_deal` | `deals` nao tem coluna `empresa` | JOIN com `pipelines` para obter empresa |
-| `WHERE empresa = NEW.empresa` nas queries do trigger | Idem acima | Usar variavel `v_empresa` obtida via pipeline |
-| `d.empresa = NEW.empresa` no calculo escalonado | Idem | Substituir por JOIN equivalente com pipeline |
-| `CHECK (empresa IN (...))` em `comissao_lancamentos` | Coluna `empresa` e TEXT sem constraint | Adicionar CHECK para consistencia |
-| `MESES` array incompleto no PDF | Faltam Nov e Dez | Completar com 'Novembro', 'Dezembro' |
-| `percentual_aplica` truncado na linha 190 | PDF cortou o SQL | Corrigir para `percentual_aplicado` |
+| `empresa` na insert de deals | `deals` nao tem coluna `empresa` | Remover `empresa` do insert de deals |
+| `contact_id` nullable nos deals | `deals.contact_id` e NOT NULL | Skip deal se contact nao mapeado (ja previsto no PDF) |
+| Status do deal = Pipedrive status | `deals.status` usa 'ABERTO', 'GANHO', 'PERDIDO' | Mapear: open='ABERTO', won='GANHO', lost='PERDIDO' |
+| `contacts.empresa` como TEXT | `contacts.empresa` e `empresa_tipo` (USER-DEFINED) | Fazer cast adequado no insert |
+| `organizations.empresa` como TEXT | Idem USER-DEFINED | Idem |
 
 ---
 
@@ -44,77 +44,58 @@ Sistema completo de metas mensais e comissoes automatizadas. Admin define metas 
 
 #### Fase 1: Migration SQL
 
-3 tabelas + 1 trigger function + 2 views:
+2 tabelas + 1 view:
 
-**Tabela `metas_vendedor`**:
-- `user_id`, `empresa`, `ano`, `mes`, `meta_valor`, `meta_deals`
-- UNIQUE(user_id, empresa, ano, mes)
-- RLS: SELECT para authenticated, ALL para ADMIN
+**Tabela `import_jobs`**:
+- `id`, `tipo` (PIPEDRIVE_FULL, PIPEDRIVE_DEALS, etc.), `empresa` (empresa_tipo)
+- `status` (PENDING, RUNNING, COMPLETED, FAILED, PARTIAL)
+- `total_records`, `imported`, `skipped`, `errors`, `error_log` JSONB
+- `config` JSONB (pipeline_mapping, stage_mapping, owner_mapping)
+- `started_by` FK profiles, `started_at`, `completed_at`
+- RLS: ALL para ADMIN
 
-**Tabela `comissao_regras`**:
-- `empresa`, `pipeline_id` (nullable), `nome`, `tipo` (PERCENTUAL/FIXO/ESCALONADO)
-- `percentual`, `valor_fixo`, `escalas` JSONB, `valor_minimo_deal`
-- RLS: SELECT para authenticated, ALL para ADMIN
+**Tabela `import_mapping`**:
+- `import_job_id` FK, `entity_type` (DEAL, CONTACT, ORGANIZATION, PERSON)
+- `source_id` TEXT (Pipedrive ID), `target_id` UUID (CRM ID), `empresa`
+- UNIQUE(entity_type, source_id, empresa)
+- Index em source lookup e target
+- RLS: SELECT + ALL para ADMIN
 
-**Tabela `comissao_lancamentos`**:
-- `deal_id`, `user_id`, `regra_id`, `empresa`, `deal_valor`, `comissao_valor`
-- `percentual_aplicado`, `status` (PENDENTE/APROVADO/PAGO/CANCELADO)
-- `aprovado_por`, `aprovado_em`, `pago_em`, `referencia_ano`, `referencia_mes`
-- UNIQUE(deal_id, user_id)
-- RLS: SELECT para authenticated, ALL para ADMIN
+**View `import_jobs_summary`** (SECURITY INVOKER):
+- import_jobs + profile nome + counts de deals/contacts/orgs mapeados
 
-**Trigger `calc_comissao_deal()`** (SECURITY DEFINER):
-- AFTER UPDATE ON deals
-- Dispara quando `fechado_em` muda de NULL para NOT NULL e stage `is_won = true`
-- CORRECAO: Obtem `v_empresa` via `SELECT p.empresa FROM pipelines p WHERE p.id = NEW.pipeline_id`
-- Busca regra ativa compativel (empresa, pipeline, valor minimo)
-- Calcula comissao: PERCENTUAL (% fixo), FIXO (valor fixo), ESCALONADO (faixas progressivas com acumulado mensal)
-- Insere/atualiza `comissao_lancamentos`
+#### Fase 2: Types — `src/types/importacao.ts`
 
-**View `meta_progresso`** (SECURITY INVOKER):
-- Progresso vs meta: realizado_valor, realizado_deals, pct_valor, pct_deals, pipeline_aberto, comissao_mes
-- CORRECAO: JOIN deals com pipelines para filtrar por empresa (em vez de `d.empresa`)
+- `ImportJobStatus`, `ImportJobType`, `ImportJob`, `ImportMapping`
+- `PipedriveDealRow`, `PipedrivePersonRow`, `PipedriveOrgRow`
+- `ImportConfig` (empresa, pipeline_mapping, stage_mapping, owner_mapping, flags)
 
-**View `comissao_resumo_mensal`** (SECURITY INVOKER):
-- Resumo por vendedor/mes: pendentes, aprovados, pagos, comissao_total
+#### Fase 3: Hooks — `src/hooks/useImportacao.ts`
 
-**Seed data**:
-- Regra Blue: 10% sobre deals >= R$500
-- Regra Tokeniza: escalonada (ate R$50k=5%, R$50-100k=8%, >R$100k=12%)
+- `useImportJobs()` — lista historico via view
+- `useRunImport()` — mutation sequencial:
+  1. Cria job com status RUNNING
+  2. Importa Orgs (insert organizations + mapping)
+  3. Importa Persons como Contacts (resolve org_id via mapping)
+  4. Importa Deals (resolve contact_id + org_id via mapping, mapeia pipeline/stage)
+  5. CORRECAO: Remove `empresa` do insert de deals
+  6. CORRECAO: Mapeia status Pipedrive (won/lost/open) para CRM (GANHO/PERDIDO/ABERTO)
+  7. Atualiza job com stats finais
 
-#### Fase 2: Types — `src/types/metas.ts`
+#### Fase 4: Page — `src/pages/ImportacaoPage.tsx`
 
-Criar arquivo com interfaces:
-- `MetaVendedor`, `MetaProgresso`, `ComissaoTipo`, `ComissaoStatus`
-- `ComissaoRegra`, `ComissaoLancamento`, `ComissaoResumoMensal`
-
-#### Fase 3: Hooks — `src/hooks/useMetas.ts`
-
-- `useMetaProgresso(ano, mes)` — ranking com filtro empresa
-- `useMyMetaProgresso(ano, mes)` — meta do usuario logado
-- `useUpsertMeta()` — criar/editar meta
-- `useComissaoRegras()` — listar regras
-- `useUpsertComissaoRegra()` — criar/editar regra
-- `useComissaoLancamentos(ano, mes)` — lancamentos com JOINs
-- `useUpdateComissaoStatus()` — aprovar/pagar lancamento
-- `useComissaoResumo(ano, mes)` — resumo mensal
-
-#### Fase 4: Page — `src/pages/MetasPage.tsx`
-
-Substituir a pagina shell existente por dashboard completo com:
-- Header: icone Target, titulo "Metas e Comissoes", navegacao mes anterior/proximo
-- 5 KPIs: Meta total, Realizado, % Atingido, Comissoes, Pipeline
-- 3 Tabs:
-  - **Ranking**: cards por vendedor com avatar, barra de progresso, coroas top 3, botao "Editar meta" (admin)
-  - **Comissoes**: tabela de lancamentos com deal, vendedor, valores, select de status (PENDENTE, APROVADO, PAGO, CANCELADO)
-  - **Regras**: cards com tipo, percentual/valor/escalas, badge ativa/inativa
-- Dialog para editar meta (valor R$ + quantidade deals)
+Wizard com 4 steps:
+- **Step 1 (Upload)**: 3 file inputs para deals.json, persons.json, orgs.json + selecao empresa + toggle "Pular existentes"
+- **Step 2 (Mapeamento)**: Extrai pipeline_ids e stage_ids unicos dos deals, mostra selects para mapear para pipelines/stages do CRM
+- **Step 3 (Running)**: Indicador de progresso enquanto importa
+- **Step 4 (Done)**: Resumo com stats (importados, ignorados, erros)
+- **Historico**: Lista de jobs anteriores com badges de status e stats
 
 #### Fase 5: Routing e Sidebar
 
-- Rota `/metas` ja existe no App.tsx — adicionar `requiredRoles={['ADMIN', 'CLOSER']}`
-- Item "Metas e Comissoes" ja existe no sidebar — sem alteracao necessaria
-- Registro `metas` ja existe em screenRegistry.ts — sem alteracao necessaria
+- Adicionar rota `/importacao` em App.tsx com `requiredRoles={['ADMIN']}`
+- Adicionar item "Importacao" no sidebar grupo Configuracao com icone Upload
+- Registrar `importacao` em screenRegistry.ts
 
 ---
 
@@ -124,38 +105,33 @@ Substituir a pagina shell existente por dashboard completo com:
 
 | Arquivo | Acao |
 |---------|------|
-| Migration SQL | Criar (3 tabelas + trigger + 2 views + seed) |
-| `src/types/metas.ts` | Criar |
-| `src/hooks/useMetas.ts` | Criar |
-| `src/pages/MetasPage.tsx` | Reescrever (substituir shell) |
-| `src/App.tsx` | Editar (adicionar requiredRoles na rota /metas) |
+| Migration SQL | Criar (2 tabelas + 1 view) |
+| `src/types/importacao.ts` | Criar |
+| `src/hooks/useImportacao.ts` | Criar |
+| `src/pages/ImportacaoPage.tsx` | Criar |
+| `src/App.tsx` | Editar (adicionar rota /importacao) |
+| `src/components/layout/AppSidebar.tsx` | Editar (adicionar item Importacao) |
+| `src/config/screenRegistry.ts` | Editar (registrar tela) |
 
-**Correcao critica no trigger**: `deals` nao tem `empresa`, entao o trigger faz:
-```text
-SELECT p.empresa::TEXT INTO v_empresa
-FROM pipelines p WHERE p.id = NEW.pipeline_id;
-```
-E usa `v_empresa` em todas as queries internas (busca regra, calculo escalonado).
+**Correcao critica no insert de deals**: `deals` nao tem `empresa`, entao o insert omite esse campo. O pipeline ja determina a empresa indiretamente.
 
-**Correcao na view `meta_progresso`**: `deals` nao tem `empresa`, entao o JOIN precisa passar por `pipelines`:
+**Mapeamento de status**: Pipedrive usa `won`/`lost`/`open`, CRM usa `GANHO`/`PERDIDO`/`ABERTO`:
 ```text
-LEFT JOIN deals d ON d.owner_id = m.user_id
-LEFT JOIN pipelines pip ON d.pipeline_id = pip.id AND pip.empresa::TEXT = m.empresa
+const statusMap = { won: 'GANHO', lost: 'PERDIDO', open: 'ABERTO' };
 ```
 
 ---
 
 ### Checklist de validacao (sera executado apos implementacao)
 
-1. Tabelas `metas_vendedor`, `comissao_regras`, `comissao_lancamentos` criadas
-2. Views `meta_progresso` e `comissao_resumo_mensal` funcionam
-3. Trigger `calc_comissao_deal` existe
-4. Seed data inserido (2 regras de comissao)
-5. Rota `/metas` acessivel com requiredRoles
-6. Pagina MetasPage renderiza com KPIs
-7. Tab Ranking mostra vendedores (ou vazio)
-8. Tab Comissoes mostra lancamentos
-9. Tab Regras mostra regras de comissao
-10. Navegar entre meses funciona
-11. Dialog de editar meta funciona (admin)
+1. Tabelas `import_jobs` e `import_mapping` criadas
+2. View `import_jobs_summary` funciona
+3. Rota `/importacao` acessivel (ADMIN only)
+4. Item "Importacao" visivel no sidebar grupo Configuracao
+5. Step 1: upload dos 3 JSONs funciona
+6. Step 2: mapeamento pipeline/stage mostra pipelines do CRM
+7. Step 3: execucao mostra progresso
+8. Step 4: resultado com stats
+9. Historico mostra jobs anteriores com badges
+10. Re-importar com "Pular existentes" funciona (skips)
 
