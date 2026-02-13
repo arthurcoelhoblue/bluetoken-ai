@@ -18,6 +18,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMetaProgresso, useComissaoRegras, useComissaoLancamentos, useUpdateComissaoStatus, useUpsertMeta } from '@/hooks/useMetas';
 import { MESES_LABEL, type ComissaoStatus, type MetaProgresso } from '@/types/metas';
+import { LeaderboardCard } from '@/components/gamification/LeaderboardCard';
+import { BadgeShowcase } from '@/components/gamification/BadgeShowcase';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -136,6 +138,7 @@ export default function MetasPage() {
         <Tabs defaultValue="ranking">
           <TabsList>
             <TabsTrigger value="ranking">Ranking</TabsTrigger>
+            <TabsTrigger value="gamificacao">Gamificação</TabsTrigger>
             <TabsTrigger value="comissoes">Comissões</TabsTrigger>
             <TabsTrigger value="regras">Regras</TabsTrigger>
           </TabsList>
@@ -178,6 +181,12 @@ export default function MetasPage() {
                 </CardContent>
               </Card>
             ))}
+          </TabsContent>
+
+          {/* Gamificação */}
+          <TabsContent value="gamificacao" className="space-y-4 mt-4">
+            <LeaderboardCard />
+            <BadgeShowcase />
           </TabsContent>
 
           {/* Comissões */}
