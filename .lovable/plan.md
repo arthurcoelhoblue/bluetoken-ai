@@ -1,63 +1,49 @@
 
+## Implementar botao "Devolver a Amelia" funcional na pagina de detalhe do lead
 
-## Plano: Rotear mensagens manuais pelo canal correto (Blue Chat ou Mensageria)
+### Problema atual
+O componente `ConversationTakeoverBar` ja possui toda a logica de "Devolver a Amelia" implementada, mas a pagina `LeadDetail` nao passa os dados corretos porque:
 
-### Problema
-A funcao `whatsapp-send` sempre envia mensagens pela API Mensageria (`dev-mensageria.grupoblue.com.br`), mas ambas as empresas (TOKENIZA e BLUE) estao com o canal `bluechat` ativo e `mensageria` desativado. Resultado: a API externa retorna erro 400 e o vendedor recebe 502.
+1. O tipo `ConversationState` (em `src/types/conversation.ts`) nao inclui os campos `modo`, `assumido_por` e `assumido_em`
+2. O hook `useConversationState` (em `src/hooks/useConversationState.ts`) nao mapeia esses campos no retorno
+3. A pagina `LeadDetail` passa `assumidoPorNome={null}` fixo (linha 371)
 
-### Causa raiz
-Nao existe roteamento por canal. A funcao ignora qual canal esta ativo em `integration_company_config` e sempre chama a API Mensageria.
+O lead atual esta com `modo: MANUAL` e `assumido_por: 3eb15a6a...`, entao o botao deveria aparecer como "Devolver a Amelia" mas pode nao estar funcionando corretamente por falta dos dados.
 
-### Solucao
-Atualizar a edge function `whatsapp-send` para verificar o canal ativo e rotear a mensagem:
+### Mudancas
 
-- **Se canal ativo = `bluechat`**: enviar via API Blue Chat (mesmo mecanismo que `bluechat-inbound` usa no `sendResponseToBluechat`)
-- **Se canal ativo = `mensageria`**: manter envio atual pela API Mensageria
+**1. `src/types/conversation.ts`** - Adicionar campos de takeover ao tipo `ConversationState`:
 
-### Mudancas tecnicas
-
-**Arquivo: `supabase/functions/whatsapp-send/index.ts`**
-
-1. Apos identificar o canal ativo (ja existente), adicionar logica de roteamento:
-
-```text
-if (activeChannel === 'bluechat') {
-  -> Buscar URL da API Blue Chat em system_settings (bluechat_tokeniza ou bluechat_blue)
-  -> Buscar API key correta (BLUECHAT_API_KEY ou BLUECHAT_API_KEY_BLUE)
-  -> Enviar POST para {api_url}/messages com:
-     - conversation_id (buscar a ultima conversa ativa do lead)
-     - content: mensagem
-     - source: 'MANUAL_SELLER'
-} else {
-  -> Manter fluxo atual pela API Mensageria
+```typescript
+export interface ConversationState {
+  // ... campos existentes ...
+  modo?: 'SDR_IA' | 'MANUAL' | 'HIBRIDO';
+  assumido_por?: string | null;
+  assumido_em?: string | null;
+  devolvido_em?: string | null;
 }
 ```
 
-2. Para encontrar o `conversation_id` do Blue Chat, buscar na tabela `lead_messages` a ultima mensagem INBOUND do lead que tenha `whatsapp_message_id` (que contem o ID da conversa Blue Chat). Alternativa: enviar a mensagem diretamente pelo telefone usando a mesma API Mensageria (se o Blue Chat aceitar).
+**2. `src/hooks/useConversationState.ts`** - Incluir `modo`, `assumido_por`, `assumido_em` e `devolvido_em` no mapeamento de retorno:
 
-3. Atualizar o estado da mensagem em `lead_messages` da mesma forma para ambos os canais (PENDENTE -> ENVIADO ou ERRO).
+```typescript
+return {
+  // ... campos existentes ...
+  modo: data.modo || 'SDR_IA',
+  assumido_por: data.assumido_por || null,
+  assumido_em: data.assumido_em || null,
+  devolvido_em: data.devolvido_em || null,
+};
+```
 
-### Alternativa mais simples (recomendada)
-Como o Blue Chat provavelmente envia WhatsApp por baixo, a API Mensageria pode ser o caminho correto para **ambos** os canais quando se trata de envio direto por telefone. O problema pode ser simplesmente que a `connectionName: "Arthur"` nao suporta o numero internacional `+351...`.
+**3. `src/pages/LeadDetail.tsx`** - Passar `modo` e `assumidoPorNome` corretamente ao `ConversationPanel`:
 
-Nesse caso, a correcao seria:
-- Buscar a `connectionName` correta por empresa em `system_settings` em vez de usar "Arthur" fixo
-- Ou adicionar uma config de `connectionName` por empresa em `system_settings`
+- Usar `conversationState?.modo` em vez de cast `(conversationState as any)?.modo`
+- Buscar o nome do usuario que assumiu (via `assumido_por`) para exibir no badge "por Fulano"
+- Como buscar o nome do usuario exigiria uma query extra, a abordagem mais simples e exibir apenas o modo sem o nome, ou fazer um select na tabela `profiles` se existir
 
-### Proposta final: implementar roteamento completo
-
-1. Se `activeChannel === 'bluechat'`:
-   - Buscar config Blue Chat em `system_settings` (key: `bluechat_blue` ou `bluechat_tokeniza`)
-   - Buscar API key correta por empresa
-   - Enviar via endpoint `/messages` do Blue Chat
-   - Se falhar, logar erro detalhado
-
-2. Se `activeChannel === 'mensageria'`:
-   - Manter fluxo atual (API Mensageria com connectionName)
-
-3. Manter todo o restante (opt-out check, registro em lead_messages, typing delay, etc.)
-
-### Risco
-- Precisamos confirmar que a API Blue Chat aceita envio de mensagem via `/messages` sem um `conversation_id` ativo (cenario de primeira mensagem manual)
-- Se nao aceitar, pode ser necessario criar uma conversa primeiro
-
+### Resultado esperado
+- Quando o lead esta em modo `MANUAL`, a barra mostra "Modo Manual" com botao "Devolver a Amelia"
+- Ao clicar, abre o dialog de confirmacao ja existente
+- Ao confirmar, o hook `useConversationTakeover` atualiza `lead_conversation_state.modo` para `SDR_IA` e registra no `conversation_takeover_log`
+- A UI atualiza automaticamente via invalidacao do query cache
