@@ -89,77 +89,16 @@ async function sendViaBluechat(
     return { success: false, error: `BLUECHAT_API_KEY não configurada para ${empresa}` };
   }
 
-  // 3. Buscar conversation_id da última mensagem INBOUND deste lead
-  const { data: lastInbound } = await supabase
-    .from('lead_messages')
-    .select('whatsapp_message_id')
+  // 3. Buscar conversation_id do lead_conversation_state.framework_data
+  const { data: convState } = await supabase
+    .from('lead_conversation_state')
+    .select('framework_data')
     .eq('lead_id', leadId)
     .eq('empresa', empresa)
-    .eq('direcao', 'INBOUND')
-    .not('whatsapp_message_id', 'is', null)
-    .order('created_at', { ascending: false })
-    .limit(1)
     .maybeSingle();
 
-  // O conversation_id pode ser extraído do contexto. No Blue Chat inbound,
-  // o conversation_id é salvo como whatsapp_message_id nas mensagens inbound.
-  // Precisamos do conversation_id real - vamos buscar do lead_cadence_events
-  // ou usar o whatsapp_message_id como fallback
-  
-  // Tentativa: buscar conversation_id dos eventos de cadência
-  const { data: lastEvent } = await supabase
-    .from('lead_cadence_events')
-    .select('detalhes')
-    .eq('template_codigo', 'BLUECHAT_INBOUND')
-    .order('created_at', { ascending: false })
-    .limit(20);
-
-  let conversationId: string | null = null;
-  
-  // Procurar nos eventos o conversation_id do lead
-  if (lastEvent) {
-    for (const evt of lastEvent) {
-      const detalhes = evt.detalhes as Record<string, unknown> | null;
-      if (detalhes?.conversation_id) {
-        // Verificar se é do mesmo lead buscando a mensagem associada
-        const msgId = detalhes.message_id as string;
-        if (msgId) {
-          const { data: msg } = await supabase
-            .from('lead_messages')
-            .select('lead_id')
-            .eq('id', msgId)
-            .maybeSingle();
-          if (msg && (msg as { lead_id: string }).lead_id === leadId) {
-            conversationId = detalhes.conversation_id as string;
-            break;
-          }
-        }
-      }
-    }
-  }
-
-  // Fallback: usar whatsapp_message_id da última mensagem inbound como conversation_id
-  if (!conversationId && lastInbound?.whatsapp_message_id) {
-    // No bluechat-inbound, o message_id do payload é salvo em whatsapp_message_id
-    // Mas o conversation_id é diferente. Vamos tentar usar o message_id
-    // e extrair o conversation_id dele (formato: bluechat usa UUIDs separados)
-    console.log('[BlueChatSend] Sem conversation_id nos eventos, tentando via mensagem');
-    
-    // Buscar na lead_messages mais recente que tenha template BLUECHAT
-    const { data: lastBcMsg } = await supabase
-      .from('lead_messages')
-      .select('whatsapp_message_id')
-      .eq('lead_id', leadId)
-      .eq('empresa', empresa)
-      .eq('template_codigo', 'BLUECHAT_PASSIVE_REPLY')
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    
-    if (lastBcMsg?.whatsapp_message_id) {
-      conversationId = lastBcMsg.whatsapp_message_id;
-    }
-  }
+  const frameworkData = convState?.framework_data as Record<string, unknown> | null;
+  const conversationId = (frameworkData?.bluechat_conversation_id as string) || null;
 
   if (!conversationId) {
     return { 
