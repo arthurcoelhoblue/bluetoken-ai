@@ -2106,6 +2106,7 @@ export type Database = {
           override_por_user_id: string | null
           persona: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade: number
+          score_composto: number | null
           score_interno: number | null
           temperatura: Database["public"]["Enums"]["temperatura_tipo"]
           updated_at: string
@@ -2126,6 +2127,7 @@ export type Database = {
           override_por_user_id?: string | null
           persona?: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade: number
+          score_composto?: number | null
           score_interno?: number | null
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"]
           updated_at?: string
@@ -2146,6 +2148,7 @@ export type Database = {
           override_por_user_id?: string | null
           persona?: Database["public"]["Enums"]["persona_tipo"] | null
           prioridade?: number
+          score_composto?: number | null
           score_interno?: number | null
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"]
           updated_at?: string
@@ -2224,6 +2227,11 @@ export type Database = {
       lead_contacts: {
         Row: {
           blue_client_id: string | null
+          chatwoot_agente_atual: string | null
+          chatwoot_conversas_total: number | null
+          chatwoot_inbox: string | null
+          chatwoot_status_atendimento: string | null
+          chatwoot_tempo_resposta_medio: number | null
           contato_internacional: boolean
           created_at: string
           ddi: string | null
@@ -2232,6 +2240,15 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           lead_id: string
+          linkedin_cargo: string | null
+          linkedin_conexoes: number | null
+          linkedin_empresa: string | null
+          linkedin_senioridade: string | null
+          linkedin_setor: string | null
+          linkedin_url: string | null
+          mautic_cidade: string | null
+          mautic_estado: string | null
+          mautic_first_visit: string | null
           nome: string | null
           numero_nacional: string | null
           opt_out: boolean
@@ -2243,6 +2260,8 @@ export type Database = {
           pipedrive_deal_id: string | null
           pipedrive_person_id: string | null
           primeiro_nome: string | null
+          prioridade_marketing: string | null
+          score_marketing: number | null
           telefone: string | null
           telefone_e164: string | null
           telefone_validado_em: string | null
@@ -2252,6 +2271,11 @@ export type Database = {
         }
         Insert: {
           blue_client_id?: string | null
+          chatwoot_agente_atual?: string | null
+          chatwoot_conversas_total?: number | null
+          chatwoot_inbox?: string | null
+          chatwoot_status_atendimento?: string | null
+          chatwoot_tempo_resposta_medio?: number | null
           contato_internacional?: boolean
           created_at?: string
           ddi?: string | null
@@ -2260,6 +2284,15 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id: string
+          linkedin_cargo?: string | null
+          linkedin_conexoes?: number | null
+          linkedin_empresa?: string | null
+          linkedin_senioridade?: string | null
+          linkedin_setor?: string | null
+          linkedin_url?: string | null
+          mautic_cidade?: string | null
+          mautic_estado?: string | null
+          mautic_first_visit?: string | null
           nome?: string | null
           numero_nacional?: string | null
           opt_out?: boolean
@@ -2271,6 +2304,8 @@ export type Database = {
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
+          prioridade_marketing?: string | null
+          score_marketing?: number | null
           telefone?: string | null
           telefone_e164?: string | null
           telefone_validado_em?: string | null
@@ -2280,6 +2315,11 @@ export type Database = {
         }
         Update: {
           blue_client_id?: string | null
+          chatwoot_agente_atual?: string | null
+          chatwoot_conversas_total?: number | null
+          chatwoot_inbox?: string | null
+          chatwoot_status_atendimento?: string | null
+          chatwoot_tempo_resposta_medio?: number | null
           contato_internacional?: boolean
           created_at?: string
           ddi?: string | null
@@ -2288,6 +2328,15 @@ export type Database = {
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           lead_id?: string
+          linkedin_cargo?: string | null
+          linkedin_conexoes?: number | null
+          linkedin_empresa?: string | null
+          linkedin_senioridade?: string | null
+          linkedin_setor?: string | null
+          linkedin_url?: string | null
+          mautic_cidade?: string | null
+          mautic_estado?: string | null
+          mautic_first_visit?: string | null
           nome?: string | null
           numero_nacional?: string | null
           opt_out?: boolean
@@ -2299,6 +2348,8 @@ export type Database = {
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
           primeiro_nome?: string | null
+          prioridade_marketing?: string | null
+          score_marketing?: number | null
           telefone?: string | null
           telefone_e164?: string | null
           telefone_validado_em?: string | null

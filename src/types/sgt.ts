@@ -100,17 +100,37 @@ export interface DadosBlue {
 }
 
 // ========================================
+// Dados LinkedIn (dados_linkedin)
+// ========================================
+export interface DadosLinkedin {
+  url?: string;
+  cargo?: string;
+  empresa?: string;
+  setor?: string;
+  senioridade?: string;
+  conexoes?: number;
+}
+
+// ========================================
+// Prioridade Marketing do SGT
+// ========================================
+export type PrioridadeMarketing = 'URGENTE' | 'QUENTE' | 'MORNO' | 'FRIO';
+
+// ========================================
 // Dados Mautic (dados_mautic)
 // ========================================
 export interface DadosMautic {
-  contact_id?: number;
+  contact_id?: number | string;
   score?: number;
   page_hits?: number;
   email_opens?: number;
   email_clicks?: number;
   last_active?: string;
-  tags?: string[];
-  segments?: string[];
+  first_visit?: string;
+  tags?: unknown;
+  segments?: unknown;
+  cidade?: string;
+  estado?: string;
 }
 
 // ========================================
@@ -119,8 +139,14 @@ export interface DadosMautic {
 export interface DadosChatwoot {
   contact_id?: number;
   mensagens_total?: number;
+  conversas_total?: number;
   ultima_mensagem_em?: string;
+  ultima_conversa?: string;
   status_conversa?: string;
+  status_atendimento?: string;
+  tempo_resposta_medio?: number;
+  agente_atual?: string;
+  inbox?: string;
   canal?: string;
 }
 
@@ -159,8 +185,15 @@ export interface SGTPayload {
   empresa: EmpresaTipo;
   timestamp: string;
   
+  // Score de marketing (SGT)
+  score_temperatura?: number;
+  prioridade?: PrioridadeMarketing;
+  
   // Dados obrigatórios
   dados_lead: DadosLead;
+  
+  // Dados LinkedIn
+  dados_linkedin?: DadosLinkedin;
   
   // Dados específicos por empresa
   dados_tokeniza?: DadosTokeniza;
