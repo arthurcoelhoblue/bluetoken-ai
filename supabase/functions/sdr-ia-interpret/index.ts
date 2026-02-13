@@ -4290,9 +4290,10 @@ serve(async (req) => {
         leadNome,
         cadenciaNome,
         classificacao,
-        conversationState,
         pessoaContext,
-        source
+        conversationState,
+        mode,
+        triageSummary
       );
 
       // Override: never respond in MANUAL mode
