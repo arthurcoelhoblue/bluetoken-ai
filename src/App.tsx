@@ -40,6 +40,7 @@ import TemplatesPage from "./pages/TemplatesPage";
 import IntegracoesPage from "./pages/IntegracoesPage";
 import PipelineConfigPage from "./pages/PipelineConfigPage";
 import CustomFieldsConfigPage from "./pages/CustomFieldsConfigPage";
+import OrganizationsPage from "./pages/OrganizationsPage";
 
 const queryClient = new QueryClient();
 
@@ -62,6 +63,7 @@ const App = () => (
             {/* Shell pages — Patch 0 */}
             <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
             <Route path="/contatos" element={<ProtectedRoute><ContatosPage /></ProtectedRoute>} />
+            <Route path="/organizacoes" element={<ProtectedRoute><OrganizationsPage /></ProtectedRoute>} />
             <Route path="/conversas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ConversasPage /></ProtectedRoute>} />
             <Route path="/metas" element={<ProtectedRoute><MetasPage /></ProtectedRoute>} />
             <Route path="/renovacao" element={<ProtectedRoute><RenovacaoPage /></ProtectedRoute>} />
