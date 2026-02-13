@@ -20,7 +20,7 @@ export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <button className="flex items-center gap-2 w-full px-2 py-1.5 rounded-md hover:bg-sidebar-accent transition-colors text-sidebar-foreground text-sm">
+        <button className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg border border-sidebar-border bg-sidebar-accent/30 hover:bg-sidebar-accent transition-colors text-sidebar-foreground text-sm shadow-sm">
           <div className={`h-5 w-5 rounded flex items-center justify-center shrink-0 ${current.color}`}>
             <Building2 className="h-3 w-3 text-primary-foreground" />
           </div>

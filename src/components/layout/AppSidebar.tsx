@@ -168,8 +168,8 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       {/* Header */}
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-3 px-2 py-2">
+      <SidebarHeader className="border-b border-sidebar-border pb-4">
+        <div className="flex items-center gap-3 px-2 py-3">
           <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shrink-0">
             <Bot className="h-5 w-5 text-primary-foreground" />
           </div>
@@ -180,11 +180,13 @@ export function AppSidebar() {
             </div>
           )}
         </div>
-        <CompanySwitcher collapsed={collapsed} />
+        <div className="px-2 mt-2">
+          <CompanySwitcher collapsed={collapsed} />
+        </div>
       </SidebarHeader>
 
       {/* Navigation */}
-      <SidebarContent>
+      <SidebarContent className="pt-2">
         {navGroups.map((group) => {
           if (!hasGroupAccess(group)) return null;
           const visibleItems = group.items.filter(item => hasAccess(item));
@@ -259,7 +261,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Footer - User */}
-      <SidebarFooter className="border-t border-sidebar-border">
+      <SidebarFooter className="border-t border-sidebar-border pt-3 pb-3">
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Meu Perfil">
@@ -284,6 +286,7 @@ export function AppSidebar() {
               </button>
             </SidebarMenuButton>
           </SidebarMenuItem>
+          <SidebarSeparator className="my-2" />
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Sair">
               <button onClick={handleSignOut} className="text-destructive hover:text-destructive">
