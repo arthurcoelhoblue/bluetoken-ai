@@ -496,6 +496,211 @@ export type Database = {
           },
         ]
       }
+      capture_form_submissions: {
+        Row: {
+          answers: Json
+          contact_id: string | null
+          created_at: string
+          deal_id: string | null
+          empresa: string
+          form_id: string
+          id: string
+          metadata: Json | null
+          rating_score: number | null
+        }
+        Insert: {
+          answers?: Json
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          empresa: string
+          form_id: string
+          id?: string
+          metadata?: Json | null
+          rating_score?: number | null
+        }
+        Update: {
+          answers?: Json
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          empresa?: string
+          form_id?: string
+          id?: string
+          metadata?: Json | null
+          rating_score?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_form_submissions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_form_submissions_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_form_submissions_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_form_submissions_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_form_submissions_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "capture_form_submissions_form_id_fkey"
+            columns: ["form_id"]
+            isOneToOne: false
+            referencedRelation: "capture_forms"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capture_forms: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          empresa: string
+          fields: Json
+          id: string
+          nome: string
+          pipeline_id: string | null
+          settings: Json
+          slug: string
+          stage_id: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa: string
+          fields?: Json
+          id?: string
+          nome: string
+          pipeline_id?: string | null
+          settings?: Json
+          slug: string
+          stage_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa?: string
+          fields?: Json
+          id?: string
+          nome?: string
+          pipeline_id?: string | null
+          settings?: Json
+          slug?: string
+          stage_id?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capture_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_forms_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "capture_forms_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "capture_forms_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+        ]
+      }
       closer_notifications: {
         Row: {
           closer_email: string | null

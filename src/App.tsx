@@ -47,6 +47,9 @@ import AnalyticsPage from "./pages/AnalyticsPage";
 import CadenciasCRMPage from "./pages/CadenciasPage";
 import ImportacaoPage from "./pages/ImportacaoPage";
 import ZadarmaConfigPage from "./pages/ZadarmaConfigPage";
+import CaptureFormsPage from "./pages/CaptureFormsPage";
+import CaptureFormBuilderPage from "./pages/CaptureFormBuilderPage";
+import PublicFormPage from "./pages/PublicFormPage";
 
 const queryClient = new QueryClient();
 
@@ -81,6 +84,8 @@ const App = () => (
             <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/cadencias-crm" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenciasCRMPage /></ProtectedRoute>} />
+            <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormsPage /></ProtectedRoute>} />
+            <Route path="/capture-forms/:id/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormBuilderPage /></ProtectedRoute>} />
             
             {/* Admin/Auditor routes */}
             <Route path="/monitor/sgt-events" element={
@@ -118,6 +123,9 @@ const App = () => (
             <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ImportacaoPage /></ProtectedRoute>} />
             <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ZadarmaConfigPage /></ProtectedRoute>} />
             
+            {/* Public form route */}
+            <Route path="/f/:slug" element={<PublicFormPage />} />
+
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />
           </Routes>
