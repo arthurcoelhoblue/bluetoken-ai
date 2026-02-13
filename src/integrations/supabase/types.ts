@@ -358,6 +358,187 @@ export type Database = {
         }
         Relationships: []
       }
+      comissao_lancamentos: {
+        Row: {
+          aprovado_em: string | null
+          aprovado_por: string | null
+          comissao_valor: number
+          created_at: string
+          deal_id: string
+          deal_valor: number
+          empresa: string
+          id: string
+          pago_em: string | null
+          percentual_aplicado: number | null
+          referencia_ano: number
+          referencia_mes: number
+          regra_id: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          comissao_valor: number
+          created_at?: string
+          deal_id: string
+          deal_valor: number
+          empresa: string
+          id?: string
+          pago_em?: string | null
+          percentual_aplicado?: number | null
+          referencia_ano: number
+          referencia_mes: number
+          regra_id: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          comissao_valor?: number
+          created_at?: string
+          deal_id?: string
+          deal_valor?: number
+          empresa?: string
+          id?: string
+          pago_em?: string | null
+          percentual_aplicado?: number | null
+          referencia_ano?: number
+          referencia_mes?: number
+          regra_id?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissao_lancamentos_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_regra_id_fkey"
+            columns: ["regra_id"]
+            isOneToOne: false
+            referencedRelation: "comissao_regras"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      comissao_regras: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          empresa: string
+          escalas: Json | null
+          id: string
+          nome: string
+          percentual: number | null
+          pipeline_id: string | null
+          tipo: string
+          updated_at: string
+          valor_fixo: number | null
+          valor_minimo_deal: number | null
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          empresa: string
+          escalas?: Json | null
+          id?: string
+          nome: string
+          percentual?: number | null
+          pipeline_id?: string | null
+          tipo: string
+          updated_at?: string
+          valor_fixo?: number | null
+          valor_minimo_deal?: number | null
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          empresa?: string
+          escalas?: Json | null
+          id?: string
+          nome?: string
+          percentual?: number | null
+          pipeline_id?: string | null
+          tipo?: string
+          updated_at?: string
+          valor_fixo?: number | null
+          valor_minimo_deal?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissao_regras_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "comissao_regras_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_regras_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       contacts: {
         Row: {
           canal_origem: string | null
@@ -1977,6 +2158,57 @@ export type Database = {
         }
         Relationships: []
       }
+      metas_vendedor: {
+        Row: {
+          ano: number
+          created_at: string
+          empresa: string
+          id: string
+          mes: number
+          meta_deals: number
+          meta_valor: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ano: number
+          created_at?: string
+          empresa: string
+          id?: string
+          mes: number
+          meta_deals?: number
+          meta_valor?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ano?: number
+          created_at?: string
+          empresa?: string
+          id?: string
+          mes?: number
+          meta_deals?: number
+          meta_valor?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       organizations: {
         Row: {
           ativo: boolean
@@ -2727,6 +2959,38 @@ export type Database = {
         }
         Relationships: []
       }
+      comissao_resumo_mensal: {
+        Row: {
+          ano: number | null
+          aprovados: number | null
+          comissao_total: number | null
+          empresa: string | null
+          mes: number | null
+          pagos: number | null
+          pendentes: number | null
+          user_id: string | null
+          valor_aprovado: number | null
+          valor_pago: number | null
+          valor_pendente: number | null
+          vendedor_nome: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       contacts_with_stats: {
         Row: {
           canal_origem: string | null
@@ -3054,6 +3318,41 @@ export type Database = {
             columns: ["stage_origem_id"]
             isOneToOne: false
             referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      meta_progresso: {
+        Row: {
+          ano: number | null
+          comissao_mes: number | null
+          empresa: string | null
+          mes: number | null
+          meta_deals: number | null
+          meta_id: string | null
+          meta_valor: number | null
+          pct_deals: number | null
+          pct_valor: number | null
+          pipeline_aberto: number | null
+          realizado_deals: number | null
+          realizado_valor: number | null
+          user_id: string | null
+          vendedor_avatar: string | null
+          vendedor_nome: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
