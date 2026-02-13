@@ -39,9 +39,10 @@ interface DealCardProps {
   deal: DealWithRelations;
   overlay?: boolean;
   currentStage?: PipelineStage;
+  onDealClick?: (dealId: string) => void;
 }
 
-export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
+export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: deal.id,
     data: { type: 'deal', deal },
@@ -143,6 +144,7 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
         style={overlay ? undefined : style}
         {...(overlay ? {} : { ...attributes, ...listeners })}
         className={`p-3 cursor-grab active:cursor-grabbing space-y-2 hover:shadow-md transition-shadow border-border/60 ${isClosed ? 'ring-1 ring-muted' : ''}`}
+        onClick={() => onDealClick?.(deal.id)}
       >
         <div className="flex items-start justify-between gap-2">
           <span className="font-medium text-sm leading-tight line-clamp-2">{deal.titulo}</span>

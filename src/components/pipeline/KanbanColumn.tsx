@@ -10,9 +10,10 @@ function formatBRL(value: number) {
 
 interface KanbanColumnProps {
   column: KanbanColumnType;
+  onDealClick?: (dealId: string) => void;
 }
 
-export function KanbanColumn({ column }: KanbanColumnProps) {
+export function KanbanColumn({ column, onDealClick }: KanbanColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.stage.id });
   const dealIds = column.deals.map(d => d.id);
 
@@ -39,7 +40,7 @@ export function KanbanColumn({ column }: KanbanColumnProps) {
         >
           <SortableContext items={dealIds} strategy={verticalListSortingStrategy}>
             {column.deals.map(deal => (
-              <DealCard key={deal.id} deal={deal} currentStage={column.stage} />
+              <DealCard key={deal.id} deal={deal} currentStage={column.stage} onDealClick={onDealClick} />
             ))}
           </SortableContext>
 

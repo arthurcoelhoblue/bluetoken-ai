@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
@@ -27,6 +28,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
   const update = useUpdateContactPage();
   const [editField, setEditField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   const startEdit = (field: string, currentValue: string) => {
     setEditField(field);
@@ -144,7 +146,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                   <p className="text-sm text-muted-foreground text-center py-8">Nenhum deal vinculado.</p>
                 ) : (
                   deals.map((d: any) => (
-                    <Card key={d.id} className="cursor-default">
+                    <Card key={d.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedDealId(d.id)}>
                       <CardContent className="p-3">
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
@@ -188,6 +190,12 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
           <p className="text-center text-muted-foreground py-12">Contato não encontrado.</p>
         )}
       </SheetContent>
+
+      <DealDetailSheet
+        dealId={selectedDealId}
+        open={!!selectedDealId}
+        onOpenChange={open => !open && setSelectedDealId(null)}
+      />
     </Sheet>
   );
 }
