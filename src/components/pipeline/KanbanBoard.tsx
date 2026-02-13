@@ -83,24 +83,26 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-4 overflow-x-auto pb-4 min-h-[400px]">
-        {columns.map(col => (
-          <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-        ))}
-      </div>
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="flex gap-4 pb-4 min-h-[400px]" style={{ minWidth: 'max-content' }}>
+          {columns.map(col => (
+            <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+          ))}
+        </div>
 
-      {wonLost.some(c => c.deals.length > 0) && (
-        <>
-          <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Encerrados
-          </div>
-          <div className="flex gap-4 overflow-x-auto pb-4">
-            {wonLost.map(col => (
-              <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-            ))}
-          </div>
-        </>
-      )}
+        {wonLost.some(c => c.deals.length > 0) && (
+          <>
+            <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Encerrados
+            </div>
+            <div className="flex gap-4 pb-4" style={{ minWidth: 'max-content' }}>
+              {wonLost.map(col => (
+                <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
 
       <DragOverlay>
         {activeDeal ? <DealCard deal={activeDeal} overlay /> : null}
