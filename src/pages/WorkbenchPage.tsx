@@ -81,9 +81,9 @@ function WorkbenchContent() {
 
   return (
     <>
-      <div className="p-8 space-y-0">
+      <div className="p-8 lg:p-10 space-y-10">
         {/* Greeting */}
-        <div className="mb-8">
+        <div>
           <h2 className="text-2xl font-bold tracking-tight">
             {getGreeting()}, {profile?.nome?.split(' ')[0] ?? 'Usuário'}
           </h2>
@@ -107,7 +107,7 @@ function WorkbenchContent() {
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
           <KPICard
             title="Pipeline Aberto"
             value={formatBRL(totalAberto)}
@@ -136,13 +136,13 @@ function WorkbenchContent() {
         </div>
 
         {/* Gamificação Mini Card */}
-        <div className="mb-8">
+        <div>
           <WorkbenchGamificationCard />
         </div>
 
         {/* Pendências do Gestor */}
         {canViewPendencias && pendencyCount > 0 && (
-          <Card className="border-warning/50 mb-8">
+          <Card className="border-warning/50">
             <CardContent className="p-5 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
@@ -267,7 +267,7 @@ function WorkbenchContent() {
         </div>
 
         {/* Meus Pipelines */}
-        <div className="mt-8">
+        <div>
           <h3 className="text-base font-semibold mb-4">Meus Pipelines</h3>
           {loadingPipelines ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -309,7 +309,7 @@ function WorkbenchContent() {
         </div>
 
         {/* Deals Recentes */}
-        <div className="mt-8">
+        <div>
           <h3 className="text-base font-semibold mb-4">Deals Recentes (7 dias)</h3>
           {loadingRecent ? (
             <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
