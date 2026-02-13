@@ -953,6 +953,40 @@ serve(async (req) => {
     if (triageSummary && !isReturningLead) {
       console.log('[BlueChat] Resumo de triagem detectado para lead:', leadContact.lead_id);
       await enrichLeadFromTriage(supabase, leadContact, triageSummary);
+      
+      // MUDANÇA 1: Reset de estado ESCALAR_IMEDIATO no [NOVO ATENDIMENTO]
+      try {
+        const { data: convStateForReset } = await supabase
+          .from('lead_conversation_state')
+          .select('ultima_pergunta_id, estado_funil, framework_data')
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa)
+          .maybeSingle();
+        
+        if (convStateForReset) {
+          const needsReset = 
+            convStateForReset.ultima_pergunta_id === 'ESCALAR_IMEDIATO' ||
+            convStateForReset.estado_funil === 'ESCALAR_IMEDIATO' ||
+            ['POS_VENDA', 'FECHAMENTO'].includes(convStateForReset.estado_funil || '');
+          
+          if (needsReset) {
+            const fwData = (convStateForReset.framework_data as Record<string, unknown>) || {};
+            await supabase
+              .from('lead_conversation_state')
+              .update({
+                ultima_pergunta_id: 'NENHUMA',
+                estado_funil: 'DIAGNOSTICO',
+                framework_data: { ...fwData, ia_null_count: 0, ticket_resolved: false },
+                updated_at: new Date().toISOString(),
+              })
+              .eq('lead_id', leadContact.lead_id)
+              .eq('empresa', empresa);
+            console.log('[Triage] Estado ESCALAR_IMEDIATO/terminal resetado para novo atendimento');
+          }
+        }
+      } catch (resetErr) {
+        console.error('[Triage] Erro ao resetar estado:', resetErr);
+      }
     } else if (triageSummary && isReturningLead) {
       console.log('[BlueChat] Lead retornando - NÃO tratando como novo atendimento');
     }
@@ -1003,11 +1037,29 @@ serve(async (req) => {
     
     const isClosingIntent = closingIntents.includes(iaResult?.intent || '');
     const hasClosingKeyword = closingKeywords.some(kw => messageText.includes(kw));
-    const isClosingFunnel = false; // Será true se estado_funil for POS_VENDA ou FECHAMENTO (checado abaixo)
+    
+    // MUDANÇA 3: Proteção contra agradecimento à MarIA
+    // Se triageSummary detectado ou Amélia tem < 3 mensagens OUTBOUND, NÃO tratar como encerramento
+    let ameliaOutboundCount = 0;
+    if (isClosingIntent || hasClosingKeyword) {
+      const { count } = await supabase
+        .from('lead_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .eq('direcao', 'OUTBOUND')
+        .eq('sender_type', 'AMELIA');
+      ameliaOutboundCount = count || 0;
+    }
+    
+    const isThankingMarIA = (triageSummary || ameliaOutboundCount < 3) && (isClosingIntent || hasClosingKeyword);
+    if (isThankingMarIA) {
+      console.log('[BlueChat] 🛡️ Agradecimento detectado mas Amélia tem <3 OUTBOUND ou triageSummary presente → NÃO tratando como encerramento');
+    }
     
     // Verificar estado do funil para contexto de encerramento
     let funnelClosing = false;
-    if (iaResult && (isClosingIntent || hasClosingKeyword)) {
+    if (iaResult && (isClosingIntent || hasClosingKeyword) && !isThankingMarIA) {
       const { data: convState } = await supabase
         .from('lead_conversation_state')
         .select('estado_funil')
@@ -1018,8 +1070,8 @@ serve(async (req) => {
       funnelClosing = ['POS_VENDA', 'FECHAMENTO'].includes(convState?.estado_funil || '');
     }
     
-    // Decidir se é encerramento: intent de despedida + (keyword OU funil avançado)
-    const isConversationEnding = isClosingIntent && (hasClosingKeyword || funnelClosing);
+    // Decidir se é encerramento: intent de despedida + (keyword OU funil avançado) + NÃO é agradecimento à MarIA
+    const isConversationEnding = !isThankingMarIA && isClosingIntent && (hasClosingKeyword || funnelClosing);
     
     // Gerar resolution se for encerramento
     let resolution: { summary: string; reason: string } | undefined;
@@ -1245,8 +1297,27 @@ serve(async (req) => {
       }
     }
 
+    // MUDANÇA 4: Verificar ticket resolvido antes de enviar callback
+    // Se ticket já foi resolvido (flag ticket_resolved em framework_data), Amélia fica muda
+    let ticketAlreadyResolved = false;
+    try {
+      const { data: stateForTicket } = await supabase
+        .from('lead_conversation_state')
+        .select('framework_data')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+      const fwTicket = (stateForTicket?.framework_data as Record<string, unknown>) || {};
+      ticketAlreadyResolved = fwTicket.ticket_resolved === true;
+    } catch (_) { /* non-critical */ }
+    
+    if (ticketAlreadyResolved) {
+      console.log('[BlueChat] 🔇 Ticket já resolvido, Amélia ficando muda');
+      response.action = 'QUALIFY_ONLY';
+    }
+
     // 9. Callback: enviar resposta/escalação de volta ao Blue Chat via API (SEMPRE que houver texto)
-    if (responseText) {
+    if (responseText && !ticketAlreadyResolved) {
       await sendResponseToBluechat(supabase, {
         conversation_id: payload.conversation_id,
         ticket_id: payload.ticket_id,
@@ -1257,6 +1328,25 @@ serve(async (req) => {
         empresa,
         department: action === 'ESCALATE' ? departamentoDestino : undefined,
       });
+      
+      // Se ação é RESOLVE, marcar ticket_resolved no framework_data
+      if (response.action === 'RESOLVE') {
+        try {
+          const { data: stateForResolve } = await supabase
+            .from('lead_conversation_state')
+            .select('framework_data')
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa)
+            .maybeSingle();
+          const fwResolve = (stateForResolve?.framework_data as Record<string, unknown>) || {};
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwResolve, ticket_resolved: true } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+          console.log('[BlueChat] ✅ Flag ticket_resolved setada');
+        } catch (_) { /* non-critical */ }
+      }
     }
     
     console.log('[BlueChat] Resposta:', {
