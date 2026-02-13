@@ -271,6 +271,7 @@ export type Database = {
           endereco: string | null
           foto_url: string | null
           id: string
+          is_active: boolean
           is_cliente: boolean
           legacy_lead_id: string | null
           nome: string
@@ -296,6 +297,7 @@ export type Database = {
           endereco?: string | null
           foto_url?: string | null
           id?: string
+          is_active?: boolean
           is_cliente?: boolean
           legacy_lead_id?: string | null
           nome: string
@@ -321,6 +323,7 @@ export type Database = {
           endereco?: string | null
           foto_url?: string | null
           id?: string
+          is_active?: boolean
           is_cliente?: boolean
           legacy_lead_id?: string | null
           nome?: string
@@ -343,6 +346,13 @@ export type Database = {
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_with_stats"
             referencedColumns: ["id"]
           },
           {
@@ -781,10 +791,24 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "deals_organization_id_fkey"
             columns: ["organization_id"]
             isOneToOne: false
             referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_with_stats"
             referencedColumns: ["id"]
           },
           {
@@ -2019,7 +2043,111 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      contacts_with_stats: {
+        Row: {
+          canal_origem: string | null
+          cpf: string | null
+          created_at: string | null
+          deals_abertos: number | null
+          deals_count: number | null
+          deals_valor_total: number | null
+          email: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          endereco: string | null
+          foto_url: string | null
+          id: string | null
+          is_active: boolean | null
+          is_cliente: boolean | null
+          legacy_lead_id: string | null
+          nome: string | null
+          notas: string | null
+          org_nome: string | null
+          org_nome_fantasia: string | null
+          organization_id: string | null
+          owner_avatar: string | null
+          owner_id: string | null
+          owner_nome: string | null
+          pessoa_id: string | null
+          primeiro_nome: string | null
+          rg: string | null
+          sobrenome: string | null
+          tags: string[] | null
+          telefone: string | null
+          telegram: string | null
+          tipo: string | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_pessoa_id_fkey"
+            columns: ["pessoa_id"]
+            isOneToOne: false
+            referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      organizations_with_stats: {
+        Row: {
+          ativo: boolean | null
+          cep: string | null
+          cidade: string | null
+          cnpj: string | null
+          contacts_count: number | null
+          created_at: string | null
+          deals_abertos: number | null
+          deals_count: number | null
+          deals_valor_total: number | null
+          email: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          endereco: string | null
+          estado: string | null
+          id: string | null
+          nome: string | null
+          nome_fantasia: string | null
+          notas: string | null
+          owner_avatar: string | null
+          owner_id: string | null
+          owner_nome: string | null
+          pais: string | null
+          porte: string | null
+          setor: string | null
+          tags: string[] | null
+          telefone: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       get_user_roles: {
