@@ -230,8 +230,22 @@ export type Database = {
             foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }
@@ -1001,8 +1015,22 @@ export type Database = {
             foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
             columns: ["trigger_stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }
@@ -1094,8 +1122,22 @@ export type Database = {
             foreignKeyName: "deal_stage_history_from_stage_id_fkey"
             columns: ["from_stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deal_stage_history_moved_by_fkey"
@@ -1122,8 +1164,22 @@ export type Database = {
             foreignKeyName: "deal_stage_history_to_stage_id_fkey"
             columns: ["to_stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }
@@ -1358,8 +1414,22 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_id_fkey"
@@ -1372,8 +1442,22 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_origem_id_fkey"
@@ -1386,8 +1470,22 @@ export type Database = {
             foreignKeyName: "deals_stage_origem_id_fkey"
             columns: ["stage_origem_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }
@@ -2224,6 +2322,98 @@ export type Database = {
           {
             foreignKeyName: "lead_messages_sender_id_fkey"
             columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      mass_action_jobs: {
+        Row: {
+          cadence_id: string | null
+          canal: string
+          completed_at: string | null
+          created_at: string
+          deal_ids: string[]
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          failed: number
+          id: string
+          instrucao: string | null
+          messages_preview: Json | null
+          processed: number
+          started_at: string | null
+          started_by: string | null
+          status: string
+          succeeded: number
+          tipo: string
+          total: number
+          updated_at: string
+        }
+        Insert: {
+          cadence_id?: string | null
+          canal?: string
+          completed_at?: string | null
+          created_at?: string
+          deal_ids?: string[]
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          failed?: number
+          id?: string
+          instrucao?: string | null
+          messages_preview?: Json | null
+          processed?: number
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          succeeded?: number
+          tipo: string
+          total?: number
+          updated_at?: string
+        }
+        Update: {
+          cadence_id?: string | null
+          canal?: string
+          completed_at?: string | null
+          created_at?: string
+          deal_ids?: string[]
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          failed?: number
+          id?: string
+          instrucao?: string | null
+          messages_preview?: Json | null
+          processed?: number
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          succeeded?: number
+          tipo?: string
+          total?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "mass_action_jobs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadencias_crm"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_started_by_fkey"
+            columns: ["started_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -3229,8 +3419,22 @@ export type Database = {
             foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
             columns: ["trigger_stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "lead_cadence_runs_cadence_id_fkey"
@@ -3403,8 +3607,22 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_id_fkey"
@@ -3417,8 +3635,22 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_origem_id_fkey"
@@ -3431,8 +3663,22 @@ export type Database = {
             foreignKeyName: "deals_stage_origem_id_fkey"
             columns: ["stage_origem_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }
@@ -3557,6 +3803,92 @@ export type Database = {
           },
         ]
       }
+      pipeline_stage_projection: {
+        Row: {
+          deals_count: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          owner_id: string | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          stage_id: string | null
+          stage_nome: string | null
+          taxa_conversao: number | null
+          valor_projetado: number | null
+          valor_total: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      stage_conversion_rates: {
+        Row: {
+          deals_ganhos: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          stage_id: string | null
+          stage_nome: string | null
+          taxa_conversao: number | null
+          total_deals: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       workbench_pipeline_summary: {
         Row: {
           deals_abertos: number | null
@@ -3630,8 +3962,22 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
           },
         ]
       }

@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.copilot-chat]
 verify_jwt = false
+
+[functions.amelia-mass-action]
+verify_jwt = false
