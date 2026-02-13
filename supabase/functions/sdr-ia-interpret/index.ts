@@ -4277,6 +4277,57 @@ serve(async (req) => {
       );
     }
 
+    // PATCH 3: Check MANUAL mode — skip AI response generation but still log intent
+    const modoAtendimento = (conversationState as any)?.modo || 'SDR_IA';
+    if (modoAtendimento === 'MANUAL') {
+      console.log('[SDR-IA] 🚫 Modo MANUAL — registrando intent sem gerar resposta automática');
+      
+      // Still interpret for intent logging purposes, but force no response
+      const { response: aiResponse, tokensUsados, tempoMs, modeloUsado } = await interpretWithAI(
+        message.conteudo,
+        message.empresa,
+        historico,
+        leadNome,
+        cadenciaNome,
+        classificacao,
+        conversationState,
+        pessoaContext,
+        source
+      );
+
+      // Override: never respond in MANUAL mode
+      aiResponse.deve_responder = false;
+      aiResponse.acao = 'NENHUMA';
+
+      const intentId = await saveInterpretation(
+        supabase,
+        message,
+        aiResponse,
+        tokensUsados,
+        tempoMs,
+        false,
+        false,
+        null,
+        modeloUsado
+      );
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          intentId,
+          intent: aiResponse.intent,
+          confidence: aiResponse.confidence,
+          acao: 'NENHUMA',
+          acaoAplicada: false,
+          respostaEnviada: false,
+          responseText: null,
+          modoManual: true,
+          message: 'Modo MANUAL ativo — resposta automática suprimida',
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     // 3. Interpretar com IA
     const { response: aiResponse, tokensUsados, tempoMs, modeloUsado } = await interpretWithAI(
       message.conteudo,

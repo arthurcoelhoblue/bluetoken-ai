@@ -2,7 +2,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "@/contexts/AuthContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import Index from "./pages/Index";
@@ -62,7 +62,7 @@ const App = () => (
             {/* Shell pages — Patch 0 */}
             <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
             <Route path="/contatos" element={<ProtectedRoute><ContatosPage /></ProtectedRoute>} />
-            <Route path="/conversas" element={<ProtectedRoute><ConversasPage /></ProtectedRoute>} />
+            <Route path="/conversas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ConversasPage /></ProtectedRoute>} />
             <Route path="/metas" element={<ProtectedRoute><MetasPage /></ProtectedRoute>} />
             <Route path="/renovacao" element={<ProtectedRoute><RenovacaoPage /></ProtectedRoute>} />
             <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><CockpitPage /></ProtectedRoute>} />
@@ -75,10 +75,8 @@ const App = () => (
               <ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}><MonitorSgtEvents /></ProtectedRoute>
             } />
             
-            {/* Atendimentos Blue Chat */}
-            <Route path="/atendimentos" element={
-              <ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><Atendimentos /></ProtectedRoute>
-            } />
+            {/* Atendimentos redirect → Conversas */}
+            <Route path="/atendimentos" element={<Navigate to="/conversas" replace />} />
             
             {/* Leads routes */}
             <Route path="/leads" element={<ProtectedRoute><LeadsList /></ProtectedRoute>} />

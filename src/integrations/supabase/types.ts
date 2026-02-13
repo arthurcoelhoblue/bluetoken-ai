@@ -361,6 +361,100 @@ export type Database = {
           },
         ]
       }
+      conversation_takeover_log: {
+        Row: {
+          acao: string
+          canal: Database["public"]["Enums"]["canal_tipo"]
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          lead_id: string
+          motivo: string | null
+          user_id: string
+        }
+        Insert: {
+          acao: string
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          lead_id: string
+          motivo?: string | null
+          user_id: string
+        }
+        Update: {
+          acao?: string
+          canal?: Database["public"]["Enums"]["canal_tipo"]
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          lead_id?: string
+          motivo?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "conversation_takeover_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      copilot_messages: {
+        Row: {
+          content: string
+          context_id: string | null
+          context_type: string
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          latency_ms: number | null
+          model_used: string | null
+          role: string
+          tokens_input: number | null
+          tokens_output: number | null
+          user_id: string
+        }
+        Insert: {
+          content: string
+          context_id?: string | null
+          context_type: string
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          latency_ms?: number | null
+          model_used?: string | null
+          role: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id: string
+        }
+        Update: {
+          content?: string
+          context_id?: string | null
+          context_type?: string
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          latency_ms?: number | null
+          model_used?: string | null
+          role?: string
+          tokens_input?: number | null
+          tokens_output?: number | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "copilot_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_field_definitions: {
         Row: {
           created_at: string
@@ -1156,8 +1250,11 @@ export type Database = {
       }
       lead_conversation_state: {
         Row: {
+          assumido_em: string | null
+          assumido_por: string | null
           canal: Database["public"]["Enums"]["canal_tipo"]
           created_at: string
+          devolvido_em: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           empresa_proxima_msg:
             | Database["public"]["Enums"]["empresa_tipo"]
@@ -1168,14 +1265,19 @@ export type Database = {
           id: string
           idioma_preferido: string
           lead_id: string
+          modo: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc: string | null
+          perfil_investidor: string | null
           ultima_pergunta_id: string | null
           ultimo_contato_em: string
           updated_at: string
         }
         Insert: {
+          assumido_em?: string | null
+          assumido_por?: string | null
           canal?: Database["public"]["Enums"]["canal_tipo"]
           created_at?: string
+          devolvido_em?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           empresa_proxima_msg?:
             | Database["public"]["Enums"]["empresa_tipo"]
@@ -1186,14 +1288,19 @@ export type Database = {
           id?: string
           idioma_preferido?: string
           lead_id: string
+          modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
+          perfil_investidor?: string | null
           ultima_pergunta_id?: string | null
           ultimo_contato_em?: string
           updated_at?: string
         }
         Update: {
+          assumido_em?: string | null
+          assumido_por?: string | null
           canal?: Database["public"]["Enums"]["canal_tipo"]
           created_at?: string
+          devolvido_em?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           empresa_proxima_msg?:
             | Database["public"]["Enums"]["empresa_tipo"]
@@ -1204,12 +1311,22 @@ export type Database = {
           id?: string
           idioma_preferido?: string
           lead_id?: string
+          modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
+          perfil_investidor?: string | null
           ultima_pergunta_id?: string | null
           ultimo_contato_em?: string
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "lead_conversation_state_assumido_por_fkey"
+            columns: ["assumido_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       lead_message_intents: {
         Row: {
@@ -1303,6 +1420,8 @@ export type Database = {
           lido_em: string | null
           recebido_em: string | null
           run_id: string | null
+          sender_id: string | null
+          sender_type: string
           step_ordem: number | null
           template_codigo: string | null
           updated_at: string
@@ -1324,6 +1443,8 @@ export type Database = {
           lido_em?: string | null
           recebido_em?: string | null
           run_id?: string | null
+          sender_id?: string | null
+          sender_type?: string
           step_ordem?: number | null
           template_codigo?: string | null
           updated_at?: string
@@ -1345,6 +1466,8 @@ export type Database = {
           lido_em?: string | null
           recebido_em?: string | null
           run_id?: string | null
+          sender_id?: string | null
+          sender_type?: string
           step_ordem?: number | null
           template_codigo?: string | null
           updated_at?: string
@@ -1356,6 +1479,13 @@ export type Database = {
             columns: ["run_id"]
             isOneToOne: false
             referencedRelation: "lead_cadence_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1909,6 +2039,7 @@ export type Database = {
       }
     }
     Enums: {
+      atendimento_modo: "SDR_IA" | "MANUAL" | "HIBRIDO"
       cadence_event_tipo:
         | "AGENDADO"
         | "DISPARADO"
@@ -2152,6 +2283,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      atendimento_modo: ["SDR_IA", "MANUAL", "HIBRIDO"],
       cadence_event_tipo: [
         "AGENDADO",
         "DISPARADO",

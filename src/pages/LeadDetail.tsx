@@ -19,7 +19,7 @@ import { EditClassificationModal } from '@/components/leads/EditClassificationMo
 import { ClassificationExplanation } from '@/components/leads/ClassificationExplanation';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
-import { ConversationView } from '@/components/messages/ConversationView';
+import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
@@ -357,15 +357,19 @@ function LeadDetailContent() {
             </CardContent>
           </Card>
 
-          {/* Conversation View - Melhorado */}
-          <ConversationView
+          {/* Conversation Panel — Patch 3 */}
+          <ConversationPanel
+            leadId={leadId || ''}
+            empresa={empresa || ''}
+            telefone={contact.telefone}
+            leadNome={contact.nome || contact.primeiro_nome}
             messages={messages}
             isLoading={messagesLoading}
             error={messagesError as Error | null}
             onRetry={() => refetchMessages()}
-            leadNome={contact.nome || contact.primeiro_nome}
+            modo={(conversationState as any)?.modo || 'SDR_IA'}
+            assumidoPorNome={null}
             maxHeight="500px"
-            emptyMessage="Nenhuma mensagem enviada para este lead."
           />
 
           {/* PATCH 6: Estado da Conversa */}
