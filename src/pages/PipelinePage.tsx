@@ -6,6 +6,7 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
+import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { Kanban } from 'lucide-react';
 
 function PipelineContent() {
@@ -15,6 +16,7 @@ function PipelineContent() {
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   useEffect(() => {
     if (pipelines && pipelines.length > 0) {
@@ -68,6 +70,13 @@ function PipelineContent() {
             columns={columns}
             wonLost={wonLost}
             isLoading={dealsLoading}
+            onDealClick={setSelectedDealId}
+          />
+
+          <DealDetailSheet
+            dealId={selectedDealId}
+            open={!!selectedDealId}
+            onOpenChange={open => !open && setSelectedDealId(null)}
           />
 
           {selectedPipeline && (

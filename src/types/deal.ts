@@ -129,6 +129,9 @@ export interface DealFormData {
   valor?: number;
   owner_id?: string;
   temperatura?: 'FRIO' | 'MORNO' | 'QUENTE';
+  canal_origem?: string;
+  notas?: string;
+  data_previsao_fechamento?: string;
 }
 
 export interface DealMoveData {

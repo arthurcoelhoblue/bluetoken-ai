@@ -566,6 +566,57 @@ export type Database = {
           },
         ]
       }
+      deal_activities: {
+        Row: {
+          created_at: string
+          deal_id: string
+          descricao: string | null
+          id: string
+          metadata: Json | null
+          tarefa_concluida: boolean | null
+          tarefa_prazo: string | null
+          tipo: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          deal_id: string
+          descricao?: string | null
+          id?: string
+          metadata?: Json | null
+          tarefa_concluida?: boolean | null
+          tarefa_prazo?: string | null
+          tipo: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          deal_id?: string
+          descricao?: string | null
+          id?: string
+          metadata?: Json | null
+          tarefa_concluida?: boolean | null
+          tarefa_prazo?: string | null
+          tipo?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       deal_loss_categories: {
         Row: {
           codigo: string
@@ -630,6 +681,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deal_stage_history_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "deal_stage_history_from_stage_id_fkey"
             columns: ["from_stage_id"]
             isOneToOne: false
@@ -654,6 +712,7 @@ export type Database = {
       }
       deals: {
         Row: {
+          canal_origem: string | null
           categoria_perda_closer: string | null
           categoria_perda_final: string | null
           categoria_perda_ia: string | null
@@ -661,16 +720,19 @@ export type Database = {
           created_at: string
           data_ganho: string | null
           data_perda: string | null
+          data_previsao_fechamento: string | null
           etiqueta: string | null
           fbclid: string | null
           fechado_em: string | null
           gclid: string | null
           id: string
+          metadata: Json | null
           moeda: string
           motivo_perda: string | null
           motivo_perda_closer: string | null
           motivo_perda_final: string | null
           motivo_perda_ia: string | null
+          notas: string | null
           organization_id: string | null
           owner_id: string | null
           perda_resolvida: boolean | null
@@ -697,6 +759,7 @@ export type Database = {
           valor: number | null
         }
         Insert: {
+          canal_origem?: string | null
           categoria_perda_closer?: string | null
           categoria_perda_final?: string | null
           categoria_perda_ia?: string | null
@@ -704,16 +767,19 @@ export type Database = {
           created_at?: string
           data_ganho?: string | null
           data_perda?: string | null
+          data_previsao_fechamento?: string | null
           etiqueta?: string | null
           fbclid?: string | null
           fechado_em?: string | null
           gclid?: string | null
           id?: string
+          metadata?: Json | null
           moeda?: string
           motivo_perda?: string | null
           motivo_perda_closer?: string | null
           motivo_perda_final?: string | null
           motivo_perda_ia?: string | null
+          notas?: string | null
           organization_id?: string | null
           owner_id?: string | null
           perda_resolvida?: boolean | null
@@ -740,6 +806,7 @@ export type Database = {
           valor?: number | null
         }
         Update: {
+          canal_origem?: string | null
           categoria_perda_closer?: string | null
           categoria_perda_final?: string | null
           categoria_perda_ia?: string | null
@@ -747,16 +814,19 @@ export type Database = {
           created_at?: string
           data_ganho?: string | null
           data_perda?: string | null
+          data_previsao_fechamento?: string | null
           etiqueta?: string | null
           fbclid?: string | null
           fechado_em?: string | null
           gclid?: string | null
           id?: string
+          metadata?: Json | null
           moeda?: string
           motivo_perda?: string | null
           motivo_perda_closer?: string | null
           motivo_perda_final?: string | null
           motivo_perda_ia?: string | null
+          notas?: string | null
           organization_id?: string | null
           owner_id?: string | null
           perda_resolvida?: boolean | null
@@ -2104,6 +2174,145 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deals_full_detail: {
+        Row: {
+          canal_origem: string | null
+          categoria_perda_closer: string | null
+          categoria_perda_final: string | null
+          categoria_perda_ia: string | null
+          contact_email: string | null
+          contact_foto_url: string | null
+          contact_id: string | null
+          contact_nome: string | null
+          contact_telefone: string | null
+          created_at: string | null
+          data_ganho: string | null
+          data_perda: string | null
+          data_previsao_fechamento: string | null
+          etiqueta: string | null
+          fbclid: string | null
+          fechado_em: string | null
+          gclid: string | null
+          id: string | null
+          metadata: Json | null
+          minutos_no_stage: number | null
+          moeda: string | null
+          motivo_perda: string | null
+          motivo_perda_closer: string | null
+          motivo_perda_final: string | null
+          motivo_perda_ia: string | null
+          notas: string | null
+          org_nome: string | null
+          organization_id: string | null
+          owner_avatar_url: string | null
+          owner_email: string | null
+          owner_id: string | null
+          owner_nome: string | null
+          perda_resolvida: boolean | null
+          perda_resolvida_em: string | null
+          perda_resolvida_por: string | null
+          pipeline_empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          posicao_kanban: number | null
+          score_engajamento: number | null
+          score_intencao: number | null
+          score_urgencia: number | null
+          score_valor: number | null
+          sla_minutos: number | null
+          stage_cor: string | null
+          stage_fechamento_id: string | null
+          stage_id: string | null
+          stage_is_lost: boolean | null
+          stage_is_won: boolean | null
+          stage_nome: string | null
+          stage_origem_id: string | null
+          stage_posicao: number | null
+          status: string | null
+          temperatura: Database["public"]["Enums"]["temperatura_tipo"] | null
+          tempo_minimo_dias: number | null
+          titulo: string | null
+          updated_at: string | null
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
+          valor: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
           },
         ]

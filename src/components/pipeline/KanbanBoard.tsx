@@ -20,9 +20,10 @@ interface KanbanBoardProps {
   columns: KanbanColumnType[];
   wonLost: KanbanColumnType[];
   isLoading: boolean;
+  onDealClick?: (dealId: string) => void;
 }
 
-export function KanbanBoard({ columns, wonLost, isLoading }: KanbanBoardProps) {
+export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const moveDeal = useMoveDeal();
 
@@ -84,7 +85,7 @@ export function KanbanBoard({ columns, wonLost, isLoading }: KanbanBoardProps) {
     >
       <div className="flex gap-4 overflow-x-auto pb-4 min-h-[400px]">
         {columns.map(col => (
-          <KanbanColumn key={col.stage.id} column={col} />
+          <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
         ))}
       </div>
 
@@ -95,7 +96,7 @@ export function KanbanBoard({ columns, wonLost, isLoading }: KanbanBoardProps) {
           </div>
           <div className="flex gap-4 overflow-x-auto pb-4">
             {wonLost.map(col => (
-              <KanbanColumn key={col.stage.id} column={col} />
+              <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
             ))}
           </div>
         </>
