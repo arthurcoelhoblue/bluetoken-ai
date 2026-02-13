@@ -29,6 +29,14 @@ const STATUS_BADGES: Record<string, { label: string; variant: 'default' | 'secon
 };
 
 export default function ImportacaoPage() {
+  return (
+    <AppLayout>
+      <ImportacaoContent />
+    </AppLayout>
+  );
+}
+
+function ImportacaoContent() {
   const [step, setStep] = useState<WizardStep>('upload');
   const [dealsFile, setDealsFile] = useState<PipedriveDealRow[]>([]);
   const [personsFile, setPersonsFile] = useState<PipedrivePersonRow[]>([]);
@@ -41,11 +49,9 @@ export default function ImportacaoPage() {
   const { mutateAsync: runImport, progress, isPending } = useRunImport();
   const { data: pipelines } = usePipelines();
 
-  // Extract unique pipeline_ids and stage_ids from deals
   const uniquePipelines = [...new Set(dealsFile.map(d => String(d.pipeline_id)).filter(Boolean))];
   const uniqueStages = [...new Set(dealsFile.map(d => String(d.stage_id)).filter(Boolean))];
 
-  // All CRM stages from all pipelines
   const allStages = pipelines?.flatMap(p =>
     (p.pipeline_stages || []).map((s: any) => ({ ...s, pipeline_name: p.nome }))
   ) || [];
@@ -79,9 +85,9 @@ export default function ImportacaoPage() {
       };
       const result = await runImport({ orgs: orgsFile, persons: personsFile, deals: dealsFile, config });
       setStep('done');
-      if (result.status === 'COMPLETED') toast.success(`Importação concluída! ${result.imported} registros importados.`);
-      else if (result.status === 'PARTIAL') toast.warning(`Importação parcial: ${result.imported} ok, ${result.errors} erros.`);
-      else toast.error(`Importação falhou: ${result.errors} erros.`);
+      if (result.status === 'COMPLETED') toast.success(`Importação concluída: ${result.imported} registros`);
+      else if (result.status === 'PARTIAL') toast.warning(`Parcial: ${result.imported} ok, ${result.errors} erros`);
+      else toast.error(`Falha: ${result.errors} erros`);
     } catch (e: any) {
       toast.error(e.message);
       setStep('mapping');
@@ -98,7 +104,7 @@ export default function ImportacaoPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <PageShell icon={Upload} title="Importação Pipedrive" description="Migre dados do Pipedrive para o CRM" patchInfo="Patch 11" />
 
       <div className="px-6 pb-8">
@@ -320,6 +326,6 @@ export default function ImportacaoPage() {
           </TabsContent>
         </Tabs>
       </div>
-    </AppLayout>
+    </>
   );
 }
