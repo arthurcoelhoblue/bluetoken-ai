@@ -81,31 +81,33 @@ function WorkbenchContent() {
 
   return (
     <>
-      <div className="p-6 space-y-0">
+      <div className="p-8 space-y-0">
         {/* Greeting */}
-        <div className="mb-6">
-          <h2 className="text-2xl font-bold">
+        <div className="mb-8">
+          <h2 className="text-2xl font-bold tracking-tight">
             {getGreeting()}, {profile?.nome?.split(' ')[0] ?? 'Usuário'}
           </h2>
-          <p className="text-sm text-muted-foreground capitalize">{hoje}</p>
-          <div className="flex items-center gap-4 mt-2 text-sm">
-            {tarefasHoje.length > 0 && (
-              <span className="flex items-center gap-1 text-warning">
-                <CheckSquare className="h-4 w-4" />
-                {tarefasHoje.length} tarefa{tarefasHoje.length > 1 ? 's' : ''} hoje
-              </span>
-            )}
-            {slaEstourados.length > 0 && (
-              <span className="flex items-center gap-1 text-destructive">
-                <AlertTriangle className="h-4 w-4" />
-                {slaEstourados.length} SLA estourado{slaEstourados.length > 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
+          <p className="text-sm text-muted-foreground capitalize mt-1">{hoje}</p>
+          {(tarefasHoje.length > 0 || slaEstourados.length > 0) && (
+            <div className="flex items-center gap-5 mt-3 text-sm">
+              {tarefasHoje.length > 0 && (
+                <span className="flex items-center gap-1.5 text-warning">
+                  <CheckSquare className="h-4 w-4" />
+                  {tarefasHoje.length} tarefa{tarefasHoje.length > 1 ? 's' : ''} hoje
+                </span>
+              )}
+              {slaEstourados.length > 0 && (
+                <span className="flex items-center gap-1.5 text-destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  {slaEstourados.length} SLA estourado{slaEstourados.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* KPI Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
           <KPICard
             title="Pipeline Aberto"
             value={formatBRL(totalAberto)}
@@ -134,21 +136,23 @@ function WorkbenchContent() {
         </div>
 
         {/* Gamificação Mini Card */}
-        <div className="mb-6">
+        <div className="mb-8">
           <WorkbenchGamificationCard />
         </div>
 
         {/* Pendências do Gestor */}
         {canViewPendencias && pendencyCount > 0 && (
-          <Card className="border-warning/50 mb-6">
-            <CardContent className="p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <AlertTriangle className="h-5 w-5 text-warning" />
+          <Card className="border-warning/50 mb-8">
+            <CardContent className="p-5 flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="h-10 w-10 rounded-lg bg-warning/10 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="h-5 w-5 text-warning" />
+                </div>
                 <div>
-                  <p className="text-sm font-medium">
+                  <p className="text-sm font-semibold">
                     {pendencyCount} pendência{pendencyCount > 1 ? 's' : ''} aguardando decisão
                   </p>
-                  <p className="text-xs text-muted-foreground">Divergências entre Closer e IA precisam de resolução</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Divergências entre Closer e IA precisam de resolução</p>
                 </div>
               </div>
               <Button size="sm" variant="outline" onClick={() => navigate('/pendencias')}>
@@ -158,16 +162,18 @@ function WorkbenchContent() {
           </Card>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
           {/* SLA Alerts */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-destructive" />
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-destructive/10 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="h-4 w-4 text-destructive" />
+                </div>
                 Alertas de SLA
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="space-y-3 pt-0">
               {loadingSLA ? (
                 <div className="space-y-2">{[1, 2].map(i => <Skeleton key={i} className="h-16 w-full" />)}</div>
               ) : slaAlerts && slaAlerts.length > 0 ? (
@@ -207,13 +213,15 @@ function WorkbenchContent() {
 
           {/* Tarefas Pendentes */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base flex items-center gap-2">
-                <CheckSquare className="h-4 w-4 text-primary" />
+            <CardHeader className="pb-4">
+              <CardTitle className="text-base flex items-center gap-2.5">
+                <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                  <CheckSquare className="h-4 w-4 text-primary" />
+                </div>
                 Tarefas Pendentes
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
+            <CardContent className="space-y-2 pt-0">
               {loadingTarefas ? (
                 <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
               ) : tarefas && tarefas.length > 0 ? (
@@ -259,22 +267,22 @@ function WorkbenchContent() {
         </div>
 
         {/* Meus Pipelines */}
-        <div className="mt-6">
-          <h3 className="text-base font-semibold mb-3">Meus Pipelines</h3>
+        <div className="mt-8">
+          <h3 className="text-base font-semibold mb-4">Meus Pipelines</h3>
           {loadingPipelines ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {[1, 2].map(i => <Skeleton key={i} className="h-28 w-full" />)}
             </div>
           ) : pipelines && pipelines.length > 0 ? (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
               {pipelines.map(p => (
                 <Card key={p.pipeline_id}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <span className="font-medium text-sm">{p.pipeline_nome}</span>
+                  <CardContent className="p-5">
+                    <div className="flex items-center justify-between mb-4">
+                      <span className="font-semibold text-sm">{p.pipeline_nome}</span>
                       <Badge variant="secondary" className="text-[10px]">{p.pipeline_empresa}</Badge>
                     </div>
-                    <div className="grid grid-cols-3 gap-2 text-center">
+                    <div className="grid grid-cols-3 gap-3 text-center">
                       <div>
                         <p className="text-lg font-bold">{p.deals_abertos}</p>
                         <p className="text-[10px] text-muted-foreground">Abertos</p>
@@ -301,12 +309,12 @@ function WorkbenchContent() {
         </div>
 
         {/* Deals Recentes */}
-        <div className="mt-6">
-          <h3 className="text-base font-semibold mb-3">Deals Recentes (7 dias)</h3>
+        <div className="mt-8">
+          <h3 className="text-base font-semibold mb-4">Deals Recentes (7 dias)</h3>
           {loadingRecent ? (
             <div className="space-y-2">{[1, 2, 3].map(i => <Skeleton key={i} className="h-12 w-full" />)}</div>
           ) : recentDeals && recentDeals.length > 0 ? (
-            <div className="space-y-1">
+            <div className="space-y-2">
               {recentDeals.map(d => (
                 <button
                   key={d.id}
@@ -366,15 +374,17 @@ function KPICard({
 }) {
   return (
     <Card className={variant === 'destructive' && value !== '0' ? 'border-destructive/50' : ''}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs text-muted-foreground">{title}</span>
-          {icon}
+      <CardContent className="p-5">
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-xs text-muted-foreground font-medium uppercase tracking-wide">{title}</span>
+          <div className="h-8 w-8 rounded-lg bg-muted/50 flex items-center justify-center">
+            {icon}
+          </div>
         </div>
         {loading ? (
-          <Skeleton className="h-7 w-24" />
+          <Skeleton className="h-8 w-24" />
         ) : (
-          <p className={`text-xl font-bold ${variant === 'destructive' && value !== '0' ? 'text-destructive' : ''}`}>
+          <p className={`text-2xl font-bold ${variant === 'destructive' && value !== '0' ? 'text-destructive' : ''}`}>
             {value}
           </p>
         )}
