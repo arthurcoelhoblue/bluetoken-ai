@@ -14,8 +14,8 @@ const corsHeaders = {
 // API Mensageria
 const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/send-message';
 
-// Número de teste padrão
-const DEFAULT_TEST_PHONE = '5581987580922';
+// Número de teste deve vir de system_settings (sem fallback hardcoded)
+const DEFAULT_TEST_PHONE: string | null = null;
 
 interface WhatsAppSendRequest {
   leadId: string;
@@ -301,6 +301,15 @@ serve(async (req) => {
     const TEST_MODE = (testConfig?.value as Record<string, unknown>)?.ativo ?? true;
     const TEST_PHONE = ((testConfig?.value as Record<string, unknown>)?.numero_teste as string) || DEFAULT_TEST_PHONE;
 
+    // Se modo teste ativo mas sem número configurado, falhar explicitamente
+    if (TEST_MODE && !TEST_PHONE) {
+      console.error('[whatsapp-send] Modo teste ativo mas nenhum numero_teste configurado em system_settings');
+      return new Response(
+        JSON.stringify({ success: false, error: 'Modo teste ativo mas nenhum número de teste configurado. Configure em system_settings(category=whatsapp, key=modo_teste).' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     console.log(`[whatsapp-send] Modo teste: ${TEST_MODE}, Canal: ${activeChannel}`);
 
     // Verificar opt-out
@@ -337,7 +346,7 @@ serve(async (req) => {
     // Formatar telefone E.164
     const phoneClean = telefone.replace(/\D/g, '');
     const phoneE164 = phoneClean.startsWith('+') ? phoneClean : `+${phoneClean}`;
-    const testPhoneE164 = TEST_PHONE.startsWith('+') ? TEST_PHONE : `+${TEST_PHONE}`;
+    const testPhoneE164 = TEST_PHONE ? (TEST_PHONE.startsWith('+') ? TEST_PHONE : `+${TEST_PHONE}`) : '';
     const phoneToSend = TEST_MODE ? testPhoneE164 : phoneE164;
 
     console.log(`[whatsapp-send] Lead ${leadId}, telefone: ${phoneClean} → ${phoneToSend}`);

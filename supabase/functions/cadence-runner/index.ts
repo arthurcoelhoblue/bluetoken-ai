@@ -353,6 +353,24 @@ async function dispararMensagem(
     }
   } else if (canal === 'EMAIL') {
     // PATCH 5D: Integração com SMTP via edge function email-send
+    // Verificar se integração de email está habilitada
+    const supabaseUrlCheck = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKeyCheck = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseCheck = createClient(supabaseUrlCheck, supabaseKeyCheck);
+    
+    const { data: emailSetting } = await supabaseCheck
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'integrations')
+      .eq('key', 'email')
+      .maybeSingle();
+    
+    const emailEnabled = (emailSetting?.value as Record<string, unknown>)?.enabled;
+    if (!emailEnabled) {
+      console.warn('[Disparo] Integração de email desabilitada em system_settings');
+      return { success: false, error: 'Integração de email desabilitada. Ative em Configurações > Integrações.' };
+    }
+
     console.log('[Disparo] Enviando email para:', to);
 
     try {
@@ -398,9 +416,9 @@ async function dispararMensagem(
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else {
-    // SMS - mock por enquanto
-    console.log('[Disparo] [MOCK] SMS enviado para:', to);
-    return { success: true };
+    // SMS não é suportado - canal não implementado
+    console.warn('[Disparo] Canal SMS não implementado, marcando como erro');
+    return { success: false, error: 'Canal SMS não suportado. Altere o step da cadência para WHATSAPP ou EMAIL.' };
   }
 }
 

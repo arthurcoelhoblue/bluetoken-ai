@@ -115,9 +115,24 @@ serve(async (req) => {
       leadInfo.framework_data = convState.framework_data as Record<string, unknown>;
     }
 
-    // Determinar email do closer (se não fornecido, usar padrão por empresa)
-    const closerEmail = body.closer_email || 
-      (body.empresa === 'TOKENIZA' ? 'closer@tokeniza.com.br' : 'closer@grupoblue.com.br');
+    // Determinar email do closer - buscar da system_settings por empresa
+    let closerEmail = body.closer_email;
+    if (!closerEmail) {
+      const empresaKey = body.empresa.toLowerCase();
+      const { data: closerConfig } = await supabase
+        .from('system_settings')
+        .select('value')
+        .eq('category', empresaKey)
+        .eq('key', 'closer_email')
+        .maybeSingle();
+      
+      const configuredEmail = (closerConfig?.value as Record<string, unknown>)?.email as string | undefined;
+      closerEmail = configuredEmail || `closer@${empresaKey === 'tokeniza' ? 'tokeniza.com.br' : 'grupoblue.com.br'}`;
+      
+      if (!configuredEmail) {
+        console.warn(`[NotifyCloser] Nenhum closer_email configurado em system_settings para empresa ${body.empresa}. Usando fallback: ${closerEmail}. Configure via system_settings(category='${empresaKey}', key='closer_email').`);
+      }
+    }
 
     // Inserir notificação no banco
     const { data: notification, error: insertError } = await supabase

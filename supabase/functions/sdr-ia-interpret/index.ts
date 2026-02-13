@@ -3857,8 +3857,42 @@ async function applyAction(
             .update({ status: 'PAUSADA', updated_at: new Date().toISOString() })
             .eq('id', runId)
             .eq('status', 'ATIVA');
-          
-          console.log('[Ação] Tarefa criada para closer:', leadId);
+        }
+
+        // Notificar closer e mudar modo para MANUAL
+        if (leadId) {
+          const now = new Date().toISOString();
+          const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+          const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+          // Chamar notify-closer
+          try {
+            const notifyResp = await fetch(`${supabaseUrl}/functions/v1/notify-closer`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${serviceKey}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                lead_id: leadId,
+                empresa,
+                motivo: detalhes?.motivo || 'Lead qualificado pelo SDR IA - tarefa criada para closer',
+              }),
+            });
+            const notifyResult = await notifyResp.json();
+            console.log('[Ação] notify-closer resultado (CRIAR_TAREFA_CLOSER):', notifyResult);
+          } catch (notifyErr) {
+            console.error('[Ação] Erro ao chamar notify-closer:', notifyErr);
+          }
+
+          // Mudar modo para MANUAL
+          await supabase
+            .from('lead_conversation_state')
+            .update({ modo: 'MANUAL', updated_at: now })
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa);
+
+          console.log('[Ação] Tarefa criada para closer + modo MANUAL:', leadId);
           return true;
         }
         break;
@@ -3876,13 +3910,45 @@ async function applyAction(
               ...detalhes,
             },
           });
-          
-          console.log('[Ação] Escalado para humano (com cadência):', leadId);
+        }
+
+        // Notificar closer e mudar modo para MANUAL
+        if (leadId) {
+          const nowEsc = new Date().toISOString();
+          const supabaseUrlEsc = Deno.env.get('SUPABASE_URL')!;
+          const serviceKeyEsc = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+
+          // Chamar notify-closer
+          try {
+            const notifyRespEsc = await fetch(`${supabaseUrlEsc}/functions/v1/notify-closer`, {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${serviceKeyEsc}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                lead_id: leadId,
+                empresa,
+                motivo: detalhes?.motivo || 'Situação requer atenção humana',
+              }),
+            });
+            const notifyResultEsc = await notifyRespEsc.json();
+            console.log('[Ação] notify-closer resultado (ESCALAR_HUMANO):', notifyResultEsc);
+          } catch (notifyErrEsc) {
+            console.error('[Ação] Erro ao chamar notify-closer:', notifyErrEsc);
+          }
+
+          // Mudar modo para MANUAL
+          await supabase
+            .from('lead_conversation_state')
+            .update({ modo: 'MANUAL', updated_at: nowEsc })
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa);
+
+          console.log('[Ação] Escalado para humano + modo MANUAL:', leadId);
           return true;
         } else {
-          // PATCH ANTI-LIMBO: Modo passivo (Blue Chat) - runId é null
-          // Registrar escalação mesmo sem cadência vinculada
-          console.log('[Ação] Escalado para humano (modo passivo, sem cadência):', leadId);
+          console.log('[Ação] Escalado para humano (modo passivo, sem leadId):', leadId);
           return true;
         }
         break;
