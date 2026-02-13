@@ -107,12 +107,10 @@ export function useSendManualMessage() {
       // Send via whatsapp-send
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
         body: {
-          to: telefone,
-          message: conteudo,
+          leadId,
+          telefone,
+          mensagem: conteudo,
           empresa,
-          lead_id: leadId,
-          sender_type: 'VENDEDOR',
-          sender_id: user.id,
         },
       });
 
