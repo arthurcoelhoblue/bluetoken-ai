@@ -2934,8 +2934,25 @@ async function interpretWithAI(
   // ========================================
   if (triageSummary && isPassiveChat) {
     userPrompt += `\n## 📋 CONTEXTO DA TRIAGEM ANTERIOR\n`;
-    userPrompt += `Este lead foi transferido pela triagem (MarIA) para o setor comercial.\n`;
-    userPrompt += `Você deve CONTINUAR a conversa dentro deste contexto, sem se reapresentar do zero.\n\n`;
+    userPrompt += `Este lead foi transferido pela triagem (MarIA) para o setor comercial.\n\n`;
+    
+    // MUDANÇA 5: Verificar se Amélia já se apresentou
+    const ameliaOutboundMsgs = historico.filter(h => h.direcao === 'OUTBOUND');
+    const isFirstInteraction = ameliaOutboundMsgs.length === 0;
+    
+    if (isFirstInteraction) {
+      userPrompt += `⚠️ IMPORTANTE: Esta é sua PRIMEIRA interação com este lead após o handoff da triagem (MarIA).\n`;
+      userPrompt += `Você DEVE se apresentar como Amélia. Exemplo: "Oi ${leadNome || '[nome]'}, aqui é a Amélia! Vi que você precisa de [contexto da triagem]..."\n`;
+      userPrompt += `NÃO continue do zero - use o contexto da triagem para dar continuidade.\n\n`;
+    } else {
+      userPrompt += `Você já se apresentou anteriormente. Continue a conversa naturalmente.\n\n`;
+    }
+    
+    // MUDANÇA 3b: Se o lead está agradecendo a MarIA, ignorar como encerramento
+    userPrompt += `### REGRA CRÍTICA: AGRADECIMENTO À MARIA\n`;
+    userPrompt += `Se o lead está agradecendo o atendente anterior (MarIA/triagem), IGNORE o agradecimento como sinal de encerramento.\n`;
+    userPrompt += `Apresente-se como Amélia e continue a qualificação a partir do contexto da triagem.\n`;
+    userPrompt += `NÃO trate "obrigado", "valeu" como intenção de encerrar se você ainda não interagiu com o lead.\n\n`;
     
     if (triageSummary.clienteNome) {
       userPrompt += `NOME DO CLIENTE: ${triageSummary.clienteNome}\n`;

@@ -1173,6 +1173,7 @@ export type Database = {
           opt_out_em: string | null
           opt_out_motivo: string | null
           origem_telefone: string | null
+          owner_id: string | null
           pessoa_id: string | null
           pipedrive_deal_id: string | null
           pipedrive_person_id: string | null
@@ -1200,6 +1201,7 @@ export type Database = {
           opt_out_em?: string | null
           opt_out_motivo?: string | null
           origem_telefone?: string | null
+          owner_id?: string | null
           pessoa_id?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
@@ -1227,6 +1229,7 @@ export type Database = {
           opt_out_em?: string | null
           opt_out_motivo?: string | null
           origem_telefone?: string | null
+          owner_id?: string | null
           pessoa_id?: string | null
           pipedrive_deal_id?: string | null
           pipedrive_person_id?: string | null
@@ -1239,6 +1242,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lead_contacts_pessoa_id_fkey"
             columns: ["pessoa_id"]

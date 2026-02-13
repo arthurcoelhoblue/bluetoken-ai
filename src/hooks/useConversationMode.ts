@@ -44,6 +44,23 @@ export function useConversationTakeover() {
 
       if (stateError) throw stateError;
 
+      // MUDANÇA 2: Auto-assign owner_id no takeover ASSUMIR
+      if (acao === 'ASSUMIR') {
+        const { data: leadContact } = await supabase
+          .from('lead_contacts')
+          .select('id, owner_id')
+          .eq('lead_id', leadId)
+          .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+          .maybeSingle();
+        
+        if (leadContact && !leadContact.owner_id) {
+          await supabase
+            .from('lead_contacts')
+            .update({ owner_id: user.id })
+            .eq('id', leadContact.id);
+        }
+      }
+
       // Insert takeover log
       const { error: logError } = await supabase
         .from('conversation_takeover_log')
