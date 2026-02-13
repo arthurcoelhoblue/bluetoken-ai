@@ -1,4 +1,5 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useRef } from 'react';
+import { useGrabScroll } from '@/hooks/useGrabScroll';
 import {
   DndContext,
   DragOverlay,
@@ -25,7 +26,9 @@ interface KanbanBoardProps {
 
 export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
+  useGrabScroll(scrollRef);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -83,7 +86,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex-1 min-h-0 overflow-auto">
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
         <div className="flex gap-4 pb-4 min-h-[400px]" style={{ minWidth: 'max-content' }}>
           {columns.map(col => (
             <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
