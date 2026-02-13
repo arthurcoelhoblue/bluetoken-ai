@@ -43,7 +43,7 @@ function getTaskUrgency(prazo: string | null): 'overdue' | 'today' | 'upcoming' 
   return 'upcoming';
 }
 
-export default function WorkbenchPage() {
+function WorkbenchContent() {
   const { profile } = useAuth();
   const { data: tarefas, isLoading: loadingTarefas } = useWorkbenchTarefas();
   const { data: slaAlerts, isLoading: loadingSLA } = useWorkbenchSLAAlerts();
@@ -72,7 +72,7 @@ export default function WorkbenchPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="p-6 space-y-0">
         {/* Greeting */}
         <div className="mb-6">
@@ -310,6 +310,14 @@ export default function WorkbenchPage() {
           onOpenChange={open => !open && setSelectedDealId(null)}
         />
       </div>
+    </>
+  );
+}
+
+export default function WorkbenchPage() {
+  return (
+    <AppLayout>
+      <WorkbenchContent />
     </AppLayout>
   );
 }
