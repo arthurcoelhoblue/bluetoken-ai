@@ -1,145 +1,148 @@
 
+## Auditoria Completa: Pontas Soltas, Mocks e Features Desligadas
 
-## Plano: Atendimento Automatico via Amelia para Leads SGT (com Horario Comercial)
+Apos varredura completa no codigo e banco de dados, identifiquei os seguintes problemas organizados por criticidade.
 
-### Situacao Atual
+---
 
-O fluxo atual do SGT ao receber um lead:
-1. Autentica e armazena o evento
-2. Enriquece os dados do lead (lead_contacts, contacts, pessoas)
-3. Classifica (ICP, temperatura, prioridade)
-4. Inicia uma cadencia de templates (mensagens estaticas)
+### CRITICO - Precisa resolver agora
 
-**Problemas:**
-- Nao verifica se o lead ja esta sendo atendido manualmente por um vendedor
-- Nao cria o estado conversacional para a Amelia
-- O cadence-runner nao verifica modo de atendimento antes de disparar
-- Nao respeita horario comercial
+**1. SMS mockado no cadence-runner**
+- Arquivo: `supabase/functions/cadence-runner/index.ts` (linha 401-403)
+- O canal SMS retorna `{ success: true }` sem fazer nada -- apenas imprime `[MOCK] SMS enviado`
+- Se alguma cadencia tiver step do tipo SMS, o sistema finge que enviou
+- **Solucao**: Remover suporte a SMS por completo (nao e usado) ou implementar via API real. Recomendo remover e logar warning se algum step tentar usar SMS, marcando como ERRO
 
-### Logica Proposta
+**2. ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER nao notificam ninguem**
+- Arquivo: `supabase/functions/sdr-ia-interpret/index.ts` (linhas 3840-3887)
+- Quando a IA decide escalar ou criar tarefa closer, apenas insere um evento na tabela `lead_cadence_events` e loga no console
+- **Nao chama** a edge function `notify-closer` que ja existe e esta pronta
+- **Nao muda** o `lead_conversation_state.modo` para MANUAL (o vendedor nao sabe que precisa assumir)
+- **Resultado**: Lead fica em limbo -- IA decide escalar mas ninguem e notificado
+- **Solucao**: Na acao ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER, chamar `notify-closer` e atualizar `lead_conversation_state.modo` para MANUAL
 
-```text
-Lead chega do SGT
-       |
-       v
-  Enriquecer dados (sempre)
-       |
-       v
-  Verificar lead_conversation_state.modo
-       |
-  +----+----+
-  |         |
-MANUAL    SDR_IA / inexistente
-  |         |
-  v         v
-APENAS   Criar conversation_state (se nao existe)
-ENRIQUECER  + Classificar
-  |         + Decidir cadencia
-  v         |
- FIM        v
-        Horario comercial? (09h-18h seg-sex, Brasilia)
-            |
-       +----+----+
-       |         |
-      SIM       NAO
-       |         |
-       v         v
-   Iniciar    Agendar cadencia
-   cadencia   com next_run_at = proximo
-   agora      horario comercial (ex: seg 09h)
-       |         |
-       v         v
-      FIM       FIM
-```
+**3. notify-closer usa emails placeholder**
+- Arquivo: `supabase/functions/notify-closer/index.ts` (linha 119-120)
+- Emails hardcoded: `closer@tokeniza.com.br` e `closer@grupoblue.com.br`
+- Esses emails provavelmente nao existem ou nao sao monitorados
+- **Solucao**: Buscar do `system_settings` ou de uma tabela de responsaveis por empresa
 
-### Horario Comercial
+---
 
-- Segunda a sexta, 09h as 18h, horario de Brasilia (America/Sao_Paulo)
-- Fora desse horario: a cadencia e criada mas com `next_run_at` agendado para o proximo horario comercial valido
-- A funcao helper sera reutilizavel tanto no sgt-webhook quanto no cadence-runner
+### IMPORTANTE - Feature desligada ou incompleta
 
-### Mudancas Necessarias
+**4. Horario da Amelia inconsistente entre banco e codigo**
+- No banco (`system_settings`): `amelia.horario_funcionamento = 08:00-18:00`
+- No codigo recente (`sgt-webhook` e `cadence-runner`): hardcoded `09:00-18:00`
+- O `sdr-ia-interpret` **nao consulta** a configuracao de horario do banco
+- **Solucao**: Alinhar tudo para usar a configuracao do banco (09:00-18:00 conforme aprovado), atualizar o registro no banco, e fazer o sdr-ia-interpret tambem respeitar horario
 
-**1. `supabase/functions/sgt-webhook/index.ts`**
+**5. Integracao Pipedrive desligada mas com infraestrutura pronta**
+- `system_settings`: `integrations.pipedrive.enabled = false`
+- Edge function `pipedrive-sync` existe e funciona
+- Secret `PIPEDRIVE_API_TOKEN` configurada
+- Leads ja chegam com `pipedrive_deal_id` e `url_pipedrive`
+- **Solucao**: Nenhuma acao tecnica necessaria -- esta desligado propositalmente. Apenas confirmar se deve permanecer assim
 
-- Adicionar funcao helper `isHorarioComercial()` que verifica se o momento atual esta dentro de seg-sex 09h-18h (America/Sao_Paulo)
-- Adicionar funcao helper `proximoHorarioComercial()` que retorna o proximo momento valido (ex: se for sabado 15h, retorna segunda 09h)
-- Apos o enriquecimento e antes da classificacao:
-  - Consultar `lead_conversation_state` para o lead + empresa
-  - Se `modo = 'MANUAL'`: pular classificacao e cadencia, apenas enriquecer
-  - Se nao existe estado: criar com `modo: 'SDR_IA'`, `estado_funil: 'SAUDACAO'`
-- Na funcao `iniciarCadenciaParaLead`: se fora de horario comercial, definir `next_run_at` para o proximo horario comercial ao inves de `now()`
+**6. connectionName "Arthur" hardcoded no whatsapp-send**
+- Arquivo: `supabase/functions/whatsapp-send/index.ts` (linha 179)
+- O nome da conexao WhatsApp "Arthur" esta fixo no codigo (canal Mensageria)
+- **Nota**: Canal Mensageria esta `enabled: false` para ambas empresas (BLUE e TOKENIZA usam BlueChat agora)
+- **Solucao**: Como Mensageria esta desativada, nao e urgente. Mas se reativar, o connectionName deveria vir de configuracao
 
-**2. `supabase/functions/cadence-runner/index.ts`**
+**7. Email em producao mas `email.enabled = false`**
+- `system_settings`: `integrations.email.enabled = false`
+- `email.modo_teste.ativo = false` (modo teste DESLIGADO -- emails reais seriam enviados)
+- SMTP configurado (secrets existem)
+- **Risco**: Se alguma cadencia tiver step de email, vai tentar enviar de verdade (modo teste desligado) mas a integracao esta marcada como desabilitada
+- **Solucao**: Garantir que o cadence-runner verifique `integrations.email.enabled` antes de enviar emails, ou ligar a integracao se pronta
 
-- Adicionar as mesmas funcoes helper de horario comercial
-- No `processarRun`, antes de disparar a mensagem:
-  - Verificar se esta em horario comercial; se nao, reagendar `next_run_at` para proximo horario valido e pular
-  - Verificar `lead_conversation_state.modo`; se `MANUAL`, pausar a cadencia
+---
 
-### Secao Tecnica
+### MENOR - Limpeza e alinhamento
 
-**Helper de horario comercial (usado em ambas as functions):**
+**8. DEFAULT_TEST_PHONE hardcoded**
+- `supabase/functions/whatsapp-send/index.ts` (linha 18): `5581987580922`
+- Esse numero so e usado como fallback se `system_settings` nao tiver `numero_teste`
+- Hoje o banco tem `numero_teste: 5561998317422` e `modo_teste.ativo = false`
+- **Solucao**: Remover o fallback hardcoded e falhar explicitamente se modo teste ativo sem numero configurado
+
+**9. closer_notifications sem registros**
+- Tabela existe mas tem 0 registros -- confirma que notify-closer nunca e chamado pelo fluxo real
+
+---
+
+### Secao Tecnica - Mudancas Propostas
+
+**Arquivo `supabase/functions/sdr-ia-interpret/index.ts`**
+
+Na funcao `applyAction`, nos cases ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER:
 
 ```text
-function isHorarioComercial(): boolean {
-  // Converter para America/Sao_Paulo
-  // Verificar: dia da semana (1-5 = seg-sex) E hora (>= 9 E < 18)
-}
-
-function proximoHorarioComercial(): Date {
-  // Se hoje e dia util e hora < 9: retorna hoje as 09:00
-  // Se hoje e dia util e hora >= 18: retorna amanha as 09:00 (ou segunda se sexta)
-  // Se fim de semana: retorna proxima segunda as 09:00
-}
+case 'ESCALAR_HUMANO':
+case 'CRIAR_TAREFA_CLOSER':
+  // 1. Manter logica existente de eventos
+  // 2. ADICIONAR: Chamar notify-closer
+  await fetch(`${SUPABASE_URL}/functions/v1/notify-closer`, {
+    method: 'POST',
+    headers: { Authorization: Bearer ${SERVICE_KEY}, Content-Type: application/json },
+    body: JSON.stringify({ lead_id: leadId, empresa, motivo: detalhes?.motivo || acao })
+  });
+  // 3. ADICIONAR: Mudar modo para MANUAL
+  await supabase.from('lead_conversation_state')
+    .update({ modo: 'MANUAL', assumido_em: now })
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa);
 ```
 
-**No sgt-webhook, bloco entre sanitizacao e classificacao:**
+**Arquivo `supabase/functions/cadence-runner/index.ts`**
+
+No bloco de SMS (linha 401):
 
 ```text
-// Verificar modo de atendimento
-const convState = buscar lead_conversation_state (lead_id, empresa)
-
-if (convState?.modo === 'MANUAL') {
-  // Apenas enriquecer, logar e retornar
-  return { success: true, enriched_only: true }
-}
-
-if (!convState) {
-  // Criar estado conversacional para Amelia
-  insert lead_conversation_state com modo: 'SDR_IA', estado_funil: 'SAUDACAO'
-}
+// Substituir mock por erro explicito
+console.warn('[Disparo] Canal SMS nao implementado');
+return { success: false, error: 'Canal SMS nao suportado' };
 ```
 
-**Na funcao iniciarCadenciaParaLead do sgt-webhook:**
+**Arquivo `supabase/functions/notify-closer/index.ts`**
+
+Substituir emails hardcoded por busca no banco:
 
 ```text
-// Definir next_run_at com base no horario comercial
-const nextRunAt = isHorarioComercial() ? now() : proximoHorarioComercial()
+// Buscar email do closer responsavel da system_settings ou profiles
+const { data: closerConfig } = await supabase
+  .from('system_settings')
+  .select('value')
+  .eq('category', empresa.toLowerCase())
+  .eq('key', 'closer_email')
+  .maybeSingle();
 
-insert lead_cadence_runs com next_run_at = nextRunAt
+const closerEmail = body.closer_email || closerConfig?.value?.email || fallback;
 ```
 
-**No cadence-runner processarRun:**
+**Banco de dados**
+
+Atualizar horario da Amelia:
 
 ```text
-// Antes de enviar mensagem:
-// 1. Verificar horario comercial
-if (!isHorarioComercial()) {
-  update lead_cadence_runs set next_run_at = proximoHorarioComercial()
-  return { status: 'REAGENDADO' }
-}
-
-// 2. Verificar modo de atendimento
-if (convState?.modo === 'MANUAL') {
-  update lead_cadence_runs set status = 'PAUSADA'
-  return { status: 'PAUSADA', motivo: 'atendimento manual' }
-}
+UPDATE system_settings 
+SET value = '{"inicio": "09:00", "fim": "18:00", "dias": ["seg","ter","qua","qui","sex"]}'
+WHERE category = 'amelia' AND key = 'horario_funcionamento';
 ```
 
-### Resultado Esperado
+---
 
-- Leads novos fora de horario: dados enriquecidos imediatamente, cadencia agendada para proximo dia util as 09h
-- Leads novos em horario: Amelia inicia atendimento automaticamente
-- Leads em modo manual: apenas enriquecimento, sem interferencia no vendedor
-- Cadence-runner: dupla protecao - nao dispara fora de horario e nao dispara para leads em atendimento manual
+### Resumo de Acoes
+
+| # | Item | Acao | Prioridade |
+|---|------|------|------------|
+| 1 | SMS mockado | Substituir mock por erro explicito | Critico |
+| 2 | ESCALAR/CLOSER nao notifica | Chamar notify-closer + mudar modo MANUAL | Critico |
+| 3 | Emails closer placeholder | Tornar configuravel via system_settings | Critico |
+| 4 | Horario inconsistente | Alinhar banco (09-18) e fazer sdr-ia ler config | Importante |
+| 5 | Pipedrive desligado | Manter (decisao de negocio) | Nenhuma |
+| 6 | connectionName Arthur | Manter (Mensageria desativada) | Baixa |
+| 7 | Email enabled vs modo_teste | Verificar flag enabled no cadence-runner | Importante |
+| 8 | DEFAULT_TEST_PHONE | Limpar fallback hardcoded | Menor |
+| 9 | closer_notifications vazia | Resolvido ao implementar item 2 | -- |
