@@ -17,6 +17,7 @@ import {
   Activity,
   Flame,
   Settings,
+  BarChart3,
 } from 'lucide-react';
 
 export interface ScreenRegistryItem {
@@ -35,6 +36,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'metas', label: 'Metas & Comissões', group: 'Comercial', icon: Target, url: '/metas' },
   { key: 'renovacao', label: 'Renovação', group: 'Comercial', icon: RefreshCcw, url: '/renovacao' },
   { key: 'cockpit', label: 'Cockpit', group: 'Comercial', icon: Gauge, url: '/cockpit' },
+  { key: 'relatorios', label: 'Relatórios', group: 'Comercial', icon: BarChart3, url: '/relatorios' },
   { key: 'amelia', label: 'Amélia IA', group: 'Automação', icon: Bot, url: '/amelia' },
   { key: 'cadencias', label: 'Cadências', group: 'Automação', icon: Zap, url: '/cadences' },
   { key: 'leads_cadencia', label: 'Leads em Cadência', group: 'Automação', icon: Play, url: '/cadences/runs' },
