@@ -1,9 +1,7 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Bot, ChevronRight } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
-import { AppLayout } from '@/components/layout/AppLayout';
-import { DashboardContent } from '@/components/dashboard/DashboardContent';
+import { useNavigate, Navigate } from 'react-router-dom';
 
 export default function Index() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -51,9 +49,5 @@ export default function Index() {
     );
   }
 
-  return (
-    <AppLayout requireAuth={false}>
-      <DashboardContent />
-    </AppLayout>
-  );
+  return <Navigate to="/meu-dia" replace />;
 }

@@ -68,7 +68,7 @@ const navGroups: NavGroup[] = [
   {
     label: 'Principal',
     items: [
-      { title: 'Meu Dia', url: '/', icon: CalendarCheck, screenKey: 'dashboard' },
+      { title: 'Meu Dia', url: '/meu-dia', icon: CalendarCheck, screenKey: 'dashboard' },
       { title: 'Pipeline', url: '/pipeline', icon: Columns3, screenKey: 'pipeline' },
       { title: 'Contatos', url: '/contatos', icon: ContactRound, screenKey: 'contatos' },
       { title: 'Organizações', url: '/organizacoes', icon: Building2, screenKey: 'organizacoes' },
