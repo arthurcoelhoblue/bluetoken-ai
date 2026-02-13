@@ -263,6 +263,60 @@ const LEAD_STAGES_VALIDOS: string[] = ['Lead', 'Contato Iniciado', 'Negociação
 const EVENTOS_QUENTES: SGTEventoTipo[] = ['MQL', 'CARRINHO_ABANDONADO', 'CLIQUE_OFERTA'];
 
 // ========================================
+// HORÁRIO COMERCIAL - 09h-18h seg-sex (America/Sao_Paulo)
+// ========================================
+function getHorarioBrasilia(): Date {
+  const now = new Date();
+  // Converter para horário de Brasília (UTC-3)
+  const brasiliaOffset = -3 * 60; // minutos
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  return new Date(utcMs + brasiliaOffset * 60 * 1000);
+}
+
+function isHorarioComercial(): boolean {
+  const brasilia = getHorarioBrasilia();
+  const dia = brasilia.getDay(); // 0=dom, 1=seg, ..., 5=sex, 6=sab
+  const hora = brasilia.getHours();
+  
+  // Seg-Sex (1-5), 09h-18h
+  return dia >= 1 && dia <= 5 && hora >= 9 && hora < 18;
+}
+
+function proximoHorarioComercial(): Date {
+  const brasilia = getHorarioBrasilia();
+  const dia = brasilia.getDay();
+  const hora = brasilia.getHours();
+  
+  let diasParaAdicionar = 0;
+  
+  if (dia >= 1 && dia <= 5 && hora < 9) {
+    // Dia útil antes das 9h → hoje às 09:00
+    diasParaAdicionar = 0;
+  } else if (dia === 5 && hora >= 18) {
+    // Sexta após 18h → segunda
+    diasParaAdicionar = 3;
+  } else if (dia === 6) {
+    // Sábado → segunda
+    diasParaAdicionar = 2;
+  } else if (dia === 0) {
+    // Domingo → segunda
+    diasParaAdicionar = 1;
+  } else if (dia >= 1 && dia <= 4 && hora >= 18) {
+    // Seg-Qui após 18h → amanhã
+    diasParaAdicionar = 1;
+  }
+  
+  // Construir data em UTC que corresponda a 09:00 Brasília (= 12:00 UTC)
+  const resultado = new Date(brasilia);
+  resultado.setDate(resultado.getDate() + diasParaAdicionar);
+  resultado.setHours(9, 0, 0, 0);
+  
+  // Converter de volta para UTC: 09:00 BRT = 12:00 UTC
+  const utcMs = resultado.getTime() - (-3 * 60) * 60 * 1000;
+  return new Date(utcMs);
+}
+
+// ========================================
 // NORMALIZAÇÃO - Aceita payload completo SGT
 // ========================================
 function normalizeStage(stage: string | undefined): LeadStage | null {
@@ -1418,7 +1472,17 @@ async function iniciarCadenciaParaLead(
   }
 
   const now = new Date();
-  const nextRunAt = new Date(now.getTime() + firstStep.offset_minutos * 60 * 1000);
+  let nextRunAt = new Date(now.getTime() + firstStep.offset_minutos * 60 * 1000);
+  
+  // Verificar horário comercial: se fora de horário, agendar para próximo horário válido
+  if (!isHorarioComercial()) {
+    const proximoHorario = proximoHorarioComercial();
+    // Usar o maior entre offset calculado e próximo horário comercial
+    if (proximoHorario.getTime() > nextRunAt.getTime()) {
+      nextRunAt = proximoHorario;
+    }
+    console.log('[Cadência] Fora de horário comercial, agendando para:', nextRunAt.toISOString());
+  }
 
   const { data: newRun, error: runError } = await supabase
     .from('lead_cadence_runs')
@@ -1804,6 +1868,61 @@ serve(async (req) => {
         }),
         { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // ========================================
+    // VERIFICAR MODO DE ATENDIMENTO
+    // ========================================
+    const { data: convState } = await supabase
+      .from('lead_conversation_state')
+      .select('id, modo')
+      .eq('lead_id', payload.lead_id)
+      .eq('empresa', payload.empresa)
+      .maybeSingle();
+
+    if (convState?.modo === 'MANUAL') {
+      console.log('[SGT Webhook] Lead em modo MANUAL, apenas enriquecendo dados');
+      
+      await supabase.from('sgt_event_logs').insert({
+        event_id: newEvent.id,
+        status: 'PROCESSADO',
+        mensagem: 'Lead em atendimento manual - dados enriquecidos sem iniciar automação'
+      } as Record<string, unknown>);
+      
+      await supabase
+        .from('sgt_events')
+        .update({ processado_em: new Date().toISOString() })
+        .eq('id', newEvent.id);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          event_id: newEvent.id,
+          lead_id: payload.lead_id,
+          evento: payload.evento,
+          empresa: payload.empresa,
+          enriched_only: true,
+          reason: 'LEAD_EM_ATENDIMENTO_MANUAL',
+        }),
+        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Criar estado conversacional se não existe
+    if (!convState) {
+      console.log('[SGT Webhook] Criando conversation_state para lead:', payload.lead_id);
+      const defaultFramework = payload.empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
+      
+      await supabase.from('lead_conversation_state').insert({
+        lead_id: payload.lead_id,
+        empresa: payload.empresa,
+        canal: 'WHATSAPP',
+        estado_funil: 'SAUDACAO',
+        framework_ativo: defaultFramework,
+        modo: 'SDR_IA',
+        idioma_preferido: 'PT',
+        ultimo_contato_em: new Date().toISOString(),
+      } as Record<string, unknown>);
     }
 
     let classification: LeadClassificationResult | null = null;
