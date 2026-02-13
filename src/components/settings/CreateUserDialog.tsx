@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useAccessProfiles } from '@/hooks/useAccessControl';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 interface Props {
   open: boolean;
@@ -18,6 +18,14 @@ const SUPER_ADMIN_NAME = 'Super Admin';
 
 export function CreateUserDialog({ open, onOpenChange }: Props) {
   const { data: profiles = [] } = useAccessProfiles();
+  const { data: allUsers = [] } = useQuery({
+    queryKey: ['all-profiles-for-gestor'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('profiles').select('id, nome, email').order('nome');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
   const queryClient = useQueryClient();
 
   const [nome, setNome] = useState('');
@@ -25,6 +33,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
   const [password, setPassword] = useState('');
   const [profileId, setProfileId] = useState('');
   const [empresa, setEmpresa] = useState('all');
+  const [gestorId, setGestorId] = useState('none');
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableProfiles = profiles.filter(p => p.nome !== SUPER_ADMIN_NAME);
@@ -35,6 +44,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
     setPassword('');
     setProfileId('');
     setEmpresa('all');
+    setGestorId('none');
   };
 
   const handleSubmit = async () => {
@@ -56,6 +66,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
           password,
           access_profile_id: profileId || undefined,
           empresa: empresa === 'all' ? undefined : empresa,
+          gestor_id: gestorId === 'none' ? undefined : gestorId,
         },
       });
 
@@ -105,6 +116,21 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
               <SelectContent>
                 {availableProfiles.map(p => (
                   <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Gestor</Label>
+            <Select value={gestorId} onValueChange={setGestorId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Selecione o gestor" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Nenhum</SelectItem>
+                {allUsers.map(u => (
+                  <SelectItem key={u.id} value={u.id}>{u.nome || u.email}</SelectItem>
                 ))}
               </SelectContent>
             </Select>

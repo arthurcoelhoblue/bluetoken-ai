@@ -133,12 +133,13 @@ export interface CloseDealData {
   status: 'GANHO' | 'PERDIDO';
   stageId: string;
   motivo_perda?: string;
+  categoria_perda_closer?: string;
 }
 
 export function useCloseDeal() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ dealId, status, stageId, motivo_perda }: CloseDealData) => {
+    mutationFn: async ({ dealId, status, stageId, motivo_perda, categoria_perda_closer }: CloseDealData) => {
       const now = new Date().toISOString();
       const updates: Record<string, unknown> = {
         status,
@@ -149,11 +150,27 @@ export function useCloseDeal() {
         updates.data_ganho = now;
       } else {
         updates.data_perda = now;
+        updates.motivo_perda_closer = motivo_perda ?? null;
+        updates.categoria_perda_closer = categoria_perda_closer ?? null;
         updates.motivo_perda = motivo_perda ?? null;
       }
       const { error } = await supabase.from('deals').update(updates).eq('id', dealId);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['deals'] }),
+  });
+}
+
+export function useLossCategories() {
+  return useQuery({
+    queryKey: ['deal_loss_categories'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('deal_loss_categories')
+        .select('*')
+        .order('posicao');
+      if (error) throw error;
+      return data as { id: string; codigo: string; label: string; descricao: string | null; posicao: number }[];
+    },
   });
 }

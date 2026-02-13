@@ -25,6 +25,7 @@ import ProductKnowledgeEditor from "./pages/admin/ProductKnowledgeEditor";
 import Settings from "./pages/admin/Settings";
 import LeadsQuentes from "./pages/admin/LeadsQuentes";
 import AIBenchmark from "./pages/admin/AIBenchmark";
+import PendenciasPerda from "./pages/admin/PendenciasPerda";
 import Atendimentos from "./pages/Atendimentos";
 
 // Shell pages (Patch 0)
@@ -101,6 +102,7 @@ const App = () => (
             <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
             <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><LeadsQuentes /></ProtectedRoute>} />
             <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><AIBenchmark /></ProtectedRoute>} />
+            <Route path="/admin/pendencias-perda" element={<ProtectedRoute requiredRoles={['ADMIN']}><PendenciasPerda /></ProtectedRoute>} />
             <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><PipelineConfigPage /></ProtectedRoute>} />
             <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><CustomFieldsConfigPage /></ProtectedRoute>} />
             

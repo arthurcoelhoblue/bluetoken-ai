@@ -18,7 +18,7 @@ export interface PipelineStage {
   is_won: boolean;
   is_lost: boolean;
   sla_minutos: number | null;
-  tempo_minimo_minutos: number | null;
+  tempo_minimo_dias: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -66,6 +66,15 @@ export interface Deal {
   posicao_kanban: number;
   fechado_em: string | null;
   motivo_perda: string | null;
+  motivo_perda_closer: string | null;
+  motivo_perda_ia: string | null;
+  categoria_perda_closer: string | null;
+  categoria_perda_ia: string | null;
+  motivo_perda_final: string | null;
+  categoria_perda_final: string | null;
+  perda_resolvida: boolean;
+  perda_resolvida_por: string | null;
+  perda_resolvida_em: string | null;
   organization_id: string | null;
   etiqueta: string | null;
   data_ganho: string | null;
@@ -86,6 +95,14 @@ export interface Deal {
   status: 'ABERTO' | 'GANHO' | 'PERDIDO';
   created_at: string;
   updated_at: string;
+}
+
+export interface DealLossCategory {
+  id: string;
+  codigo: string;
+  label: string;
+  descricao: string | null;
+  posicao: number;
 }
 
 export interface DealWithRelations extends Deal {

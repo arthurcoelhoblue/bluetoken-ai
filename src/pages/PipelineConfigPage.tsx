@@ -91,7 +91,7 @@ function PipelineConfigContent() {
     const parsed = value === '' ? null : parseInt(value, 10);
     if (parsed !== null && isNaN(parsed)) return;
     try {
-      await updateStage.mutateAsync({ id: stage.id, tempo_minimo_minutos: parsed } as any);
+      await updateStage.mutateAsync({ id: stage.id, tempo_minimo_dias: parsed } as any);
     } catch (e: any) {
       toast.error(e.message);
     }
@@ -176,13 +176,13 @@ function PipelineConfigContent() {
                                 type="number"
                                 min={0}
                                 className="h-7 w-20 text-xs"
-                                placeholder="min"
-                                defaultValue={stage.tempo_minimo_minutos ?? ''}
+                                placeholder="dias"
+                                defaultValue={(stage as any).tempo_minimo_dias ?? ''}
                                 onBlur={e => handleUpdateTempoMinimo(stage, e.target.value)}
                               />
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent>Tempo mínimo (minutos) para ganhar/perder deal neste stage</TooltipContent>
+                          <TooltipContent>Tempo mínimo (dias) para ganhar/perder deal neste stage</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
