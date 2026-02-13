@@ -273,9 +273,9 @@ export function AppSidebar() {
                   </AvatarFallback>
                 </Avatar>
                 {!collapsed && (
-                  <div className="flex flex-col overflow-hidden flex-1">
-                    <span className="text-sm font-medium truncate">{profile?.nome || 'Usuário'}</span>
-                    <div className="flex gap-1">
+                  <div className="flex flex-col overflow-hidden flex-1 gap-1.5">
+                    <span className="text-sm font-semibold truncate leading-none">{profile?.nome || 'Usuário'}</span>
+                    <div className="flex gap-1.5">
                       {roles.slice(0, 2).map(role => (
                         <RoleBadge key={role} role={role} size="sm" />
                       ))}
