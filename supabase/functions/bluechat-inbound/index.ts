@@ -1038,13 +1038,61 @@ serve(async (req) => {
     // Departamento destino: vem da IA ou fallback "Comercial"
     let departamentoDestino: string = iaResult?.departamento_destino || 'Comercial';
 
-    // ANTI-LIMBO: Se IA retornou null (falha total), escalar automaticamente
+    // ANTI-LIMBO: Se IA retornou null (falha total), perguntar antes de escalar
     if (!iaResult) {
-      action = 'ESCALATE';
-      responseText = 'Estamos com um problema técnico. Vou te conectar com um atendente agora!';
-      departamentoDestino = 'Comercial';
-      console.log('[BlueChat] ⚠️ IA retornou null → ESCALATE automático → Comercial');
+      // Buscar contador de falhas consecutivas do framework_data
+      const { data: stateForNull } = await supabase
+        .from('lead_conversation_state')
+        .select('framework_data')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+      
+      const fwData = (stateForNull?.framework_data as Record<string, unknown>) || {};
+      const iaNullCount = (typeof fwData.ia_null_count === 'number' ? fwData.ia_null_count : 0) + 1;
+      
+      if (iaNullCount >= 3) {
+        // 3a falha consecutiva: agora sim escalar
+        action = 'ESCALATE';
+        responseText = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
+        departamentoDestino = 'Comercial';
+        console.log(`[BlueChat] ⚠️ IA null ${iaNullCount}x consecutivas → ESCALATE → Comercial`);
+        // Resetar contador
+        await supabase
+          .from('lead_conversation_state')
+          .update({ framework_data: { ...fwData, ia_null_count: 0 } })
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa);
+      } else {
+        // 1a ou 2a falha: perguntar em vez de escalar
+        action = 'RESPOND';
+        responseText = 'Desculpa, pode repetir ou dar mais detalhes? Quero entender direitinho pra te ajudar!';
+        console.log(`[BlueChat] 🔄 IA null (${iaNullCount}/3) → pergunta de continuidade`);
+        // Incrementar contador
+        await supabase
+          .from('lead_conversation_state')
+          .update({ framework_data: { ...fwData, ia_null_count: iaNullCount } })
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa);
+      }
     } else if (isConversationEnding) {
+      // IA respondeu com sucesso: resetar contador de falhas se existir
+      try {
+        const { data: stateForReset } = await supabase
+          .from('lead_conversation_state')
+          .select('framework_data')
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa)
+          .maybeSingle();
+        const fwReset = (stateForReset?.framework_data as Record<string, unknown>) || {};
+        if (fwReset.ia_null_count && (fwReset.ia_null_count as number) > 0) {
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwReset, ia_null_count: 0 } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+        }
+      } catch (_) { /* non-critical */ }
       action = 'RESOLVE';
     } else if (iaResult.escalation?.needed) {
       action = 'ESCALATE';
@@ -1055,9 +1103,25 @@ serve(async (req) => {
       }
     } else if (responseText) {
       action = 'RESPOND';
+      // IA respondeu com sucesso: resetar contador de falhas
+      try {
+        const { data: stateForReset2 } = await supabase
+          .from('lead_conversation_state')
+          .select('framework_data')
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa)
+          .maybeSingle();
+        const fwReset2 = (stateForReset2?.framework_data as Record<string, unknown>) || {};
+        if (fwReset2.ia_null_count && (fwReset2.ia_null_count as number) > 0) {
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwReset2, ia_null_count: 0 } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+        }
+      } catch (_) { /* non-critical */ }
     } else {
-      // ANTI-LIMBO: Mesmo sem resposta da IA, nunca deixar sem ação
-      // Verificar se tem contexto prévio para decidir
+      // ANTI-LIMBO: IA respondeu mas sem texto
       const { count: msgCount } = await supabase
         .from('lead_messages')
         .select('id', { count: 'exact', head: true })
@@ -1069,12 +1133,17 @@ serve(async (req) => {
         action = 'RESPOND';
         responseText = 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
         console.log('[BlueChat] 🔄 Sem resposta IA + pouco contexto → pergunta de contexto');
-      } else {
-        // Tem contexto mas IA não respondeu: escalar
+      } else if ((msgCount || 0) > 15) {
+        // Muitas mensagens sem resposta: loop real, escalar
         action = 'ESCALATE';
         departamentoDestino = 'Comercial';
-        responseText = 'Hmm, deixa eu pedir ajuda de alguém da equipe pra te atender melhor. Já já entram em contato!';
-        console.log('[BlueChat] 🔄 Sem resposta IA + contexto existente → ESCALATE → Comercial');
+        responseText = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
+        console.log('[BlueChat] 🔄 Sem resposta IA + >15 msgs → ESCALATE (loop detectado)');
+      } else {
+        // 2-15 mensagens: perguntar mais detalhes em vez de escalar
+        action = 'RESPOND';
+        responseText = 'Me conta mais sobre o que você precisa? Quero entender melhor pra te direcionar certo!';
+        console.log('[BlueChat] 🔄 Sem resposta IA + contexto médio → pergunta de continuidade');
       }
     }
     
