@@ -33,6 +33,7 @@ import { useResolvedFields } from '@/hooks/useCustomFields';
 import { CustomFieldsRenderer } from '@/components/contacts/CustomFieldsRenderer';
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
+import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
 
@@ -262,12 +263,15 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
                 {/* Timeline */}
                 <TabsContent value="timeline" className="flex-1 px-6 mt-3 space-y-4 overflow-y-auto">
-                  {/* Cadences Card */}
+                   {/* Cadences Card */}
                   <DealCadenceCard
                     dealId={deal.id}
                     contactId={deal.contact_id}
                     empresa={deal.pipeline_empresa ?? ''}
                   />
+
+                  {/* Calls Panel */}
+                  <DealCallsPanel dealId={deal.id} />
 
                   {/* Add activity inline */}
                   <Card>

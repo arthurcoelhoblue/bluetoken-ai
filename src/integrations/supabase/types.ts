@@ -336,6 +336,145 @@ export type Database = {
         }
         Relationships: []
       }
+      call_events: {
+        Row: {
+          call_id: string | null
+          created_at: string
+          event_type: string
+          id: string
+          payload: Json
+        }
+        Insert: {
+          call_id?: string | null
+          created_at?: string
+          event_type: string
+          id?: string
+          payload?: Json
+        }
+        Update: {
+          call_id?: string | null
+          created_at?: string
+          event_type?: string
+          id?: string
+          payload?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "call_events_call_id_fkey"
+            columns: ["call_id"]
+            isOneToOne: false
+            referencedRelation: "calls"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calls: {
+        Row: {
+          answered_at: string | null
+          caller_number: string | null
+          contact_id: string | null
+          created_at: string
+          deal_id: string | null
+          destination_number: string | null
+          direcao: string
+          duracao_segundos: number
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          ended_at: string | null
+          id: string
+          pbx_call_id: string
+          recording_url: string | null
+          started_at: string | null
+          status: string
+          user_id: string | null
+        }
+        Insert: {
+          answered_at?: string | null
+          caller_number?: string | null
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          destination_number?: string | null
+          direcao: string
+          duracao_segundos?: number
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          ended_at?: string | null
+          id?: string
+          pbx_call_id: string
+          recording_url?: string | null
+          started_at?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Update: {
+          answered_at?: string | null
+          caller_number?: string | null
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          destination_number?: string | null
+          direcao?: string
+          duracao_segundos?: number
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          ended_at?: string | null
+          id?: string
+          pbx_call_id?: string
+          recording_url?: string | null
+          started_at?: string | null
+          status?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       closer_notifications: {
         Row: {
           closer_email: string | null
@@ -3044,6 +3183,84 @@ export type Database = {
           },
         ]
       }
+      zadarma_config: {
+        Row: {
+          api_key: string
+          api_secret: string
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          updated_at: string
+          webhook_enabled: boolean
+          webrtc_enabled: boolean
+        }
+        Insert: {
+          api_key: string
+          api_secret: string
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          updated_at?: string
+          webhook_enabled?: boolean
+          webrtc_enabled?: boolean
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          updated_at?: string
+          webhook_enabled?: boolean
+          webrtc_enabled?: boolean
+        }
+        Relationships: []
+      }
+      zadarma_extensions: {
+        Row: {
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          extension_number: string
+          id: string
+          is_active: boolean
+          sip_login: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          extension_number: string
+          id?: string
+          is_active?: boolean
+          sip_login?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          extension_number?: string
+          id?: string
+          is_active?: boolean
+          sip_login?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "zadarma_extensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "zadarma_extensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       analytics_canal_origem: {
@@ -3262,6 +3479,36 @@ export type Database = {
           triggers?: never
         }
         Relationships: []
+      }
+      call_stats_by_user: {
+        Row: {
+          ano: number | null
+          atendidas: number | null
+          duracao_media: number | null
+          duracao_total: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          mes: number | null
+          perdidas: number | null
+          total_chamadas: number | null
+          user_id: string | null
+          user_nome: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       comissao_resumo_mensal: {
         Row: {

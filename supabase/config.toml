@@ -41,3 +41,9 @@ verify_jwt = false
 
 [functions.amelia-mass-action]
 verify_jwt = false
+
+[functions.zadarma-webhook]
+verify_jwt = false
+
+[functions.zadarma-proxy]
+verify_jwt = false

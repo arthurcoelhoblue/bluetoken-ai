@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { CompanyProvider } from '@/contexts/CompanyContext';
 import { Navigate } from 'react-router-dom';
+import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -43,6 +44,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
               </div>
             </SidebarInset>
           </div>
+          <ZadarmaPhoneWidget />
         </SidebarProvider>
       </CompanyProvider>
     </ThemeProvider>

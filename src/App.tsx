@@ -46,6 +46,7 @@ import OrganizationsPage from "./pages/OrganizationsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
 import CadenciasCRMPage from "./pages/CadenciasPage";
 import ImportacaoPage from "./pages/ImportacaoPage";
+import ZadarmaConfigPage from "./pages/ZadarmaConfigPage";
 
 const queryClient = new QueryClient();
 
@@ -115,6 +116,7 @@ const App = () => (
             <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><PipelineConfigPage /></ProtectedRoute>} />
             <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><CustomFieldsConfigPage /></ProtectedRoute>} />
             <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ImportacaoPage /></ProtectedRoute>} />
+            <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ZadarmaConfigPage /></ProtectedRoute>} />
             
             {/* Catch-all */}
             <Route path="*" element={<NotFound />} />

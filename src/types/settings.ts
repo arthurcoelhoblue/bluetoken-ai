@@ -135,6 +135,16 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     perCompany: true,
     mutuallyExclusiveGroup: 'messaging',
   },
+  {
+    id: 'zadarma',
+    name: 'Zadarma Telefonia',
+    description: 'Telefonia VoIP, WebRTC e gravação de chamadas',
+    icon: 'Phone',
+    secrets: [],
+    settingsKey: 'zadarma',
+    testable: true,
+    perCompany: true,
+  },
 ];
 
 export const AI_PROVIDERS = [
@@ -195,6 +205,14 @@ export const WEBHOOKS: WebhookInfo[] = [
     name: 'Cadence Runner',
     description: 'Executa cadências programadas',
     path: '/functions/v1/cadence-runner',
+    method: 'POST',
+    authType: 'None',
+  },
+  {
+    id: 'zadarma-webhook',
+    name: 'Zadarma Webhook',
+    description: 'Recebe eventos de telefonia do PBX Zadarma',
+    path: '/functions/v1/zadarma-webhook',
     method: 'POST',
     authType: 'None',
   },

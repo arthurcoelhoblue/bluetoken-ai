@@ -19,6 +19,7 @@ import {
   Settings,
   BarChart3,
   Upload,
+  PhoneCall,
 } from 'lucide-react';
 
 export interface ScreenRegistryItem {
@@ -51,6 +52,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'monitor_sgt', label: 'Monitor SGT', group: 'Configuração', icon: Activity, url: '/monitor/sgt-events' },
   { key: 'leads_quentes', label: 'Leads Quentes', group: 'Configuração', icon: Flame, url: '/admin/leads-quentes' },
   { key: 'importacao', label: 'Importação', group: 'Configuração', icon: Upload, url: '/importacao' },
+  { key: 'telefonia_zadarma', label: 'Telefonia', group: 'Configuração', icon: PhoneCall, url: '/admin/zadarma' },
   { key: 'configuracoes', label: 'Configurações', group: 'Configuração', icon: Settings, url: '/admin/settings' },
 ];
 
