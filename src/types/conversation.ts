@@ -72,6 +72,10 @@ export interface ConversationState {
   ultimo_contato_em: string;
   created_at: string;
   updated_at: string;
+  modo?: 'SDR_IA' | 'MANUAL' | 'HIBRIDO';
+  assumido_por?: string | null;
+  assumido_em?: string | null;
+  devolvido_em?: string | null;
 }
 
 // Labels para exibição na UI
