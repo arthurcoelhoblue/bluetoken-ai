@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import {
   AlertTriangle,
+  BarChart3,
   Bot,
   Building2,
   CalendarCheck,
@@ -81,6 +82,7 @@ const navGroups: NavGroup[] = [
       { title: 'Metas & Comissões', url: '/metas', icon: Target, screenKey: 'metas' },
       { title: 'Renovação', url: '/renovacao', icon: RefreshCcw, screenKey: 'renovacao' },
       { title: 'Cockpit', url: '/cockpit', icon: Gauge, screenKey: 'cockpit' },
+      { title: 'Relatórios', url: '/relatorios', icon: BarChart3, screenKey: 'relatorios' },
     ],
   },
   {

@@ -50,6 +50,13 @@ export type Database = {
             foreignKeyName: "access_profiles_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "access_profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -359,6 +366,13 @@ export type Database = {
             foreignKeyName: "contacts_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -403,6 +417,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "conversation_takeover_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "conversation_takeover_log_user_id_fkey"
             columns: ["user_id"]
@@ -456,6 +477,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "copilot_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "copilot_messages_user_id_fkey"
             columns: ["user_id"]
@@ -705,6 +733,13 @@ export type Database = {
             foreignKeyName: "deal_stage_history_from_stage_id_fkey"
             columns: ["from_stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
           },
@@ -712,8 +747,22 @@ export type Database = {
             foreignKeyName: "deal_stage_history_moved_by_fkey"
             columns: ["moved_by"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_moved_by_fkey"
+            columns: ["moved_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deal_stage_history_to_stage_id_fkey"
@@ -899,6 +948,13 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -906,8 +962,22 @@ export type Database = {
             foreignKeyName: "deals_perda_resolvida_por_fkey"
             columns: ["perda_resolvida_por"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
           },
           {
             foreignKeyName: "deals_pipeline_id_fkey"
@@ -927,6 +997,13 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
           },
@@ -934,8 +1011,22 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_origem_id_fkey"
@@ -1266,6 +1357,13 @@ export type Database = {
             foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
             columns: ["resolvido_por"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
+            columns: ["resolvido_por"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1361,6 +1459,13 @@ export type Database = {
             foreignKeyName: "lead_contacts_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1444,6 +1549,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_conversation_state_assumido_por_fkey"
+            columns: ["assumido_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "lead_conversation_state_assumido_por_fkey"
             columns: ["assumido_por"]
@@ -1610,6 +1722,13 @@ export type Database = {
             foreignKeyName: "lead_messages_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1732,6 +1851,13 @@ export type Database = {
             foreignKeyName: "organizations_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -1817,6 +1943,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
           {
             foreignKeyName: "pipeline_stages_pipeline_id_fkey"
             columns: ["pipeline_id"]
@@ -1944,6 +2077,13 @@ export type Database = {
             foreignKeyName: "profiles_gestor_id_fkey"
             columns: ["gestor_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "profiles_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2053,6 +2193,13 @@ export type Database = {
             foreignKeyName: "system_settings_updated_by_fkey"
             columns: ["updated_by"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "system_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2098,8 +2245,22 @@ export type Database = {
             foreignKeyName: "user_access_assignments_assigned_by_fkey"
             columns: ["assigned_by"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "user_access_assignments_user_id_fkey"
@@ -2134,6 +2295,13 @@ export type Database = {
             foreignKeyName: "user_roles_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_roles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2141,6 +2309,178 @@ export type Database = {
       }
     }
     Views: {
+      analytics_canal_origem: {
+        Row: {
+          canal: string | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          total_deals: number | null
+          valor_ganho: number | null
+          win_rate: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      analytics_conversion: {
+        Row: {
+          ciclo_medio_dias: number | null
+          deals_abertos: number | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          ticket_medio_ganho: number | null
+          total_deals: number | null
+          valor_ganho: number | null
+          valor_pipeline_aberto: number | null
+          win_rate: number | null
+        }
+        Relationships: []
+      }
+      analytics_deals_periodo: {
+        Row: {
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          mes: string | null
+          pipeline_id: string | null
+          total_deals: number | null
+          valor_ganho: number | null
+          valor_perdido: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      analytics_funnel: {
+        Row: {
+          deals_ativos: number | null
+          deals_count: number | null
+          deals_valor: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          posicao: number | null
+          stage_id: string | null
+          stage_nome: string | null
+          tempo_medio_min: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      analytics_motivos_perda: {
+        Row: {
+          categoria: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          motivo: string | null
+          pipeline_id: string | null
+          quantidade: number | null
+          valor_perdido: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      analytics_vendedor: {
+        Row: {
+          atividades_7d: number | null
+          deals_abertos: number | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          total_deals: number | null
+          user_id: string | null
+          valor_ganho: number | null
+          vendedor_nome: string | null
+          win_rate: number | null
+        }
+        Relationships: []
+      }
       contacts_with_stats: {
         Row: {
           canal_origem: string | null
@@ -2189,6 +2529,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations_with_stats"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "contacts_owner_id_fkey"
@@ -2305,6 +2652,13 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2312,8 +2666,22 @@ export type Database = {
             foreignKeyName: "deals_perda_resolvida_por_fkey"
             columns: ["perda_resolvida_por"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
           },
           {
             foreignKeyName: "deals_pipeline_id_fkey"
@@ -2333,6 +2701,13 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
           },
@@ -2340,8 +2715,22 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "pipeline_stages"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_origem_id_fkey"
@@ -2387,6 +2776,13 @@ export type Database = {
             foreignKeyName: "organizations_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
@@ -2406,6 +2802,13 @@ export type Database = {
           valor_perdido: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
@@ -2437,8 +2840,22 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_id_fkey"
@@ -2488,6 +2905,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workbench_sla_alerts"
             referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "deals_owner_id_fkey"

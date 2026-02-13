@@ -42,6 +42,7 @@ import IntegracoesPage from "./pages/IntegracoesPage";
 import PipelineConfigPage from "./pages/PipelineConfigPage";
 import CustomFieldsConfigPage from "./pages/CustomFieldsConfigPage";
 import OrganizationsPage from "./pages/OrganizationsPage";
+import AnalyticsPage from "./pages/AnalyticsPage";
 
 const queryClient = new QueryClient();
 
@@ -73,6 +74,7 @@ const App = () => (
             <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><AmeliaPage /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
             <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
+            <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
             
             {/* Admin/Auditor routes */}
             <Route path="/monitor/sgt-events" element={
