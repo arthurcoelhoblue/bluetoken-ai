@@ -1,148 +1,141 @@
 
-## Auditoria Completa: Pontas Soltas, Mocks e Features Desligadas
 
-Apos varredura completa no codigo e banco de dados, identifiquei os seguintes problemas organizados por criticidade.
+## Form de Captura — Estrutura Completa
 
----
+### Visao Geral
 
-### CRITICO - Precisa resolver agora
-
-**1. SMS mockado no cadence-runner**
-- Arquivo: `supabase/functions/cadence-runner/index.ts` (linha 401-403)
-- O canal SMS retorna `{ success: true }` sem fazer nada -- apenas imprime `[MOCK] SMS enviado`
-- Se alguma cadencia tiver step do tipo SMS, o sistema finge que enviou
-- **Solucao**: Remover suporte a SMS por completo (nao e usado) ou implementar via API real. Recomendo remover e logar warning se algum step tentar usar SMS, marcando como ERRO
-
-**2. ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER nao notificam ninguem**
-- Arquivo: `supabase/functions/sdr-ia-interpret/index.ts` (linhas 3840-3887)
-- Quando a IA decide escalar ou criar tarefa closer, apenas insere um evento na tabela `lead_cadence_events` e loga no console
-- **Nao chama** a edge function `notify-closer` que ja existe e esta pronta
-- **Nao muda** o `lead_conversation_state.modo` para MANUAL (o vendedor nao sabe que precisa assumir)
-- **Resultado**: Lead fica em limbo -- IA decide escalar mas ninguem e notificado
-- **Solucao**: Na acao ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER, chamar `notify-closer` e atualizar `lead_conversation_state.modo` para MANUAL
-
-**3. notify-closer usa emails placeholder**
-- Arquivo: `supabase/functions/notify-closer/index.ts` (linha 119-120)
-- Emails hardcoded: `closer@tokeniza.com.br` e `closer@grupoblue.com.br`
-- Esses emails provavelmente nao existem ou nao sao monitorados
-- **Solucao**: Buscar do `system_settings` ou de uma tabela de responsaveis por empresa
+Criar um modulo "Form de Captura" dentro do grupo Automacao na sidebar, com uma pagina de gestao (datatable) e um builder de formularios estilo Typeform. Os formularios serao publicos (sem autenticacao) e os leads capturados serao inseridos no pipeline automaticamente.
 
 ---
 
-### IMPORTANTE - Feature desligada ou incompleta
+### 1. Banco de Dados
 
-**4. Horario da Amelia inconsistente entre banco e codigo**
-- No banco (`system_settings`): `amelia.horario_funcionamento = 08:00-18:00`
-- No codigo recente (`sgt-webhook` e `cadence-runner`): hardcoded `09:00-18:00`
-- O `sdr-ia-interpret` **nao consulta** a configuracao de horario do banco
-- **Solucao**: Alinhar tudo para usar a configuracao do banco (09:00-18:00 conforme aprovado), atualizar o registro no banco, e fazer o sdr-ia-interpret tambem respeitar horario
+Duas tabelas novas:
 
-**5. Integracao Pipedrive desligada mas com infraestrutura pronta**
-- `system_settings`: `integrations.pipedrive.enabled = false`
-- Edge function `pipedrive-sync` existe e funciona
-- Secret `PIPEDRIVE_API_TOKEN` configurada
-- Leads ja chegam com `pipedrive_deal_id` e `url_pipedrive`
-- **Solucao**: Nenhuma acao tecnica necessaria -- esta desligado propositalmente. Apenas confirmar se deve permanecer assim
+**`capture_forms`** — Metadados dos formularios
+- `id` (uuid, PK)
+- `empresa` (text, NOT NULL) — BLUE ou TOKENIZA
+- `nome` (text, NOT NULL)
+- `slug` (text, UNIQUE, NOT NULL) — identificador na URL publica
+- `descricao` (text)
+- `pipeline_id` (uuid, FK pipelines.id) — pipeline destino dos leads
+- `stage_id` (uuid, FK pipeline_stages.id) — estagio inicial
+- `fields` (jsonb, NOT NULL, default '[]') — definicao dos campos/steps do form
+- `settings` (jsonb, default '{}') — cores, logo, mensagem de conclusao
+- `status` (text, default 'DRAFT') — DRAFT, PUBLISHED, ARCHIVED
+- `created_by` (uuid, FK profiles.id)
+- `created_at` / `updated_at` (timestamptz)
 
-**6. connectionName "Arthur" hardcoded no whatsapp-send**
-- Arquivo: `supabase/functions/whatsapp-send/index.ts` (linha 179)
-- O nome da conexao WhatsApp "Arthur" esta fixo no codigo (canal Mensageria)
-- **Nota**: Canal Mensageria esta `enabled: false` para ambas empresas (BLUE e TOKENIZA usam BlueChat agora)
-- **Solucao**: Como Mensageria esta desativada, nao e urgente. Mas se reativar, o connectionName deveria vir de configuracao
+**`capture_form_submissions`** — Respostas recebidas
+- `id` (uuid, PK)
+- `form_id` (uuid, FK capture_forms.id)
+- `empresa` (text)
+- `answers` (jsonb) — respostas do usuario
+- `metadata` (jsonb) — IP, user-agent, UTM params
+- `rating_score` (integer, nullable) — reservado para o sistema de rating futuro
+- `contact_id` (uuid, FK contatos.id, nullable) — contato criado/vinculado
+- `deal_id` (uuid, FK deals.id, nullable) — deal criado no pipeline
+- `created_at` (timestamptz)
 
-**7. Email em producao mas `email.enabled = false`**
-- `system_settings`: `integrations.email.enabled = false`
-- `email.modo_teste.ativo = false` (modo teste DESLIGADO -- emails reais seriam enviados)
-- SMTP configurado (secrets existem)
-- **Risco**: Se alguma cadencia tiver step de email, vai tentar enviar de verdade (modo teste desligado) mas a integracao esta marcada como desabilitada
-- **Solucao**: Garantir que o cadence-runner verifique `integrations.email.enabled` antes de enviar emails, ou ligar a integracao se pronta
-
----
-
-### MENOR - Limpeza e alinhamento
-
-**8. DEFAULT_TEST_PHONE hardcoded**
-- `supabase/functions/whatsapp-send/index.ts` (linha 18): `5581987580922`
-- Esse numero so e usado como fallback se `system_settings` nao tiver `numero_teste`
-- Hoje o banco tem `numero_teste: 5561998317422` e `modo_teste.ativo = false`
-- **Solucao**: Remover o fallback hardcoded e falhar explicitamente se modo teste ativo sem numero configurado
-
-**9. closer_notifications sem registros**
-- Tabela existe mas tem 0 registros -- confirma que notify-closer nunca e chamado pelo fluxo real
+RLS: `capture_forms` isolado por empresa via `get_user_empresa`. `capture_form_submissions` idem. A edge function de submissao usara `service_role`.
 
 ---
 
-### Secao Tecnica - Mudancas Propostas
+### 2. Edge Function — `capture-form-submit`
 
-**Arquivo `supabase/functions/sdr-ia-interpret/index.ts`**
+Endpoint publico (sem auth) que:
+1. Recebe `{ slug, answers, metadata }`
+2. Busca o form pelo slug
+3. Valida campos obrigatorios
+4. Cria ou vincula contato na tabela `contatos`
+5. Cria deal no pipeline/stage configurado
+6. Insere registro em `capture_form_submissions`
+7. Retorna sucesso
 
-Na funcao `applyAction`, nos cases ESCALAR_HUMANO e CRIAR_TAREFA_CLOSER:
+---
+
+### 3. Frontend — Paginas e Componentes
+
+**Pagina de Gestao (`/capture-forms`)**
+- Wrapper `AppLayout` com `CaptureFormsContent` (padrao do projeto)
+- Datatable com colunas: Nome, Status (badge), Respostas (count), Pipeline destino, Criado em, Acoes
+- Acoes por linha: Editar nome (inline ou dialog), Visualizar, Editar conteudo, Compartilhar (copiar link publico), Excluir
+- Botao "Criar Form de Captura" no topo
+- Filtro por status e busca por nome
+
+**Pagina do Builder (`/capture-forms/:id/edit`)**
+- Editor visual dos steps do formulario
+- Cada step = 1 pergunta (estilo Typeform, tela cheia por pergunta)
+- Tipos de campo: texto curto, texto longo, email, telefone, selecao unica, selecao multipla, numero
+- Configuracao: pipeline destino, estagio, cores, mensagem de conclusao
+- Preview lateral
+
+**Pagina Publica do Form (`/f/:slug`)**
+- Rota publica (sem ProtectedRoute, sem AppLayout)
+- Renderiza os steps um a um, tela cheia, com transicoes suaves
+- Ao finalizar, chama a edge function `capture-form-submit`
+- Tela de agradecimento configuravel
+
+**Dialog de Compartilhamento**
+- Mostra URL publica copiavel
+- Opcao de copiar link
+
+---
+
+### 4. Sidebar e Rotas
+
+- Adicionar item "Form de Captura" no grupo Automacao da sidebar (icone `ClipboardList`)
+- Registrar no `screenRegistry.ts` com key `capture_forms`
+- Rotas novas no `App.tsx`:
+  - `/capture-forms` — listagem (ProtectedRoute, roles ADMIN)
+  - `/capture-forms/new` — criar (ProtectedRoute, roles ADMIN)  
+  - `/capture-forms/:id/edit` — builder (ProtectedRoute, roles ADMIN)
+  - `/f/:slug` — formulario publico (sem ProtectedRoute)
+
+---
+
+### 5. Arquivos a Criar/Modificar
+
+| Arquivo | Acao |
+|---------|------|
+| Migration SQL | Criar tabelas + RLS |
+| `src/pages/CaptureFormsPage.tsx` | Listagem com datatable |
+| `src/pages/CaptureFormBuilderPage.tsx` | Builder de campos |
+| `src/pages/PublicFormPage.tsx` | Renderizacao publica |
+| `src/hooks/useCaptureForms.ts` | CRUD dos formularios |
+| `src/types/captureForms.ts` | Tipagens |
+| `src/components/capture-forms/FormFieldEditor.tsx` | Editor de campo individual |
+| `src/components/capture-forms/PublicFormRenderer.tsx` | Renderizador Typeform-style |
+| `src/components/capture-forms/ShareFormDialog.tsx` | Dialog de compartilhamento |
+| `supabase/functions/capture-form-submit/index.ts` | Submissao publica |
+| `src/components/layout/AppSidebar.tsx` | Adicionar menu |
+| `src/config/screenRegistry.ts` | Registrar tela |
+| `src/App.tsx` | Adicionar rotas |
+| `src/components/layout/TopBar.tsx` | Adicionar titulo da rota |
+
+---
+
+### Secao Tecnica — Estrutura do `fields` (jsonb)
 
 ```text
-case 'ESCALAR_HUMANO':
-case 'CRIAR_TAREFA_CLOSER':
-  // 1. Manter logica existente de eventos
-  // 2. ADICIONAR: Chamar notify-closer
-  await fetch(`${SUPABASE_URL}/functions/v1/notify-closer`, {
-    method: 'POST',
-    headers: { Authorization: Bearer ${SERVICE_KEY}, Content-Type: application/json },
-    body: JSON.stringify({ lead_id: leadId, empresa, motivo: detalhes?.motivo || acao })
-  });
-  // 3. ADICIONAR: Mudar modo para MANUAL
-  await supabase.from('lead_conversation_state')
-    .update({ modo: 'MANUAL', assumido_em: now })
-    .eq('lead_id', leadId)
-    .eq('empresa', empresa);
+[
+  {
+    "id": "uuid",
+    "type": "short_text" | "long_text" | "email" | "phone" | "single_select" | "multi_select" | "number",
+    "label": "Qual seu nome?",
+    "required": true,
+    "placeholder": "Digite aqui...",
+    "options": ["Opcao A", "Opcao B"]  // apenas para select
+  }
+]
 ```
 
-**Arquivo `supabase/functions/cadence-runner/index.ts`**
+### Ordem de Implementacao
 
-No bloco de SMS (linha 401):
+1. Migration (tabelas + RLS)
+2. Tipos e hook
+3. Pagina de listagem + sidebar/rotas
+4. Builder de formularios
+5. Edge function de submissao
+6. Pagina publica do form
 
-```text
-// Substituir mock por erro explicito
-console.warn('[Disparo] Canal SMS nao implementado');
-return { success: false, error: 'Canal SMS nao suportado' };
-```
-
-**Arquivo `supabase/functions/notify-closer/index.ts`**
-
-Substituir emails hardcoded por busca no banco:
-
-```text
-// Buscar email do closer responsavel da system_settings ou profiles
-const { data: closerConfig } = await supabase
-  .from('system_settings')
-  .select('value')
-  .eq('category', empresa.toLowerCase())
-  .eq('key', 'closer_email')
-  .maybeSingle();
-
-const closerEmail = body.closer_email || closerConfig?.value?.email || fallback;
-```
-
-**Banco de dados**
-
-Atualizar horario da Amelia:
-
-```text
-UPDATE system_settings 
-SET value = '{"inicio": "09:00", "fim": "18:00", "dias": ["seg","ter","qua","qui","sex"]}'
-WHERE category = 'amelia' AND key = 'horario_funcionamento';
-```
-
----
-
-### Resumo de Acoes
-
-| # | Item | Acao | Prioridade |
-|---|------|------|------------|
-| 1 | SMS mockado | Substituir mock por erro explicito | Critico |
-| 2 | ESCALAR/CLOSER nao notifica | Chamar notify-closer + mudar modo MANUAL | Critico |
-| 3 | Emails closer placeholder | Tornar configuravel via system_settings | Critico |
-| 4 | Horario inconsistente | Alinhar banco (09-18) e fazer sdr-ia ler config | Importante |
-| 5 | Pipedrive desligado | Manter (decisao de negocio) | Nenhuma |
-| 6 | connectionName Arthur | Manter (Mensageria desativada) | Baixa |
-| 7 | Email enabled vs modo_teste | Verificar flag enabled no cadence-runner | Importante |
-| 8 | DEFAULT_TEST_PHONE | Limpar fallback hardcoded | Menor |
-| 9 | closer_notifications vazia | Resolvido ao implementar item 2 | -- |
