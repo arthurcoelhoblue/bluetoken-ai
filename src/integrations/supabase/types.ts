@@ -615,6 +615,13 @@ export type Database = {
             referencedRelation: "deals_full_detail"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
         ]
       }
       deal_loss_categories: {
@@ -686,6 +693,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "deals_full_detail"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
           },
           {
             foreignKeyName: "deal_stage_history_from_stage_id_fkey"
@@ -901,6 +915,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "pipelines"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
           },
           {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
@@ -1803,6 +1824,13 @@ export type Database = {
             referencedRelation: "pipelines"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
         ]
       }
       pipelines: {
@@ -2295,6 +2323,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
@@ -2350,6 +2385,112 @@ export type Database = {
         Relationships: [
           {
             foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workbench_pipeline_summary: {
+        Row: {
+          deals_abertos: number | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          owner_id: string | null
+          pipeline_empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          valor_aberto: number | null
+          valor_ganho: number | null
+          valor_perdido: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workbench_sla_alerts: {
+        Row: {
+          contact_nome: string | null
+          deal_id: string | null
+          deal_titulo: string | null
+          deal_valor: number | null
+          minutos_no_stage: number | null
+          owner_id: string | null
+          pipeline_empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_nome: string | null
+          sla_estourado: boolean | null
+          sla_minutos: number | null
+          sla_percentual: number | null
+          stage_cor: string | null
+          stage_id: string | null
+          stage_nome: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workbench_tarefas: {
+        Row: {
+          contact_nome: string | null
+          created_at: string | null
+          deal_id: string | null
+          deal_status: string | null
+          deal_titulo: string | null
+          deal_valor: number | null
+          descricao: string | null
+          id: string | null
+          owner_id: string | null
+          pipeline_empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          pipeline_nome: string | null
+          stage_cor: string | null
+          stage_nome: string | null
+          tarefa_concluida: boolean | null
+          tarefa_prazo: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_activities_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "profiles"

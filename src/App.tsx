@@ -27,6 +27,7 @@ import LeadsQuentes from "./pages/admin/LeadsQuentes";
 import AIBenchmark from "./pages/admin/AIBenchmark";
 import PendenciasPerda from "./pages/admin/PendenciasPerda";
 import Atendimentos from "./pages/Atendimentos";
+import WorkbenchPage from "./pages/WorkbenchPage";
 
 // Shell pages (Patch 0)
 import PipelinePage from "./pages/PipelinePage";
@@ -58,6 +59,7 @@ const App = () => (
             
             {/* Protected routes */}
             <Route path="/" element={<Index />} />
+            <Route path="/meu-dia" element={<ProtectedRoute><WorkbenchPage /></ProtectedRoute>} />
             <Route path="/me" element={<ProtectedRoute><Me /></ProtectedRoute>} />
             
             {/* Shell pages — Patch 0 */}
