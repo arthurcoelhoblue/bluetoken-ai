@@ -37,11 +37,11 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
         <SidebarProvider defaultOpen={true}>
           <div className="min-h-screen flex w-full">
             <AppSidebar />
-            <SidebarInset>
+            <SidebarInset className="flex flex-col overflow-hidden">
               <TopBar />
-              <div className="flex-1 overflow-auto">
+              <main className="flex-1 min-h-0 overflow-auto flex flex-col">
                 {children}
-              </div>
+              </main>
             </SidebarInset>
           </div>
           <ZadarmaPhoneWidget />
