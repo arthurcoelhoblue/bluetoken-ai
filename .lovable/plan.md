@@ -1,107 +1,99 @@
 
-
-## Patch 7: Edge Functions — Copilot IA + SDR Modo Manual
+## Patch 8: Relatorios e Analytics
 
 ### Resumo
 
-Substituir o mock do Copilot Amelia por uma edge function real que enriquece contexto com dados do CRM e chama a IA via Lovable AI Gateway. Tambem consolida a tipagem do modo MANUAL no sdr-ia-interpret.
+Dashboard analitico completo com 6 KPIs, 4 tabs (Funil, Vendedores, Canais, Perdas), filtro por pipeline, e Copilot integrado. Alimentado por 6 views SQL otimizadas.
 
 ---
 
-### O que ja existe vs o que precisa ser feito
+### Adaptacoes vs PDF (problemas encontrados no schema real)
 
-| Item | Status atual | Acao |
-|------|-------------|------|
-| CopilotPanel UI | Mock com setTimeout | Conectar a edge function real |
-| SDR modo MANUAL | Implementado (linha 4298) | Apenas tipar — remover `as any` |
-| ConversationState.modo | Falta no tipo (linha 102-115) | Adicionar campos modo/assumido |
-| MANUAL_MODE no LeadIntentTipo | Nao existe (linha 29-46) | Adicionar ao enum |
-| copilot-chat edge function | Nao existe | Criar |
-| LOVABLE_API_KEY | Configurado | Pronto para uso |
+| PDF assume | Schema real | Correcao |
+|------------|------------|----------|
+| `deal_stage_history.tempo_no_stage_anterior_min` | `tempo_no_stage_anterior_ms` (milissegundos) | Converter `ms / 60000` para obter minutos |
+| `pipeline_stages.is_active` | Coluna nao existe | Remover filtro (todos stages ativos por padrao) |
+| `pipelines.is_active` | `pipelines.ativo` | Usar `p.ativo = true` |
+| `deals.empresa` (em analytics_vendedor) | Nao existe no deals | Fazer JOIN com pipelines para obter empresa |
+| `analytics_conversion.ticket_medio_ganho` / `ciclo_medio_dias` | PDF corta SQL na pagina 3 | Completar calculo baseado na logica descrita |
 
 ---
 
 ### Ordem de implementacao
 
-#### Fase 1: Edge Function `copilot-chat`
+#### Fase 1: Migration SQL — 6 Views Analytics
 
-Criar `supabase/functions/copilot-chat/index.ts`:
+Criar 6 views com as correcoes acima:
 
-- CORS headers padrao
-- Recebe: `messages`, `contextType`, `contextId`, `empresa`
-- Enriquecimento por tipo de contexto:
-  - **LEAD**: classificacao + ultimas 15 mensagens + estado conversa + framework data
-  - **DEAL**: deal completo via `deals_full_detail` + 10 atividades recentes
-  - **PIPELINE/GERAL**: resumo pipelines + SLA estourados
-- Chama Lovable AI Gateway (`google/gemini-3-flash-preview`)
-- Retorna: `{ content, model, tokens_input, tokens_output, latency_ms }`
-- Erros tratados: 429, 402, 500
+1. **analytics_funnel** — Deals por stage em cada pipeline (deals_count, deals_valor, tempo_medio_min, deals_ativos)
+2. **analytics_conversion** — Taxas por pipeline (total_deals, win_rate, ticket_medio_ganho, ciclo_medio_dias)
+3. **analytics_vendedor** — Performance individual (deals_ganhos, valor_ganho, win_rate, atividades_7d). JOIN com pipelines para empresa
+4. **analytics_deals_periodo** — Deals agrupados por mes
+5. **analytics_motivos_perda** — Top motivos rankeados com quantidade e valor
+6. **analytics_canal_origem** — Performance por canal de origem
 
-Registrar no `supabase/config.toml`:
-```text
-[functions.copilot-chat]
-verify_jwt = false
-```
+Todas as views usam `SECURITY INVOKER` para respeitar RLS.
 
-System prompt da Amelia:
-```text
-Voce e a Amelia, consultora de vendas IA do Blue CRM.
-Ajude vendedores com insights diretos e actionaveis baseados nos dados do CRM.
-Responda em portugues. Nao invente dados — use apenas o contexto fornecido.
-```
+#### Fase 2: Types — `src/types/analytics.ts`
 
-#### Fase 2: SDR-IA-Interpret — Consolidar tipagem
+6 interfaces conforme PDF:
+- AnalyticsFunnel, AnalyticsConversion, AnalyticsVendedor
+- AnalyticsPeriodo, AnalyticsMotivosPerda, AnalyticsCanalOrigem
 
-No `supabase/functions/sdr-ia-interpret/index.ts`:
+#### Fase 3: Hooks — `src/hooks/useAnalytics.ts`
 
-1. Adicionar `'MANUAL_MODE'` ao tipo `LeadIntentTipo` (linha 46)
-2. Adicionar ao `ConversationState` (linhas 102-115):
-   - `modo?: 'SDR_IA' | 'MANUAL' | 'HIBRIDO'`
-   - `assumido_por?: string | null`
-   - `assumido_em?: string | null`
-   - `devolvido_em?: string | null`
-3. Remover cast `as any` na linha 4298
+6 hooks (1 por view), cada um filtrando por empresa via `useCompany()`. useAnalyticsFunnel aceita `pipelineId` opcional.
 
-#### Fase 3: CopilotPanel — Conectar ao backend
+#### Fase 4: Page — `src/pages/AnalyticsPage.tsx`
 
-Modificar `src/components/copilot/CopilotPanel.tsx`:
+Dashboard completo com:
+- Header: titulo + filtro por pipeline + botao Copilot Amelia
+- 6 KPIs cards no topo (Total deals, Win rate, Valor ganho, Pipeline aberto, Ticket medio, Ciclo medio)
+- 4 Tabs:
+  - **Funil**: barras horizontais por stage com deals, valor, tempo medio
+  - **Vendedores**: tabela ranking com ganhos, perdidos, abertos, valor, win rate, atividades 7d
+  - **Canais**: tabela com total, ganhos, perdidos, valor ganho, win rate
+  - **Perdas**: motivos rankeados com quantidade e valor perdido
 
-- Remover setTimeout mock (linhas 63-71)
-- Chamar `supabase.functions.invoke('copilot-chat', { body })`
-- Passar historico, contextType, contextId, empresa
-- Toast de erro para falhas 429/402
-- Mensagem inline para erros genericos
+#### Fase 5: Routing e Sidebar
+
+- Rota `/relatorios` em App.tsx com `requiredRoles={['ADMIN', 'CLOSER']}`
+- Item "Relatorios" no grupo "Comercial" do AppSidebar com icone BarChart3
+- Registro em screenRegistry.ts
 
 ---
 
 ### Secao tecnica
 
-**Modelo IA**: `google/gemini-3-flash-preview` via Lovable AI Gateway (`https://ai.gateway.lovable.dev/v1/chat/completions`)
-
-**Autenticacao**: `LOVABLE_API_KEY` ja configurada (secret do projeto)
-
 **Arquivos criados/modificados**:
 
 | Arquivo | Acao |
 |---------|------|
-| `supabase/functions/copilot-chat/index.ts` | Criar |
-| `supabase/functions/sdr-ia-interpret/index.ts` | Editar (3 pontos) |
-| `src/components/copilot/CopilotPanel.tsx` | Editar (remover mock, conectar backend) |
+| Migration SQL (6 views) | Criar via migration tool |
+| `src/types/analytics.ts` | Criar |
+| `src/hooks/useAnalytics.ts` | Criar |
+| `src/pages/AnalyticsPage.tsx` | Criar |
+| `src/App.tsx` | Editar (adicionar rota) |
+| `src/components/layout/AppSidebar.tsx` | Editar (adicionar item) |
+| `src/config/screenRegistry.ts` | Editar (registrar tela) |
 
-**Decisao vs PDF**: O PDF sugere Claude Sonnet + Gemini fallback, mas usaremos Lovable AI Gateway (gemini-3-flash-preview) que ja esta disponivel sem API key extra e e o padrao do projeto.
+**Correcao critica no SQL**: `tempo_no_stage_anterior_ms / 60000.0` em vez de referenciar coluna inexistente `_min`.
+
+**Dependencias satisfeitas**: pipelines, deals, pipeline_stages, deal_stage_history, deal_activities, profiles, contacts — todas existem.
 
 ---
 
-### Checklist de validacao
+### Checklist de validacao (sera executado apos implementacao)
 
-1. copilot-chat edge function criada e deployada
-2. Teste curl: POST copilot-chat com contextType=GERAL retorna resposta IA
-3. CopilotPanel chama backend real
-4. Resposta da Amelia aparece no painel
-5. Enriquecimento LEAD funciona (classificacao + mensagens)
-6. Enriquecimento DEAL funciona (deal + atividades)
-7. SDR-IA: MANUAL_MODE adicionado ao tipo
-8. SDR-IA: ConversationState tipado corretamente
-9. SDR-IA: cast `as any` removido
-10. Erros 429/402 exibidos como toast
-
+1. 6 views analytics criadas (SELECT * FROM analytics_conversion LIMIT 5)
+2. Verificar dados reais nas views
+3. Rota /relatorios acessivel
+4. Item "Relatorios" visivel na sidebar grupo Comercial
+5. KPIs renderizam corretamente
+6. Tab Funil mostra stages com barras
+7. Tab Vendedores mostra ranking em tabela
+8. Tab Canais mostra performance por canal
+9. Tab Perdas mostra motivos rankeados
+10. Filtro por pipeline atualiza todos os dados
+11. Company switcher filtra por empresa
+12. Copilot Amelia acessivel no header da pagina
