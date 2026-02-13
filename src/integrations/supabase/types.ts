@@ -60,6 +60,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "access_profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       ai_model_benchmarks: {
@@ -218,6 +225,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workbench_pipeline_summary"
             referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
@@ -473,6 +487,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       closer_notifications: {
@@ -582,6 +603,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "comissao_lancamentos_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "comissao_lancamentos_deal_id_fkey"
             columns: ["deal_id"]
             isOneToOne: false
@@ -622,6 +650,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -801,6 +836,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "contacts_pessoa_id_fkey"
             columns: ["pessoa_id"]
             isOneToOne: false
@@ -854,6 +896,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "conversation_takeover_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -914,6 +963,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copilot_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -1147,6 +1203,13 @@ export type Database = {
             foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
             columns: ["trigger_stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -1254,6 +1317,13 @@ export type Database = {
             foreignKeyName: "deal_stage_history_from_stage_id_fkey"
             columns: ["from_stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -1291,6 +1361,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_moved_by_fkey"
+            columns: ["moved_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deal_stage_history_to_stage_id_fkey"
@@ -1508,6 +1592,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "deals_perda_resolvida_por_fkey"
             columns: ["perda_resolvida_por"]
             isOneToOne: false
@@ -1520,6 +1611,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "deals_pipeline_id_fkey"
@@ -1546,6 +1644,13 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -1574,6 +1679,13 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -1596,6 +1708,13 @@ export type Database = {
             columns: ["stage_id"]
             isOneToOne: false
             referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
             referencedColumns: ["stage_id"]
           },
           {
@@ -1694,6 +1813,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2086,6 +2212,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
+            columns: ["resolvido_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       lead_contacts: {
@@ -2189,6 +2322,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "lead_contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "lead_contacts_pessoa_id_fkey"
             columns: ["pessoa_id"]
             isOneToOne: false
@@ -2281,6 +2421,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_conversation_state_assumido_por_fkey"
+            columns: ["assumido_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2465,6 +2612,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "lead_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       mass_action_jobs: {
@@ -2556,6 +2710,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2650,6 +2811,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       organizations: {
@@ -2736,6 +2904,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -2963,6 +3138,154 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "profiles_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      seller_badge_awards: {
+        Row: {
+          awarded_at: string
+          badge_key: string
+          empresa: string
+          id: string
+          referencia: string | null
+          user_id: string
+        }
+        Insert: {
+          awarded_at?: string
+          badge_key: string
+          empresa: string
+          id?: string
+          referencia?: string | null
+          user_id: string
+        }
+        Update: {
+          awarded_at?: string
+          badge_key?: string
+          empresa?: string
+          id?: string
+          referencia?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_badge_awards_badge_key_fkey"
+            columns: ["badge_key"]
+            isOneToOne: false
+            referencedRelation: "seller_badges"
+            referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "seller_badge_awards_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "seller_badge_awards_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_badge_awards_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      seller_badges: {
+        Row: {
+          categoria: string
+          created_at: string
+          criterio_valor: number
+          descricao: string | null
+          icone: string
+          id: string
+          key: string
+          nome: string
+        }
+        Insert: {
+          categoria?: string
+          created_at?: string
+          criterio_valor?: number
+          descricao?: string | null
+          icone?: string
+          id?: string
+          key: string
+          nome: string
+        }
+        Update: {
+          categoria?: string
+          created_at?: string
+          criterio_valor?: number
+          descricao?: string | null
+          icone?: string
+          id?: string
+          key?: string
+          nome?: string
+        }
+        Relationships: []
+      }
+      seller_points_log: {
+        Row: {
+          created_at: string
+          empresa: string
+          id: string
+          pontos: number
+          referencia_id: string | null
+          tipo: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          id?: string
+          pontos?: number
+          referencia_id?: string | null
+          tipo?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          id?: string
+          pontos?: number
+          referencia_id?: string | null
+          tipo?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_points_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "seller_points_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_points_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       sgt_event_logs: {
@@ -3079,6 +3402,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "system_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       user_access_assignments: {
@@ -3132,6 +3462,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "user_access_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "user_access_assignments_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: true
@@ -3144,6 +3481,13 @@ export type Database = {
             isOneToOne: true
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -3180,6 +3524,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -3258,6 +3609,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "zadarma_extensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -3350,6 +3708,81 @@ export type Database = {
           },
         ]
       }
+      analytics_evolucao_mensal: {
+        Row: {
+          deals_criados: number | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: string | null
+          mes: string | null
+          pipeline_id: string | null
+          ticket_medio: number | null
+          valor_ganho: number | null
+          valor_perdido: number | null
+          win_rate: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
+      analytics_funil_visual: {
+        Row: {
+          deals_entrada: number | null
+          deals_saida: number | null
+          empresa: string | null
+          pipeline_id: string | null
+          pipeline_nome: string | null
+          posicao: number | null
+          stage_id: string | null
+          stage_nome: string | null
+          taxa_conversao: number | null
+          valor_entrada: number | null
+          valor_saida: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_stages_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       analytics_funnel: {
         Row: {
           deals_ativos: number | null
@@ -3386,6 +3819,18 @@ export type Database = {
             referencedColumns: ["pipeline_id"]
           },
         ]
+      }
+      analytics_ltv_cohort: {
+        Row: {
+          cohort_mes: string | null
+          deals_ganhos: number | null
+          empresa: string | null
+          ltv_medio: number | null
+          total_deals: number | null
+          valor_total: number | null
+          win_rate: number | null
+        }
+        Relationships: []
       }
       analytics_motivos_perda: {
         Row: {
@@ -3508,6 +3953,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       comissao_resumo_mensal: {
@@ -3539,6 +3991,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -3606,6 +4065,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "contacts_pessoa_id_fkey"
             columns: ["pessoa_id"]
             isOneToOne: false
@@ -3654,6 +4120,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workbench_sla_alerts"
             referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
@@ -3809,6 +4282,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "deals_perda_resolvida_por_fkey"
             columns: ["perda_resolvida_por"]
             isOneToOne: false
@@ -3821,6 +4301,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "deals_pipeline_id_fkey"
@@ -3847,6 +4334,13 @@ export type Database = {
             foreignKeyName: "deals_stage_fechamento_id_fkey"
             columns: ["stage_fechamento_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_fechamento_id_fkey"
+            columns: ["stage_fechamento_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -3875,6 +4369,13 @@ export type Database = {
             foreignKeyName: "deals_stage_id_fkey"
             columns: ["stage_id"]
             isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
             referencedRelation: "analytics_funnel"
             referencedColumns: ["stage_id"]
           },
@@ -3897,6 +4398,13 @@ export type Database = {
             columns: ["stage_id"]
             isOneToOne: false
             referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_origem_id_fkey"
+            columns: ["stage_origem_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
             referencedColumns: ["stage_id"]
           },
           {
@@ -3966,6 +4474,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       meta_progresso: {
@@ -4000,6 +4515,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }
@@ -4048,6 +4570,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       pipeline_stage_projection: {
@@ -4079,6 +4608,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
             foreignKeyName: "deals_pipeline_id_fkey"
             columns: ["pipeline_id"]
             isOneToOne: false
@@ -4100,6 +4636,19 @@ export type Database = {
             referencedColumns: ["pipeline_id"]
           },
         ]
+      }
+      seller_leaderboard: {
+        Row: {
+          empresa: string | null
+          pontos_mes: number | null
+          ranking_posicao: number | null
+          streak_dias: number | null
+          total_badges: number | null
+          user_id: string | null
+          vendedor_avatar: string | null
+          vendedor_nome: string | null
+        }
+        Relationships: []
       }
       stage_conversion_rates: {
         Row: {
@@ -4164,6 +4713,13 @@ export type Database = {
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
         ]
       }
       workbench_sla_alerts: {
@@ -4197,6 +4753,20 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
           },
           {
             foreignKeyName: "deals_stage_id_fkey"
@@ -4281,6 +4851,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }

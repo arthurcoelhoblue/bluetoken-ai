@@ -14,7 +14,13 @@ import {
   useAnalyticsVendedor,
   useAnalyticsMotivosPerda,
   useAnalyticsCanalOrigem,
+  useAnalyticsFunilVisual,
+  useAnalyticsEvolucao,
+  useAnalyticsLTV,
 } from '@/hooks/useAnalytics';
+import { FunnelChart } from '@/components/analytics/FunnelChart';
+import { EvolutionChart } from '@/components/analytics/EvolutionChart';
+import { LTVCohortTable } from '@/components/analytics/LTVCohortTable';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -33,6 +39,9 @@ export default function AnalyticsPage() {
   const { data: vendedores, isLoading: loadingVendedores } = useAnalyticsVendedor();
   const { data: canais, isLoading: loadingCanais } = useAnalyticsCanalOrigem(pipelineId);
   const { data: perdas, isLoading: loadingPerdas } = useAnalyticsMotivosPerda(pipelineId);
+  const { data: funilVisual, isLoading: loadingFunilVisual } = useAnalyticsFunilVisual(pipelineId);
+  const { data: evolucao, isLoading: loadingEvolucao } = useAnalyticsEvolucao(pipelineId);
+  const { data: ltv, isLoading: loadingLTV } = useAnalyticsLTV();
 
   // Aggregate KPIs from conversion data
   const totalDeals = conversion?.reduce((s, c) => s + c.total_deals, 0) ?? 0;
@@ -99,12 +108,15 @@ export default function AnalyticsPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="funil" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="funil">Funil</TabsTrigger>
-          <TabsTrigger value="vendedores">Vendedores</TabsTrigger>
-          <TabsTrigger value="canais">Canais</TabsTrigger>
-          <TabsTrigger value="perdas">Perdas</TabsTrigger>
-        </TabsList>
+         <TabsList className="flex-wrap">
+           <TabsTrigger value="funil">Funil</TabsTrigger>
+           <TabsTrigger value="funil_visual">Funil Visual</TabsTrigger>
+           <TabsTrigger value="evolucao">Evolução</TabsTrigger>
+           <TabsTrigger value="ltv">LTV & Cohort</TabsTrigger>
+           <TabsTrigger value="vendedores">Vendedores</TabsTrigger>
+           <TabsTrigger value="canais">Canais</TabsTrigger>
+           <TabsTrigger value="perdas">Perdas</TabsTrigger>
+         </TabsList>
 
         {/* Tab Funil */}
         <TabsContent value="funil">
@@ -141,6 +153,36 @@ export default function AnalyticsPage() {
                   })}
                 </div>
               )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Funil Visual */}
+        <TabsContent value="funil_visual">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Funil Visual com Conversão</CardTitle></CardHeader>
+            <CardContent>
+              <FunnelChart data={funilVisual} isLoading={loadingFunilVisual} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab Evolução */}
+        <TabsContent value="evolucao">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Evolução Mensal</CardTitle></CardHeader>
+            <CardContent>
+              <EvolutionChart data={evolucao} isLoading={loadingEvolucao} />
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Tab LTV & Cohort */}
+        <TabsContent value="ltv">
+          <Card>
+            <CardHeader><CardTitle className="text-base">LTV por Cohort</CardTitle></CardHeader>
+            <CardContent>
+              <LTVCohortTable data={ltv} isLoading={loadingLTV} />
             </CardContent>
           </Card>
         </TabsContent>

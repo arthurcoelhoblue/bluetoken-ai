@@ -8,6 +8,9 @@ import type {
   AnalyticsPeriodo,
   AnalyticsMotivosPerda,
   AnalyticsCanalOrigem,
+  AnalyticsFunilVisual,
+  AnalyticsEvolucaoMensal,
+  AnalyticsLTVCohort,
 } from '@/types/analytics';
 
 function empresaFilter(activeCompany: string) {
@@ -111,6 +114,56 @@ export function useAnalyticsCanalOrigem(pipelineId?: string | null) {
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as AnalyticsCanalOrigem[];
+    },
+  });
+}
+
+export function useAnalyticsFunilVisual(pipelineId?: string | null) {
+  const { activeCompany } = useCompany();
+  return useQuery({
+    queryKey: ['analytics_funil_visual', activeCompany, pipelineId],
+    queryFn: async () => {
+      let q = supabase.from('analytics_funil_visual' as any).select('*');
+      const emp = empresaFilter(activeCompany);
+      if (emp) q = q.eq('empresa', emp);
+      if (pipelineId) q = q.eq('pipeline_id', pipelineId);
+      q = q.order('posicao', { ascending: true });
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as AnalyticsFunilVisual[];
+    },
+  });
+}
+
+export function useAnalyticsEvolucao(pipelineId?: string | null) {
+  const { activeCompany } = useCompany();
+  return useQuery({
+    queryKey: ['analytics_evolucao_mensal', activeCompany, pipelineId],
+    queryFn: async () => {
+      let q = supabase.from('analytics_evolucao_mensal' as any).select('*');
+      const emp = empresaFilter(activeCompany);
+      if (emp) q = q.eq('empresa', emp);
+      if (pipelineId) q = q.eq('pipeline_id', pipelineId);
+      q = q.order('mes', { ascending: false }).limit(12);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as AnalyticsEvolucaoMensal[];
+    },
+  });
+}
+
+export function useAnalyticsLTV() {
+  const { activeCompany } = useCompany();
+  return useQuery({
+    queryKey: ['analytics_ltv_cohort', activeCompany],
+    queryFn: async () => {
+      let q = supabase.from('analytics_ltv_cohort' as any).select('*');
+      const emp = empresaFilter(activeCompany);
+      if (emp) q = q.eq('empresa', emp);
+      q = q.order('cohort_mes', { ascending: false }).limit(24);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as AnalyticsLTVCohort[];
     },
   });
 }

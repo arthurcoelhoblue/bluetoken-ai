@@ -69,3 +69,40 @@ export interface AnalyticsCanalOrigem {
   valor_ganho: number;
   win_rate: number;
 }
+
+export interface AnalyticsFunilVisual {
+  pipeline_id: string;
+  pipeline_nome: string;
+  empresa: string;
+  stage_id: string;
+  stage_nome: string;
+  posicao: number;
+  deals_entrada: number;
+  deals_saida: number;
+  taxa_conversao: number;
+  valor_entrada: number;
+  valor_saida: number;
+}
+
+export interface AnalyticsEvolucaoMensal {
+  mes: string;
+  empresa: string;
+  pipeline_id: string;
+  deals_criados: number;
+  deals_ganhos: number;
+  deals_perdidos: number;
+  valor_ganho: number;
+  valor_perdido: number;
+  win_rate: number;
+  ticket_medio: number;
+}
+
+export interface AnalyticsLTVCohort {
+  cohort_mes: string;
+  empresa: string;
+  total_deals: number;
+  deals_ganhos: number;
+  valor_total: number;
+  ltv_medio: number;
+  win_rate: number;
+}

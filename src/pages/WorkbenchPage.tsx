@@ -24,6 +24,7 @@ import {
   useWorkbenchRecentDeals,
 } from '@/hooks/useWorkbench';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
+import { WorkbenchGamificationCard } from '@/components/gamification/WorkbenchGamificationCard';
 import { toast } from 'sonner';
 
 function formatBRL(value: number) {
@@ -130,6 +131,11 @@ function WorkbenchContent() {
             loading={loadingSLA}
             variant={slaEstourados.length > 0 ? 'destructive' : 'default'}
           />
+        </div>
+
+        {/* Gamificação Mini Card */}
+        <div className="mb-6">
+          <WorkbenchGamificationCard />
         </div>
 
         {/* Pendências do Gestor */}
