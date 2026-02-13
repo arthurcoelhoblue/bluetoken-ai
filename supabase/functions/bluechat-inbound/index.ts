@@ -1116,6 +1116,38 @@ serve(async (req) => {
       };
     }
     
+    // 7.5. Persistir conversation_id do Blue Chat no lead_conversation_state
+    // para que whatsapp-send possa usá-lo ao enviar mensagens manuais
+    try {
+      const { data: existingState } = await supabase
+        .from('lead_conversation_state')
+        .select('framework_data')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      const currentFrameworkData = (existingState?.framework_data as Record<string, unknown>) || {};
+      const updatedFrameworkData = {
+        ...currentFrameworkData,
+        bluechat_conversation_id: payload.conversation_id,
+        bluechat_ticket_id: payload.ticket_id || null,
+      };
+
+      await supabase
+        .from('lead_conversation_state')
+        .upsert({
+          lead_id: leadContact.lead_id,
+          empresa: empresa,
+          framework_data: updatedFrameworkData,
+          ultimo_contato_em: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'lead_id,empresa' });
+
+      console.log('[BlueChat] conversation_id salvo no framework_data:', payload.conversation_id);
+    } catch (err) {
+      console.error('[BlueChat] Erro ao salvar conversation_id:', err);
+    }
+
     // 8. Persistir mensagem OUTBOUND da Amélia no banco (SEMPRE que houver texto)
     if (responseText) {
       try {
