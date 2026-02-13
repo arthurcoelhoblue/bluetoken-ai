@@ -76,6 +76,7 @@ const navGroups: NavGroup[] = [
       { title: 'Contatos', url: '/contatos', icon: ContactRound, screenKey: 'contatos' },
       { title: 'Organizações', url: '/organizacoes', icon: Building2, screenKey: 'organizacoes' },
       { title: 'Conversas', url: '/conversas', icon: MessagesSquare, screenKey: 'conversas' },
+      { title: 'Pendências', url: '/pendencias', icon: AlertTriangle, screenKey: 'pendencias_gestor' },
     ],
   },
   {
@@ -107,7 +108,7 @@ const navGroups: NavGroup[] = [
       { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, screenKey: 'benchmark_ia' },
       { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, screenKey: 'monitor_sgt' },
       { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, screenKey: 'leads_quentes' },
-      { title: 'Pendências Perda', url: '/admin/pendencias-perda', icon: AlertTriangle, screenKey: 'pendencias_perda' },
+      
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },

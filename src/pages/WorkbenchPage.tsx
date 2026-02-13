@@ -8,11 +8,15 @@ import {
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToggleTaskActivity } from '@/hooks/useDealDetail';
+import { useLossPendencyCount } from '@/hooks/useLossPendencies';
+import { useCanView } from '@/hooks/useScreenPermissions';
+import { useNavigate } from 'react-router-dom';
 import {
   useWorkbenchTarefas,
   useWorkbenchSLAAlerts,
@@ -45,11 +49,14 @@ function getTaskUrgency(prazo: string | null): 'overdue' | 'today' | 'upcoming' 
 
 function WorkbenchContent() {
   const { profile } = useAuth();
+  const navigate = useNavigate();
   const { data: tarefas, isLoading: loadingTarefas } = useWorkbenchTarefas();
   const { data: slaAlerts, isLoading: loadingSLA } = useWorkbenchSLAAlerts();
   const { data: pipelines, isLoading: loadingPipelines } = useWorkbenchPipelineSummary();
   const { data: recentDeals, isLoading: loadingRecent } = useWorkbenchRecentDeals();
   const toggleTask = useToggleTaskActivity();
+  const pendencyCount = useLossPendencyCount();
+  const canViewPendencias = useCanView('pendencias_gestor');
 
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
@@ -124,6 +131,26 @@ function WorkbenchContent() {
             variant={slaEstourados.length > 0 ? 'destructive' : 'default'}
           />
         </div>
+
+        {/* Pendências do Gestor */}
+        {canViewPendencias && pendencyCount > 0 && (
+          <Card className="border-warning/50 mb-6">
+            <CardContent className="p-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <AlertTriangle className="h-5 w-5 text-warning" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {pendencyCount} pendência{pendencyCount > 1 ? 's' : ''} aguardando decisão
+                  </p>
+                  <p className="text-xs text-muted-foreground">Divergências entre Closer e IA precisam de resolução</p>
+                </div>
+              </div>
+              <Button size="sm" variant="outline" onClick={() => navigate('/pendencias')}>
+                Resolver
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {/* SLA Alerts */}

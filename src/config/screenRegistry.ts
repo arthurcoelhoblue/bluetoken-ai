@@ -1,4 +1,5 @@
 import {
+  AlertTriangle,
   CalendarCheck,
   Columns3,
   ContactRound,
@@ -53,6 +54,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'leads_quentes', label: 'Leads Quentes', group: 'Configuração', icon: Flame, url: '/admin/leads-quentes' },
   { key: 'importacao', label: 'Importação', group: 'Configuração', icon: Upload, url: '/importacao' },
   { key: 'telefonia_zadarma', label: 'Telefonia', group: 'Configuração', icon: PhoneCall, url: '/admin/zadarma' },
+  { key: 'pendencias_gestor', label: 'Pendências', group: 'Principal', icon: AlertTriangle, url: '/pendencias' },
   { key: 'configuracoes', label: 'Configurações', group: 'Configuração', icon: Settings, url: '/admin/settings' },
 ];
 
