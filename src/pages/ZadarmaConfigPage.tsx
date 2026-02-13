@@ -11,6 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { Phone, Plus, Trash2, RefreshCw, Check, Copy, TestTube2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { useCompany } from '@/contexts/CompanyContext';
 import {
   useZadarmaConfig,
@@ -25,7 +26,7 @@ import type { EmpresaTipo } from '@/types/patch13';
 
 const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
 
-export default function ZadarmaConfigPage() {
+function ZadarmaConfigContent() {
   const { activeCompany } = useCompany();
   const activeEmpresa: EmpresaTipo = activeCompany === 'all' ? 'BLUE' : (activeCompany === 'blue' ? 'BLUE' : 'TOKENIZA');
 
@@ -242,5 +243,13 @@ export default function ZadarmaConfigPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+export default function ZadarmaConfigPage() {
+  return (
+    <AppLayout>
+      <ZadarmaConfigContent />
+    </AppLayout>
   );
 }
