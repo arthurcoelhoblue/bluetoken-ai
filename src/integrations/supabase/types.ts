@@ -1391,6 +1391,120 @@ export type Database = {
           },
         ]
       }
+      import_jobs: {
+        Row: {
+          completed_at: string | null
+          config: Json | null
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          error_log: Json | null
+          errors: number
+          id: string
+          imported: number
+          skipped: number
+          started_at: string | null
+          started_by: string | null
+          status: string
+          tipo: string
+          total_records: number
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          config?: Json | null
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          error_log?: Json | null
+          errors?: number
+          id?: string
+          imported?: number
+          skipped?: number
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          tipo?: string
+          total_records?: number
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          config?: Json | null
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          error_log?: Json | null
+          errors?: number
+          id?: string
+          imported?: number
+          skipped?: number
+          started_at?: string | null
+          started_by?: string | null
+          status?: string
+          tipo?: string
+          total_records?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_mapping: {
+        Row: {
+          created_at: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type: string
+          id: string
+          import_job_id: string
+          source_id: string
+          target_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type: string
+          id?: string
+          import_job_id: string
+          source_id: string
+          target_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          entity_type?: string
+          id?: string
+          import_job_id?: string
+          source_id?: string
+          target_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_mapping_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "import_mapping_import_job_id_fkey"
+            columns: ["import_job_id"]
+            isOneToOne: false
+            referencedRelation: "import_jobs_summary"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       integration_company_config: {
         Row: {
           channel: string
@@ -3318,6 +3432,45 @@ export type Database = {
             columns: ["stage_origem_id"]
             isOneToOne: false
             referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      import_jobs_summary: {
+        Row: {
+          completed_at: string | null
+          config: Json | null
+          contacts_mapped: number | null
+          created_at: string | null
+          deals_mapped: number | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          error_log: Json | null
+          errors: number | null
+          id: string | null
+          imported: number | null
+          orgs_mapped: number | null
+          skipped: number | null
+          started_at: string | null
+          started_by: string | null
+          started_by_nome: string | null
+          status: string | null
+          tipo: string | null
+          total_records: number | null
+          updated_at: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]

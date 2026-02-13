@@ -28,6 +28,7 @@ import {
   LogOut,
   ChevronRight,
   ChevronDown,
+  Upload,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -107,6 +108,7 @@ const navGroups: NavGroup[] = [
       { title: 'Pendências Perda', url: '/admin/pendencias-perda', icon: AlertTriangle, screenKey: 'pendencias_perda' },
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
+      { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },

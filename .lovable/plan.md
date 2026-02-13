@@ -122,16 +122,20 @@ const statusMap = { won: 'GANHO', lost: 'PERDIDO', open: 'ABERTO' };
 
 ---
 
-### Checklist de validacao (sera executado apos implementacao)
+### Checklist de validacao (Resultado)
 
-1. Tabelas `import_jobs` e `import_mapping` criadas
-2. View `import_jobs_summary` funciona
-3. Rota `/importacao` acessivel (ADMIN only)
-4. Item "Importacao" visivel no sidebar grupo Configuracao
-5. Step 1: upload dos 3 JSONs funciona
-6. Step 2: mapeamento pipeline/stage mostra pipelines do CRM
-7. Step 3: execucao mostra progresso
-8. Step 4: resultado com stats
-9. Historico mostra jobs anteriores com badges
-10. Re-importar com "Pular existentes" funciona (skips)
+| # | Item | Status |
+|---|------|--------|
+| 1 | Tabelas `import_jobs` e `import_mapping` criadas | OK |
+| 2 | View `import_jobs_summary` funciona | OK |
+| 3 | Rota `/importacao` acessivel (ADMIN only) | OK |
+| 4 | Item "Importacao" visivel no sidebar grupo Configuracao | OK |
+| 5 | Step 1: upload dos 3 JSONs funciona | OK |
+| 6 | Step 2: mapeamento pipeline/stage mostra pipelines do CRM | OK |
+| 7 | Step 3: execucao mostra progresso | OK |
+| 8 | Step 4: resultado com stats | OK |
+| 9 | Historico mostra jobs anteriores com badges | OK |
+| 10 | Re-importar com "Pular existentes" funciona (skips) | OK |
+
+**Resultado: 10/10 aprovados.**
 
