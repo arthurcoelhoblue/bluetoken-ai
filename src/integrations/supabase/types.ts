@@ -462,6 +462,33 @@ export type Database = {
           },
         ]
       }
+      deal_loss_categories: {
+        Row: {
+          codigo: string
+          created_at: string
+          descricao: string | null
+          id: string
+          label: string
+          posicao: number
+        }
+        Insert: {
+          codigo: string
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          label: string
+          posicao?: number
+        }
+        Update: {
+          codigo?: string
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          label?: string
+          posicao?: number
+        }
+        Relationships: []
+      }
       deal_stage_history: {
         Row: {
           created_at: string
@@ -523,6 +550,9 @@ export type Database = {
       }
       deals: {
         Row: {
+          categoria_perda_closer: string | null
+          categoria_perda_final: string | null
+          categoria_perda_ia: string | null
           contact_id: string
           created_at: string
           data_ganho: string | null
@@ -534,8 +564,14 @@ export type Database = {
           id: string
           moeda: string
           motivo_perda: string | null
+          motivo_perda_closer: string | null
+          motivo_perda_final: string | null
+          motivo_perda_ia: string | null
           organization_id: string | null
           owner_id: string | null
+          perda_resolvida: boolean | null
+          perda_resolvida_em: string | null
+          perda_resolvida_por: string | null
           pipeline_id: string
           posicao_kanban: number
           score_engajamento: number | null
@@ -557,6 +593,9 @@ export type Database = {
           valor: number | null
         }
         Insert: {
+          categoria_perda_closer?: string | null
+          categoria_perda_final?: string | null
+          categoria_perda_ia?: string | null
           contact_id: string
           created_at?: string
           data_ganho?: string | null
@@ -568,8 +607,14 @@ export type Database = {
           id?: string
           moeda?: string
           motivo_perda?: string | null
+          motivo_perda_closer?: string | null
+          motivo_perda_final?: string | null
+          motivo_perda_ia?: string | null
           organization_id?: string | null
           owner_id?: string | null
+          perda_resolvida?: boolean | null
+          perda_resolvida_em?: string | null
+          perda_resolvida_por?: string | null
           pipeline_id: string
           posicao_kanban?: number
           score_engajamento?: number | null
@@ -591,6 +636,9 @@ export type Database = {
           valor?: number | null
         }
         Update: {
+          categoria_perda_closer?: string | null
+          categoria_perda_final?: string | null
+          categoria_perda_ia?: string | null
           contact_id?: string
           created_at?: string
           data_ganho?: string | null
@@ -602,8 +650,14 @@ export type Database = {
           id?: string
           moeda?: string
           motivo_perda?: string | null
+          motivo_perda_closer?: string | null
+          motivo_perda_final?: string | null
+          motivo_perda_ia?: string | null
           organization_id?: string | null
           owner_id?: string | null
+          perda_resolvida?: boolean | null
+          perda_resolvida_em?: string | null
+          perda_resolvida_por?: string | null
           pipeline_id?: string
           posicao_kanban?: number
           score_engajamento?: number | null
@@ -642,6 +696,13 @@ export type Database = {
           {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -1471,7 +1532,7 @@ export type Database = {
           pipeline_id: string
           posicao: number
           sla_minutos: number | null
-          tempo_minimo_minutos: number | null
+          tempo_minimo_dias: number | null
           updated_at: string
         }
         Insert: {
@@ -1484,7 +1545,7 @@ export type Database = {
           pipeline_id: string
           posicao: number
           sla_minutos?: number | null
-          tempo_minimo_minutos?: number | null
+          tempo_minimo_dias?: number | null
           updated_at?: string
         }
         Update: {
@@ -1497,7 +1558,7 @@ export type Database = {
           pipeline_id?: string
           posicao?: number
           sla_minutos?: number | null
-          tempo_minimo_minutos?: number | null
+          tempo_minimo_dias?: number | null
           updated_at?: string
         }
         Relationships: [
@@ -1582,6 +1643,7 @@ export type Database = {
           created_at: string
           email: string
           empresa_id: string | null
+          gestor_id: string | null
           google_id: string | null
           id: string
           is_active: boolean
@@ -1594,6 +1656,7 @@ export type Database = {
           created_at?: string
           email: string
           empresa_id?: string | null
+          gestor_id?: string | null
           google_id?: string | null
           id: string
           is_active?: boolean
@@ -1606,6 +1669,7 @@ export type Database = {
           created_at?: string
           email?: string
           empresa_id?: string | null
+          gestor_id?: string | null
           google_id?: string | null
           id?: string
           is_active?: boolean
@@ -1613,7 +1677,15 @@ export type Database = {
           nome?: string | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "profiles_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       sgt_event_logs: {
         Row: {

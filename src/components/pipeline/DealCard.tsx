@@ -8,9 +8,11 @@ import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DollarSign, Clock, Trophy, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
-import { useCloseDeal } from '@/hooks/useDeals';
+import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { supabase } from '@/integrations/supabase/client';
 import type { DealWithRelations, PipelineStage } from '@/types/deal';
 
@@ -46,8 +48,10 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
   });
 
   const closeDeal = useCloseDeal();
+  const { data: lossCategories = [] } = useLossCategories();
   const [lossDialogOpen, setLossDialogOpen] = useState(false);
   const [motivoPerda, setMotivoPerda] = useState('');
+  const [categoriaPerda, setCategoriaPerda] = useState('');
 
   const isClosed = deal.status === 'GANHO' || deal.status === 'PERDIDO';
 
@@ -60,9 +64,8 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
   const days = daysInStage(deal.updated_at);
 
   const checkMinTime = async (): Promise<boolean> => {
-    if (!currentStage?.tempo_minimo_minutos) return true;
+    if (!currentStage?.tempo_minimo_dias) return true;
 
-    // Get last stage entry time from deal_stage_history
     const { data: history } = await supabase
       .from('deal_stage_history')
       .select('created_at')
@@ -71,11 +74,11 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
       .limit(1);
 
     const lastEntry = history?.[0]?.created_at ?? deal.created_at;
-    const minutesInStage = (Date.now() - new Date(lastEntry).getTime()) / 60000;
+    const daysInCurrentStage = (Date.now() - new Date(lastEntry).getTime()) / 86400000;
 
-    if (minutesInStage < currentStage.tempo_minimo_minutos) {
-      const remaining = Math.ceil(currentStage.tempo_minimo_minutos - minutesInStage);
-      toast.error(`Tempo mínimo não atingido. Faltam ${remaining} minuto(s) neste stage.`);
+    if (daysInCurrentStage < currentStage.tempo_minimo_dias) {
+      const remaining = Math.ceil(currentStage.tempo_minimo_dias - daysInCurrentStage);
+      toast.error(`Tempo mínimo não atingido. Faltam ${remaining} dia(s) neste stage.`);
       return false;
     }
     return true;
@@ -106,14 +109,31 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
       toast.error('Informe o motivo da perda');
       return;
     }
-    closeDeal.mutate({
-      dealId: deal.id,
-      status: 'PERDIDO',
-      stageId: deal.stage_id,
-      motivo_perda: motivoPerda.trim(),
-    });
+    if (!categoriaPerda) {
+      toast.error('Selecione a categoria da perda');
+      return;
+    }
+    closeDeal.mutate(
+      {
+        dealId: deal.id,
+        status: 'PERDIDO',
+        stageId: deal.stage_id,
+        motivo_perda: motivoPerda.trim(),
+        categoria_perda_closer: categoriaPerda,
+      },
+      {
+        onSuccess: () => {
+          // Fire-and-forget AI analysis
+          supabase.functions.invoke('deal-loss-analysis', {
+            body: { deal_id: deal.id },
+          }).catch(console.error);
+          toast.info('Análise da IA em andamento...');
+        },
+      }
+    );
     setLossDialogOpen(false);
     setMotivoPerda('');
+    setCategoriaPerda('');
   };
 
   return (
@@ -208,12 +228,30 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
           <DialogHeader>
             <DialogTitle>Motivo da Perda</DialogTitle>
           </DialogHeader>
-          <Textarea
-            placeholder="Descreva o motivo da perda deste deal..."
-            value={motivoPerda}
-            onChange={e => setMotivoPerda(e.target.value)}
-            rows={3}
-          />
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Categoria *</Label>
+              <Select value={categoriaPerda} onValueChange={setCategoriaPerda}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a categoria" />
+                </SelectTrigger>
+                <SelectContent>
+                  {lossCategories.map(c => (
+                    <SelectItem key={c.codigo} value={c.codigo}>{c.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Descrição do motivo *</Label>
+              <Textarea
+                placeholder="Descreva o motivo da perda deste deal..."
+                value={motivoPerda}
+                onChange={e => setMotivoPerda(e.target.value)}
+                rows={3}
+              />
+            </div>
+          </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setLossDialogOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleConfirmLoss} disabled={closeDeal.isPending}>

@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, nome, password, access_profile_id, empresa } = await req.json()
+    const { email, nome, password, access_profile_id, empresa, gestor_id } = await req.json()
 
     if (!email || !nome || !password) {
       return new Response(JSON.stringify({ error: 'Email, nome e senha são obrigatórios' }), {
@@ -78,6 +78,17 @@ Deno.serve(async (req) => {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
+    }
+
+    // Set gestor_id if provided
+    if (gestor_id && newUser.user) {
+      const { error: gestorError } = await adminClient
+        .from('profiles')
+        .update({ gestor_id })
+        .eq('id', newUser.user.id)
+      if (gestorError) {
+        console.error('Error setting gestor:', gestorError)
+      }
     }
 
     // Assign access profile if provided

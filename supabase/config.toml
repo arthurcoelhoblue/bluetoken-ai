@@ -32,3 +32,6 @@ verify_jwt = false
 
 [functions.ai-benchmark]
 verify_jwt = false
+
+[functions.deal-loss-analysis]
+verify_jwt = false
