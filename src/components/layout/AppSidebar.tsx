@@ -30,6 +30,7 @@ import {
   ChevronDown,
   Upload,
   PhoneCall,
+  ClipboardList,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -98,6 +99,7 @@ const navGroups: NavGroup[] = [
       { title: 'Leads em Cadência', url: '/cadences/runs', icon: Play, screenKey: 'leads_cadencia' },
       { title: 'Próx. Ações', url: '/cadences/next-actions', icon: Clock, screenKey: 'proximas_acoes' },
       { title: 'Templates', url: '/templates', icon: FileText, screenKey: 'templates' },
+      { title: 'Form de Captura', url: '/capture-forms', icon: ClipboardList, screenKey: 'capture_forms' },
     ],
   },
   {
