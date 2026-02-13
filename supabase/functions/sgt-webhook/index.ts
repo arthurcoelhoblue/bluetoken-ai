@@ -8,7 +8,7 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sgt-signature, x-sgt-timestamp',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sgt-signature, x-sgt-timestamp, x-webhook-secret',
 };
 
 // ========================================
@@ -796,25 +796,32 @@ function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
 // ========================================
 // AUTENTICAÇÃO
 // ========================================
-function validateBearerToken(authHeader: string | null): boolean {
+function validateWebhookToken(req: Request): boolean {
   const secret = Deno.env.get('SGT_WEBHOOK_SECRET');
   if (!secret) {
     console.error('[SGT Webhook] SGT_WEBHOOK_SECRET não configurado');
     return false;
   }
 
-  if (!authHeader) {
-    console.error('[SGT Webhook] Header Authorization ausente');
-    return false;
+  // 1. Prioridade: x-webhook-secret (não é interceptado pelo platform)
+  const webhookSecret = req.headers.get('x-webhook-secret');
+  if (webhookSecret) {
+    console.log('[SGT Webhook] Autenticando via x-webhook-secret');
+    return webhookSecret === secret;
   }
 
-  const match = authHeader.match(/^Bearer\s+(.+)$/i);
-  if (!match) {
-    console.error('[SGT Webhook] Formato de Authorization inválido');
-    return false;
+  // 2. Fallback: Authorization Bearer (pode ser interceptado pelo Lovable Cloud)
+  const authHeader = req.headers.get('authorization');
+  if (authHeader) {
+    const match = authHeader.match(/^Bearer\s+(.+)$/i);
+    if (match) {
+      console.log('[SGT Webhook] Autenticando via Authorization Bearer (fallback)');
+      return match[1] === secret;
+    }
   }
 
-  return match[1] === secret;
+  console.error('[SGT Webhook] Nenhum token de autenticação encontrado (x-webhook-secret ou Authorization)');
+  return false;
 }
 
 // ========================================
@@ -1474,15 +1481,15 @@ serve(async (req) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
   try {
-    const authHeader = req.headers.get('authorization');
     const bodyText = await req.text();
     
     console.log('[SGT Webhook] Requisição recebida:', {
-      hasAuth: !!authHeader,
+      hasWebhookSecret: !!req.headers.get('x-webhook-secret'),
+      hasAuth: !!req.headers.get('authorization'),
       bodyLength: bodyText.length,
     });
 
-    const isValidToken = validateBearerToken(authHeader);
+    const isValidToken = validateWebhookToken(req);
     if (!isValidToken) {
       console.error('[SGT Webhook] Token inválido ou ausente');
       return new Response(
