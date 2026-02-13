@@ -84,11 +84,9 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
     return true;
   };
 
-  const handleWin = async (e: React.MouseEvent) => {
+  const handleWin = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isClosed) return;
-    const ok = await checkMinTime();
-    if (!ok) return;
     closeDeal.mutate({
       dealId: deal.id,
       status: 'GANHO',
@@ -96,15 +94,13 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
     });
   };
 
-  const handleLoseClick = async (e: React.MouseEvent) => {
+  const handleLoseClick = (e: React.MouseEvent) => {
     e.stopPropagation();
     if (isClosed) return;
-    const ok = await checkMinTime();
-    if (!ok) return;
     setLossDialogOpen(true);
   };
 
-  const handleConfirmLoss = () => {
+  const handleConfirmLoss = async () => {
     if (!motivoPerda.trim()) {
       toast.error('Informe o motivo da perda');
       return;
@@ -112,6 +108,10 @@ export function DealCard({ deal, overlay, currentStage }: DealCardProps) {
     if (!categoriaPerda) {
       toast.error('Selecione a categoria da perda');
       return;
+    }
+    if (categoriaPerda !== 'PRODUTO_INADEQUADO') {
+      const ok = await checkMinTime();
+      if (!ok) return;
     }
     closeDeal.mutate(
       {
