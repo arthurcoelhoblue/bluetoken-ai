@@ -37,6 +37,7 @@ import MetasPage from "./pages/MetasPage";
 import RenovacaoPage from "./pages/RenovacaoPage";
 import CockpitPage from "./pages/CockpitPage";
 import AmeliaPage from "./pages/AmeliaPage";
+import AmeliaMassActionPage from "./pages/AmeliaMassActionPage";
 import TemplatesPage from "./pages/TemplatesPage";
 import IntegracoesPage from "./pages/IntegracoesPage";
 import PipelineConfigPage from "./pages/PipelineConfigPage";
@@ -74,6 +75,7 @@ const App = () => (
             <Route path="/renovacao" element={<ProtectedRoute><RenovacaoPage /></ProtectedRoute>} />
             <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><CockpitPage /></ProtectedRoute>} />
             <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><AmeliaPage /></ProtectedRoute>} />
+            <Route path="/amelia/mass-action" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AmeliaMassActionPage /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
             <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />

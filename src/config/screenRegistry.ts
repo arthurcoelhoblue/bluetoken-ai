@@ -39,6 +39,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'cockpit', label: 'Cockpit', group: 'Comercial', icon: Gauge, url: '/cockpit' },
   { key: 'relatorios', label: 'Relatórios', group: 'Comercial', icon: BarChart3, url: '/relatorios' },
   { key: 'amelia', label: 'Amélia IA', group: 'Automação', icon: Bot, url: '/amelia' },
+  { key: 'amelia_mass_action', label: 'Ação em Massa', group: 'Automação', icon: Bot, url: '/amelia/mass-action' },
   { key: 'cadencias', label: 'Cadências', group: 'Automação', icon: Zap, url: '/cadences' },
   { key: 'cadencias_crm', label: 'Cadências CRM', group: 'Automação', icon: Zap, url: '/cadencias-crm' },
   { key: 'leads_cadencia', label: 'Leads em Cadência', group: 'Automação', icon: Play, url: '/cadences/runs' },

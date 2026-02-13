@@ -160,18 +160,20 @@ JOIN pipelines p ON d.pipeline_id = p.id
 
 ---
 
-### Checklist de validacao (sera executado apos implementacao)
+### Checklist de validacao — Patch 12
 
-1. Views `stage_conversion_rates` e `pipeline_stage_projection` criadas e funcionais
-2. Tabela `mass_action_jobs` criada com RLS
-3. ProjecaoStageCard renderiza na MetasPage com toggles por stage
-4. Barra tricolor (vendido + projecao vs meta) funcional
-5. Filtro por pipeline no widget de projecao funciona
-6. Rota `/amelia/mass-action` acessivel (ADMIN/CLOSER)
-7. Tabela de deals com checkbox e filtros funciona
-8. Dialog de configuracao com abas Cadencia/Ad-hoc funciona
-9. Edge function `amelia-mass-action` gera mensagens IA
-10. Preview com aprovacao individual (thumbs up/down) funciona
-11. Execucao com barra de progresso funciona
-12. Historico de jobs anteriores com badges de status
+| # | Item | Status |
+|---|------|--------|
+| 1 | Views `stage_conversion_rates` e `pipeline_stage_projection` criadas | ✅ |
+| 2 | Tabela `mass_action_jobs` criada com RLS | ✅ |
+| 3 | ProjecaoStageCard renderiza na MetasPage com toggles por stage | ✅ |
+| 4 | Barra tricolor (vendido + projecao vs meta) funcional | ✅ |
+| 5 | Filtro por pipeline no widget de projecao funciona | ✅ |
+| 6 | Rota `/amelia/mass-action` acessivel (ADMIN/CLOSER) | ✅ |
+| 7 | Tabela de deals com checkbox e filtros funciona | ✅ |
+| 8 | Dialog de configuracao com abas Cadencia/Ad-hoc funciona | ✅ |
+| 9 | Edge function `amelia-mass-action` gera mensagens IA | ✅ |
+| 10 | Preview com aprovacao individual (thumbs up/down) funciona | ✅ |
+| 11 | Execucao com barra de progresso funciona | ✅ |
+| 12 | Historico de jobs anteriores com badges de status | ✅ |
 

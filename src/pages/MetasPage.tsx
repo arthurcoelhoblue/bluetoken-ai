@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Target, ChevronLeft, ChevronRight, Trophy, Crown, DollarSign, TrendingUp, PieChart, Edit2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { ProjecaoStageCard } from '@/components/ProjecaoStageCard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -14,6 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCompany } from '@/contexts/CompanyContext';
 import { useMetaProgresso, useComissaoRegras, useComissaoLancamentos, useUpdateComissaoStatus, useUpsertMeta } from '@/hooks/useMetas';
 import { MESES_LABEL, type ComissaoStatus, type MetaProgresso } from '@/types/metas';
 
@@ -23,7 +25,9 @@ export default function MetasPage() {
   const now = new Date();
   const [ano, setAno] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
+  const { activeCompany } = useCompany();
+  const empresa = activeCompany === 'blue' ? 'BLUE' : activeCompany === 'tokeniza' ? 'TOKENIZA' : undefined;
   const isAdmin = hasRole('ADMIN');
 
   const { data: ranking = [], isLoading: loadingRanking } = useMetaProgresso(ano, mes);
@@ -119,6 +123,14 @@ export default function MetasPage() {
             </Card>
           ))}
         </div>
+
+        {/* Projeção por Etapa */}
+        <ProjecaoStageCard
+          userId={user?.id}
+          empresa={empresa}
+          metaValor={totalMeta}
+          vendidoAtual={totalRealizado}
+        />
 
         {/* Tabs */}
         <Tabs defaultValue="ranking">

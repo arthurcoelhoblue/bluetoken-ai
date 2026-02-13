@@ -1,16 +1,35 @@
+import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { Bot } from 'lucide-react';
+import { Bot, Zap } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 
 export default function AmeliaPage() {
+  const navigate = useNavigate();
+
   return (
     <AppLayout>
-      <PageShell
-        icon={Bot}
-        title="Amélia IA"
-        description="Central de operações da SDR IA. Métricas, conversas ativas. Ação em massa: selecionar leads e acionar Amélia com modelos ou campanhas ad-hoc."
-        patchInfo="Patch 6 — Amélia Ação em Massa"
-      />
+      <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
+        <PageShell
+          icon={Bot}
+          title="Amélia IA"
+          description="Central de operações da SDR IA. Métricas, conversas ativas e ações em massa."
+          patchInfo="Patch 6 + 12"
+        />
+        <Card className="cursor-pointer hover:border-primary/50 transition-colors" onClick={() => navigate('/amelia/mass-action')}>
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+              <Zap className="h-6 w-6 text-primary" />
+            </div>
+            <div className="flex-1">
+              <h3 className="font-semibold">Ação em Massa</h3>
+              <p className="text-sm text-muted-foreground">Selecione deals e gere mensagens personalizadas com IA</p>
+            </div>
+            <Button variant="outline">Acessar</Button>
+          </CardContent>
+        </Card>
+      </div>
     </AppLayout>
   );
 }
