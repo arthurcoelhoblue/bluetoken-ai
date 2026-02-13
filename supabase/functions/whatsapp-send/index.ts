@@ -150,11 +150,13 @@ serve(async (req) => {
       );
     }
 
-    // Formata telefone (remove caracteres não numéricos)
+    // Formata telefone: remove caracteres não numéricos e garante formato E.164 com +
     const phoneClean = telefone.replace(/\D/g, '');
+    const phoneE164 = phoneClean.startsWith('+') ? phoneClean : `+${phoneClean}`;
     
-    // Em modo teste, usa número de teste
-    const phoneToSend = TEST_MODE ? TEST_PHONE : phoneClean;
+    // Em modo teste, usa número de teste (também com +)
+    const testPhoneE164 = TEST_PHONE.startsWith('+') ? TEST_PHONE : `+${TEST_PHONE}`;
+    const phoneToSend = TEST_MODE ? testPhoneE164 : phoneE164;
     
     console.log(`[whatsapp-send] Enviando mensagem para lead ${leadId}`);
     console.log(`[whatsapp-send] Telefone original: ${phoneClean}, Enviando para: ${phoneToSend}`);
