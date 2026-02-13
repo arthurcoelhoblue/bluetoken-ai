@@ -367,7 +367,7 @@ function LeadDetailContent() {
             isLoading={messagesLoading}
             error={messagesError as Error | null}
             onRetry={() => refetchMessages()}
-            modo={(conversationState as any)?.modo || 'SDR_IA'}
+            modo={conversationState?.modo || 'SDR_IA'}
             assumidoPorNome={null}
             maxHeight="500px"
           />

@@ -43,6 +43,10 @@ export function useConversationState({ leadId, empresa, enabled = true }: UseCon
         ultimo_contato_em: data.ultimo_contato_em,
         created_at: data.created_at,
         updated_at: data.updated_at,
+        modo: (data.modo as 'SDR_IA' | 'MANUAL' | 'HIBRIDO') || 'SDR_IA',
+        assumido_por: data.assumido_por || null,
+        assumido_em: data.assumido_em || null,
+        devolvido_em: data.devolvido_em || null,
       };
     },
     enabled: enabled && !!leadId && !!empresa,
