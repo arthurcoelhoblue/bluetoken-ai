@@ -1,49 +1,62 @@
 
-## Implementar botao "Devolver a Amelia" funcional na pagina de detalhe do lead
 
-### Problema atual
-O componente `ConversationTakeoverBar` ja possui toda a logica de "Devolver a Amelia" implementada, mas a pagina `LeadDetail` nao passa os dados corretos porque:
+## Corrigir Amelia "muda" - 2 bugs identificados
 
-1. O tipo `ConversationState` (em `src/types/conversation.ts`) nao inclui os campos `modo`, `assumido_por` e `assumido_em`
-2. O hook `useConversationState` (em `src/hooks/useConversationState.ts`) nao mapeia esses campos no retorno
-3. A pagina `LeadDetail` passa `assumidoPorNome={null}` fixo (linha 371)
+### Problema 1 (CRITICO): Argumentos trocados no modo MANUAL
 
-O lead atual esta com `modo: MANUAL` e `assumido_por: 3eb15a6a...`, entao o botao deveria aparecer como "Devolver a Amelia" mas pode nao estar funcionando corretamente por falta dos dados.
+Na funcao `sdr-ia-interpret`, quando o lead esta em modo MANUAL (linha 4286), os argumentos `pessoaContext` e `conversationState` estao **invertidos** na chamada a `interpretWithAI`.
 
-### Mudancas
-
-**1. `src/types/conversation.ts`** - Adicionar campos de takeover ao tipo `ConversationState`:
-
-```typescript
-export interface ConversationState {
-  // ... campos existentes ...
-  modo?: 'SDR_IA' | 'MANUAL' | 'HIBRIDO';
-  assumido_por?: string | null;
-  assumido_em?: string | null;
-  devolvido_em?: string | null;
-}
+**Assinatura da funcao:**
+```text
+interpretWithAI(mensagem, empresa, historico, leadNome, cadenciaNome, classificacao, pessoaContext, conversationState, mode, triageSummary)
 ```
 
-**2. `src/hooks/useConversationState.ts`** - Incluir `modo`, `assumido_por`, `assumido_em` e `devolvido_em` no mapeamento de retorno:
-
-```typescript
-return {
-  // ... campos existentes ...
-  modo: data.modo || 'SDR_IA',
-  assumido_por: data.assumido_por || null,
-  assumido_em: data.assumido_em || null,
-  devolvido_em: data.devolvido_em || null,
-};
+**Chamada no modo MANUAL (errada - linha 4286):**
+```text
+interpretWithAI(..., classificacao, conversationState, pessoaContext, source)
+                                    ^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^
+                                    deveria ser pessoaContext  deveria ser conversationState
 ```
 
-**3. `src/pages/LeadDetail.tsx`** - Passar `modo` e `assumidoPorNome` corretamente ao `ConversationPanel`:
+**Chamada normal (correta - linha 4332):**
+```text
+interpretWithAI(..., classificacao, pessoaContext, conversationState, mode, triageSummary)
+```
 
-- Usar `conversationState?.modo` em vez de cast `(conversationState as any)?.modo`
-- Buscar o nome do usuario que assumiu (via `assumido_por`) para exibir no badge "por Fulano"
-- Como buscar o nome do usuario exigiria uma query extra, a abordagem mais simples e exibir apenas o modo sem o nome, ou fazer um select na tabela `profiles` se existir
+Resultado: a funcao tenta acessar `pessoaContext.pessoa.nome` mas recebe o `conversationState` (que nao tem `.pessoa`), causando o crash `TypeError: Cannot read properties of undefined (reading 'nome')`. Isso faz todas as 3 tentativas falharem com 500, e o `bluechat-inbound` entra no fallback "IA retornou null -> ESCALATE automatico" sem enviar resposta da Amelia.
+
+### Problema 2: API key 401 no callback Blue Chat
+
+Apos o fallback de escalacao, o `bluechat-inbound` tenta enviar a mensagem de volta ao Blue Chat mas recebe `401 Invalid API key`. O log mostra:
+
+```text
+[Callback] Erro ao enviar mensagem: 401 {"message":"Invalid API key","error":"Invalid API key","statusCode":401}
+```
+
+Isso significa que o secret `BLUECHAT_API_KEY_BLUE` pode estar incorreto ou expirado. Sera necessario verificar/atualizar o valor do secret.
+
+### Correcoes
+
+**Arquivo: `supabase/functions/sdr-ia-interpret/index.ts`**
+
+Corrigir a ordem dos argumentos na chamada do modo MANUAL (linha 4286-4296), trocando `conversationState` e `pessoaContext` para a ordem correta e adicionando `mode` e `triageSummary`:
+
+```text
+// DE (errado):
+interpretWithAI(message.conteudo, message.empresa, historico, leadNome, cadenciaNome, classificacao, conversationState, pessoaContext, source)
+
+// PARA (correto):
+interpretWithAI(message.conteudo, message.empresa, historico, leadNome, cadenciaNome, classificacao, pessoaContext, conversationState, mode, triageSummary)
+```
+
+**Secret: `BLUECHAT_API_KEY_BLUE`**
+
+Solicitar ao usuario que verifique/atualize a API key da integracao Blue Chat para a empresa BLUE, pois esta retornando 401.
 
 ### Resultado esperado
-- Quando o lead esta em modo `MANUAL`, a barra mostra "Modo Manual" com botao "Devolver a Amelia"
-- Ao clicar, abre o dialog de confirmacao ja existente
-- Ao confirmar, o hook `useConversationTakeover` atualiza `lead_conversation_state.modo` para `SDR_IA` e registra no `conversation_takeover_log`
-- A UI atualiza automaticamente via invalidacao do query cache
+
+- A Amelia voltara a interpretar mensagens corretamente (sem crash no `.nome`)
+- Em modo SDR_IA, gerara e enviara respostas automaticas
+- Em modo MANUAL, registrara intents sem responder (comportamento correto)
+- Com a API key corrigida, as mensagens de callback serao entregues ao Blue Chat
+
