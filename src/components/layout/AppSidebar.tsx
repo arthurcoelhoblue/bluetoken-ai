@@ -90,6 +90,7 @@ const navGroups: NavGroup[] = [
     items: [
       { title: 'Amélia IA', url: '/amelia', icon: Bot, screenKey: 'amelia', liveDot: true },
       { title: 'Cadências', url: '/cadences', icon: Zap, screenKey: 'cadencias' },
+      { title: 'Cadências CRM', url: '/cadencias-crm', icon: Zap, screenKey: 'cadencias_crm' },
       { title: 'Leads em Cadência', url: '/cadences/runs', icon: Play, screenKey: 'leads_cadencia' },
       { title: 'Próx. Ações', url: '/cadences/next-actions', icon: Clock, screenKey: 'proximas_acoes' },
       { title: 'Templates', url: '/templates', icon: FileText, screenKey: 'templates' },

@@ -152,6 +152,89 @@ export type Database = {
         }
         Relationships: []
       }
+      cadence_stage_triggers: {
+        Row: {
+          cadence_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          pipeline_id: string
+          stage_id: string
+          trigger_type: string
+          updated_at: string
+        }
+        Insert: {
+          cadence_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          pipeline_id: string
+          stage_id: string
+          trigger_type?: string
+          updated_at?: string
+        }
+        Update: {
+          cadence_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          pipeline_id?: string
+          stage_id?: string
+          trigger_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cadence_stage_triggers_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadencias_crm"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "cadence_stage_triggers_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cadence_steps: {
         Row: {
           cadence_id: string
@@ -192,6 +275,13 @@ export type Database = {
             columns: ["cadence_id"]
             isOneToOne: false
             referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cadence_steps_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadencias_crm"
             referencedColumns: ["id"]
           },
         ]
@@ -649,6 +739,89 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workbench_sla_alerts"
             referencedColumns: ["deal_id"]
+          },
+        ]
+      }
+      deal_cadence_runs: {
+        Row: {
+          cadence_run_id: string
+          created_at: string
+          deal_id: string
+          id: string
+          status: string
+          trigger_stage_id: string | null
+          trigger_type: string
+          updated_at: string
+        }
+        Insert: {
+          cadence_run_id: string
+          created_at?: string
+          deal_id: string
+          id?: string
+          status?: string
+          trigger_stage_id?: string | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Update: {
+          cadence_run_id?: string
+          created_at?: string
+          deal_id?: string
+          id?: string
+          status?: string
+          trigger_stage_id?: string | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_cadence_runs_cadence_run_id_fkey"
+            columns: ["cadence_run_id"]
+            isOneToOne: false
+            referencedRelation: "deal_cadencia_status"
+            referencedColumns: ["cadence_run_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_cadence_run_id_fkey"
+            columns: ["cadence_run_id"]
+            isOneToOne: false
+            referencedRelation: "lead_cadence_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1176,6 +1349,13 @@ export type Database = {
             foreignKeyName: "lead_cadence_events_lead_cadence_run_id_fkey"
             columns: ["lead_cadence_run_id"]
             isOneToOne: false
+            referencedRelation: "deal_cadencia_status"
+            referencedColumns: ["cadence_run_id"]
+          },
+          {
+            foreignKeyName: "lead_cadence_events_lead_cadence_run_id_fkey"
+            columns: ["lead_cadence_run_id"]
+            isOneToOne: false
             referencedRelation: "lead_cadence_runs"
             referencedColumns: ["id"]
           },
@@ -1233,6 +1413,13 @@ export type Database = {
             columns: ["cadence_id"]
             isOneToOne: false
             referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_cadence_runs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadencias_crm"
             referencedColumns: ["id"]
           },
           {
@@ -1635,6 +1822,13 @@ export type Database = {
             foreignKeyName: "lead_message_intents_run_id_fkey"
             columns: ["run_id"]
             isOneToOne: false
+            referencedRelation: "deal_cadencia_status"
+            referencedColumns: ["cadence_run_id"]
+          },
+          {
+            foreignKeyName: "lead_message_intents_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
             referencedRelation: "lead_cadence_runs"
             referencedColumns: ["id"]
           },
@@ -1711,6 +1905,13 @@ export type Database = {
           whatsapp_message_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_messages_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "deal_cadencia_status"
+            referencedColumns: ["cadence_run_id"]
+          },
           {
             foreignKeyName: "lead_messages_run_id_fkey"
             columns: ["run_id"]
@@ -2481,6 +2682,51 @@ export type Database = {
         }
         Relationships: []
       }
+      cadencias_crm: {
+        Row: {
+          ativo: boolean | null
+          canal_principal: Database["public"]["Enums"]["canal_tipo"] | null
+          codigo: string | null
+          deals_ativos: number | null
+          deals_completados: number | null
+          deals_total: number | null
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          id: string | null
+          nome: string | null
+          total_steps: number | null
+          triggers: Json | null
+        }
+        Insert: {
+          ativo?: boolean | null
+          canal_principal?: Database["public"]["Enums"]["canal_tipo"] | null
+          codigo?: string | null
+          deals_ativos?: never
+          deals_completados?: never
+          deals_total?: never
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          id?: string | null
+          nome?: string | null
+          total_steps?: never
+          triggers?: never
+        }
+        Update: {
+          ativo?: boolean | null
+          canal_principal?: Database["public"]["Enums"]["canal_tipo"] | null
+          codigo?: string | null
+          deals_ativos?: never
+          deals_completados?: never
+          deals_total?: never
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          id?: string | null
+          nome?: string | null
+          total_steps?: never
+          triggers?: never
+        }
+        Relationships: []
+      }
       contacts_with_stats: {
         Row: {
           canal_origem: string | null
@@ -2549,6 +2795,77 @@ export type Database = {
             columns: ["pessoa_id"]
             isOneToOne: false
             referencedRelation: "pessoas"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      deal_cadencia_status: {
+        Row: {
+          bridge_status: string | null
+          cadence_codigo: string | null
+          cadence_id: string | null
+          cadence_nome: string | null
+          cadence_run_id: string | null
+          deal_cadence_run_id: string | null
+          deal_id: string | null
+          last_step_ordem: number | null
+          next_run_at: string | null
+          next_step_ordem: number | null
+          run_status: Database["public"]["Enums"]["cadence_run_status"] | null
+          started_at: string | null
+          total_steps: number | null
+          trigger_stage_id: string | null
+          trigger_stage_nome: string | null
+          trigger_type: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "deal_cadence_runs_trigger_stage_id_fkey"
+            columns: ["trigger_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_cadence_runs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadences"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_cadence_runs_cadence_id_fkey"
+            columns: ["cadence_id"]
+            isOneToOne: false
+            referencedRelation: "cadencias_crm"
             referencedColumns: ["id"]
           },
         ]
