@@ -43,6 +43,7 @@ type LeadIntentTipo =
   | 'CUMPRIMENTO'
   | 'AGRADECIMENTO'
   | 'FORA_CONTEXTO'
+  | 'MANUAL_MODE'
   | 'OUTRO';
 
 type SdrAcaoTipo =
@@ -112,6 +113,10 @@ interface ConversationState {
   idioma_preferido: string;
   ultima_pergunta_id?: string | null;
   ultimo_contato_em: string;
+  modo?: 'SDR_IA' | 'MANUAL' | 'HIBRIDO';
+  assumido_por?: string | null;
+  assumido_em?: string | null;
+  devolvido_em?: string | null;
 }
 
 // ========================================
@@ -4295,7 +4300,7 @@ serve(async (req) => {
     }
 
     // PATCH 3: Check MANUAL mode — skip AI response generation but still log intent
-    const modoAtendimento = (conversationState as any)?.modo || 'SDR_IA';
+    const modoAtendimento = conversationState?.modo || 'SDR_IA';
     if (modoAtendimento === 'MANUAL') {
       console.log('[SDR-IA] 🚫 Modo MANUAL — registrando intent sem gerar resposta automática');
       

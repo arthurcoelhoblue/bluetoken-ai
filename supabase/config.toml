@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.deal-loss-analysis]
 verify_jwt = false
+
+[functions.copilot-chat]
+verify_jwt = false
