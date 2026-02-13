@@ -405,6 +405,49 @@ async function dispararMensagem(
 }
 
 // ========================================
+// HORÁRIO COMERCIAL - 09h-18h seg-sex (America/Sao_Paulo)
+// ========================================
+function getHorarioBrasilia(): Date {
+  const now = new Date();
+  const brasiliaOffset = -3 * 60;
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
+  return new Date(utcMs + brasiliaOffset * 60 * 1000);
+}
+
+function isHorarioComercial(): boolean {
+  const brasilia = getHorarioBrasilia();
+  const dia = brasilia.getDay();
+  const hora = brasilia.getHours();
+  return dia >= 1 && dia <= 5 && hora >= 9 && hora < 18;
+}
+
+function proximoHorarioComercial(): Date {
+  const brasilia = getHorarioBrasilia();
+  const dia = brasilia.getDay();
+  const hora = brasilia.getHours();
+  
+  let diasParaAdicionar = 0;
+  
+  if (dia >= 1 && dia <= 5 && hora < 9) {
+    diasParaAdicionar = 0;
+  } else if (dia === 5 && hora >= 18) {
+    diasParaAdicionar = 3;
+  } else if (dia === 6) {
+    diasParaAdicionar = 2;
+  } else if (dia === 0) {
+    diasParaAdicionar = 1;
+  } else if (dia >= 1 && dia <= 4 && hora >= 18) {
+    diasParaAdicionar = 1;
+  }
+  
+  const resultado = new Date(brasilia);
+  resultado.setDate(resultado.getDate() + diasParaAdicionar);
+  resultado.setHours(9, 0, 0, 0);
+  const utcMs = resultado.getTime() - (-3 * 60) * 60 * 1000;
+  return new Date(utcMs);
+}
+
+// ========================================
 // PROCESSAMENTO DE CADÊNCIAS VENCIDAS
 // ========================================
 async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<ProcessResult[]> {
@@ -515,6 +558,74 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   }
 
   const currentStep = step as CadenceStep;
+
+  // 2.5 Verificar horário comercial
+  if (!isHorarioComercial()) {
+    const proximoHorario = proximoHorarioComercial();
+    console.log('[Runner] Fora de horário comercial, reagendando para:', proximoHorario.toISOString());
+    
+    await supabase
+      .from('lead_cadence_runs')
+      .update({
+        next_run_at: proximoHorario.toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', run.id);
+
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id,
+      step_ordem: currentStep.ordem,
+      template_codigo: currentStep.template_codigo,
+      tipo_evento: 'AGENDADO',
+      detalhes: { motivo: 'Fora de horário comercial', next_run_at: proximoHorario.toISOString() },
+    });
+
+    return {
+      runId: run.id,
+      leadId: run.lead_id,
+      stepOrdem: currentStep.ordem,
+      templateCodigo: currentStep.template_codigo,
+      status: 'SKIPPED',
+      mensagem: 'Reagendado para próximo horário comercial',
+    };
+  }
+
+  // 2.6 Verificar modo de atendimento
+  const { data: convState } = await supabase
+    .from('lead_conversation_state')
+    .select('modo')
+    .eq('lead_id', run.lead_id)
+    .eq('empresa', run.empresa)
+    .maybeSingle();
+
+  if (convState?.modo === 'MANUAL') {
+    console.log('[Runner] Lead em modo MANUAL, pausando cadência:', run.id);
+    
+    await supabase
+      .from('lead_cadence_runs')
+      .update({
+        status: 'PAUSADA',
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', run.id);
+
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id,
+      step_ordem: currentStep.ordem,
+      template_codigo: currentStep.template_codigo,
+      tipo_evento: 'PAUSADA',
+      detalhes: { motivo: 'Lead em atendimento manual por vendedor' },
+    });
+
+    return {
+      runId: run.id,
+      leadId: run.lead_id,
+      stepOrdem: currentStep.ordem,
+      templateCodigo: currentStep.template_codigo,
+      status: 'SKIPPED',
+      mensagem: 'Cadência pausada - lead em atendimento manual',
+    };
+  }
 
   // 3. Buscar contato do lead
   const { data: contact, error: contactError } = await supabase
