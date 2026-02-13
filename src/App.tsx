@@ -112,7 +112,7 @@ const App = () => (
             <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
             <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><LeadsQuentes /></ProtectedRoute>} />
             <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><AIBenchmark /></ProtectedRoute>} />
-            <Route path="/admin/pendencias-perda" element={<ProtectedRoute requiredRoles={['ADMIN']}><PendenciasPerda /></ProtectedRoute>} />
+            <Route path="/pendencias" element={<ProtectedRoute><PendenciasPerda /></ProtectedRoute>} />
             <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><PipelineConfigPage /></ProtectedRoute>} />
             <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><CustomFieldsConfigPage /></ProtectedRoute>} />
             <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ImportacaoPage /></ProtectedRoute>} />

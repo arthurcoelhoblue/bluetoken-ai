@@ -155,9 +155,9 @@ export default function PendenciasPerda() {
     <AppLayout>
       <PageShell
         icon={AlertTriangle}
-        title="Pendências de Perda"
-        description="Resolva divergências entre o motivo do Closer e a análise da IA."
-        patchInfo="Controle de Perda"
+        title="Pendências do Gestor"
+        description="Resolva divergências e tome decisões sobre situações pendentes."
+        patchInfo="Gestão"
       />
       <div className="px-6 pb-8 space-y-4">
         {isLoading ? (
