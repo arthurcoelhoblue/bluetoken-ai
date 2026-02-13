@@ -264,16 +264,16 @@ export function AppSidebar() {
       <SidebarFooter className="border-t border-sidebar-border pt-3 pb-3">
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Meu Perfil">
+            <SidebarMenuButton asChild tooltip="Meu Perfil" className="h-auto py-3">
               <button onClick={() => navigate('/me')} className="w-full">
-                <Avatar className="h-6 w-6 shrink-0">
+                <Avatar className="h-8 w-8 shrink-0">
                   <AvatarImage src={profile?.avatar_url || undefined} />
                   <AvatarFallback className="text-xs bg-primary/10 text-primary">
                     {getInitials(profile?.nome || null, profile?.email || '')}
                   </AvatarFallback>
                 </Avatar>
                 {!collapsed && (
-                  <div className="flex flex-col overflow-hidden flex-1 gap-1.5">
+                  <div className="flex flex-col overflow-hidden flex-1 gap-2 ml-1">
                     <span className="text-sm font-semibold truncate leading-none">{profile?.nome || 'Usuário'}</span>
                     <div className="flex gap-1.5">
                       {roles.slice(0, 2).map(role => (
