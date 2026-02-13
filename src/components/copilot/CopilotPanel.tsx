@@ -5,6 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Bot, Send, Sparkles, MessageCircle } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from '@/hooks/use-toast';
 import type { CopilotContextType } from '@/types/conversas';
 
 interface CopilotContext {
@@ -60,15 +62,42 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
     setInput('');
     setIsLoading(true);
 
-    // Simulate response — copilot-chat edge function will be implemented in future patch
-    setTimeout(() => {
+    try {
+      const { data, error } = await supabase.functions.invoke('copilot-chat', {
+        body: {
+          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
+          contextType: context.type,
+          contextId: context.id,
+          empresa: context.empresa,
+        },
+      });
+
+      if (error) {
+        // Check for rate limit or payment errors
+        const status = (error as any)?.status || (error as any)?.context?.status;
+        if (status === 429) {
+          toast({ title: 'Rate limit', description: 'Muitas requisições. Aguarde alguns segundos.', variant: 'destructive' });
+        } else if (status === 402) {
+          toast({ title: 'Créditos insuficientes', description: 'Adicione créditos de IA ao workspace.', variant: 'destructive' });
+        }
+        throw error;
+      }
+
       const assistantMsg: LocalMessage = {
         role: 'assistant',
-        content: `🚧 O Copilot IA será conectado em breve.\n\n**Contexto detectado:**\n- Tipo: ${context.type}\n- Empresa: ${context.empresa}\n${context.leadNome ? `- Lead: ${context.leadNome}` : ''}\n${context.estadoFunil ? `- Funil: ${context.estadoFunil}` : ''}\n\nPor enquanto, use o Blue Chat para conversar diretamente com o lead.`,
+        content: data?.content || 'Sem resposta da IA.',
       };
       setMessages(prev => [...prev, assistantMsg]);
+    } catch (err) {
+      console.error('[Copilot] Erro:', err);
+      const errorMsg: LocalMessage = {
+        role: 'assistant',
+        content: '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.',
+      };
+      setMessages(prev => [...prev, errorMsg]);
+    } finally {
       setIsLoading(false);
-    }, 800);
+    }
   };
 
   const trigger = variant === 'icon' ? (
