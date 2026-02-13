@@ -1,28 +1,25 @@
 
 
-## Patch 5: Deal Detail — Pagina Completa
+## Patch 6: Meu Dia — Dashboard do Vendedor
 
 ### Resumo
 
-Este patch entrega a experiencia completa do Deal com pagina de detalhe (DealDetailSheet), timeline de atividades, barra de progresso visual, acoes de Ganhar/Perder/Reabrir, criacao de notas/tarefas/ligacoes, custom fields EAV, scores IA, e integracao com Copilot.
+Este patch cria a pagina "Meu Dia" (/meu-dia), o cockpit pessoal do vendedor com KPIs, alertas de SLA, tarefas pendentes, resumo de pipelines e deals recentes. Tudo filtrado por empresa ativa e usuario logado.
 
 ---
 
 ### Gaps identificados no banco de dados
 
-1. **Tabela `deal_activities` nao existe** — Precisa ser criada com 14 tipos de atividade
-2. **View `deals_full_detail` nao existe** — JOIN completo de deals com contacts, organizations, stages, pipelines, profiles + tempo no stage
-3. **Trigger `trg_deal_activity_log` nao existe** — Auto-log de STAGE_CHANGE, VALOR_CHANGE, GANHO, PERDA
-4. **Colunas faltando em `deals`** — O PDF assume `canal_origem`, `data_previsao_fechamento`, `notas` e `metadata`, que nao existem na tabela atual
-5. **Coluna `moved_at` vs `created_at`** — O PDF referencia `moved_at` na `deal_stage_history`, mas a coluna real e `created_at`. A view sera adaptada para usar `created_at`
+1. **Views SQL nao existem** — `workbench_tarefas`, `workbench_sla_alerts`, `workbench_pipeline_summary` precisam ser criadas
+2. **Coluna `moved_at` nao existe** — O PDF referencia `dsh.moved_at` na view `workbench_sla_alerts`, mas a tabela `deal_stage_history` usa `created_at`. A view sera adaptada para usar `created_at`
+3. **Coluna `fechado_em` verificar** — A view SLA filtra por `d.fechado_em IS NULL`. Precisa confirmar que esta coluna existe em `deals`
 
 ### Gaps identificados no codigo
 
-1. **DealCard nao tem onClick** — Nao existe callback para abrir o detail sheet ao clicar
-2. **KanbanBoard/KanbanColumn nao propagam click** — Sem suporte a `onDealClick`
-3. **CopilotPanel usa `context` object** — O PDF passa props separadas (`contextType`, `contextId`), mas o componente real usa `context: { type, id, empresa, ... }`. Sera adaptado
-4. **`DealFormData` incompleto** — Faltam `canal_origem`, `notas`, `data_previsao_fechamento`
-5. **CreateDealDialog existente** em `pipeline/` sera substituido pelo novo `deals/DealCreateDialog`
+1. **Sidebar ja tem "Meu Dia" apontando para `/`** — O item existe mas aponta para a rota raiz que renderiza `DashboardContent`. Sera redirecionado para `/meu-dia`
+2. **`Index.tsx` renderiza `DashboardContent`** — Sera alterado para redirecionar para `/meu-dia` quando autenticado
+3. **Dependencia do Patch 5** — Usa `DealDetailSheet` e `useToggleTaskActivity` do hook `useDealDetail`
+4. **Locale `date-fns/locale/pt-BR`** — O PDF usa formatacao em portugues com `ptBR` locale
 
 ---
 
@@ -30,66 +27,43 @@ Este patch entrega a experiencia completa do Deal com pagina de detalhe (DealDet
 
 #### Fase 1: Migration SQL
 
-Uma unica migration que:
+Uma unica migration que cria 3 views (todas com `SECURITY INVOKER`):
 
-- Adiciona colunas em `deals`: `canal_origem TEXT`, `data_previsao_fechamento TIMESTAMPTZ`, `notas TEXT`, `metadata JSONB DEFAULT '{}'`
-- Cria tabela `deal_activities` com RLS (authenticated read, ADMIN/CLOSER manage)
-- Cria indices de performance (`idx_deal_activities_deal`, `idx_deal_activities_tipo`, `idx_deal_activities_tarefa`)
-- Cria trigger `trg_deal_activity_log` (SECURITY DEFINER) que auto-registra STAGE_CHANGE, VALOR_CHANGE, GANHO/PERDA
-- Cria view `deals_full_detail` (SECURITY INVOKER) com todos os JOINs + campo calculado `minutos_no_stage` usando `created_at` da `deal_stage_history`
-
-Nota sobre a policy "Service can manage": o PDF inclui uma policy sem role restriction (`USING (true)`). Esta e para o service_role usado por triggers. Sera incluida conforme o PDF.
+- **`workbench_tarefas`** — Tarefas pendentes (tipo TAREFA) dos deals, com JOINs para deal, stage, contact, pipeline
+- **`workbench_sla_alerts`** — Deals abertos em stages com SLA definido, com calculo de `minutos_no_stage`, `sla_estourado` (boolean), `sla_percentual` (0-100+). Usa `created_at` em vez de `moved_at` da `deal_stage_history`
+- **`workbench_pipeline_summary`** — Aggregates por pipeline/owner/empresa: total deals, abertos/ganhos/perdidos, valores
 
 #### Fase 2: Types
 
-Criar `src/types/dealDetail.ts`:
-- `DealActivityType` — union dos 14 tipos
-- `DealActivity` — interface com campos da tabela + `user_nome` joined
-- `DealFullDetail` — interface espelhando a view `deals_full_detail`
-- `WinLoseData` — dados para ganhar/perder deal
-
-Atualizar `src/types/deal.ts`:
-- Adicionar `canal_origem`, `notas`, `data_previsao_fechamento`, `metadata` ao `DealFormData`
+Criar `src/types/workbench.ts`:
+- `WorkbenchTarefa` — interface com campos da view workbench_tarefas
+- `WorkbenchSLAAlert` — interface com deal_id, sla_percentual, sla_estourado, minutos_no_stage, etc.
+- `WorkbenchPipelineSummary` — interface com pipeline_id, deals_abertos/ganhos/perdidos, valores
 
 #### Fase 3: Hooks
 
-Criar `src/hooks/useDealDetail.ts`:
-- `useDealDetail(dealId)` — query da view `deals_full_detail`
-- `useDealActivities(dealId)` — lista atividades com JOIN profiles
-- `useAddDealActivity()` — criar atividade manual
-- `useToggleTaskActivity()` — toggle checkbox de tarefa
-- `useUpdateDealField()` — update campo individual do deal
-- `useMoveDealStage()` — mover deal para outro stage via clique na barra
-- `useWinDeal()` — marcar como ganho
-- `useLoseDeal()` — marcar como perdido
-- `useReopenDeal()` — reabrir deal fechado + log REABERTO
-- `useDealStageHistory(dealId)` — historico de movimentacoes
+Criar `src/hooks/useWorkbench.ts`:
+- `useWorkbenchTarefas()` — tarefas pendentes filtradas por owner + empresa, ordenadas por prazo
+- `useWorkbenchSLAAlerts()` — alertas SLA ordenados por criticidade, refresh a cada 60s
+- `useWorkbenchPipelineSummary()` — resumo por pipeline do vendedor
+- `useWorkbenchRecentDeals()` — ultimos 7 dias via query direta em `deals` com JOIN `pipeline_stages`
 
-#### Fase 4: Componentes
+#### Fase 4: Componente
 
-Criar `src/components/deals/DealDetailSheet.tsx`:
-- Header: titulo, badges (empresa, pipeline, stage com cor, ganho/perdido), valor, tempo no stage + alerta SLA
-- Barra de progresso visual com stages clicaveis (clicar move deal)
-- Botoes Ganhar/Perder (ou Reabrir se fechado)
-- 4 tabs: Timeline, Dados, Campos Custom, Scores IA
-- Timeline: feed cronologico reverso com input inline para adicionar atividades
-- Dados: campos do deal com edicao inline
-- Campos: `CustomFieldsRenderer` para EAV do deal
-- Scores: 4 barras de progresso (Engajamento, Intencao, Valor, Urgencia)
-- Dialog de confirmacao para Ganhar/Perder
-- Copilot integrado no header (adaptado para `context` object existente)
-
-Criar `src/components/deals/DealCreateDialog.tsx`:
-- Modal completo: titulo, contato (busca via useContactsPage), pipeline, stage, valor, temperatura, canal origem, previsao fechamento, notas
-- Substitui o `CreateDealDialog` existente em `pipeline/`
+Criar `src/pages/WorkbenchPage.tsx`:
+- **Greeting** contextual: "Bom dia/tarde/noite, [nome]" + data formatada em PT-BR + contadores (tarefas hoje, SLA estourados)
+- **4 KPI Cards**: Pipeline aberto (R$), Total ganho (R$), Deals abertos (qtd), SLA estourados (qtd)
+- **SLA Alerts**: Cards vermelhos/amarelos com barra de progresso visual, clicavel abre DealDetailSheet
+- **Tarefas pendentes**: Lista com checkbox para concluir, indicacao atrasada/hoje/amanha, clicavel abre DealDetailSheet
+- **Meus Pipelines**: Resumo por pipeline com deals abertos/ganhos/perdidos + valores
+- **Deals recentes**: Ultimos 7 dias com stage colorido, valor, icone ganho/perdido
+- **Copilot**: Botao no header para perguntas gerais (via CopilotPanel existente)
 
 #### Fase 5: Integracao
 
-- **PipelinePage.tsx**: Adicionar state `selectedDealId`, passar `onDealClick` ao KanbanBoard, renderizar `DealDetailSheet` e trocar `CreateDealDialog` pelo novo `DealCreateDialog`
-- **KanbanBoard.tsx**: Aceitar e propagar `onDealClick` callback
-- **KanbanColumn.tsx**: Aceitar e propagar `onDealClick` callback
-- **DealCard.tsx**: Adicionar `onClick` prop, separar area clicavel da area de drag
-- **ContactDetailSheet.tsx**: Na tab Deals, ao clicar deal abrir `DealDetailSheet` inline
+- **App.tsx**: Adicionar rota `/meu-dia` com `ProtectedRoute` (roles ADMIN, CLOSER). Redirecionar `/` para `/meu-dia` quando autenticado
+- **AppSidebar.tsx**: Atualizar item "Meu Dia" para apontar para `/meu-dia` em vez de `/`
+- **Index.tsx**: Quando autenticado, redirecionar para `/meu-dia` em vez de renderizar DashboardContent
 
 ---
 
@@ -98,31 +72,26 @@ Criar `src/components/deals/DealCreateDialog.tsx`:
 | Item | PDF | Implementacao real |
 |------|-----|--------------------|
 | `deal_stage_history.moved_at` | Assume `moved_at` | Usar `created_at` existente |
-| `CopilotPanel` props | Props separadas | Usar `context` object existente |
-| Policy service role | `FOR ALL USING (true)` | Manter conforme PDF (service_role) |
-| `CreateDealDialog` existente | Nao menciona | Substituir pelo novo em `deals/` |
-| `status` do deal | PDF usa `is_won`/`is_lost` do stage | Manter compativel com campo `status` existente |
+| Rota `/` | Redirect para `/meu-dia` | Index.tsx redireciona quando autenticado |
+| Sidebar "Meu Dia" | Novo item | Item ja existe, atualizar URL para `/meu-dia` |
+| `date-fns` locale | Assume `ptBR` importado | Importar de `date-fns/locale/pt-BR` |
+| Deals recentes JOIN | `d.contacts?.nome` | Usar `contacts!inner(nome)` via Supabase query |
 
 ---
 
-### Checklist de validacao (pagina 27 do documento)
+### Checklist de validacao
 
-1. Migration SQL rodada — tabela deal_activities, trigger, view
-2. Verificar: tabela deal_activities existe com trigger trg_deal_activity_log
-3. Verificar: view deals_full_detail funciona (SELECT * LIMIT 5)
-4. types/dealDetail.ts criado
-5. hooks/useDealDetail.ts criado
-6. components/deals/DealDetailSheet.tsx criado
-7. components/deals/DealCreateDialog.tsx criado
-8. Integrar no PipelinePage: handleDealClick + handleNewDeal
-9. Integrar no ContactDetailSheet: click deal abre DealDetailSheet
-10. Testar: clicar num deal card no kanban — DealDetailSheet abre
-11. Testar: tab Timeline — adicionar nota, tarefa (checkbox funciona)
-12. Testar: clicar stage na barra de progresso — deal move + atividade auto-registrada
-13. Testar: clicar Ganhar — confirmar — badge + atividade GANHO
-14. Testar: clicar Perder — preencher motivo — badge + atividade PERDA
-15. Testar: clicar Reabrir — deal volta ao primeiro stage + atividade REABERTO
-16. Testar: criar novo deal via DealCreateDialog (botao Novo Deal no kanban)
-17. Testar: custom fields do deal (tab Campos) renderizados e editaveis
-18. Testar: Copilot no header do deal — perguntar sobre este deal
+1. Migration SQL rodada — 3 views existem
+2. Verificar: SELECT * FROM workbench_tarefas LIMIT 5
+3. Verificar: SELECT * FROM workbench_sla_alerts LIMIT 5
+4. Verificar: SELECT * FROM workbench_pipeline_summary LIMIT 5
+5. types/workbench.ts criado
+6. hooks/useWorkbench.ts criado com 4 hooks
+7. pages/WorkbenchPage.tsx criado
+8. Rota /meu-dia configurada no App.tsx
+9. Sidebar "Meu Dia" aponta para /meu-dia
+10. Testar: abrir /meu-dia, ver greeting, KPIs, SLA alerts, tarefas
+11. Testar: checkbox tarefa — marca como concluida
+12. Testar: clicar deal na lista — DealDetailSheet abre
+13. Testar: trocar empresa no company switcher — dados atualizam
 
