@@ -1,7 +1,7 @@
 export type DealActivityType =
   | 'NOTA' | 'LIGACAO' | 'EMAIL' | 'REUNIAO' | 'TAREFA'
   | 'STAGE_CHANGE' | 'VALOR_CHANGE' | 'GANHO' | 'PERDA' | 'REABERTO'
-  | 'CRIACAO' | 'ARQUIVO' | 'WHATSAPP' | 'OUTRO';
+  | 'CRIACAO' | 'ARQUIVO' | 'WHATSAPP' | 'CADENCIA' | 'OUTRO';
 
 export interface DealActivity {
   id: string;
@@ -96,6 +96,7 @@ export const ACTIVITY_LABELS: Record<DealActivityType, string> = {
   CRIACAO: 'Criação',
   ARQUIVO: 'Arquivo',
   WHATSAPP: 'WhatsApp',
+  CADENCIA: 'Cadência',
   OUTRO: 'Outro',
 };
 
@@ -113,5 +114,6 @@ export const ACTIVITY_ICONS: Record<DealActivityType, string> = {
   CRIACAO: '✨',
   ARQUIVO: '📎',
   WHATSAPP: '💬',
+  CADENCIA: '⚡',
   OUTRO: '📌',
 };

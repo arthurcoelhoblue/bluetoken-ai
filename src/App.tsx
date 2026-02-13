@@ -43,6 +43,7 @@ import PipelineConfigPage from "./pages/PipelineConfigPage";
 import CustomFieldsConfigPage from "./pages/CustomFieldsConfigPage";
 import OrganizationsPage from "./pages/OrganizationsPage";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import CadenciasCRMPage from "./pages/CadenciasPage";
 
 const queryClient = new QueryClient();
 
@@ -75,6 +76,7 @@ const App = () => (
             <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
             <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
             <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
+            <Route path="/cadencias-crm" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenciasCRMPage /></ProtectedRoute>} />
             
             {/* Admin/Auditor routes */}
             <Route path="/monitor/sgt-events" element={
