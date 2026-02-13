@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
-import type { CustomFieldDefinition, CustomFieldValue, CustomFieldEntityType, CustomFieldFormData } from '@/types/customFields';
+import type { CustomFieldDefinition, CustomFieldValue, CustomFieldEntityType, CustomFieldFormData, ResolvedCustomField } from '@/types/customFields';
 
 export function useCustomFieldDefinitions(entityType?: CustomFieldEntityType) {
   const { activeCompany } = useCompany();
@@ -115,4 +115,40 @@ export function useUpsertFieldValue() {
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['custom_field_values'] }),
   });
+}
+
+export function useResolvedFields(entityType: CustomFieldEntityType, entityId: string | null): ResolvedCustomField[] {
+  const { data: definitions } = useCustomFieldDefinitions(entityType);
+  const { data: values } = useCustomFieldValues(entityType, entityId);
+
+  if (!definitions) return [];
+
+  const valueMap = new Map<string, CustomFieldValue>();
+  values?.forEach((v) => valueMap.set(v.field_id, v));
+
+  return definitions
+    .filter((d) => d.is_visible)
+    .map((def) => {
+      const val = valueMap.get(def.id) ?? null;
+      let displayValue = '—';
+
+      if (val) {
+        const vt = def.value_type;
+        if (['TEXT', 'EMAIL', 'PHONE', 'URL', 'TAG', 'TEXTAREA', 'SELECT'].includes(vt) && val.value_text) {
+          displayValue = val.value_text;
+        } else if (['NUMBER', 'PERCENT'].includes(vt) && val.value_number != null) {
+          displayValue = String(val.value_number);
+        } else if (vt === 'CURRENCY' && val.value_number != null) {
+          displayValue = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(val.value_number);
+        } else if (vt === 'BOOLEAN' && val.value_boolean != null) {
+          displayValue = val.value_boolean ? 'Sim' : 'Não';
+        } else if (['DATE', 'DATETIME'].includes(vt) && val.value_date) {
+          displayValue = new Date(val.value_date).toLocaleDateString('pt-BR');
+        } else if (vt === 'MULTISELECT' && val.value_text) {
+          displayValue = val.value_text;
+        }
+      }
+
+      return { definition: def, value: val, displayValue };
+    });
 }

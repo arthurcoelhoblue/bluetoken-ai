@@ -4,6 +4,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import {
   AlertTriangle,
   Bot,
+  Building2,
   CalendarCheck,
   Columns3,
   ContactRound,
@@ -70,6 +71,7 @@ const navGroups: NavGroup[] = [
       { title: 'Meu Dia', url: '/', icon: CalendarCheck, screenKey: 'dashboard' },
       { title: 'Pipeline', url: '/pipeline', icon: Columns3, screenKey: 'pipeline' },
       { title: 'Contatos', url: '/contatos', icon: ContactRound, screenKey: 'contatos' },
+      { title: 'Organizações', url: '/organizacoes', icon: Building2, screenKey: 'organizacoes' },
       { title: 'Conversas', url: '/conversas', icon: MessagesSquare, screenKey: 'conversas' },
     ],
   },
