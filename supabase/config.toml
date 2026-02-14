@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.deal-context-summary]
 verify_jwt = false
+
+[functions.revenue-forecast]
+verify_jwt = false

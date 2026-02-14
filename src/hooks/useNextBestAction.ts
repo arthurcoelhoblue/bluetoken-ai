@@ -9,7 +9,12 @@ export interface NextBestAction {
   deal_id?: string;
   lead_id?: string;
   prioridade: 'ALTA' | 'MEDIA' | 'BAIXA';
-  tipo_acao: 'TAREFA' | 'FOLLOW_UP' | 'SLA' | 'DEAL_PARADO' | 'LEAD_QUENTE';
+  tipo_acao: 'TAREFA' | 'FOLLOW_UP' | 'SLA' | 'DEAL_PARADO' | 'LEAD_QUENTE' | 'CS_RISCO';
+}
+
+export interface NBAResponse {
+  acoes: NextBestAction[];
+  narrativa_dia: string;
 }
 
 export function useNextBestAction() {
@@ -21,14 +26,17 @@ export function useNextBestAction() {
     queryKey: ['next-best-action', user?.id, activeCompany],
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000, // 5 minutes
-    queryFn: async (): Promise<NextBestAction[]> => {
+    queryFn: async (): Promise<NBAResponse> => {
       const empresa = activeCompany === 'ALL' ? null : activeCompany;
       const { data, error } = await supabase.functions.invoke('next-best-action', {
         body: { user_id: user!.id, empresa },
       });
 
       if (error) throw error;
-      return data?.acoes ?? [];
+      return {
+        acoes: data?.acoes ?? [],
+        narrativa_dia: data?.narrativa_dia ?? '',
+      };
     },
   });
 
