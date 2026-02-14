@@ -1931,6 +1931,187 @@ serve(async (req) => {
     try {
       classification = await classificarLead(supabase, newEvent.id, leadNormalizado);
       
+      // ========================================
+      // AUTO-CRIAÇÃO DE DEAL
+      // ========================================
+      try {
+        // Buscar contact_id do lead
+        const { data: contactForDeal } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('legacy_lead_id', payload.lead_id)
+          .eq('empresa', payload.empresa)
+          .maybeSingle();
+
+        if (contactForDeal) {
+          // Determinar pipeline default da empresa
+          const { data: defaultPipeline } = await supabase
+            .from('pipelines')
+            .select('id')
+            .eq('empresa', payload.empresa)
+            .eq('is_default', true)
+            .eq('ativo', true)
+            .maybeSingle();
+
+          const pipelineId = defaultPipeline?.id;
+
+          if (pipelineId) {
+            // Verificar se já existe deal ABERTO para este contact+pipeline
+            const { data: existingDeal } = await supabase
+              .from('deals')
+              .select('id')
+              .eq('contact_id', contactForDeal.id)
+              .eq('pipeline_id', pipelineId)
+              .eq('status', 'ABERTO')
+              .maybeSingle();
+
+            if (!existingDeal) {
+              // Detectar comando de prioridade
+              const isPriority = 
+                payload.dados_lead.stage === 'Atacar agora!' ||
+                !!payload.dados_lead.data_levantou_mao ||
+                payload.prioridade === 'URGENTE';
+
+              const temperatura = classification?.temperatura || 'FRIO';
+
+              // Determinar stage_id
+              let targetStageId: string | null = null;
+
+              if (isPriority) {
+                // Buscar stage com is_priority = true
+                const { data: priorityStage } = await supabase
+                  .from('pipeline_stages')
+                  .select('id')
+                  .eq('pipeline_id', pipelineId)
+                  .eq('is_priority', true)
+                  .maybeSingle();
+                targetStageId = priorityStage?.id || null;
+              }
+
+              if (!targetStageId) {
+                // Primeiro estágio do pipeline (menor posição, não won/lost)
+                const { data: firstStage } = await supabase
+                  .from('pipeline_stages')
+                  .select('id')
+                  .eq('pipeline_id', pipelineId)
+                  .eq('is_won', false)
+                  .eq('is_lost', false)
+                  .order('posicao', { ascending: true })
+                  .limit(1)
+                  .maybeSingle();
+                targetStageId = firstStage?.id || null;
+              }
+
+              if (targetStageId) {
+                const dealTitulo = `${leadNormalizado.nome} — Inbound SGT`;
+
+                const { data: newDeal, error: dealError } = await supabase
+                  .from('deals')
+                  .insert({
+                    contact_id: contactForDeal.id,
+                    pipeline_id: pipelineId,
+                    stage_id: targetStageId,
+                    titulo: dealTitulo,
+                    valor: 0,
+                    moeda: 'BRL',
+                    temperatura,
+                    status: 'ABERTO',
+                    origem: 'SGT',
+                    utm_source: leadNormalizado.utm_source,
+                    utm_medium: leadNormalizado.utm_medium,
+                    utm_campaign: leadNormalizado.utm_campaign,
+                    utm_content: leadNormalizado.utm_content,
+                    utm_term: leadNormalizado.utm_term,
+                  } as Record<string, unknown>)
+                  .select('id')
+                  .single();
+
+                if (dealError) {
+                  console.error('[SGT Webhook] Erro ao criar deal:', dealError);
+                } else {
+                  console.log('[SGT Webhook] Deal criado:', newDeal.id, '| Temp:', temperatura, '| Priority:', isPriority);
+
+                  // Registrar atividade de criação
+                  await supabase.from('deal_activities').insert({
+                    deal_id: newDeal.id,
+                    tipo: 'CRIACAO',
+                    descricao: `Deal criado automaticamente via SGT (${isPriority ? 'PRIORIDADE' : temperatura})`,
+                    metadata: {
+                      origem: 'SGT',
+                      temperatura,
+                      is_priority: isPriority,
+                      lead_id: payload.lead_id,
+                      evento: payload.evento,
+                    },
+                  } as Record<string, unknown>);
+
+                  // Notificação para leads QUENTES ou prioritários
+                  if (isPriority || temperatura === 'QUENTE') {
+                    await supabase.from('notifications').insert({
+                      tipo: 'DEAL_NOVO_PRIORITARIO',
+                      titulo: isPriority ? '🔥 Lead pediu atendimento urgente!' : '🔥 Lead QUENTE entrou no pipeline!',
+                      mensagem: `${leadNormalizado.nome} — ${payload.empresa}`,
+                      empresa: payload.empresa,
+                      link: `/pipeline?deal=${newDeal.id}`,
+                      metadata: { deal_id: newDeal.id, temperatura, lead_id: payload.lead_id },
+                    } as Record<string, unknown>);
+                  }
+
+                  // Cadência de aquecimento para leads FRIOS
+                  if (temperatura === 'FRIO' && convState?.modo !== 'MANUAL') {
+                    const warmingCode = payload.empresa === 'BLUE' 
+                      ? 'WARMING_INBOUND_FRIO_BLUE' 
+                      : 'WARMING_INBOUND_FRIO_TOKENIZA';
+
+                    const { data: warmingCadence } = await supabase
+                      .from('cadences')
+                      .select('id')
+                      .eq('codigo', warmingCode)
+                      .eq('ativo', true)
+                      .maybeSingle();
+
+                    if (warmingCadence) {
+                      // Criar run de cadência
+                      const { data: warmingRun } = await supabase
+                        .from('lead_cadence_runs')
+                        .insert({
+                          cadence_id: warmingCadence.id,
+                          lead_id: payload.lead_id,
+                          empresa: payload.empresa,
+                          status: 'ATIVA',
+                          last_step_ordem: 0,
+                          next_step_ordem: 1,
+                          next_run_at: new Date().toISOString(),
+                        } as Record<string, unknown>)
+                        .select('id')
+                        .single();
+
+                      if (warmingRun) {
+                        // Bridge deal <-> cadence
+                        await supabase.from('deal_cadence_runs').insert({
+                          deal_id: newDeal.id,
+                          cadence_run_id: warmingRun.id,
+                          trigger_stage_id: targetStageId,
+                          trigger_type: 'AUTO_WARMING',
+                          status: 'ACTIVE',
+                        } as Record<string, unknown>);
+
+                        console.log('[SGT Webhook] Cadência de aquecimento iniciada:', warmingRun.id);
+                      }
+                    }
+                  }
+                }
+              }
+            } else {
+              console.log('[SGT Webhook] Deal já existe para contact:', contactForDeal.id, 'pipeline:', pipelineId);
+            }
+          }
+        }
+      } catch (dealErr) {
+        console.error('[SGT Webhook] Erro no fluxo de auto-criação de deal:', dealErr);
+        // Não interrompe o fluxo principal
+      }
+
       const cadenceCodigo = decidirCadenciaParaLead(classification, payload.evento);
       cadenceResult.cadenceCodigo = cadenceCodigo;
 

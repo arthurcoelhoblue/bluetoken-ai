@@ -3,9 +3,9 @@ import { useKanbanData } from "./useDeals";
 import type { DealWithRelations, PipelineStage } from "@/types/deal";
 
 const mockStages: PipelineStage[] = [
-  { id: "s1", nome: "Prospecção", cor: "#ccc", posicao: 1, pipeline_id: "p1", is_won: false, is_lost: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
-  { id: "s2", nome: "Negociação", cor: "#aaa", posicao: 2, pipeline_id: "p1", is_won: false, is_lost: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
-  { id: "s3", nome: "Ganho", cor: "#0f0", posicao: 3, pipeline_id: "p1", is_won: true, is_lost: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
+  { id: "s1", nome: "Prospecção", cor: "#ccc", posicao: 1, pipeline_id: "p1", is_won: false, is_lost: false, is_priority: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
+  { id: "s2", nome: "Negociação", cor: "#aaa", posicao: 2, pipeline_id: "p1", is_won: false, is_lost: false, is_priority: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
+  { id: "s3", nome: "Ganho", cor: "#0f0", posicao: 3, pipeline_id: "p1", is_won: true, is_lost: false, is_priority: false, sla_minutos: null, tempo_minimo_dias: null, created_at: "", updated_at: "" },
 ];
 
 const baseDeal: Omit<DealWithRelations, 'id' | 'titulo' | 'stage_id' | 'valor' | 'posicao_kanban'> = {
