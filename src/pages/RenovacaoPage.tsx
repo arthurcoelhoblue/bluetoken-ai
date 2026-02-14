@@ -24,10 +24,11 @@ function formatPercent(value: number) {
 function RenovacaoContent() {
   const { data: pipelines, isLoading: loadingPipelines } = usePipelines();
 
-  // Tenta encontrar um pipeline de renovação pelo nome
-  const renovacaoPipeline = pipelines?.find(
-    (p) => p.nome.toLowerCase().includes('renova') || p.nome.toLowerCase().includes('churn')
-  );
+  // Busca pipeline de renovação por nome normalizado (sem acentos)
+  const renovacaoPipeline = pipelines?.find((p) => {
+    const nome = p.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    return nome.includes('renovacao') || nome.includes('churn');
+  });
   const pipelineId = renovacaoPipeline?.id ?? null;
 
   const { data: conversion, isLoading: loadingConversion } = useAnalyticsConversion(pipelineId);

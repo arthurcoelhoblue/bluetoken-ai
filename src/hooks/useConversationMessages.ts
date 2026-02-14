@@ -157,7 +157,7 @@ export function useConversationMessages({
           filter: `lead_id=eq.${leadId}`,
         },
         (payload) => {
-          console.log('[Realtime] Mensagem do lead atualizada:', payload);
+          
           queryClient.invalidateQueries({ 
             queryKey: ['conversation-messages', leadId, empresa, telefone] 
           });
@@ -179,7 +179,7 @@ export function useConversationMessages({
           const newMsg = payload.new as any;
           // Se for INBOUND e não tiver lead_id, pode ser mensagem não associada
           if (newMsg.direcao === 'INBOUND' && !newMsg.lead_id) {
-            console.log('[Realtime] Nova mensagem INBOUND não associada:', payload);
+            
             queryClient.invalidateQueries({ 
               queryKey: ['conversation-messages', leadId, empresa, telefone] 
             });
