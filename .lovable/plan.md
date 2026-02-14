@@ -1,194 +1,212 @@
 
+# Leads vs Contacts -- Unificacao (8.1)
 
-# Gamificacao com Consequencia (8.2)
+## Situacao Atual
 
-## Diagnostico Atual
+O sistema possui **duas entidades paralelas** para representar pessoas:
 
-O sistema de gamificacao ja possui a infraestrutura basica:
-
-| Componente | Status | Detalhe |
+| Aspecto | `lead_contacts` (Legacy) | `contacts` (CRM) |
 |---|---|---|
-| Tabela `seller_badges` | Pronta | 10 badges configurados (streak, fechamento, ranking, atividade) |
-| Tabela `seller_badge_awards` | Pronta | Vazia - nenhum badge concedido |
-| Tabela `seller_points_log` | Pronta | Vazia - nenhum ponto registrado |
-| View `seller_leaderboard` | Pronta | Consolida pontos, badges e streak |
-| Funcao `fn_gamify_deal_ganho` | Pronta | Logica completa para pontuar deal ganho + conceder badges |
-| **Trigger no deals** | **AUSENTE** | A funcao existe mas nao esta ligada a nenhuma tabela |
-| Trigger para atividades | **AUSENTE** | Nada pontua conclusao de tarefas |
-| Trigger para streak | **AUSENTE** | Badges de streak nao sao concedidos automaticamente |
-| UI Workbench | Pronta | Card resumo no "Meu Dia" |
-| UI Metas | Pronta | Aba "Gamificacao" com Leaderboard + Badges |
+| Registros | 1.799 | 124 |
+| ID primario | `lead_id` (TEXT, sem FK) | `id` (UUID, com FKs) |
+| Usado por | Mensagens, Cadencias, Classificacoes, Conversas, SGT, Intents | Deals, Pipeline, Organizacoes, Custom Fields |
+| Dados unicos | telefone_e164, opt_out, LinkedIn, Mautic, Chatwoot, score_marketing | CPF, RG, Telegram, endereco, foto_url, is_cliente, tags, tipo |
+| Ponte | -- | `legacy_lead_id` (apenas 123 preenchidos de 1.799) |
 
-**Problema central**: O motor de gamificacao esta "desligado" -- a funcao de pontuacao existe mas nunca e chamada porque falta o trigger no `deals`. Alem disso, nao ha gatilhos para atividades concluidas, streak de badges, nem feedback visual ao usuario quando ganha pontos/badges.
+### Problemas
+
+1. Ao criar um deal no Pipeline, o usuario escolhe de `contacts` (124). Os 1.799 leads do SGT/Cadencias ficam invisiveis para o CRM.
+2. A tela de Leads (`/leads`) lê de `lead_contacts` + `lead_classifications`. A tela de Contatos (`/contatos`) lê de `contacts`. Sao mundos separados.
+3. Conversas e mensagens usam `lead_id` (TEXT). Deals usam `contact_id` (UUID FK). Nao ha como navegar de um deal para suas mensagens diretamente.
+4. Dados enriquecidos (LinkedIn, Mautic, scores) ficam presos em `lead_contacts` e nao aparecem no CRM.
+
+## Estrategia: `contacts` como Entidade Unica
+
+A tabela `contacts` sera a **unica fonte de verdade** para pessoas. O `lead_contacts` sera mantido temporariamente como cache de automacao, mas toda a navegacao e UI convergira para `contacts`.
+
+### Principios
+
+- **Sem breaking change nos webhooks/edge functions** -- o SGT e WhatsApp continuam gravando em `lead_contacts` como antes
+- **Migracao de dados** via SQL para sincronizar os 1.799 leads existentes para `contacts`
+- **Bridge column** `legacy_lead_id` na tabela `contacts` garante a ponte para as tabelas `lead_*`
+- **Progressivo** -- a UI converge primeiro, e futuramente as tabelas `lead_*` podem ser migradas para usar `contact_id` UUID
 
 ## Plano de Implementacao
 
-### 1. Ativar trigger de deal ganho (DB)
+### Fase 1: Enriquecer `contacts` e Sincronizar Dados (DB)
 
-Criar o trigger que conecta `fn_gamify_deal_ganho` a tabela `deals`:
+**1.1 - Adicionar colunas faltantes em `contacts`**
 
-```sql
-CREATE TRIGGER trg_gamify_deal_ganho
-  AFTER UPDATE ON deals
-  FOR EACH ROW
-  EXECUTE FUNCTION fn_gamify_deal_ganho();
+Colunas de `lead_contacts` que nao existem em `contacts`:
+
+```
+telefone_e164        TEXT
+ddi                  TEXT
+numero_nacional      TEXT
+telefone_valido      BOOLEAN DEFAULT true
+opt_out              BOOLEAN DEFAULT false
+opt_out_em           TIMESTAMPTZ
+opt_out_motivo       TEXT
+score_marketing      INTEGER
+prioridade_marketing TEXT
+linkedin_url         TEXT
+linkedin_cargo       TEXT
+linkedin_empresa     TEXT
+linkedin_setor       TEXT
+origem_telefone      TEXT DEFAULT 'MANUAL'
 ```
 
-### 2. Criar funcao e trigger para atividades concluidas (DB)
+**1.2 - Migrar dados de `lead_contacts` para `contacts`**
 
-Nova funcao `fn_gamify_activity_done` que:
-- Ao marcar `tarefa_concluida = true` em `deal_activities`, concede pontos (5 pts por tarefa)
-- Verifica threshold de 50 atividades na semana para badge `activity_50`
+Query de sincronizacao:
 
 ```sql
-CREATE OR REPLACE FUNCTION fn_gamify_activity_done()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
-DECLARE
-  v_empresa text;
-  v_week_count int;
-BEGIN
-  IF NEW.tarefa_concluida = true AND (OLD.tarefa_concluida IS DISTINCT FROM true) AND NEW.user_id IS NOT NULL THEN
-    -- Descobrir empresa via deal -> contact
-    SELECT c.empresa::text INTO v_empresa
-    FROM deals d JOIN contacts c ON c.id = d.contact_id
-    WHERE d.id = NEW.deal_id;
-    IF v_empresa IS NULL THEN v_empresa := 'BLUE'; END IF;
-
-    -- Pontuar
-    INSERT INTO seller_points_log (user_id, empresa, pontos, tipo, referencia_id)
-    VALUES (NEW.user_id, v_empresa, 5, 'TAREFA_CONCLUIDA', NEW.id::text);
-
-    -- Badge activity_50
-    SELECT COUNT(*) INTO v_week_count
-    FROM deal_activities
-    WHERE user_id = NEW.user_id AND tarefa_concluida = true
-      AND created_at >= date_trunc('week', now());
-    IF v_week_count >= 50 THEN
-      INSERT INTO seller_badge_awards (user_id, badge_key, empresa, referencia)
-      VALUES (NEW.user_id, 'activity_50', v_empresa, to_char(now(), 'IYYY-IW'))
-      ON CONFLICT DO NOTHING;
-    END IF;
-  END IF;
-  RETURN NEW;
-END; $$;
-
-CREATE TRIGGER trg_gamify_activity_done
-  AFTER UPDATE ON deal_activities
-  FOR EACH ROW
-  EXECUTE FUNCTION fn_gamify_activity_done();
+INSERT INTO contacts (
+  legacy_lead_id, empresa, nome, primeiro_nome, email, telefone,
+  telefone_e164, ddi, numero_nacional, telefone_valido,
+  opt_out, opt_out_em, opt_out_motivo,
+  score_marketing, prioridade_marketing,
+  linkedin_url, linkedin_cargo, linkedin_empresa, linkedin_setor,
+  origem_telefone, pessoa_id, owner_id,
+  canal_origem, tipo
+)
+SELECT
+  lc.lead_id,
+  lc.empresa,
+  COALESCE(lc.nome, 'Lead ' || LEFT(lc.lead_id, 8)),
+  lc.primeiro_nome,
+  lc.email,
+  lc.telefone,
+  lc.telefone_e164, lc.ddi, lc.numero_nacional, lc.telefone_valido,
+  lc.opt_out, lc.opt_out_em, lc.opt_out_motivo,
+  lc.score_marketing, lc.prioridade_marketing,
+  lc.linkedin_url, lc.linkedin_cargo, lc.linkedin_empresa, lc.linkedin_setor,
+  lc.origem_telefone, lc.pessoa_id, lc.owner_id,
+  'SGT', 'LEAD'
+FROM lead_contacts lc
+WHERE NOT EXISTS (
+  SELECT 1 FROM contacts c WHERE c.legacy_lead_id = lc.lead_id
+);
 ```
 
-### 3. Criar funcao e trigger para streak de badges (DB)
+**1.3 - Criar trigger de sincronizacao automatica**
 
-Nova funcao `fn_gamify_streak_check` executada apos insercao de pontos para verificar streak:
+Trigger `AFTER INSERT OR UPDATE ON lead_contacts` que faz upsert automatico em `contacts` com base no `lead_id`, garantindo que novos leads do SGT aparecem automaticamente no CRM.
 
-```sql
-CREATE OR REPLACE FUNCTION fn_gamify_streak_check()
-RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path TO 'public' AS $$
-DECLARE
-  v_streak int;
-BEGIN
-  -- Contar dias distintos com pontos nos ultimos 30 dias
-  SELECT COUNT(DISTINCT created_at::date) INTO v_streak
-  FROM seller_points_log
-  WHERE user_id = NEW.user_id AND empresa = NEW.empresa
-    AND created_at >= now() - interval '30 days';
+**1.4 - Atualizar view `contacts_with_stats`**
 
-  IF v_streak >= 3 THEN
-    INSERT INTO seller_badge_awards (user_id, badge_key, empresa, referencia)
-    VALUES (NEW.user_id, 'streak_3', NEW.empresa, 'auto') ON CONFLICT DO NOTHING;
-  END IF;
-  IF v_streak >= 7 THEN
-    INSERT INTO seller_badge_awards (user_id, badge_key, empresa, referencia)
-    VALUES (NEW.user_id, 'streak_7', NEW.empresa, 'auto') ON CONFLICT DO NOTHING;
-  END IF;
-  IF v_streak >= 30 THEN
-    INSERT INTO seller_badge_awards (user_id, badge_key, empresa, referencia)
-    VALUES (NEW.user_id, 'streak_30', NEW.empresa, 'auto') ON CONFLICT DO NOTHING;
-  END IF;
+Recriar a view para incluir as novas colunas (telefone_e164, score_marketing, linkedin_*, etc).
 
-  RETURN NEW;
-END; $$;
+### Fase 2: Unificar a UI (Frontend)
 
-CREATE TRIGGER trg_gamify_streak_check
-  AFTER INSERT ON seller_points_log
-  FOR EACH ROW
-  EXECUTE FUNCTION fn_gamify_streak_check();
+**2.1 - Eliminar pagina `/leads` separada**
+
+A tela de Leads sera absorvida pela tela de Contatos. O que muda:
+
+| Antes | Depois |
+|---|---|
+| `/contatos` mostra 124 registros de `contacts` | `/contatos` mostra TODOS (incluindo os 1.799 migrados) |
+| `/leads` mostra `lead_contacts` + `lead_classifications` | `/leads` redireciona para `/contatos` |
+| LeadDetail lê de `lead_contacts` | LeadDetail continua existindo como rota legacy mas pode ser acessado via ContactDetail |
+
+**2.2 - Enriquecer `ContactDetailSheet`**
+
+Adicionar abas/secoes que hoje so existem na LeadDetail:
+- Classificacao IA (via `legacy_lead_id` -> `lead_classifications`)
+- Mensagens/Conversas (via `legacy_lead_id` -> `lead_messages`)
+- Cadencia ativa (via `legacy_lead_id` -> `lead_cadence_runs`)
+- Estado da conversa (via `legacy_lead_id` -> `lead_conversation_state`)
+- Eventos SGT (via `legacy_lead_id` -> `sgt_events`)
+- Intents IA (via `legacy_lead_id` -> `lead_message_intents`)
+
+**2.3 - Adicionar filtros de classificacao na tela de Contatos**
+
+Trazer os filtros de ICP, Temperatura e Prioridade da LeadsList para a ContatosPage, fazendo JOIN com `lead_classifications` via `legacy_lead_id`.
+
+**2.4 - Redirect de `/leads` para `/contatos`**
+
+Manter a rota `/leads/:leadId/:empresa` funcionando (redirect para o contato equivalente) para nao quebrar links externos, bookmarks e notificacoes.
+
+### Fase 3: Adaptar Hooks de Ponte (Frontend)
+
+**3.1 - Criar hook `useContactLeadBridge`**
+
+Hook que, dado um `contact.id`, retorna o `legacy_lead_id` e permite buscar dados das tabelas `lead_*`:
+
+```typescript
+function useContactLeadBridge(contactId: string) {
+  // 1. Busca legacy_lead_id do contact
+  // 2. Retorna dados de lead_classifications, lead_messages, etc.
+}
 ```
 
-### 4. Notificacao visual de conquista (Frontend)
+**3.2 - Adaptar ConversationPanel para aceitar contactId**
 
-Adicionar um componente `GamificationToast` que mostra uma notificacao animada quando o usuario ganha pontos ou um badge. Implementar via Realtime subscription no `seller_points_log` e `seller_badge_awards`.
+Hoje a ConversationPanel recebe `leadId`. Adicionar suporte para receber `contactId` e resolver internamente o `legacy_lead_id`.
 
-- Habilitar realtime nas tabelas `seller_points_log` e `seller_badge_awards`
-- Criar hook `useGamificationNotifications` que escuta inserts em tempo real
-- Mostrar toast estilizado com icone do badge e pontos ganhos
-- Integrar no `AppLayout` para funcionar em qualquer pagina
+**3.3 - Atualizar Conversas (`/conversas`)**
 
-### 5. Historico de pontos na aba Gamificacao (Frontend)
-
-Enriquecer a aba "Gamificacao" na pagina de Metas com:
-- Feed de atividade recente (ultimos pontos ganhos) usando `useRecentAwards`
-- Mostrar tipo da acao, pontos, e data
+A tela de Conversas hoje navega para `/leads/:leadId/:empresa`. Mudar para navegar para `/contatos?open=CONTACT_ID` ou para uma nova rota unificada.
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migracao SQL (1 migracao)
+### Migracao SQL (1 migracao, 4 operacoes)
 
-| Acao | Descricao |
+| Operacao | Descricao |
 |---|---|
-| `CREATE TRIGGER trg_gamify_deal_ganho` | Conecta funcao existente ao deals |
-| `CREATE FUNCTION fn_gamify_activity_done` | Pontua tarefas concluidas + badge atividade |
-| `CREATE TRIGGER trg_gamify_activity_done` | Liga funcao ao deal_activities |
-| `CREATE FUNCTION fn_gamify_streak_check` | Verifica e concede badges de streak |
-| `CREATE TRIGGER trg_gamify_streak_check` | Liga funcao ao seller_points_log |
-| `ALTER PUBLICATION supabase_realtime ADD TABLE seller_points_log, seller_badge_awards` | Habilitar realtime |
+| `ALTER TABLE contacts ADD COLUMN ...` | 14 colunas novas de lead_contacts |
+| `INSERT INTO contacts SELECT FROM lead_contacts` | Migrar ~1.676 leads nao vinculados |
+| `CREATE FUNCTION fn_sync_lead_to_contact()` | Trigger de sincronizacao automatica |
+| `CREATE TRIGGER trg_sync_lead_contact` | Liga funcao ao lead_contacts |
+| `CREATE OR REPLACE VIEW contacts_with_stats` | View atualizada com campos novos |
 
 ### Arquivos Frontend
 
-| Arquivo | Acao |
-|---|---|
-| `src/hooks/useGamificationNotifications.ts` | **Novo** - Realtime listener para pontos e badges |
-| `src/components/gamification/GamificationToast.tsx` | **Novo** - Toast animado de conquista |
-| `src/components/layout/AppLayout.tsx` | **Editar** - Integrar listener de gamificacao |
-| `src/pages/MetasPage.tsx` | **Editar** - Adicionar feed de atividade recente na aba Gamificacao |
-
-### Tabela de pontuacao
-
-| Evento | Pontos | Badge Possivel |
+| Arquivo | Acao | Descricao |
 |---|---|---|
-| Deal ganho | max(10, valor/1000) | first_deal, deal_10, deal_50 |
-| Tarefa concluida | 5 | activity_50 (50/semana) |
-| Streak 3 dias | -- | streak_3 |
-| Streak 7 dias | -- | streak_7 |
-| Streak 30 dias | -- | streak_30 |
-| Meta 100% | -- | meta_100 (verificacao futura) |
-| Meta 150% | -- | meta_150 (verificacao futura) |
-| #1 ranking | -- | top_month (verificacao futura) |
+| `src/hooks/useContactLeadBridge.ts` | **Novo** | Hook ponte contact -> lead_* |
+| `src/components/contacts/ContactDetailSheet.tsx` | **Editar** | Adicionar abas de Classificacao, Mensagens, Cadencia, Intents |
+| `src/pages/ContatosPage.tsx` | **Editar** | Adicionar filtros de ICP/Temperatura/Prioridade |
+| `src/hooks/useContactsPage.ts` | **Editar** | Suportar filtros de classificacao via join |
+| `src/types/contactsPage.ts` | **Editar** | Adicionar campos novos ao tipo |
+| `src/App.tsx` | **Editar** | Redirect `/leads` -> `/contatos` |
+| `src/components/layout/AppSidebar.tsx` | **Editar** | Remover item "Leads" do menu (absorvido por Contatos) |
+| `src/config/screenRegistry.ts` | **Editar** | Atualizar registro de telas |
 
-### Fluxo de dados
+### O que NAO muda nesta fase
+
+- **Edge functions** (sgt-webhook, whatsapp-inbound, cadence-runner, sdr-ia-interpret, bluechat-inbound) continuam gravando em `lead_contacts` e `lead_messages` usando `lead_id` TEXT. O trigger automatico sincroniza para `contacts`.
+- **Tabelas `lead_*`** continuam existindo. A migracao completa para `contact_id` UUID seria uma Fase 2 futura.
+- **Rota `/leads/:leadId/:empresa`** continua funcionando como fallback, redirecionando para o contato equivalente.
+
+### Fluxo de dados apos unificacao
 
 ```text
-Deal marcado GANHO
+SGT Webhook / WhatsApp Inbound
     |
     v
-trg_gamify_deal_ganho (trigger)
-    |
-    +-- INSERT seller_points_log (10+ pts)
-    +-- INSERT seller_badge_awards (first_deal/deal_10/deal_50)
+lead_contacts (INSERT/UPDATE)
     |
     v
-trg_gamify_streak_check (trigger cascata)
+trg_sync_lead_contact (trigger)
     |
-    +-- Verifica dias distintos com pontos
-    +-- INSERT seller_badge_awards (streak_3/7/30)
-    |
-    v
-Realtime -> useGamificationNotifications
+    +-- UPSERT contacts (legacy_lead_id = lead_id)
     |
     v
-GamificationToast (UI)
+contacts_with_stats (view)
+    |
+    v
+ContatosPage (UI unificada)
+    |
+    +-- ContactDetailSheet
+         |
+         +-- Dados basicos (contacts)
+         +-- Classificacao IA (lead_classifications via legacy_lead_id)
+         +-- Mensagens (lead_messages via legacy_lead_id)
+         +-- Cadencia (lead_cadence_runs via legacy_lead_id)
+         +-- Intents IA (lead_message_intents via legacy_lead_id)
+         +-- Deals (deals via contact_id)
+         +-- Campos Custom (custom_field_values via contact_id)
 ```
-
