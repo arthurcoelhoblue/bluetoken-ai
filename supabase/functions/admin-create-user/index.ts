@@ -1,4 +1,15 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { z } from 'https://esm.sh/zod@3.25.76'
+
+const createUserPayload = z.object({
+  email: z.string().trim().email('Email inválido').max(255),
+  nome: z.string().trim().min(2, 'Nome deve ter no mínimo 2 caracteres').max(100),
+  password: z.string().min(6, 'Senha deve ter no mínimo 6 caracteres'),
+  access_profile_id: z.string().uuid().optional(),
+  empresa: z.string().optional(),
+  gestor_id: z.string().uuid().optional(),
+  is_vendedor: z.boolean().optional(),
+})
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -47,23 +58,16 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor } = await req.json()
-
-    if (!email || !nome || !password) {
-      return new Response(JSON.stringify({ error: 'Email, nome e senha são obrigatórios' }), {
+    const rawBody = await req.json()
+    const parsed = createUserPayload.safeParse(rawBody)
+    if (!parsed.success) {
+      return new Response(JSON.stringify({ error: parsed.error.errors[0]?.message || 'Dados inválidos' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    if (password.length < 6) {
-      return new Response(JSON.stringify({ error: 'Senha deve ter no mínimo 6 caracteres' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
-    }
-
-    // Create user with service role
+    const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor } = parsed.data
     const adminClient = createClient(supabaseUrl, serviceRoleKey)
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email,

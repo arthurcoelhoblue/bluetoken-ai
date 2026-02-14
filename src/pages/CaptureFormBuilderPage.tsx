@@ -186,7 +186,7 @@ function BuilderContent() {
                   <Select value={stageId} onValueChange={setStageId}>
                     <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
                     <SelectContent>
-                      {stages.map((s: any) => (
+                      {stages.map((s: { id: string; nome: string }) => (
                         <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
                       ))}
                     </SelectContent>

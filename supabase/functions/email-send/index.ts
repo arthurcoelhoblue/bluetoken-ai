@@ -1,5 +1,18 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
+import { z } from 'https://esm.sh/zod@3.25.76';
+
+const emailSendPayload = z.object({
+  to: z.string().trim().email('E-mail inválido').max(255),
+  subject: z.string().trim().min(1, 'Subject obrigatório').max(500),
+  html: z.string().min(1, 'HTML obrigatório').max(100000),
+  text: z.string().optional(),
+  lead_id: z.string().uuid().optional(),
+  empresa: z.enum(['TOKENIZA', 'BLUE']).optional(),
+  run_id: z.string().uuid().optional(),
+  step_ordem: z.number().int().optional(),
+  template_codigo: z.string().optional(),
+});
 
 // ========================================
 // CORS Headers
@@ -243,38 +256,27 @@ serve(async (req) => {
       );
     }
 
-    // Parse do body
-    const body: EmailSendRequest = await req.json();
+    // Parse e validar body com Zod
+    const rawBody = await req.json();
+    const parsed = emailSendPayload.safeParse(rawBody);
+    if (!parsed.success) {
+      console.error('[EmailSend] Validação falhou:', parsed.error.errors);
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: parsed.error.errors[0]?.message || 'Payload inválido',
+        } as EmailSendResponse),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const body = parsed.data;
     console.log('[EmailSend] Request:', {
       to: body.to,
       subject: body.subject,
       lead_id: body.lead_id,
       empresa: body.empresa,
     });
-
-    // Validações básicas
-    if (!body.to || !body.subject || !body.html) {
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Campos obrigatórios: to, subject, html',
-        } as EmailSendResponse),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    // Validar formato de e-mail
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(body.to)) {
-      console.error('[EmailSend] E-mail inválido:', body.to);
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: `E-mail inválido: ${body.to}`,
-        } as EmailSendResponse),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     // Inicializar Supabase para logging
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;

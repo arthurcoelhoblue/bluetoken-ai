@@ -1,18 +1,21 @@
-import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Loader2 } from 'lucide-react';
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
+import {
+  Form, FormControl, FormField, FormItem, FormLabel, FormMessage,
+} from '@/components/ui/form';
+import { Loader2 } from 'lucide-react';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useCreateOrgPage } from '@/hooks/useOrganizationsPage';
 import { toast } from 'sonner';
-import type { OrganizationFormData } from '@/types/contactsPage';
+import { organizationCreateSchema, type OrgCreateFormData } from '@/schemas/contacts';
 
 const SETOR_OPTIONS = ['Tecnologia', 'Finanças', 'Saúde', 'Educação', 'Varejo', 'Indústria', 'Serviços', 'Outro'];
 const PORTE_OPTIONS = ['MEI', 'ME', 'EPP', 'Médio', 'Grande'];
@@ -25,25 +28,40 @@ interface Props {
 export function OrgCreateDialog({ open, onOpenChange }: Props) {
   const { activeCompany } = useCompany();
   const create = useCreateOrgPage();
-  const [form, setForm] = useState<Partial<OrganizationFormData>>({});
 
-  const handleCreate = async () => {
-    if (!form.nome?.trim()) {
-      toast.error('Razão social é obrigatória');
-      return;
-    }
+  const form = useForm<OrgCreateFormData>({
+    resolver: zodResolver(organizationCreateSchema),
+    defaultValues: {
+      nome: '', nome_fantasia: '', cnpj: '', telefone: '', email: '',
+      setor: '', porte: '', website: '', endereco: '', cidade: '', estado: '', cep: '',
+    },
+  });
+
+  const handleCreate = async (data: OrgCreateFormData) => {
     const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
     try {
-      await create.mutateAsync({ ...form, nome: form.nome.trim(), empresa } as OrganizationFormData);
+      await create.mutateAsync({
+        nome: data.nome.trim(),
+        empresa,
+        nome_fantasia: data.nome_fantasia || undefined,
+        cnpj: data.cnpj || undefined,
+        telefone: data.telefone || undefined,
+        email: data.email || undefined,
+        setor: data.setor || undefined,
+        porte: data.porte || undefined,
+        website: data.website || undefined,
+        endereco: data.endereco || undefined,
+        cidade: data.cidade || undefined,
+        estado: data.estado || undefined,
+        cep: data.cep || undefined,
+      });
       toast.success('Organização criada com sucesso');
       onOpenChange(false);
-      setForm({});
+      form.reset();
     } catch {
       toast.error('Erro ao criar organização');
     }
   };
-
-  const set = (key: keyof OrganizationFormData, value: string) => setForm((f) => ({ ...f, [key]: value }));
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -52,81 +70,119 @@ export function OrgCreateDialog({ open, onOpenChange }: Props) {
           <DialogTitle>Nova Organização</DialogTitle>
           <DialogDescription>Dados da empresa/organização.</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-4">
-          <div>
-            <Label>Razão Social *</Label>
-            <Input value={form.nome ?? ''} onChange={(e) => set('nome', e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Nome Fantasia</Label>
-              <Input value={form.nome_fantasia ?? ''} onChange={(e) => set('nome_fantasia', e.target.value)} />
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleCreate)} className="grid gap-4 py-4">
+            <FormField control={form.control} name="nome" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Razão Social *</FormLabel>
+                <FormControl><Input {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="nome_fantasia" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Nome Fantasia</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="cnpj" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CNPJ</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
-            <div>
-              <Label>CNPJ</Label>
-              <Input value={form.cnpj ?? ''} onChange={(e) => set('cnpj', e.target.value)} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="telefone" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Telefone</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="email" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Email</FormLabel>
+                  <FormControl><Input type="email" {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Telefone</Label>
-              <Input value={form.telefone ?? ''} onChange={(e) => set('telefone', e.target.value)} />
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="setor" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Setor</FormLabel>
+                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {SETOR_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="porte" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Porte</FormLabel>
+                  <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      {PORTE_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
-            <div>
-              <Label>Email</Label>
-              <Input type="email" value={form.email ?? ''} onChange={(e) => set('email', e.target.value)} />
+            <FormField control={form.control} name="website" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Website</FormLabel>
+                <FormControl><Input {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="endereco" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Endereço</FormLabel>
+                <FormControl><Input {...field} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <div className="grid grid-cols-3 gap-4">
+              <FormField control={form.control} name="cidade" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Cidade</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="estado" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Estado</FormLabel>
+                  <FormControl><Input {...field} maxLength={2} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="cep" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>CEP</FormLabel>
+                  <FormControl><Input {...field} /></FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Setor</Label>
-              <Select value={form.setor ?? ''} onValueChange={(v) => set('setor', v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {SETOR_OPTIONS.map((s) => <SelectItem key={s} value={s}>{s}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Porte</Label>
-              <Select value={form.porte ?? ''} onValueChange={(v) => set('porte', v)}>
-                <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
-                <SelectContent>
-                  {PORTE_OPTIONS.map((p) => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <div>
-            <Label>Website</Label>
-            <Input value={form.website ?? ''} onChange={(e) => set('website', e.target.value)} />
-          </div>
-          <div>
-            <Label>Endereço</Label>
-            <Input value={form.endereco ?? ''} onChange={(e) => set('endereco', e.target.value)} />
-          </div>
-          <div className="grid grid-cols-3 gap-4">
-            <div>
-              <Label>Cidade</Label>
-              <Input value={form.cidade ?? ''} onChange={(e) => set('cidade', e.target.value)} />
-            </div>
-            <div>
-              <Label>Estado</Label>
-              <Input value={form.estado ?? ''} onChange={(e) => set('estado', e.target.value)} maxLength={2} />
-            </div>
-            <div>
-              <Label>CEP</Label>
-              <Input value={form.cep ?? ''} onChange={(e) => set('cep', e.target.value)} />
-            </div>
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleCreate} disabled={create.isPending}>
-            {create.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Criar Organização
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={create.isPending}>
+                {create.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                Criar Organização
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

@@ -1,14 +1,17 @@
 import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { useCreateDeal } from '@/hooks/useDeals';
 import { useContacts, useCreateContact } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
+import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -21,28 +24,31 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const { activeCompany } = useCompany();
   const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
 
-  const [titulo, setTitulo] = useState('');
-  const [valor, setValor] = useState('');
-  const [contactId, setContactId] = useState('');
-  const [contactNome, setContactNome] = useState('');
-  const [stageId, setStageId] = useState(stages.find(s => !s.is_won && !s.is_lost)?.id ?? '');
-  const [temperatura, setTemperatura] = useState<'FRIO' | 'MORNO' | 'QUENTE'>('FRIO');
-
   const { data: contacts } = useContacts();
   const createDeal = useCreateDeal();
   const createContact = useCreateContact();
 
   const activeStages = stages.filter(s => !s.is_won && !s.is_lost);
+  const defaultStageId = activeStages[0]?.id ?? '';
 
-  const handleSubmit = async () => {
-    if (!titulo.trim()) { toast.error('Título é obrigatório'); return; }
+  const form = useForm<CreateDealFormData>({
+    resolver: zodResolver(createDealSchema),
+    defaultValues: {
+      titulo: '',
+      valor: 0,
+      temperatura: 'FRIO',
+      contact_id: '',
+      contact_nome: '',
+      stage_id: defaultStageId,
+    },
+  });
 
-    let finalContactId = contactId;
+  const handleSubmit = async (data: CreateDealFormData) => {
+    let finalContactId = data.contact_id;
 
-    // If no contact selected, create one with the name
-    if (!finalContactId && contactNome.trim()) {
+    if (!finalContactId && data.contact_nome?.trim()) {
       try {
-        const contact = await createContact.mutateAsync({ nome: contactNome.trim(), empresa });
+        const contact = await createContact.mutateAsync({ nome: data.contact_nome.trim(), empresa });
         finalContactId = contact.id;
       } catch {
         toast.error('Erro ao criar contato');
@@ -50,27 +56,29 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
       }
     }
 
-    if (!finalContactId) { toast.error('Selecione ou crie um contato'); return; }
+    if (!finalContactId) {
+      toast.error('Selecione ou crie um contato');
+      return;
+    }
 
     try {
       await createDeal.mutateAsync({
-        titulo: titulo.trim(),
+        titulo: data.titulo.trim(),
         contact_id: finalContactId,
         pipeline_id: pipelineId,
-        stage_id: stageId,
-        valor: parseFloat(valor) || 0,
-        temperatura,
+        stage_id: data.stage_id || defaultStageId,
+        valor: data.valor,
+        temperatura: data.temperatura,
       });
       toast.success('Deal criado com sucesso');
       onOpenChange(false);
-      setTitulo('');
-      setValor('');
-      setContactId('');
-      setContactNome('');
+      form.reset();
     } catch {
       toast.error('Erro ao criar deal');
     }
   };
+
+  const contactId = form.watch('contact_id');
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -78,67 +86,90 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
         <DialogHeader>
           <DialogTitle>Novo Deal</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div>
-            <Label>Título *</Label>
-            <Input value={titulo} onChange={e => setTitulo(e.target.value)} placeholder="Ex: Declaração IR 2025" />
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField control={form.control} name="titulo" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Título *</FormLabel>
+                <FormControl><Input {...field} placeholder="Ex: Declaração IR 2025" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
 
-          <div>
-            <Label>Contato</Label>
-            {contacts && contacts.length > 0 ? (
-              <Select value={contactId} onValueChange={setContactId}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione um contato" />
-                </SelectTrigger>
-                <SelectContent>
-                  {contacts.map(c => (
-                    <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input value={contactNome} onChange={e => setContactNome(e.target.value)} placeholder="Nome do novo contato" />
-            )}
-            {contacts && contacts.length > 0 && !contactId && (
-              <Input className="mt-2" value={contactNome} onChange={e => setContactNome(e.target.value)} placeholder="Ou crie um novo contato..." />
-            )}
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
             <div>
-              <Label>Valor (R$)</Label>
-              <Input type="number" value={valor} onChange={e => setValor(e.target.value)} placeholder="0" />
+              <FormField control={form.control} name="contact_id" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Contato</FormLabel>
+                  {contacts && contacts.length > 0 ? (
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl>
+                        <SelectTrigger><SelectValue placeholder="Selecione um contato" /></SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        {contacts.map(c => (
+                          <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <FormField control={form.control} name="contact_nome" render={({ field: nomeField }) => (
+                      <FormControl><Input {...nomeField} placeholder="Nome do novo contato" /></FormControl>
+                    )} />
+                  )}
+                </FormItem>
+              )} />
+              {contacts && contacts.length > 0 && !contactId && (
+                <FormField control={form.control} name="contact_nome" render={({ field }) => (
+                  <FormControl><Input className="mt-2" {...field} placeholder="Ou crie um novo contato..." /></FormControl>
+                )} />
+              )}
             </div>
-            <div>
-              <Label>Temperatura</Label>
-              <Select value={temperatura} onValueChange={v => setTemperatura(v as any)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="FRIO">Frio</SelectItem>
-                  <SelectItem value="MORNO">Morno</SelectItem>
-                  <SelectItem value="QUENTE">Quente</SelectItem>
-                </SelectContent>
-              </Select>
+
+            <div className="grid grid-cols-2 gap-4">
+              <FormField control={form.control} name="valor" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Valor (R$)</FormLabel>
+                  <FormControl>
+                    <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} placeholder="0" />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )} />
+              <FormField control={form.control} name="temperatura" render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Temperatura</FormLabel>
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                    <SelectContent>
+                      <SelectItem value="FRIO">Frio</SelectItem>
+                      <SelectItem value="MORNO">Morno</SelectItem>
+                      <SelectItem value="QUENTE">Quente</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <FormMessage />
+                </FormItem>
+              )} />
             </div>
-          </div>
 
-          <div>
-            <Label>Stage Inicial</Label>
-            <Select value={stageId} onValueChange={setStageId}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {activeStages.map(s => (
-                  <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <FormField control={form.control} name="stage_id" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Stage Inicial</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {activeStages.map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-          <Button onClick={handleSubmit} className="w-full" disabled={createDeal.isPending}>
-            {createDeal.isPending ? 'Criando...' : 'Criar Deal'}
-          </Button>
-        </div>
+            <Button type="submit" className="w-full" disabled={createDeal.isPending}>
+              {createDeal.isPending ? 'Criando...' : 'Criar Deal'}
+            </Button>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

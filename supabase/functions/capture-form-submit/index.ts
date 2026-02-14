@@ -1,4 +1,11 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.25.76";
+
+const submitPayload = z.object({
+  slug: z.string().trim().min(1, "slug is required").max(200),
+  answers: z.record(z.unknown()),
+  metadata: z.record(z.unknown()).optional().default({}),
+});
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -11,13 +18,16 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { slug, answers, metadata } = await req.json();
-    if (!slug || !answers) {
-      return new Response(JSON.stringify({ error: "slug and answers required" }), {
+    const rawBody = await req.json();
+    const parsed = submitPayload.safeParse(rawBody);
+    if (!parsed.success) {
+      return new Response(JSON.stringify({ error: parsed.error.errors[0]?.message || "Invalid payload" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    const { slug, answers, metadata } = parsed.data;
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL")!,
