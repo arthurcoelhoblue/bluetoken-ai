@@ -23,6 +23,17 @@ export interface ContactWithStats {
   telegram: string | null;
   endereco: string | null;
   foto_url: string | null;
+  // New fields from lead_contacts sync
+  telefone_e164: string | null;
+  telefone_valido: boolean | null;
+  opt_out: boolean | null;
+  score_marketing: number | null;
+  prioridade_marketing: string | null;
+  linkedin_url: string | null;
+  linkedin_cargo: string | null;
+  linkedin_empresa: string | null;
+  linkedin_setor: string | null;
+  origem_telefone: string | null;
   // From view joins
   org_nome: string | null;
   org_nome_fantasia: string | null;

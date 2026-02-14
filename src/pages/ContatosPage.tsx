@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Filter, Plus, Search, Users, X, ChevronLeft, ChevronRight,
+  Filter, Plus, Search, Users, X, ChevronLeft, ChevronRight, Linkedin,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ContactCreateDialog } from '@/components/contacts/ContactCreateDialog';
@@ -179,6 +179,7 @@ function ContatosContent() {
                       <TableHead>Organização</TableHead>
                       <TableHead>Deals</TableHead>
                       <TableHead>Valor Aberto</TableHead>
+                      <TableHead>Score MKT</TableHead>
                       <TableHead>Cliente</TableHead>
                       <TableHead>Criado em</TableHead>
                     </TableRow>
@@ -186,7 +187,13 @@ function ContatosContent() {
                   <TableBody>
                     {contacts.map((c) => (
                       <TableRow key={c.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedContactId(c.id)}>
-                        <TableCell className="font-medium">{c.nome}</TableCell>
+                        <TableCell className="font-medium">
+                          <div className="flex items-center gap-1.5">
+                            {c.nome}
+                            {c.linkedin_url && <Linkedin className="h-3 w-3 text-muted-foreground" />}
+                            {c.opt_out && <Badge variant="destructive" className="text-[10px] px-1 py-0">opt-out</Badge>}
+                          </div>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">{c.email || '—'}</TableCell>
                         <TableCell className="text-muted-foreground">{c.telefone || '—'}</TableCell>
                         <TableCell>
@@ -195,6 +202,7 @@ function ContatosContent() {
                         <TableCell className="text-sm">{c.org_nome_fantasia || c.org_nome || '—'}</TableCell>
                         <TableCell className="text-sm">{c.deals_abertos}/{c.deals_count}</TableCell>
                         <TableCell className="text-sm font-medium">{formatCurrency(c.deals_valor_total)}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{c.score_marketing ?? '—'}</TableCell>
                         <TableCell>
                           {c.is_cliente && (
                             <Badge variant="outline" className="bg-accent text-accent-foreground">Cliente</Badge>
