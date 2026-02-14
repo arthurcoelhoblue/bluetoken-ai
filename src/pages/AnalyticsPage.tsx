@@ -21,6 +21,8 @@ import {
 import { FunnelChart } from '@/components/analytics/FunnelChart';
 import { EvolutionChart } from '@/components/analytics/EvolutionChart';
 import { LTVCohortTable } from '@/components/analytics/LTVCohortTable';
+import { EsforcoVendedorTable } from '@/components/analytics/EsforcoVendedorTable';
+import { EsforcoCanalTable } from '@/components/analytics/EsforcoCanalTable';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -116,6 +118,7 @@ export default function AnalyticsPage() {
            <TabsTrigger value="vendedores">Vendedores</TabsTrigger>
            <TabsTrigger value="canais">Canais</TabsTrigger>
            <TabsTrigger value="perdas">Perdas</TabsTrigger>
+           <TabsTrigger value="esforco">Esforço</TabsTrigger>
          </TabsList>
 
         {/* Tab Funil */}
@@ -314,6 +317,24 @@ export default function AnalyticsPage() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* Tab Esforço */}
+        <TabsContent value="esforco">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader><CardTitle className="text-base">Esforço por Vendedor (Deals Perdidos)</CardTitle></CardHeader>
+              <CardContent>
+                <EsforcoVendedorTable />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader><CardTitle className="text-base">Esforço por Canal de Origem</CardTitle></CardHeader>
+              <CardContent>
+                <EsforcoCanalTable pipelineId={pipelineId} />
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
       </Tabs>
       </div>

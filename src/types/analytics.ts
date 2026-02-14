@@ -106,3 +106,28 @@ export interface AnalyticsLTVCohort {
   ltv_medio: number;
   win_rate: number;
 }
+
+export interface AnalyticsEsforcoVendedor {
+  user_id: string;
+  vendedor_nome: string;
+  empresa: string;
+  total_perdidos: number;
+  media_atividades: number;
+  sem_atividade_pct: number;
+  media_dias_funil: number;
+  perdidos_menos_24h: number;
+}
+
+export interface AnalyticsCanalEsforco {
+  canal: string;
+  empresa: string;
+  pipeline_id: string;
+  total_deals: number;
+  deals_ganhos: number;
+  deals_perdidos: number;
+  valor_ganho: number;
+  win_rate: number;
+  media_atividades_perdidos: number;
+  sem_atividade_pct: number;
+  media_dias_funil_perdidos: number;
+}

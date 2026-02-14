@@ -16,6 +16,7 @@ import {
 } from '@/hooks/useAnalytics';
 import { useWorkbenchSLAAlerts } from '@/hooks/useWorkbench';
 import { EvolutionChart } from '@/components/analytics/EvolutionChart';
+import { CriticalAlerts } from '@/components/cockpit/CriticalAlerts';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -100,6 +101,9 @@ function CockpitContent() {
             </Card>
           ))}
         </div>
+
+        {/* Alertas Críticos */}
+        <CriticalAlerts />
 
         {/* Row 1: Funnel + Evolution */}
         <div className="grid lg:grid-cols-2 gap-6">
