@@ -1,121 +1,64 @@
 
-
-# Paginacao Real (3.5) -- Melhoria do Relatorio PO
+# Realtime Subscriptions (3.1) -- Otimizacao de Custos
 
 ## Resumo
 
-O projeto possui **5 paginas com paginacao server-side** funcional (usando `.range()` + `count: 'exact'`), porem com UI duplicada e inconsistente (apenas botoes Anterior/Proxima, sem numeros de pagina). Alem disso, **3 paginas carregam TODOS os registros** sem nenhuma paginacao, o que pode causar lentidao e atingir o limite de 1000 rows do Supabase.
+Tres problemas de custo identificados nas subscriptions realtime do projeto:
 
-O componente `Pagination` do shadcn/ui ja existe em `src/components/ui/pagination.tsx` mas **nao e utilizado em nenhuma pagina**.
-
----
-
-## Diagnostico: Estado Atual
-
-| Pagina | Paginacao Server | UI | Problema |
-|--------|-----------------|-----|----------|
-| ContatosPage | `.range()` + count | Prev/Next manual | UI duplicada, sem numeros de pagina, page 0-based |
-| OrganizationsPage | `.range()` + count | Prev/Next manual | UI duplicada, hardcoded `/ 25` |
-| LeadsList | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
-| CadenceRunsList | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
-| MonitorSgtEvents | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
-| **CadencesList** | **Nenhuma** | Nenhuma | Carrega TODAS cadencias |
-| **Atendimentos** | **Nenhuma** | Nenhuma | Carrega TODOS atendimentos |
-| **TemplatesPage** | **Nenhuma** | Nenhuma | Carrega TODOS templates |
+1. **Canal sem filtro** em `useConversationMessages` recebe TODOS os inserts de `lead_messages` globalmente
+2. **Gamificacao global** em `AppLayout` cria 2 canais WebSocket para todo usuario logado, mesmo sem usar
+3. **Polling agressivo** em `useAtendimentos` consulta 4 tabelas a cada 30 segundos
 
 ---
 
-## Plano de Implementacao
+## Fase 1: Remover canal sem filtro (`useConversationMessages.ts`)
 
-### Fase 1: Criar componente reutilizavel `DataTablePagination`
+O channel `messages-inbound-unmatched` (linhas 169-189) escuta **todos** os INSERTs na tabela `lead_messages` sem nenhum filtro server-side. Cada mensagem enviada/recebida no sistema inteiro dispara este callback para cada conversa aberta.
 
-Criar `src/components/ui/data-table-pagination.tsx` que encapsula toda a logica de paginacao:
+**Mudanca:** Remover o segundo channel inteiro. A query inicial ja busca mensagens unmatched por telefone, e o channel filtrado por `lead_id` ja cobre mensagens associadas. Para unmatched que chegam depois, o polling natural do React Query (staleTime) resolve.
 
-- Utiliza os primitivos `Pagination`, `PaginationContent`, `PaginationItem`, `PaginationLink`, `PaginationEllipsis`, `PaginationPrevious`, `PaginationNext` ja existentes
-- Props: `page` (0-based), `totalPages`, `totalCount`, `pageSize`, `onPageChange`
-- Exibe: "Mostrando X-Y de Z registros" + botoes de pagina com ellipsis inteligente
-- Logica de ellipsis: mostra primeira, ultima e 2 vizinhas da pagina atual
+**Linhas afetadas:** 168-189 (remover) + 193 (remover `supabase.removeChannel(inboundChannel)`)
 
-### Fase 2: Refatorar as 5 paginas que ja tem paginacao
+## Fase 2: Gamificacao lazy (`AppLayout.tsx` + novo provider)
 
-Substituir o bloco duplicado de Prev/Next em cada pagina pelo novo componente:
+Atualmente `useGamificationNotifications()` e chamado na linha 35 de `AppLayout.tsx`, criando 2 channels WebSocket (`seller_points_log` + `seller_badge_awards`) para **todo usuario logado** em **toda pagina**.
 
-1. **ContatosPage** -- Substituir bloco linhas 220-233 por `<DataTablePagination />`
-2. **OrganizationsPage** -- Substituir bloco linhas 128-141; corrigir hardcoded `/ 25` para usar `ORG_PAGE_SIZE`
-3. **LeadsList** -- Substituir bloco linhas 548-574; normalizar page para 0-based
-4. **CadenceRunsList** -- Substituir bloco linhas 516-538; normalizar page para 0-based
-5. **MonitorSgtEvents** -- Substituir bloco linhas 357-378; normalizar page para 0-based
+**Mudanca:**
+1. Remover `useGamificationNotifications()` de `AppLayout.tsx`
+2. Criar `src/hooks/useGamificationRealtimeProvider.tsx` -- um wrapper que ativa as subscriptions apenas quando montado
+3. Montar o provider apenas nas paginas que usam gamificacao:
+   - `WorkbenchPage.tsx` (ja usa `WorkbenchGamificationCard`)
+   - `MetasPage.tsx` (tem aba de gamificacao)
 
-### Fase 3: Adicionar paginacao server-side nas 3 paginas sem paginacao
+**Resultado:** Channels de gamificacao so existem quando o usuario esta nas 2 paginas relevantes, ao inves de em todas as ~25 paginas.
 
-#### 3a. TemplatesPage + useTemplates
+## Fase 3: Reduzir polling de Atendimentos (`useAtendimentos.ts`)
 
-- Adicionar `page` e `count: 'exact'` + `.range()` ao hook `useTemplates`
-- Adicionar `<DataTablePagination />` na UI
-- PAGE_SIZE = 25
+O `refetchInterval: 30000` dispara 4 queries simultaneas (lead_messages, lead_contacts, lead_conversation_state, lead_message_intents) a cada 30 segundos.
 
-#### 3b. CadencesList + useCadences
-
-- O hook `useCadences()` ja retorna tudo sem paginacao; adicionar parametros `page`/`pageSize` com `.range()` e `count: 'exact'`
-- Adicionar `<DataTablePagination />` na UI
-- PAGE_SIZE = 25
-
-#### 3c. Atendimentos + useAtendimentos
-
-- Este hook faz logica complexa client-side (joins manuais entre 4 tabelas). A paginacao aqui sera **client-side** com slice, pois a logica de merge impede `.range()` direto
-- Adicionar estado `page` e fatiar o array final com `.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)`
-- Adicionar `<DataTablePagination />` na UI
+**Mudanca:**
+- `refetchInterval: 60000` (60s ao inves de 30s -- reduz queries pela metade)
+- Adicionar `refetchOnWindowFocus: true` para refresh imediato quando usuario volta a aba
 
 ---
 
-## Detalhes do Componente DataTablePagination
+## Arquivos Modificados
 
-```text
-Props:
-  page: number          -- pagina atual (0-based)
-  totalPages: number    -- total de paginas
-  totalCount: number    -- total de registros
-  pageSize: number      -- registros por pagina
-  onPageChange: (page: number) => void
+| Acao | Arquivo | Mudanca |
+|------|---------|---------|
+| Editar | `src/hooks/useConversationMessages.ts` | Remover channel `messages-inbound-unmatched` |
+| Editar | `src/components/layout/AppLayout.tsx` | Remover `useGamificationNotifications()` |
+| Criar | `src/hooks/useGamificationRealtimeProvider.tsx` | Wrapper que monta gamification notifications on-demand |
+| Editar | `src/pages/WorkbenchPage.tsx` | Adicionar `useGamificationNotifications()` |
+| Editar | `src/pages/MetasPage.tsx` | Adicionar `useGamificationNotifications()` |
+| Editar | `src/hooks/useAtendimentos.ts` | `refetchInterval: 60000` + `refetchOnWindowFocus: true` |
 
-Renderizacao:
-  [Mostrando 1-25 de 342 registros]
-  [< Anterior] [1] [2] [3] [...] [14] [Proxima >]
+## Impacto nos Custos
 
-Logica de numeros visiveis:
-  - Sempre mostra pagina 1 e ultima
-  - Mostra 2 vizinhas da pagina atual
-  - Ellipsis entre gaps > 1
-  - Maximo ~7 botoes numericos visiveis
-```
+- **Canal sem filtro removido:** Elimina N broadcasts/segundo para cada conversa aberta (onde N = volume total de mensagens do sistema)
+- **Gamificacao lazy:** De 2 channels permanentes por usuario para 2 channels apenas em 2 paginas (~92% de reducao)
+- **Polling reduzido:** 50% menos queries de atendimentos por minuto
 
----
+## Risco
 
-## Ordem de Execucao
-
-```text
-1. Criar DataTablePagination (componente reutilizavel)
-2. Refatorar ContatosPage + OrganizationsPage (0-based, mais simples)
-3. Refatorar LeadsList + CadenceRunsList + MonitorSgtEvents (normalizar indexacao)
-4. Adicionar paginacao em TemplatesPage (hook simples)
-5. Adicionar paginacao em CadencesList (hook simples)
-6. Adicionar paginacao client-side em Atendimentos (slice)
-```
-
-## Impacto Esperado
-
-- Componente de paginacao unificado com numeros de pagina e ellipsis
-- 8 paginas com paginacao consistente (vs 5 atualmente com UI duplicada)
-- Reducao de ~80 linhas de codigo duplicado
-- Prevencao do limite de 1000 rows em TemplatesPage e CadencesList
-- Melhor experiencia do usuario com indicador "Mostrando X-Y de Z"
-- Zero mudanca de banco de dados
-
-## Detalhes Tecnicos
-
-- O componente usa os primitivos shadcn/ui ja existentes em `pagination.tsx`
-- Nenhuma dependencia nova necessaria
-- Hooks existentes que ja usam `.range()` mantem a mesma API
-- Hooks novos (useTemplates, useCadences) recebem parametro `page` opcional para backwards compatibility
-- Atendimentos usa paginacao client-side por limitacao arquitetural do hook (merge de 4 tabelas)
-
+- **Baixo**: Mensagens INBOUND unmatched podem levar ate o proximo refetch para aparecer (em vez de realtime). Isso e aceitavel porque unmatched sao raros e o canal filtrado por lead_id ja cobre o caso principal.
