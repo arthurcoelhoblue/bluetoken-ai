@@ -4,30 +4,42 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Search, Bell, Sun, Moon, ArrowLeft } from 'lucide-react';
+import { Bell, Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { GlobalSearch } from './GlobalSearch';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/': 'Meu Dia',
+  '/meu-dia': 'Meu Dia',
   '/pipeline': 'Pipeline',
   '/contatos': 'Contatos',
+  '/organizacoes': 'Organizações',
   '/conversas': 'Conversas',
   '/metas': 'Metas & Comissões',
   '/renovacao': 'Renovação',
   '/cockpit': 'Cockpit',
   '/amelia': 'Amélia IA',
+  '/amelia/mass-action': 'Ação em Massa',
   '/cadences': 'Cadências',
   '/cadences/runs': 'Leads em Cadência',
   '/cadences/next-actions': 'Próximas Ações',
+  '/cadencias-crm': 'Cadências CRM',
   '/templates': 'Templates',
   '/leads': 'Leads',
-  '/atendimentos': 'Atendimentos',
+  '/relatorios': 'Relatórios',
   '/admin/produtos': 'Knowledge Base',
   '/integracoes': 'Integrações',
   '/admin/ai-benchmark': 'Benchmark IA',
   '/monitor/sgt-events': 'Monitor SGT',
   '/admin/leads-quentes': 'Leads Quentes',
   '/admin/settings': 'Configurações',
+  '/admin/zadarma': 'Telefonia',
+  '/settings/pipelines': 'Configuração de Funis',
+  '/settings/custom-fields': 'Campos Customizáveis',
+  '/capture-forms': 'Formulários de Captura',
+  '/importacao': 'Importação',
+  '/pendencias': 'Pendências',
   '/me': 'Meu Perfil',
   '/tokeniza/offers': 'Ofertas Tokeniza',
 };
@@ -69,17 +81,26 @@ export function TopBar() {
 
       <div className="flex-1" />
 
-      {/* Search placeholder */}
-      <div className="hidden md:flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 text-sm text-muted-foreground w-56">
-        <Search className="h-4 w-4" />
-        <span>Buscar...</span>
-      </div>
+      {/* Global Search */}
+      <GlobalSearch />
 
-      {/* Notifications placeholder */}
-      <Button variant="ghost" size="icon" className="relative h-8 w-8">
-        <Bell className="h-4 w-4" />
-        <span className="absolute top-1 right-1 h-2 w-2 rounded-full bg-destructive" />
-      </Button>
+      {/* Notifications */}
+      <Popover>
+        <PopoverTrigger asChild>
+          <Button variant="ghost" size="icon" className="relative h-8 w-8">
+            <Bell className="h-4 w-4" />
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent className="w-72 p-4" align="end">
+          <div className="flex items-center gap-2 mb-2">
+            <Bell className="h-4 w-4 text-muted-foreground" />
+            <span className="font-medium text-sm">Notificações</span>
+          </div>
+          <p className="text-sm text-muted-foreground text-center py-4">
+            Nenhuma notificação
+          </p>
+        </PopoverContent>
+      </Popover>
 
       {/* Theme toggle */}
       <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-8 w-8">

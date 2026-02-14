@@ -143,7 +143,9 @@ function MeContent() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground text-sm">Provider</span>
-                <span className="text-sm">Google OAuth</span>
+                <span className="text-sm capitalize">
+                  {user?.app_metadata?.provider || user?.app_metadata?.providers?.[0] || 'Email'}
+                </span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-muted-foreground text-sm">Google ID</span>

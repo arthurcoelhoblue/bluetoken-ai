@@ -154,12 +154,18 @@ export function useExecuteMassAction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (jobId: string) => {
-      const { error } = await supabase
+      // Update status and trigger the edge function for actual sending
+      const { error: updateError } = await supabase
         .from('mass_action_jobs')
         .update({ status: 'RUNNING' as any, started_at: new Date().toISOString() })
         .eq('id', jobId);
-      if (error) throw error;
-      // TODO: trigger actual message sending via edge function
+      if (updateError) throw updateError;
+
+      // Trigger actual message sending via edge function
+      const { error: fnError } = await supabase.functions.invoke('amelia-mass-action', {
+        body: { jobId, action: 'execute' },
+      });
+      if (fnError) throw fnError;
     },
     onSuccess: (_, jobId) => {
       qc.invalidateQueries({ queryKey: ['mass-action-job', jobId] });
