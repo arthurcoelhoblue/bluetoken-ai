@@ -68,3 +68,9 @@ verify_jwt = false
 
 [functions.cs-daily-briefing]
 verify_jwt = false
+
+[functions.cs-churn-predictor]
+verify_jwt = false
+
+[functions.cs-trending-topics]
+verify_jwt = false
