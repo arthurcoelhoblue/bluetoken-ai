@@ -90,7 +90,7 @@ export default function Auth() {
             <Bot className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-primary-foreground">Amelia CRM</h1>
+            <h1 className="text-xl font-bold text-primary-foreground">Amélia CRM</h1>
             <p className="text-xs text-primary-foreground/70">Grupo Blue</p>
           </div>
         </div>
@@ -102,7 +102,7 @@ export default function Auth() {
           <Card className="glass border-border/30 shadow-lg">
             <CardHeader className="text-center pb-2">
               <CardTitle className="text-2xl font-bold">
-                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo ao Amelia CRM'}
+                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo ao Amélia CRM'}
               </CardTitle>
               <CardDescription className="text-muted-foreground">
                 {authView === 'forgot-password' 
