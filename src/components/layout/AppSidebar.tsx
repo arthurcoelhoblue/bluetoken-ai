@@ -87,6 +87,7 @@ const navGroups: NavGroup[] = [
       { title: 'Renovação', url: '/renovacao', icon: RefreshCcw, screenKey: 'renovacao' },
       { title: 'Cockpit', url: '/cockpit', icon: Gauge, screenKey: 'cockpit' },
       { title: 'Relatórios', url: '/relatorios', icon: BarChart3, screenKey: 'relatorios' },
+      { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, screenKey: 'leads_quentes' },
     ],
   },
   {
@@ -99,6 +100,7 @@ const navGroups: NavGroup[] = [
       { title: 'Próx. Ações', url: '/cadences/next-actions', icon: Clock, screenKey: 'proximas_acoes' },
       { title: 'Templates', url: '/templates', icon: FileText, screenKey: 'templates' },
       { title: 'Form de Captura', url: '/capture-forms', icon: ClipboardList, screenKey: 'capture_forms' },
+      { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, screenKey: 'monitor_sgt' },
     ],
   },
   {
@@ -107,8 +109,6 @@ const navGroups: NavGroup[] = [
       { title: 'Knowledge Base', url: '/admin/produtos', icon: BookOpen, screenKey: 'knowledge_base' },
       { title: 'Integrações', url: '/integracoes', icon: Plug, screenKey: 'integracoes' },
       { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, screenKey: 'benchmark_ia' },
-      { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, screenKey: 'monitor_sgt' },
-      { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, screenKey: 'leads_quentes' },
       
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
