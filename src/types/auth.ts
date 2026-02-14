@@ -10,6 +10,7 @@ export interface UserProfile {
   avatar_url: string | null;
   empresa_id: string | null;
   is_active: boolean;
+  is_vendedor: boolean;
   last_login_at: string | null;
   created_at: string;
   updated_at: string;

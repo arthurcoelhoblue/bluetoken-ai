@@ -2,19 +2,35 @@ import { useState } from 'react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserPlus, Plus, X } from 'lucide-react';
 import { useUsersWithProfiles, useRemoveAssignment } from '@/hooks/useAccessControl';
 import { AssignProfileDialog } from './AssignProfileDialog';
 import { CreateUserDialog } from './CreateUserDialog';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 import type { UserWithAccess } from '@/types/accessControl';
 
 export function UserAccessList() {
   const { data: users = [], isLoading } = useUsersWithProfiles();
   const removeMutation = useRemoveAssignment();
+  const queryClient = useQueryClient();
 
   const [assignTarget, setAssignTarget] = useState<UserWithAccess | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+
+  const handleToggleVendedor = async (userId: string, value: boolean) => {
+    const { error } = await supabase.from('profiles').update({ is_vendedor: value }).eq('id', userId);
+    if (error) {
+      toast.error('Erro ao atualizar flag vendedor');
+      return;
+    }
+    toast.success(value ? 'Marcado como vendedor' : 'Removido de vendedor');
+    queryClient.invalidateQueries({ queryKey: ['users-with-profiles'] });
+    queryClient.invalidateQueries({ queryKey: ['pipeline-owners'] });
+  };
 
   const getInitials = (nome: string | null, email: string) => {
     if (nome) return nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
@@ -47,6 +63,7 @@ export function UserAccessList() {
               <TableHead>Usuário</TableHead>
               <TableHead>Perfil</TableHead>
               <TableHead>Empresa</TableHead>
+              <TableHead className="text-center">Vendedor</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[100px]">Ações</TableHead>
             </TableRow>
@@ -81,6 +98,12 @@ export function UserAccessList() {
                   ) : (
                     <span className="text-xs text-muted-foreground">Todas</span>
                   )}
+                </TableCell>
+                <TableCell className="text-center">
+                  <Switch
+                    checked={(u as any).is_vendedor ?? false}
+                    onCheckedChange={(val) => handleToggleVendedor(u.id, val)}
+                  />
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.is_active ? 'default' : 'destructive'} className="text-xs">

@@ -3482,6 +3482,7 @@ export type Database = {
           google_id: string | null
           id: string
           is_active: boolean
+          is_vendedor: boolean
           last_login_at: string | null
           nome: string | null
           updated_at: string
@@ -3495,6 +3496,7 @@ export type Database = {
           google_id?: string | null
           id: string
           is_active?: boolean
+          is_vendedor?: boolean
           last_login_at?: string | null
           nome?: string | null
           updated_at?: string
@@ -3508,6 +3510,7 @@ export type Database = {
           google_id?: string | null
           id?: string
           is_active?: boolean
+          is_vendedor?: boolean
           last_login_at?: string | null
           nome?: string | null
           updated_at?: string
