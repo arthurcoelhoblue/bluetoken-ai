@@ -14,15 +14,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock } from 'lucide-react';
+import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock, Clock, Phone, Mail, AlertTriangle, FileText, StickyNote } from 'lucide-react';
 import { healthStatusConfig, gravidadeConfig, incidentStatusConfig, npsConfig } from '@/types/customerSuccess';
 import type { CSIncidentTipo, CSGravidade } from '@/types/customerSuccess';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { toast } from 'sonner';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { supabase } from '@/integrations/supabase/client';
+import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
+
+// Icons for timeline items
+const TIMELINE_ICONS: Record<string, React.ReactNode> = {
+  deal_activity: <Briefcase className="h-3 w-3" />,
+  survey: <MessageCircle className="h-3 w-3" />,
+  incident: <AlertTriangle className="h-3 w-3" />,
+  health: <HeartPulse className="h-3 w-3" />,
+};
+
+interface TimelineItem {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  date: string;
+  badge?: string;
+  badgeVariant?: 'default' | 'secondary' | 'destructive' | 'outline';
+}
 
 export default function CSClienteDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -39,6 +58,13 @@ export default function CSClienteDetailPage() {
   const [sendingNpsWa, setSendingNpsWa] = useState(false);
   const [deals, setDeals] = useState<any[] | null>(null);
   const [dealsLoading, setDealsLoading] = useState(false);
+  const [csmNote, setCsmNote] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
+
+  // Load CSM notes from customer
+  useEffect(() => {
+    if (customer?.notas_csm) setCsmNote(customer.notas_csm);
+  }, [customer?.notas_csm]);
 
   const loadDeals = async () => {
     if (deals || !customer?.contact_id) return;
@@ -64,6 +90,20 @@ export default function CSClienteDetailPage() {
     }
   };
 
+  const handleSaveNote = async () => {
+    if (!customer) return;
+    setSavingNote(true);
+    try {
+      const { error } = await supabase.from('cs_customers').update({ notas_csm: csmNote }).eq('id', customer.id);
+      if (error) throw error;
+      toast.success('Notas salvas');
+    } catch {
+      toast.error('Erro ao salvar notas');
+    } finally {
+      setSavingNote(false);
+    }
+  };
+
   if (isLoading) return <LoadingSpinner />;
   if (!customer) return <div className="p-6"><p>Cliente não encontrado</p></div>;
 
@@ -85,6 +125,39 @@ export default function CSClienteDetailPage() {
     } catch { toast.error('Erro ao criar incidência'); }
   };
 
+  // Build unified timeline
+  const timelineItems: TimelineItem[] = [];
+  surveys?.forEach(s => {
+    timelineItems.push({
+      id: `survey-${s.id}`, type: 'survey',
+      title: `${s.tipo} — Nota: ${s.nota ?? 'Pendente'}`,
+      description: s.pergunta || undefined,
+      date: s.enviado_em,
+      badge: s.tipo, badgeVariant: 'outline',
+    });
+  });
+  incidents?.forEach(inc => {
+    timelineItems.push({
+      id: `incident-${inc.id}`, type: 'incident',
+      title: inc.titulo,
+      description: inc.descricao?.slice(0, 100) || undefined,
+      date: inc.created_at,
+      badge: gravidadeConfig[inc.gravidade]?.label,
+      badgeVariant: inc.gravidade === 'CRITICA' || inc.gravidade === 'ALTA' ? 'destructive' : 'secondary',
+    });
+  });
+  healthLog?.forEach(log => {
+    timelineItems.push({
+      id: `health-${log.id}`, type: 'health',
+      title: `Health Score: ${log.score}`,
+      description: log.motivo_mudanca || 'Recalculado',
+      date: log.created_at,
+      badge: healthStatusConfig[log.status]?.label,
+      badgeVariant: log.status === 'CRITICO' || log.status === 'EM_RISCO' ? 'destructive' : 'default',
+    });
+  });
+  timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
   return (
     <div className="flex-1 overflow-auto">
       <PageShell icon={User} title={customer.contact?.nome || 'Cliente CS'} description="Detalhe do cliente" />
@@ -105,6 +178,12 @@ export default function CSClienteDetailPage() {
                 </Avatar>
                 <h3 className="font-semibold">{customer.contact?.nome}</h3>
                 <p className="text-sm text-muted-foreground">{customer.contact?.email}</p>
+                {customer.contact?.telefone && (
+                  <div className="flex items-center justify-center gap-1 mt-1">
+                    <span className="text-sm text-muted-foreground">{customer.contact.telefone}</span>
+                    <ClickToCallButton phone={customer.contact.telefone} contactName={customer.contact.nome} customerId={customer.id} />
+                  </div>
+                )}
                 <Badge className={`mt-2 ${healthStatusConfig[customer.health_status]?.bgClass}`}>
                   <HeartPulse className="h-3 w-3 mr-1" />{customer.health_score} — {healthStatusConfig[customer.health_status]?.label}
                 </Badge>
@@ -125,15 +204,41 @@ export default function CSClienteDetailPage() {
 
           {/* Main */}
           <div className="lg:col-span-3">
-            <Tabs defaultValue="pesquisas">
-              <TabsList>
+            <Tabs defaultValue="visao-geral">
+              <TabsList className="grid grid-cols-7 w-full">
+                <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
                 <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
                 <TabsTrigger value="renovacao">Renovação</TabsTrigger>
                 <TabsTrigger value="incidencias">Incidências</TabsTrigger>
-                <TabsTrigger value="health-log">Health Log</TabsTrigger>
+                <TabsTrigger value="health-log">Health</TabsTrigger>
+                <TabsTrigger value="notas">Notas</TabsTrigger>
               </TabsList>
 
+              {/* Visão Geral — Unified Timeline */}
+              <TabsContent value="visao-geral" className="mt-4 space-y-3">
+                {timelineItems.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-8">Nenhum evento registrado ainda.</p>
+                ) : (
+                  timelineItems.slice(0, 30).map(item => (
+                    <div key={item.id} className="flex items-start gap-3 py-2 border-b border-border/40 last:border-0">
+                      <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                        {TIMELINE_ICONS[item.type] || <Clock className="h-3 w-3" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">{item.title}</span>
+                          {item.badge && <Badge variant={item.badgeVariant || 'outline'} className="text-[10px] px-1.5 py-0">{item.badge}</Badge>}
+                        </div>
+                        {item.description && <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>}
+                        <span className="text-[10px] text-muted-foreground">{format(new Date(item.date), "dd/MM/yy HH:mm", { locale: ptBR })}</span>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </TabsContent>
+
+              {/* Pesquisas */}
               <TabsContent value="pesquisas" className="mt-4 space-y-4">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Registrar NPS</CardTitle></CardHeader>
@@ -156,6 +261,7 @@ export default function CSClienteDetailPage() {
                 {surveys?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma pesquisa registrada</p>}
               </TabsContent>
 
+              {/* Deals */}
               <TabsContent value="deals" className="mt-4 space-y-3">
                 {dealsLoading && <LoadingSpinner />}
                 {deals?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum deal associado a este contato</p>}
@@ -179,6 +285,7 @@ export default function CSClienteDetailPage() {
                 ))}
               </TabsContent>
 
+              {/* Renovação */}
               <TabsContent value="renovacao" className="mt-4 space-y-4">
                 <Card>
                   <CardHeader className="pb-2">
@@ -195,6 +302,7 @@ export default function CSClienteDetailPage() {
                 </Card>
               </TabsContent>
 
+              {/* Incidências */}
               <TabsContent value="incidencias" className="mt-4 space-y-4">
                 <Dialog>
                   <DialogTrigger asChild><Button size="sm"><Plus className="h-4 w-4 mr-1" /> Nova Incidência</Button></DialogTrigger>
@@ -217,11 +325,34 @@ export default function CSClienteDetailPage() {
                 {incidents?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma incidência</p>}
               </TabsContent>
 
+              {/* Health Log */}
               <TabsContent value="health-log" className="mt-4 space-y-3">
                 {healthLog?.map(log => (
                   <Card key={log.id}><CardContent className="pt-4"><div className="flex items-center justify-between"><div><Badge className={healthStatusConfig[log.status]?.bgClass}>{log.score}</Badge><span className="ml-2 text-sm">{log.motivo_mudanca || 'Recalculado'}</span></div><span className="text-xs text-muted-foreground">{format(new Date(log.created_at), "dd/MM/yy HH:mm", { locale: ptBR })}</span></div></CardContent></Card>
                 ))}
                 {healthLog?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum registro de health score</p>}
+              </TabsContent>
+
+              {/* Notas CSM */}
+              <TabsContent value="notas" className="mt-4 space-y-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2">
+                      <StickyNote className="h-4 w-4" /> Notas do CSM
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <Textarea
+                      value={csmNote}
+                      onChange={e => setCsmNote(e.target.value)}
+                      placeholder="Adicione observações, contexto e notas sobre este cliente..."
+                      className="min-h-[200px]"
+                    />
+                    <Button onClick={handleSaveNote} disabled={savingNote} size="sm">
+                      <FileText className="h-4 w-4 mr-1" /> Salvar Notas
+                    </Button>
+                  </CardContent>
+                </Card>
               </TabsContent>
             </Tabs>
           </div>

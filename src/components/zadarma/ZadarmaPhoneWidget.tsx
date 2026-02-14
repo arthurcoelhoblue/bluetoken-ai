@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
@@ -22,6 +22,7 @@ export function ZadarmaPhoneWidget() {
   const [contactName, setContactName] = useState('');
   const [dealId, setDealId] = useState<string | undefined>();
   const [muted, setMuted] = useState(false);
+  const [onHold, setOnHold] = useState(false);
   const [callTimer, setCallTimer] = useState(0);
 
   const proxy = useZadarmaProxy();
@@ -51,6 +52,7 @@ export function ZadarmaPhoneWidget() {
     if (!number.trim() || !empresa || !myExtension) return;
     setPhoneState('dialing');
     setCallTimer(0);
+    setOnHold(false);
 
     proxy.mutate({
       action: 'click_to_call',
@@ -64,10 +66,21 @@ export function ZadarmaPhoneWidget() {
 
   const handleHangup = () => {
     setPhoneState('ended');
+    setOnHold(false);
     setTimeout(() => {
       setPhoneState('idle');
       setCallTimer(0);
     }, 2000);
+  };
+
+  const handleHold = () => {
+    if (!empresa || !myExtension) return;
+    setOnHold(prev => !prev);
+    proxy.mutate({
+      action: onHold ? 'unhold' : 'hold',
+      empresa,
+      payload: { extension: myExtension.extension_number },
+    });
   };
 
   const formatTimer = (seconds: number) => {
@@ -116,14 +129,22 @@ export function ZadarmaPhoneWidget() {
             <p className="text-lg font-semibold">{contactName || number}</p>
             {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
           </div>
+          {onHold && (
+            <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
+          )}
           <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
             {phoneState === 'dialing' ? 'Discando...' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
           </p>
-          <div className="flex items-center justify-center gap-4">
+          <div className="flex items-center justify-center gap-3">
             {phoneState === 'active' && (
-              <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
-                {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
-              </Button>
+              <>
+                <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
+                  {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
+                </Button>
+                <Button variant="outline" size="icon" className={`h-10 w-10 rounded-full ${onHold ? 'bg-warning/20 border-warning' : ''}`} onClick={handleHold}>
+                  {onHold ? <Play className="h-4 w-4 text-warning" /> : <Pause className="h-4 w-4" />}
+                </Button>
+              </>
             )}
             {phoneState !== 'ended' && (
               <Button variant="destructive" size="icon" className="h-12 w-12 rounded-full" onClick={handleHangup}>

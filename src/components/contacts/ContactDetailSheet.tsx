@@ -15,6 +15,7 @@ import { useContactLeadBridge } from '@/hooks/useContactLeadBridge';
 import { useConversationMessages } from '@/hooks/useConversationMessages';
 import { CustomFieldsRenderer } from './CustomFieldsRenderer';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
+import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { toast } from 'sonner';
 import type { ContactWithStats } from '@/types/contactsPage';
 import type { EmpresaTipo } from '@/types/sgt';
@@ -156,7 +157,10 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
 
               <TabsContent value="dados" className="mt-4 space-y-1">
                 {renderInlineField('Email', 'email', contact.email, <Mail className="h-3.5 w-3.5" />)}
-                {renderInlineField('Telefone', 'telefone', contact.telefone, <Phone className="h-3.5 w-3.5" />)}
+                <div className="flex items-center gap-1">
+                  <div className="flex-1">{renderInlineField('Telefone', 'telefone', contact.telefone, <Phone className="h-3.5 w-3.5" />)}</div>
+                  <ClickToCallButton phone={contact.telefone} contactName={contact.nome} />
+                </div>
                 {renderInlineField('Organização', 'organization_id', contact.org_nome || contact.org_nome_fantasia, <Building2 className="h-3.5 w-3.5" />)}
                 {renderInlineField('CPF', 'cpf', contact.cpf)}
                 {renderInlineField('Primeiro nome', 'primeiro_nome', contact.primeiro_nome)}
