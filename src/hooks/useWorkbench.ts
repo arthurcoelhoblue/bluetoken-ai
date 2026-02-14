@@ -1,4 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
+import { useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -14,7 +15,24 @@ function empresaFilter(activeCompany: string): EmpresaEnum | null {
 export function useWorkbenchTarefas() {
   const { activeCompany } = useCompany();
   const { user } = useAuth();
+  const qc = useQueryClient();
   const empresa = empresaFilter(activeCompany);
+
+  // Realtime for deal_activities (tasks)
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`workbench-tasks-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deal_activities' },
+        () => {
+          qc.invalidateQueries({ queryKey: ['workbench-tarefas'] });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, qc]);
 
   return useQuery({
     queryKey: ['workbench-tarefas', empresa, user?.id],
@@ -40,12 +58,29 @@ export function useWorkbenchTarefas() {
 export function useWorkbenchSLAAlerts() {
   const { activeCompany } = useCompany();
   const { user } = useAuth();
+  const qc = useQueryClient();
   const empresa = empresaFilter(activeCompany);
+
+  // Realtime: invalidate SLA alerts when deals change
+  useEffect(() => {
+    if (!user?.id) return;
+    const channel = supabase
+      .channel(`workbench-sla-${user.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'deals' },
+        () => {
+          qc.invalidateQueries({ queryKey: ['workbench-sla'] });
+        }
+      )
+      .subscribe();
+    return () => { supabase.removeChannel(channel); };
+  }, [user?.id, qc]);
 
   return useQuery({
     queryKey: ['workbench-sla', empresa, user?.id],
     enabled: !!user?.id,
-    refetchInterval: 60_000,
+    refetchInterval: 30_000, // Reduced from 60s to 30s
     queryFn: async (): Promise<WorkbenchSLAAlert[]> => {
       let query = supabase
         .from('workbench_sla_alerts')

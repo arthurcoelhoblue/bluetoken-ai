@@ -37,6 +37,7 @@ function PipelineConfigContent() {
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
   const [newEmpresa, setNewEmpresa] = useState<'BLUE' | 'TOKENIZA'>('BLUE');
+  const [newTipo, setNewTipo] = useState('COMERCIAL');
   const [newStageDialogOpen, setNewStageDialogOpen] = useState<string | null>(null);
   const [newStageName, setNewStageName] = useState('');
 
@@ -47,7 +48,7 @@ function PipelineConfigContent() {
   const handleCreatePipeline = async () => {
     if (!newName.trim()) return;
     try {
-      await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa });
+      await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo } as any);
       toast.success('Pipeline criado');
       setNewName('');
       setNewDialogOpen(false);
@@ -124,6 +125,15 @@ function PipelineConfigContent() {
                     <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
                   </SelectContent>
                 </Select>
+                <Select value={newTipo} onValueChange={setNewTipo}>
+                  <SelectTrigger><SelectValue placeholder="Tipo" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="COMERCIAL">Comercial</SelectItem>
+                    <SelectItem value="RENOVACAO">Renovação</SelectItem>
+                    <SelectItem value="POS_VENDA">Pós-Venda</SelectItem>
+                    <SelectItem value="CUSTOM">Custom</SelectItem>
+                  </SelectContent>
+                </Select>
                 <Button onClick={handleCreatePipeline} className="w-full" disabled={createPipeline.isPending}>Criar</Button>
               </div>
             </DialogContent>
@@ -138,6 +148,9 @@ function PipelineConfigContent() {
                   <CollapsibleTrigger className="flex items-center gap-3 cursor-pointer hover:opacity-80">
                     <CardTitle className="text-lg">{pipeline.nome}</CardTitle>
                     <Badge variant="outline">{pipeline.empresa}</Badge>
+                    {(pipeline as unknown as { tipo?: string }).tipo && (pipeline as unknown as { tipo?: string }).tipo !== 'COMERCIAL' && (
+                      <Badge variant="secondary">{(pipeline as unknown as { tipo?: string }).tipo}</Badge>
+                    )}
                     {pipeline.is_default && <Badge variant="secondary">Padrão</Badge>}
                   </CollapsibleTrigger>
                   <div className="flex gap-2">

@@ -10,7 +10,7 @@ export function useCadenciasCRM() {
     queryFn: async () => {
       let query = supabase.from('cadencias_crm').select('*');
       if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany) as any;
+        query = query.eq('empresa', activeCompany);
       }
       const { data, error } = await query;
       if (error) throw error;
@@ -44,12 +44,12 @@ export function useStartDealCadence() {
         .insert({
           cadence_id: cadenceId,
           lead_id: leadId,
-          empresa: empresa as any,
-          status: 'ATIVA' as any,
+          empresa: empresa,
+          status: 'ATIVA',
           last_step_ordem: 0,
           next_step_ordem: 1,
           next_run_at: new Date().toISOString(),
-        })
+        } as any)
         .select('id')
         .single();
       if (runErr) throw runErr;
@@ -87,7 +87,7 @@ export function usePauseDealCadence() {
   return useMutation({
     mutationFn: async ({ dealCadenceRunId, cadenceRunId, dealId }: { dealCadenceRunId: string; cadenceRunId: string; dealId: string }) => {
       await supabase.from('deal_cadence_runs').update({ status: 'PAUSED' }).eq('id', dealCadenceRunId);
-      await supabase.from('lead_cadence_runs').update({ status: 'PAUSADA' as any }).eq('id', cadenceRunId);
+      await supabase.from('lead_cadence_runs').update({ status: 'PAUSADA' }).eq('id', cadenceRunId);
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-cadencia-status', vars.dealId] });
@@ -100,7 +100,7 @@ export function useResumeDealCadence() {
   return useMutation({
     mutationFn: async ({ dealCadenceRunId, cadenceRunId, dealId }: { dealCadenceRunId: string; cadenceRunId: string; dealId: string }) => {
       await supabase.from('deal_cadence_runs').update({ status: 'ACTIVE' }).eq('id', dealCadenceRunId);
-      await supabase.from('lead_cadence_runs').update({ status: 'ATIVA' as any, next_run_at: new Date().toISOString() }).eq('id', cadenceRunId);
+      await supabase.from('lead_cadence_runs').update({ status: 'ATIVA', next_run_at: new Date().toISOString() }).eq('id', cadenceRunId);
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-cadencia-status', vars.dealId] });
@@ -113,7 +113,7 @@ export function useCancelDealCadence() {
   return useMutation({
     mutationFn: async ({ dealCadenceRunId, cadenceRunId, dealId }: { dealCadenceRunId: string; cadenceRunId: string; dealId: string }) => {
       await supabase.from('deal_cadence_runs').update({ status: 'CANCELLED' }).eq('id', dealCadenceRunId);
-      await supabase.from('lead_cadence_runs').update({ status: 'CANCELADA' as any }).eq('id', cadenceRunId);
+      await supabase.from('lead_cadence_runs').update({ status: 'CANCELADA' }).eq('id', cadenceRunId);
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-cadencia-status', vars.dealId] });

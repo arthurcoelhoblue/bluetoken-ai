@@ -24,11 +24,10 @@ function formatPercent(value: number) {
 function RenovacaoContent() {
   const { data: pipelines, isLoading: loadingPipelines } = usePipelines();
 
-  // Busca pipeline de renovação por nome normalizado (sem acentos)
-  const renovacaoPipeline = pipelines?.find((p) => {
-    const nome = p.nome.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-    return nome.includes('renovacao') || nome.includes('churn');
-  });
+  // Busca pipeline de renovação pelo campo tipo (sem depender do nome)
+  const renovacaoPipeline = pipelines?.find((p) =>
+    (p as unknown as { tipo?: string }).tipo === 'RENOVACAO'
+  );
   const pipelineId = renovacaoPipeline?.id ?? null;
 
   const { data: conversion, isLoading: loadingConversion } = useAnalyticsConversion(pipelineId);
@@ -48,7 +47,7 @@ function RenovacaoContent() {
           <Info className="h-4 w-4" />
           <AlertTitle>Nenhum pipeline de renovação encontrado</AlertTitle>
           <AlertDescription>
-            Para usar este dashboard, crie um pipeline com "Renovação" no nome em Configurações → Pipeline.
+            Para usar este dashboard, marque o tipo "Renovação" em um pipeline existente em Configurações → Pipeline.
             Os KPIs e análises serão calculados automaticamente a partir dos deals desse funil.
           </AlertDescription>
         </Alert>

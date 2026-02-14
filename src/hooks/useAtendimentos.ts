@@ -22,6 +22,12 @@ interface UseAtendimentosOptions {
   empresaFilter?: 'TOKENIZA' | 'BLUE' | null;
 }
 
+/**
+ * NOTA TÉCNICA: Paginação client-side é intencional aqui.
+ * Este hook faz merge complexo de 4 tabelas (lead_messages, lead_contacts,
+ * lead_conversation_state, lead_message_intents) no client, o que impede
+ * o uso de .range() server-side. A alternativa seria criar uma view materializada.
+ */
 export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) {
   return useQuery({
     queryKey: ['atendimentos', empresaFilter],

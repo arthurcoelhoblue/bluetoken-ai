@@ -1167,6 +1167,7 @@ interface AIResponse {
   disc_estimado?: PerfilDISC;
   ultima_pergunta_id?: string;
   departamento_destino?: string | null;
+  sentimento?: 'POSITIVO' | 'NEUTRO' | 'NEGATIVO';
 }
 
 // ========================================
@@ -1876,7 +1877,7 @@ Amélia, 32 anos, economista, especialista em finanças digitais do Grupo Blue (
 ## INTENÇÕES: INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO, SOLICITACAO_CONTATO, DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA, OBJECAO_PRECO, OBJECAO_RISCO, SEM_INTERESSE, OPT_OUT, RECLAMACAO, CUMPRIMENTO, AGRADECIMENTO, NAO_ENTENDI, FORA_CONTEXTO, OUTRO
 ## AÇÕES: ENVIAR_RESPOSTA_AUTOMATICA, ESCALAR_HUMANO, AJUSTAR_TEMPERATURA, NENHUMA, DESQUALIFICAR_LEAD
 
-## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{},"disc_estimado":null,"departamento_destino":null}
+## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{},"disc_estimado":null,"departamento_destino":null}
 `;
 
 const SYSTEM_PROMPT = `# AMÉLIA - SDR IA QUALIFICADORA CONSULTIVA
@@ -1912,8 +1913,10 @@ PAUSAR_CADENCIA, CANCELAR_CADENCIA, RETOMAR_CADENCIA, AJUSTAR_TEMPERATURA, CRIAR
 PROIBIDO: prometer retorno, recomendar ativo específico, negociar preço, pressionar, divulgar plano Customizado, INVENTAR INFORMAÇÕES.
 PERMITIDO: explicar, informar preços tabelados, convidar pra conversa com especialista, dizer "vou confirmar com a equipe".
 
+## SENTIMENTO: Analise o sentimento da mensagem do lead. Retorne "POSITIVO", "NEUTRO" ou "NEGATIVO".
+
 ## FORMATO JSON
-{"intent":"...","confidence":0.85,"summary":"...","acao":"...","acao_detalhes":{},"deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{},"disc_estimado":null,"ultima_pergunta_id":"...","departamento_destino":null}
+{"intent":"...","confidence":0.85,"summary":"...","acao":"...","acao_detalhes":{},"sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{},"disc_estimado":null,"ultima_pergunta_id":"...","departamento_destino":null}
 
 VÁ DIRETO AO PONTO. Não elogie perguntas. Se não souber, diga que vai buscar. UMA PERGUNTA POR VEZ.`;
 
@@ -3616,6 +3619,7 @@ async function saveInterpretation(
     tempo_processamento_ms: tempoMs,
     resposta_automatica_texto: respostaTexto,
     resposta_enviada_em: respostaEnviada ? new Date().toISOString() : null,
+    sentimento: aiResponse.sentimento || null,
   };
 
   const { data, error } = await supabase
