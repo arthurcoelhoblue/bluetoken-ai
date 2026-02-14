@@ -161,8 +161,28 @@ function LeadCard({ lead }: { lead: LeadQuente }) {
   );
 }
 
+type FilterType = 'TODOS' | 'QUENTES' | 'CRIAR_TAREFA_CLOSER' | 'ESCALAR_HUMANO' | 'TOKENIZA' | 'BLUE';
+
 export default function LeadsQuentes() {
   const { data: leads, isLoading } = useLeadsQuentes();
+  const [activeFilter, setActiveFilter] = useState<FilterType>('TODOS');
+
+  const filters: { label: string; value: FilterType; emoji?: string }[] = [
+    { label: 'Todos', value: 'TODOS' },
+    { label: 'Quentes', value: 'QUENTES', emoji: '🔥' },
+    { label: 'Criar Tarefa Closer', value: 'CRIAR_TAREFA_CLOSER' },
+    { label: 'Escalar Humano', value: 'ESCALAR_HUMANO' },
+    { label: 'TOKENIZA', value: 'TOKENIZA' },
+    { label: 'BLUE', value: 'BLUE' },
+  ];
+
+  const filteredLeads = leads?.filter((lead) => {
+    if (activeFilter === 'TODOS') return true;
+    if (activeFilter === 'QUENTES') return lead.temperatura === 'QUENTE';
+    if (activeFilter === 'TOKENIZA') return lead.empresa === 'TOKENIZA';
+    if (activeFilter === 'BLUE') return lead.empresa === 'BLUE';
+    return lead.acao_recomendada === activeFilter;
+  });
 
   return (
     <AppLayout>
@@ -178,9 +198,9 @@ export default function LeadsQuentes() {
               Leads que precisam de atenção humana imediata
             </p>
           </div>
-          {leads && leads.length > 0 && (
+          {filteredLeads && filteredLeads.length > 0 && (
             <Badge variant="destructive" className="text-lg px-4 py-2">
-              {leads.length} pendente{leads.length !== 1 ? 's' : ''}
+              {filteredLeads.length} pendente{filteredLeads.length !== 1 ? 's' : ''}
             </Badge>
           )}
         </div>
@@ -189,24 +209,16 @@ export default function LeadsQuentes() {
         <Card>
           <CardContent className="p-4">
             <div className="flex flex-wrap gap-2">
-              <Badge variant="secondary" className="cursor-pointer hover:bg-secondary/80">
-                Todos
-              </Badge>
-              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                🔥 Quentes
-              </Badge>
-              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                Criar Tarefa Closer
-              </Badge>
-              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                Escalar Humano
-              </Badge>
-              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                TOKENIZA
-              </Badge>
-              <Badge variant="outline" className="cursor-pointer hover:bg-accent">
-                BLUE
-              </Badge>
+              {filters.map((f) => (
+                <Badge
+                  key={f.value}
+                  variant={activeFilter === f.value ? 'secondary' : 'outline'}
+                  className="cursor-pointer hover:bg-accent transition-colors"
+                  onClick={() => setActiveFilter(f.value)}
+                >
+                  {f.emoji ? `${f.emoji} ` : ''}{f.label}
+                </Badge>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -218,9 +230,9 @@ export default function LeadsQuentes() {
               <Skeleton key={i} className="h-48 w-full" />
             ))}
           </div>
-        ) : leads && leads.length > 0 ? (
+        ) : filteredLeads && filteredLeads.length > 0 ? (
           <div className="grid gap-4">
-            {leads.map((lead) => (
+            {filteredLeads.map((lead) => (
               <LeadCard key={lead.id} lead={lead} />
             ))}
           </div>

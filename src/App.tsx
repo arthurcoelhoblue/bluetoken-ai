@@ -81,7 +81,7 @@ const App = () => (
             <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><AmeliaPage /></ProtectedRoute>} />
             <Route path="/amelia/mass-action" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AmeliaMassActionPage /></ProtectedRoute>} />
             <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
-            <Route path="/integracoes" element={<ProtectedRoute requiredRoles={['ADMIN']}><IntegracoesPage /></ProtectedRoute>} />
+            <Route path="/integracoes" element={<Navigate to="/admin/settings" replace />} />
             <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
             <Route path="/cadencias-crm" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenciasCRMPage /></ProtectedRoute>} />
             <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormsPage /></ProtectedRoute>} />
