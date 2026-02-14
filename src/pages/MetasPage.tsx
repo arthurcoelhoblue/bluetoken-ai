@@ -21,6 +21,7 @@ import { useMetaProgresso, useComissaoRegras, useComissaoLancamentos, useUpdateC
 import { MESES_LABEL, type ComissaoStatus, type MetaProgresso } from '@/types/metas';
 import { LeaderboardCard } from '@/components/gamification/LeaderboardCard';
 import { BadgeShowcase } from '@/components/gamification/BadgeShowcase';
+import { RecentPointsFeed } from '@/components/gamification/RecentPointsFeed';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -194,6 +195,7 @@ export default function MetasPage() {
           <TabsContent value="gamificacao" className="space-y-4 mt-4">
             <LeaderboardCard />
             <BadgeShowcase />
+            <RecentPointsFeed />
           </TabsContent>
 
           {/* Comissões */}
