@@ -47,6 +47,7 @@ const PipelineConfigPage = lazy(() => import("./pages/PipelineConfigPage"));
 const CustomFieldsConfigPage = lazy(() => import("./pages/CustomFieldsConfigPage"));
 const OrganizationsPage = lazy(() => import("./pages/OrganizationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const AnalyticsExecutivoPage = lazy(() => import("./pages/AnalyticsExecutivoPage"));
 
 const ImportacaoPage = lazy(() => import("./pages/ImportacaoPage"));
 const ZadarmaConfigPage = lazy(() => import("./pages/ZadarmaConfigPage"));
@@ -104,6 +105,7 @@ const App = () => (
                 <Route path="/renovacao" element={<ProtectedRoute><ErrorBoundary><RenovacaoPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><CockpitPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><AnalyticsPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/relatorios/executivo" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AnalyticsExecutivoPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Conversas & Atendimentos — isolated ErrorBoundary */}
                 <Route path="/conversas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><ConversasPage /></ErrorBoundary></ProtectedRoute>} />

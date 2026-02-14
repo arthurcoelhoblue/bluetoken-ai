@@ -86,3 +86,6 @@ verify_jwt = false
 
 [functions.revenue-forecast]
 verify_jwt = false
+
+[functions.weekly-report]
+verify_jwt = false
