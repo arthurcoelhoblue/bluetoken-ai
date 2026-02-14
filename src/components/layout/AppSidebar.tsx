@@ -31,6 +31,9 @@ import {
   Upload,
   PhoneCall,
   ClipboardList,
+  HeartPulse,
+  Users,
+  AlertCircle,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -101,6 +104,15 @@ const navGroups: NavGroup[] = [
       { title: 'Templates', url: '/templates', icon: FileText, screenKey: 'templates' },
       { title: 'Form de Captura', url: '/capture-forms', icon: ClipboardList, screenKey: 'capture_forms' },
       { title: 'Monitor SGT', url: '/monitor/sgt-events', icon: Activity, screenKey: 'monitor_sgt' },
+    ],
+  },
+  {
+    label: 'Sucesso do Cliente',
+    items: [
+      { title: 'Dashboard CS', url: '/cs', icon: HeartPulse, screenKey: 'cs_dashboard' },
+      { title: 'Clientes CS', url: '/cs/clientes', icon: Users, screenKey: 'cs_clientes' },
+      { title: 'Pesquisas', url: '/cs/pesquisas', icon: ClipboardList, screenKey: 'cs_pesquisas' },
+      { title: 'Incidências', url: '/cs/incidencias', icon: AlertCircle, screenKey: 'cs_incidencias' },
     ],
   },
   {

@@ -22,6 +22,9 @@ import {
   Upload,
   PhoneCall,
   ClipboardList,
+  HeartPulse,
+  Users,
+  AlertCircle,
 } from 'lucide-react';
 
 export interface ScreenRegistryItem {
@@ -57,6 +60,10 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'telefonia_zadarma', label: 'Telefonia', group: 'Configuração', icon: PhoneCall, url: '/admin/zadarma' },
   { key: 'pendencias_gestor', label: 'Pendências', group: 'Principal', icon: AlertTriangle, url: '/pendencias' },
   { key: 'configuracoes', label: 'Configurações', group: 'Configuração', icon: Settings, url: '/admin/settings' },
+  { key: 'cs_dashboard', label: 'Dashboard CS', group: 'Sucesso do Cliente', icon: HeartPulse, url: '/cs' },
+  { key: 'cs_clientes', label: 'Clientes CS', group: 'Sucesso do Cliente', icon: Users, url: '/cs/clientes' },
+  { key: 'cs_pesquisas', label: 'Pesquisas', group: 'Sucesso do Cliente', icon: ClipboardList, url: '/cs/pesquisas' },
+  { key: 'cs_incidencias', label: 'Incidências', group: 'Sucesso do Cliente', icon: AlertCircle, url: '/cs/incidencias' },
 ];
 
 export const SCREEN_GROUPS = [...new Set(SCREEN_REGISTRY.map(s => s.group))];
