@@ -22,6 +22,7 @@ import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
+import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
 import { ConversationStateCard } from '@/components/conversation/ConversationStateCard';
 import { Button } from '@/components/ui/button';
@@ -184,6 +185,7 @@ function LeadDetailContent() {
                 <div className="flex items-center gap-2">
                   <Phone className="h-4 w-4 text-muted-foreground" />
                   <span>{contact.telefone}</span>
+                  <ClickToCallButton phone={contact.telefone} contactName={contact.nome || contact.primeiro_nome} />
                 </div>
               )}
               <Separator />

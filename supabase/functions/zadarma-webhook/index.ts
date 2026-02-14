@@ -14,28 +14,36 @@ function isZadarmaIP(ip: string): boolean {
   return parts[0] === 185 && parts[1] === 45 && parts[2] === 152 && parts[3] >= 40 && parts[3] <= 47;
 }
 
-// HMAC-SHA1 signature validation
-async function validateSignature(body: string, signature: string, secret: string): Promise<boolean> {
-  if (!signature || !secret) return false;
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey('raw', encoder.encode(secret), { name: 'HMAC', hash: 'SHA-1' }, false, ['sign']);
-  const sig = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
-  const hexSig = Array.from(new Uint8Array(sig)).map(b => b.toString(16).padStart(2, '0')).join('');
-  return hexSig === signature.toLowerCase();
-}
-
 function normalizePhone(phone: string | null): string | null {
   if (!phone) return null;
   return phone.replace(/\D/g, '').replace(/^0+/, '');
+}
+
+async function createCallDealActivity(supabase: any, callId: string, dealId: string, direcao: string, duration: number, callerNumber: string, destinationNumber: string, recordingUrl: string | null, userId: string | null) {
+  const desc = `Chamada ${direcao === 'OUTBOUND' ? 'realizada' : 'recebida'} — ${Math.floor(duration / 60)}m${duration % 60}s` +
+    (recordingUrl ? ' (com gravação)' : '');
+
+  await supabase.from('deal_activities').insert({
+    deal_id: dealId,
+    tipo: 'LIGACAO',
+    descricao: desc,
+    user_id: userId,
+    metadata: {
+      call_id: callId,
+      direcao,
+      duracao_segundos: duration,
+      caller_number: callerNumber,
+      destination_number: destinationNumber,
+      recording_url: recordingUrl,
+    },
+  });
 }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    // IP validation
     const clientIP = req.headers.get('x-forwarded-for') || req.headers.get('cf-connecting-ip') || '';
-    // In production, uncomment: if (!isZadarmaIP(clientIP)) return new Response('Forbidden', { status: 403 });
 
     const rawBody = await req.text();
     const params = new URLSearchParams(rawBody);
@@ -50,7 +58,6 @@ Deno.serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Parse common fields
     const pbxCallId = params.get('pbx_call_id') || params.get('call_id_with_rec') || '';
     const callerNumber = params.get('caller_id') || params.get('caller_number') || '';
     const destinationNumber = params.get('called_did') || params.get('destination') || '';
@@ -73,7 +80,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback: try first config
     if (!empresa) {
       const { data: configs } = await supabase.from('zadarma_config').select('empresa').limit(1);
       if (configs && configs.length > 0) empresa = configs[0].empresa;
@@ -97,7 +103,7 @@ Deno.serve(async (req) => {
       if (contacts && contacts.length > 0) contactId = contacts[0].id;
     }
 
-    // Auto-link deal (most recent open deal for contact)
+    // Auto-link deal
     let dealId: string | null = null;
     if (contactId) {
       const { data: deals } = await supabase
@@ -162,13 +168,14 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await supabase
         .from('calls')
-        .select('id, status')
+        .select('id, status, deal_id, direcao, caller_number, destination_number, recording_url, user_id')
         .eq('pbx_call_id', pbxCallId)
         .maybeSingle();
 
       if (existing) {
+        const resolvedStatus = existing.status === 'ANSWERED' ? 'ANSWERED' : finalStatus;
         await supabase.from('calls').update({
-          status: existing.status === 'ANSWERED' ? 'ANSWERED' : finalStatus,
+          status: resolvedStatus,
           duracao_segundos: duration,
           ended_at: new Date().toISOString(),
         }).eq('id', existing.id);
@@ -178,6 +185,15 @@ Deno.serve(async (req) => {
           event_type: eventType,
           payload: Object.fromEntries(params),
         });
+
+        // Auto-create deal_activity when call ends with a deal linked
+        if (existing.deal_id && resolvedStatus === 'ANSWERED' && duration > 0) {
+          await createCallDealActivity(
+            supabase, existing.id, existing.deal_id, existing.direcao,
+            duration, existing.caller_number || callerNumber, existing.destination_number || destinationNumber,
+            existing.recording_url, existing.user_id
+          );
+        }
       }
     } else if (eventType === 'NOTIFY_RECORD') {
       const recordingUrl = params.get('call_id_with_rec') || '';
@@ -185,7 +201,7 @@ Deno.serve(async (req) => {
 
       const { data: existing } = await supabase
         .from('calls')
-        .select('id')
+        .select('id, deal_id')
         .eq('pbx_call_id', callIdForRec)
         .maybeSingle();
 
@@ -201,7 +217,6 @@ Deno.serve(async (req) => {
         });
       }
     } else {
-      // Unknown event — log it
       await supabase.from('call_events').insert({
         event_type: eventType,
         payload: Object.fromEntries(params),
@@ -215,7 +230,7 @@ Deno.serve(async (req) => {
   } catch (err) {
     console.error('Zadarma webhook error:', err);
     return new Response(JSON.stringify({ error: String(err) }), {
-      status: 200, // Zadarma expects 200
+      status: 200,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
