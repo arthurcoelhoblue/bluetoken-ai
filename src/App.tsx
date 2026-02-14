@@ -89,38 +89,39 @@ const App = () => (
                 {/* Public routes */}
                 <Route path="/auth" element={<Auth />} />
                 <Route path="/unauthorized" element={<Unauthorized />} />
+                <Route path="/f/:slug" element={<PublicFormPage />} />
                 
                 {/* Protected routes */}
                 <Route path="/" element={<Index />} />
                 <Route path="/meu-dia" element={<ProtectedRoute><WorkbenchPage /></ProtectedRoute>} />
                 <Route path="/me" element={<ProtectedRoute><Me /></ProtectedRoute>} />
                 
-                {/* Shell pages — Patch 0 */}
-                <Route path="/pipeline" element={<ProtectedRoute><PipelinePage /></ProtectedRoute>} />
-                <Route path="/contatos" element={<ProtectedRoute><ContatosPage /></ProtectedRoute>} />
-                <Route path="/organizacoes" element={<ProtectedRoute><OrganizationsPage /></ProtectedRoute>} />
-                <Route path="/conversas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ConversasPage /></ProtectedRoute>} />
-                <Route path="/metas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><MetasPage /></ProtectedRoute>} />
-                <Route path="/renovacao" element={<ProtectedRoute><RenovacaoPage /></ProtectedRoute>} />
-                <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><CockpitPage /></ProtectedRoute>} />
-                <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><AmeliaPage /></ProtectedRoute>} />
-                <Route path="/amelia/mass-action" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AmeliaMassActionPage /></ProtectedRoute>} />
-                <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
+                {/* Pipeline & Deals — isolated ErrorBoundary */}
+                <Route path="/pipeline" element={<ProtectedRoute><ErrorBoundary><PipelinePage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/contatos" element={<ProtectedRoute><ErrorBoundary><ContatosPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/organizacoes" element={<ProtectedRoute><ErrorBoundary><OrganizationsPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/metas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><MetasPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/renovacao" element={<ProtectedRoute><ErrorBoundary><RenovacaoPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cockpit" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><CockpitPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><AnalyticsPage /></ErrorBoundary></ProtectedRoute>} />
+
+                {/* Conversas & Atendimentos — isolated ErrorBoundary */}
+                <Route path="/conversas" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><ConversasPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/atendimentos" element={<Navigate to="/conversas" replace />} />
+
+                {/* Amelia & Templates */}
+                <Route path="/amelia" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AmeliaPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/amelia/mass-action" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><AmeliaMassActionPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><ErrorBoundary><TemplatesPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/integracoes" element={<Navigate to="/admin/settings" replace />} />
-                <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
                 <Route path="/cadencias-crm" element={<Navigate to="/cadences" replace />} />
                 <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormsPage /></ProtectedRoute>} />
                 <Route path="/capture-forms/:id/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormBuilderPage /></ProtectedRoute>} />
                 
-                {/* Admin/Auditor routes */}
-                <Route path="/monitor/sgt-events" element={
-                  <ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}><MonitorSgtEvents /></ProtectedRoute>
-                } />
+                {/* Admin/Auditor — isolated ErrorBoundary */}
+                <Route path="/monitor/sgt-events" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}><ErrorBoundary><MonitorSgtEvents /></ErrorBoundary></ProtectedRoute>} />
                 
-                {/* Atendimentos redirect → Conversas */}
-                <Route path="/atendimentos" element={<Navigate to="/conversas" replace />} />
-                
-                {/* Leads routes - redirect to unified Contatos */}
+                {/* Leads routes */}
                 <Route path="/leads" element={<Navigate to="/contatos" replace />} />
                 <Route path="/leads/:leadId/:empresa" element={<ProtectedRoute><LeadDetail /></ProtectedRoute>} />
                 
@@ -133,31 +134,28 @@ const App = () => (
                 <Route path="/cadences/:cadenceId" element={<ProtectedRoute><CadenceDetail /></ProtectedRoute>} />
                 <Route path="/cadences" element={<ProtectedRoute><CadencesList /></ProtectedRoute>} />
                 
-                {/* Tokeniza routes */}
+                {/* Tokeniza */}
                 <Route path="/tokeniza/offers" element={<ProtectedRoute><TokenizaOffers /></ProtectedRoute>} />
                 
-                {/* Admin routes */}
-                <Route path="/admin/produtos" element={<ProtectedRoute requiredRoles={['ADMIN']}><ProductKnowledgeList /></ProtectedRoute>} />
-                <Route path="/admin/produtos/:productId" element={<ProtectedRoute requiredRoles={['ADMIN']}><ProductKnowledgeEditor /></ProtectedRoute>} />
-                <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><Settings /></ProtectedRoute>} />
-                <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><LeadsQuentes /></ProtectedRoute>} />
-                <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><AIBenchmark /></ProtectedRoute>} />
-                <Route path="/pendencias" element={<ProtectedRoute><PendenciasPerda /></ProtectedRoute>} />
-                <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><PipelineConfigPage /></ProtectedRoute>} />
-                <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><CustomFieldsConfigPage /></ProtectedRoute>} />
-                <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ImportacaoPage /></ProtectedRoute>} />
-                <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ZadarmaConfigPage /></ProtectedRoute>} />
-                
-                {/* Public form route */}
-                <Route path="/f/:slug" element={<PublicFormPage />} />
+                {/* Admin routes — isolated ErrorBoundary */}
+                <Route path="/admin/produtos" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ProductKnowledgeList /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/produtos/:productId" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ProductKnowledgeEditor /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><Settings /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><LeadsQuentes /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AIBenchmark /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/pendencias" element={<ProtectedRoute><ErrorBoundary><PendenciasPerda /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><PipelineConfigPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CustomFieldsConfigPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ImportacaoPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ZadarmaConfigPage /></ErrorBoundary></ProtectedRoute>} />
 
-                {/* CS Module routes */}
-                <Route path="/cs" element={<ProtectedRoute><CSDashboardPage /></ProtectedRoute>} />
-                <Route path="/cs/clientes" element={<ProtectedRoute><CSClientesPage /></ProtectedRoute>} />
-                <Route path="/cs/clientes/:id" element={<ProtectedRoute><CSClienteDetailPage /></ProtectedRoute>} />
-                <Route path="/cs/pesquisas" element={<ProtectedRoute><CSPesquisasPage /></ProtectedRoute>} />
-                <Route path="/cs/incidencias" element={<ProtectedRoute><CSIncidenciasPage /></ProtectedRoute>} />
-                <Route path="/cs/playbooks" element={<ProtectedRoute><CSPlaybooksPage /></ProtectedRoute>} />
+                {/* CS Module — isolated ErrorBoundary */}
+                <Route path="/cs" element={<ProtectedRoute><ErrorBoundary><CSDashboardPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/clientes" element={<ProtectedRoute><ErrorBoundary><CSClientesPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/clientes/:id" element={<ProtectedRoute><ErrorBoundary><CSClienteDetailPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/pesquisas" element={<ProtectedRoute><ErrorBoundary><CSPesquisasPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/incidencias" element={<ProtectedRoute><ErrorBoundary><CSIncidenciasPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/playbooks" element={<ProtectedRoute><ErrorBoundary><CSPlaybooksPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

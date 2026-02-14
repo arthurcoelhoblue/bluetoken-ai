@@ -3,17 +3,19 @@ import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
 import type { Contact } from '@/types/deal';
 
-export function useContacts(search?: string) {
+const PAGE_SIZE = 25;
+
+export function useContacts(search?: string, page = 0) {
   const { activeCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['contacts', activeCompany, search],
-    queryFn: async (): Promise<Contact[]> => {
+    queryKey: ['contacts', activeCompany, search, page],
+    queryFn: async (): Promise<{ data: Contact[]; count: number }> => {
       let query = supabase
         .from('contacts')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('nome', { ascending: true })
-        .limit(200);
+        .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
       if (activeCompany !== 'ALL') {
         query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
@@ -23,9 +25,9 @@ export function useContacts(search?: string) {
         query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);
       }
 
-      const { data, error } = await query;
+      const { data, error, count } = await query;
       if (error) throw error;
-      return (data ?? []) as Contact[];
+      return { data: (data ?? []) as Contact[], count: count ?? 0 };
     },
   });
 }

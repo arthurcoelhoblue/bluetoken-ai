@@ -17,7 +17,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
+    const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
     const sb = createClient(supabaseUrl, serviceKey);
 
     // ========== EXECUTE BRANCH ==========
@@ -176,29 +176,30 @@ Temperatura: ${deal.temperatura || "não definida"}`;
       }
 
       try {
-        if (lovableApiKey) {
-          const aiResp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        if (anthropicApiKey) {
+          const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${lovableApiKey}`,
-              "Content-Type": "application/json",
+              "x-api-key": anthropicApiKey,
+              "anthropic-version": "2023-06-01",
+              "content-type": "application/json",
             },
             body: JSON.stringify({
-              model: "google/gemini-2.5-flash",
-              messages: [
-                { role: "system", content: systemPrompt },
-                { role: "user", content: userPrompt },
-              ],
+              model: "claude-sonnet-4-20250514",
+              max_tokens: 500,
+              temperature: 0.5,
+              system: systemPrompt,
+              messages: [{ role: "user", content: userPrompt }],
             }),
           });
 
           if (aiResp.ok) {
             const aiData = await aiResp.json();
-            const message = aiData.choices?.[0]?.message?.content || "";
+            const message = aiData.content?.[0]?.text || "";
             messagesPreview.push({ deal_id: deal.id, contact_name: contactName, message, approved: true });
           } else {
             const errText = await aiResp.text();
-            console.error("AI error:", aiResp.status, errText);
+            console.error("Anthropic error:", aiResp.status, errText);
             messagesPreview.push({
               deal_id: deal.id, contact_name: contactName,
               message: `[Erro na geração - status ${aiResp.status}]`, approved: false,
@@ -207,7 +208,7 @@ Temperatura: ${deal.temperatura || "não definida"}`;
         } else {
           messagesPreview.push({
             deal_id: deal.id, contact_name: contactName,
-            message: "[LOVABLE_API_KEY não configurada]", approved: false,
+            message: "[ANTHROPIC_API_KEY não configurada]", approved: false,
           });
         }
       } catch (e) {

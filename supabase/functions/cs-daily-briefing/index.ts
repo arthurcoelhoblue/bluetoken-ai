@@ -7,71 +7,37 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      return new Response(JSON.stringify({ error: 'LOVABLE_API_KEY não configurada' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY não configurada' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Get all CSMs (users that have cs_customers assigned)
-    const { data: csmRows } = await supabase
-      .from('cs_customers')
-      .select('csm_id')
-      .eq('is_active', true)
-      .not('csm_id', 'is', null);
-
+    const { data: csmRows } = await supabase.from('cs_customers').select('csm_id').eq('is_active', true).not('csm_id', 'is', null);
     const csmIds = [...new Set((csmRows ?? []).map((r: any) => r.csm_id))];
 
     if (csmIds.length === 0) {
-      return new Response(JSON.stringify({ briefings: 0 }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(JSON.stringify({ briefings: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     let briefings = 0;
 
     for (const csmId of csmIds) {
-      // Gather data for this CSM
       const [customersRes, incidentsRes, renewalsRes] = await Promise.all([
-        supabase
-          .from('cs_customers')
-          .select('id, health_score, health_status, valor_mrr, contacts(nome)')
-          .eq('csm_id', csmId)
-          .eq('is_active', true),
-        supabase
-          .from('cs_incidents')
-          .select('titulo, gravidade, status, customer_id')
-          .in('status', ['ABERTA', 'EM_ANDAMENTO'])
-          .limit(20),
-        supabase
-          .from('cs_customers')
-          .select('id, proxima_renovacao, valor_mrr, health_status, contacts(nome)')
-          .eq('csm_id', csmId)
-          .eq('is_active', true)
-          .gte('proxima_renovacao', new Date().toISOString())
-          .lte('proxima_renovacao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()),
+        supabase.from('cs_customers').select('id, health_score, health_status, valor_mrr, empresa, contacts(nome)').eq('csm_id', csmId).eq('is_active', true),
+        supabase.from('cs_incidents').select('titulo, gravidade, status, customer_id').in('status', ['ABERTA', 'EM_ANDAMENTO']).limit(20),
+        supabase.from('cs_customers').select('id, proxima_renovacao, valor_mrr, health_status, contacts(nome)').eq('csm_id', csmId).eq('is_active', true).gte('proxima_renovacao', new Date().toISOString()).lte('proxima_renovacao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()),
       ]);
 
       const customers = customersRes.data ?? [];
-      const incidents = (incidentsRes.data ?? []).filter((i: any) =>
-        customers.some((c: any) => c.id === i.customer_id)
-      );
+      const incidents = (incidentsRes.data ?? []).filter((i: any) => customers.some((c: any) => c.id === i.customer_id));
       const renewals = renewalsRes.data ?? [];
 
       if (customers.length === 0) continue;
 
-      // Build context for AI
       const healthDist: Record<string, number> = {};
       let totalMrr = 0;
       customers.forEach((c: any) => {
@@ -79,44 +45,37 @@ serve(async (req) => {
         totalMrr += c.valor_mrr || 0;
       });
 
-      const contextText = `
-Portfólio: ${customers.length} clientes, MRR total R$ ${totalMrr.toLocaleString('pt-BR')}
+      const contextText = `Portfólio: ${customers.length} clientes, MRR total R$ ${totalMrr.toLocaleString('pt-BR')}
 Distribuição Health: ${Object.entries(healthDist).map(([k, v]) => `${k}=${v}`).join(', ')}
 Incidências abertas: ${incidents.length} (${incidents.filter((i: any) => i.gravidade === 'ALTA' || i.gravidade === 'CRITICA').length} alta/crítica)
 Renovações próximas (30 dias): ${renewals.length} totalizando R$ ${renewals.reduce((s: number, r: any) => s + (r.valor_mrr || 0), 0).toLocaleString('pt-BR')}
-Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c: any) => (c as any).contacts?.nome || 'N/A').join(', ') || 'Nenhum'}
-      `.trim();
+Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c: any) => (c as any).contacts?.nome || 'N/A').join(', ') || 'Nenhum'}`;
 
-      // Call AI for briefing
       try {
-        const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
           },
           body: JSON.stringify({
-            model: 'google/gemini-3-flash-preview',
-            messages: [
-              {
-                role: 'system',
-                content: 'Você é a Amélia, assistente de Customer Success. Gere um briefing diário conciso em português brasileiro com: 1) Resumo do portfólio, 2) Alertas urgentes, 3) Top 3 ações recomendadas para hoje. Use bullets, seja direta e acionável. Máximo 300 palavras.'
-              },
-              { role: 'user', content: contextText },
-            ],
-            stream: false,
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1000,
+            temperature: 0.4,
+            system: 'Você é a Amélia, assistente de Customer Success. Gere um briefing diário conciso em português brasileiro com: 1) Resumo do portfólio, 2) Alertas urgentes, 3) Top 3 ações recomendadas para hoje. Use bullets, seja direta e acionável. Máximo 300 palavras.',
+            messages: [{ role: 'user', content: contextText }],
           }),
         });
 
         if (!aiResponse.ok) {
-          console.warn(`[CS-Briefing] AI error for CSM ${csmId}: ${aiResponse.status}`);
+          console.warn(`[CS-Briefing] Anthropic error for CSM ${csmId}: ${aiResponse.status}`);
           continue;
         }
 
         const aiData = await aiResponse.json();
-        const briefingText = aiData.choices?.[0]?.message?.content || 'Briefing indisponível.';
+        const briefingText = aiData.content?.[0]?.text || 'Briefing indisponível.';
 
-        // Save as notification
         await supabase.from('notifications').insert({
           user_id: csmId,
           empresa: customers[0]?.empresa || 'BLUE',
@@ -133,15 +92,9 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
       }
     }
 
-    return new Response(
-      JSON.stringify({ briefings }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ briefings }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     console.error('[CS-Daily-Briefing] Erro:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

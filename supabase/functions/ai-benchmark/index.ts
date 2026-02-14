@@ -24,10 +24,10 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
-    if (!GOOGLE_API_KEY && !LOVABLE_API_KEY) {
-      return new Response(JSON.stringify({ error: 'Nenhuma API key configurada (GOOGLE_API_KEY ou LOVABLE_API_KEY)' }), {
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'Nenhuma API key configurada (GOOGLE_API_KEY ou ANTHROPIC_API_KEY)' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -140,28 +140,28 @@ Retorne APENAS o JSON, sem markdown.`;
           }
         }
 
-        // Fallback para Lovable AI Gateway
-        if (!benchResult && LOVABLE_API_KEY) {
-          const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        // Fallback para Anthropic API
+        if (!benchResult && ANTHROPIC_API_KEY) {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
             headers: {
-              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-              'Content-Type': 'application/json',
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
             },
             body: JSON.stringify({
-              model: modelo,
-              messages: [
-                { role: 'system', content: benchmarkSystemPrompt },
-                { role: 'user', content: userPrompt },
-              ],
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 1500,
               temperature: 0.3,
+              system: benchmarkSystemPrompt,
+              messages: [{ role: 'user', content: userPrompt }],
             }),
           });
 
           if (response.ok) {
             const data = await response.json();
-            const content = data.choices?.[0]?.message?.content;
-            const tokens = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
+            const content = data.content?.[0]?.text;
+            const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
             const tempoMs = Date.now() - startTime;
 
             if (content) {
@@ -171,7 +171,7 @@ Retorne APENAS o JSON, sem markdown.`;
             }
           } else {
             const errText = await response.text();
-            console.error(`[Benchmark] Lovable AI falhou:`, response.status, errText);
+            console.error(`[Benchmark] Anthropic falhou:`, response.status, errText);
           }
         }
 

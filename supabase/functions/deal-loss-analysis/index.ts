@@ -6,26 +6,23 @@ const corsHeaders = {
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders })
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const lovableApiKey = Deno.env.get('LOVABLE_API_KEY')
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
+    if (!ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    }
 
     const { deal_id } = await req.json()
     if (!deal_id) {
-      return new Response(JSON.stringify({ error: 'deal_id is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(JSON.stringify({ error: 'deal_id is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const supabase = createClient(supabaseUrl, serviceRoleKey)
 
-    // Get deal with contact info
     const { data: deal, error: dealErr } = await supabase
       .from('deals')
       .select('*, contacts:contact_id(id, nome, legacy_lead_id)')
@@ -33,14 +30,9 @@ Deno.serve(async (req) => {
       .single()
 
     if (dealErr || !deal) {
-      console.error('Deal not found:', dealErr)
-      return new Response(JSON.stringify({ error: 'Deal not found' }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Try to find messages via legacy_lead_id from contact
     const leadId = (deal as any).contacts?.legacy_lead_id
     let messages: any[] = []
 
@@ -51,12 +43,10 @@ Deno.serve(async (req) => {
         .eq('lead_id', leadId)
         .order('created_at', { ascending: true })
         .limit(50)
-
       messages = msgs ?? []
     }
 
     if (messages.length === 0) {
-      // No messages to analyze — auto-resolve with closer's category
       await supabase.from('deals').update({
         motivo_perda_ia: 'Sem histórico de conversas para análise',
         categoria_perda_ia: deal.categoria_perda_closer,
@@ -65,12 +55,9 @@ Deno.serve(async (req) => {
         perda_resolvida: true,
       }).eq('id', deal_id)
 
-      return new Response(JSON.stringify({ success: true, auto_resolved: true }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(JSON.stringify({ success: true, auto_resolved: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
-    // Build conversation transcript
     const transcript = messages.map((m: any) => {
       const dir = m.direcao === 'INBOUND' ? 'LEAD' : 'SDR'
       return `[${dir}]: ${m.conteudo}`
@@ -90,34 +77,30 @@ Com base APENAS no conteúdo da conversa, identifique o motivo real da perda. Re
 
 Responda APENAS com o JSON, sem markdown.`
 
-    // Call AI via Lovable AI Gateway
-    const aiResponse = await fetch('https://ai-gateway.lovable.dev/v1/chat/completions', {
+    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${lovableApiKey}`,
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [{ role: 'user', content: prompt }],
-        temperature: 0.3,
+        model: 'claude-sonnet-4-20250514',
         max_tokens: 500,
+        temperature: 0.3,
+        messages: [{ role: 'user', content: prompt }],
       }),
     })
 
     if (!aiResponse.ok) {
       const errText = await aiResponse.text()
-      console.error('AI Gateway error:', errText)
-      return new Response(JSON.stringify({ error: 'AI analysis failed' }), {
-        status: 500,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      console.error('Anthropic error:', errText)
+      return new Response(JSON.stringify({ error: 'AI analysis failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const aiData = await aiResponse.json()
-    const content = aiData.choices?.[0]?.message?.content ?? ''
+    const content = aiData.content?.[0]?.text ?? ''
 
-    // Parse JSON response
     let categoria_ia = 'OUTRO'
     let explicacao_ia = content
 
@@ -130,13 +113,8 @@ Responda APENAS com o JSON, sem markdown.`
       console.error('Failed to parse AI response as JSON, using raw text')
     }
 
-    // Check if categories match
     const match = categoria_ia === deal.categoria_perda_closer
-
-    const updates: Record<string, unknown> = {
-      motivo_perda_ia: explicacao_ia,
-      categoria_perda_ia: categoria_ia,
-    }
+    const updates: Record<string, unknown> = { motivo_perda_ia: explicacao_ia, categoria_perda_ia: categoria_ia }
 
     if (match) {
       updates.motivo_perda_final = deal.motivo_perda_closer
@@ -147,19 +125,9 @@ Responda APENAS com o JSON, sem markdown.`
 
     await supabase.from('deals').update(updates).eq('id', deal_id)
 
-    return new Response(JSON.stringify({
-      success: true,
-      categoria_ia,
-      match,
-      auto_resolved: match,
-    }), {
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(JSON.stringify({ success: true, categoria_ia, match, auto_resolved: match }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {
     console.error('Unexpected error:', err)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    })
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   }
 })

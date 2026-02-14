@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { usePipelines } from '@/hooks/usePipelines';
@@ -30,6 +31,7 @@ function useOwnerOptions() {
 
 function PipelineContent() {
   const { activeCompany } = useCompany();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
   const { data: owners = [] } = useOwnerOptions();
   const { activeOffers } = useActiveTokenizaOffers();
@@ -39,7 +41,7 @@ function PipelineContent() {
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
-  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(searchParams.get('deal'));
 
   const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
 

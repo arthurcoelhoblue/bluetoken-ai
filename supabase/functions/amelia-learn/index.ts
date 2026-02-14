@@ -259,8 +259,8 @@ serve(async (req) => {
 
       if (timelines.length >= 5) {
         // Find common subsequences using AI
-        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-        if (LOVABLE_API_KEY) {
+        const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+        if (ANTHROPIC_API_KEY) {
           try {
             const prompt = `Analise estas timelines de deals que foram PERDIDOS e identifique subsequências de 2-4 eventos que aparecem em 50%+ dos casos. Cada timeline é uma lista de tipos de atividade em ordem cronológica.
 
@@ -269,53 +269,31 @@ ${timelines.map((t, i) => `${i + 1}. ${t.events.join(' → ')}`).join('\n')}
 
 Retorne APENAS um JSON com tool_calls. Para cada padrão encontrado, use a tool "report_sequence" com: events (array de strings), match_pct (number 0-100), window_days (number estimado), description (string em PT-BR).`;
 
-            const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'google/gemini-3-flash-preview',
-                messages: [
-                  { role: 'system', content: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM.' },
-                  { role: 'user', content: prompt },
-                ],
-                tools: [{
-                  type: 'function',
-                  function: {
-                    name: 'report_sequence',
-                    description: 'Report a detected event sequence pattern',
-                    parameters: {
-                      type: 'object',
-                      properties: {
-                        sequences: {
-                          type: 'array',
-                          items: {
-                            type: 'object',
-                            properties: {
-                              events: { type: 'array', items: { type: 'string' } },
-                              match_pct: { type: 'number' },
-                              window_days: { type: 'number' },
-                              description: { type: 'string' },
-                            },
-                            required: ['events', 'match_pct', 'window_days', 'description'],
-                          },
-                        },
-                      },
-                      required: ['sequences'],
-                    },
-                  },
-                }],
-                tool_choice: { type: 'function', function: { name: 'report_sequence' } },
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                temperature: 0.3,
+                system: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM. Retorne APENAS JSON válido sem markdown.',
+                messages: [{ role: 'user', content: `${prompt}\n\nRetorne JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window_days": number, "description": "string em PT-BR"}]}` }],
               }),
             });
 
             if (aiResponse.ok) {
               const aiData = await aiResponse.json();
-              const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-              if (toolCall) {
-                const args = JSON.parse(toolCall.function.arguments);
+              const content = aiData.content?.[0]?.text ?? '';
+              let args: any = { sequences: [] };
+              try {
+                const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                args = JSON.parse(cleaned);
+              } catch { /* ignore */ }
+              if (args) {
                 for (const seq of (args.sequences || [])) {
                   if (seq.match_pct >= 50 && seq.events.length >= 2) {
                     const hash = `seq_perda_${seq.events.join('_')}_${empresa}`;
@@ -378,63 +356,41 @@ Retorne APENAS um JSON com tool_calls. Para cada padrão encontrado, use a tool 
       }
 
       if (churnTimelines.length >= 3) {
-        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-        if (LOVABLE_API_KEY) {
+        const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+        if (ANTHROPIC_API_KEY) {
           try {
             const prompt = `Analise estas timelines de leads que fizeram OPT-OUT (cancelamento). Identifique subsequências de 2-4 intents que precedem o cancelamento em 50%+ dos casos.
 
 Timelines de intents:
 ${churnTimelines.map((t, i) => `${i + 1}. ${t.intents.join(' → ')}`).join('\n')}
 
-Retorne APENAS via tool_calls.`;
+Retorne APENAS JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window_days": number, "description": "string em PT-BR"}]}`;
 
-            const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
               headers: {
-                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-                'Content-Type': 'application/json',
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
               },
               body: JSON.stringify({
-                model: 'google/gemini-3-flash-preview',
-                messages: [
-                  { role: 'system', content: 'Analista de padrões de churn em CRM.' },
-                  { role: 'user', content: prompt },
-                ],
-                tools: [{
-                  type: 'function',
-                  function: {
-                    name: 'report_sequence',
-                    description: 'Report churn sequence pattern',
-                    parameters: {
-                      type: 'object',
-                      properties: {
-                        sequences: {
-                          type: 'array',
-                          items: {
-                            type: 'object',
-                            properties: {
-                              events: { type: 'array', items: { type: 'string' } },
-                              match_pct: { type: 'number' },
-                              window_days: { type: 'number' },
-                              description: { type: 'string' },
-                            },
-                            required: ['events', 'match_pct', 'window_days', 'description'],
-                          },
-                        },
-                      },
-                      required: ['sequences'],
-                    },
-                  },
-                }],
-                tool_choice: { type: 'function', function: { name: 'report_sequence' } },
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                temperature: 0.3,
+                system: 'Analista de padrões de churn em CRM. Retorne APENAS JSON válido sem markdown.',
+                messages: [{ role: 'user', content: prompt }],
               }),
             });
 
             if (aiResponse.ok) {
               const aiData = await aiResponse.json();
-              const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
-              if (toolCall) {
-                const args = JSON.parse(toolCall.function.arguments);
+              const content = aiData.content?.[0]?.text ?? '';
+              let args: any = { sequences: [] };
+              try {
+                const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                args = JSON.parse(cleaned);
+              } catch { /* ignore */ }
+              if (args) {
                 for (const seq of (args.sequences || [])) {
                   if (seq.match_pct >= 50 && seq.events.length >= 2) {
                     const hash = `seq_churn_${seq.events.join('_')}_${empresa}`;
