@@ -8,8 +8,8 @@ function TestConsumer() {
   return React.createElement("div", null,
     React.createElement("span", { "data-testid": "company" }, activeCompany),
     React.createElement("span", { "data-testid": "label" }, companyLabel),
-    React.createElement("button", { onClick: () => setActiveCompany("tokeniza") }, "Switch Tokeniza"),
-    React.createElement("button", { onClick: () => setActiveCompany("all") }, "Switch All"),
+    React.createElement("button", { onClick: () => setActiveCompany("TOKENIZA") }, "Switch Tokeniza"),
+    React.createElement("button", { onClick: () => setActiveCompany("ALL") }, "Switch All"),
   );
 }
 
@@ -18,13 +18,13 @@ describe("CompanyContext", () => {
     localStorage.clear();
   });
 
-  it("defaults to blue when no stored value", () => {
+  it("defaults to BLUE when no stored value", () => {
     const { getByTestId } = render(
       React.createElement(CompanyProvider, null,
         React.createElement(TestConsumer)
       )
     );
-    expect(getByTestId("company").textContent).toBe("blue");
+    expect(getByTestId("company").textContent).toBe("BLUE");
     expect(getByTestId("label").textContent).toBe("Blue Consult");
   });
 
@@ -35,28 +35,38 @@ describe("CompanyContext", () => {
       )
     );
     getByText("Switch Tokeniza").click();
-    expect(getByTestId("company").textContent).toBe("tokeniza");
-    expect(localStorage.getItem("bluecrm-company")).toBe("tokeniza");
+    expect(getByTestId("company").textContent).toBe("TOKENIZA");
+    expect(localStorage.getItem("bluecrm-company")).toBe("TOKENIZA");
   });
 
   it("reads stored value on mount", () => {
-    localStorage.setItem("bluecrm-company", "all");
+    localStorage.setItem("bluecrm-company", "ALL");
     const { getByTestId } = render(
       React.createElement(CompanyProvider, null,
         React.createElement(TestConsumer)
       )
     );
-    expect(getByTestId("company").textContent).toBe("all");
+    expect(getByTestId("company").textContent).toBe("ALL");
     expect(getByTestId("label").textContent).toBe("Todas");
   });
 
-  it("falls back to blue for invalid stored value", () => {
+  it("migrates old lowercase values", () => {
+    localStorage.setItem("bluecrm-company", "blue");
+    const { getByTestId } = render(
+      React.createElement(CompanyProvider, null,
+        React.createElement(TestConsumer)
+      )
+    );
+    expect(getByTestId("company").textContent).toBe("BLUE");
+  });
+
+  it("falls back to BLUE for invalid stored value", () => {
     localStorage.setItem("bluecrm-company", "invalid");
     const { getByTestId } = render(
       React.createElement(CompanyProvider, null,
         React.createElement(TestConsumer)
       )
     );
-    expect(getByTestId("company").textContent).toBe("blue");
+    expect(getByTestId("company").textContent).toBe("BLUE");
   });
 });

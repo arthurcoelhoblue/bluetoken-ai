@@ -7,7 +7,7 @@ import { toast } from '@/hooks/use-toast';
 
 function useEmpresa() {
   const { activeCompany } = useCompany();
-  return activeCompany === 'all' ? 'BLUE' : activeCompany.toUpperCase();
+  return activeCompany === 'ALL' ? 'BLUE' : activeCompany;
 }
 
 // ─── Sazonalidade ───

@@ -6,8 +6,8 @@ import type { CaptureForm, CaptureFormField, CaptureFormSettings } from '@/types
 
 function useEmpresa() {
   const { activeCompany } = useCompany();
-  if (activeCompany === 'all') return 'BLUE';
-  return activeCompany.toUpperCase();
+  if (activeCompany === 'ALL') return 'BLUE';
+  return activeCompany;
 }
 
 export function useCaptureForms() {

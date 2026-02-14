@@ -5,8 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { LeaderboardEntry, Badge, BadgeAward, PointsLog } from '@/types/gamification';
 
 function empresaFilter(activeCompany: string) {
-  if (activeCompany === 'all') return null;
-  return activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA';
+  if (activeCompany === 'ALL') return null;
+  return activeCompany as 'BLUE' | 'TOKENIZA';
 }
 
 export function useLeaderboard() {

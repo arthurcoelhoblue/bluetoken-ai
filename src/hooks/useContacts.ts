@@ -15,8 +15,8 @@ export function useContacts(search?: string) {
         .order('nome', { ascending: true })
         .limit(200);
 
-      if (activeCompany !== 'all') {
-        query = query.eq('empresa', activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA');
+      if (activeCompany !== 'ALL') {
+        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
 
       if (search) {

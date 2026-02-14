@@ -53,7 +53,7 @@ export function FaqFormDialog({ open, onOpenChange }: FaqFormDialogProps) {
       categoria,
       tags,
       status,
-      empresa: activeCompany === 'tokeniza' ? 'TOKENIZA' : 'BLUE',
+      empresa: activeCompany === 'ALL' ? 'BLUE' : activeCompany,
     }, {
       onSuccess: () => {
         toast.success(status === 'PENDENTE' ? 'Enviado para aprovação' : 'Rascunho salvo');

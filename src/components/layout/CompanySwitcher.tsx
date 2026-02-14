@@ -8,9 +8,9 @@ import {
 } from '@/components/ui/dropdown-menu';
 
 const options: { value: ActiveCompany; label: string; color: string }[] = [
-  { value: 'blue', label: 'Blue Consult', color: 'bg-primary' },
-  { value: 'tokeniza', label: 'Tokeniza', color: 'bg-accent' },
-  { value: 'all', label: 'Todas', color: 'bg-muted-foreground' },
+  { value: 'BLUE', label: 'Blue Consult', color: 'bg-primary' },
+  { value: 'TOKENIZA', label: 'Tokeniza', color: 'bg-accent' },
+  { value: 'ALL', label: 'Todas', color: 'bg-muted-foreground' },
 ];
 
 export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {

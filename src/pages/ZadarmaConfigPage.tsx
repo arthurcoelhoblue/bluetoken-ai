@@ -28,7 +28,7 @@ const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
 
 function ZadarmaConfigContent() {
   const { activeCompany } = useCompany();
-  const activeEmpresa: EmpresaTipo = activeCompany === 'all' ? 'BLUE' : (activeCompany === 'blue' ? 'BLUE' : 'TOKENIZA');
+  const activeEmpresa: EmpresaTipo = activeCompany === 'ALL' ? 'BLUE' : activeCompany as EmpresaTipo;
 
   const { data: config, isLoading: configLoading } = useZadarmaConfig(activeEmpresa);
   const saveConfig = useSaveZadarmaConfig();
