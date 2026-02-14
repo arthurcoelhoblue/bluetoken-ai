@@ -53,7 +53,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
   const saveEdit = async () => {
     if (!contactId || !editField) return;
     try {
-      await update.mutateAsync({ id: contactId, [editField]: editValue || null } as any);
+      await update.mutateAsync({ id: contactId, [editField]: editValue || null } as Parameters<typeof update.mutateAsync>[0]);
       toast.success('Campo atualizado');
     } catch {
       toast.error('Erro ao atualizar');
@@ -288,7 +288,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                     leadNome={contact.nome}
                     messages={messages}
                     isLoading={messagesLoading}
-                    modo={bridge.conversationState?.modo as any || 'SDR_IA'}
+                    modo={(bridge.conversationState?.modo as any) || 'SDR_IA'}
                     assumidoPorNome={null}
                     maxHeight="400px"
                   />

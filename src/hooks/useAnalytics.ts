@@ -25,7 +25,7 @@ export function useAnalyticsFunnel(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_funnel', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_funnel' as any).select('*');
+      let q = supabase.from('analytics_funnel').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -42,7 +42,7 @@ export function useAnalyticsConversion(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_conversion', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_conversion' as any).select('*');
+      let q = supabase.from('analytics_conversion').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -58,7 +58,7 @@ export function useAnalyticsVendedor() {
   return useQuery({
     queryKey: ['analytics_vendedor', activeCompany],
     queryFn: async () => {
-      let q = supabase.from('analytics_vendedor' as any).select('*');
+      let q = supabase.from('analytics_vendedor').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       q = q.order('valor_ganho', { ascending: false });
@@ -74,7 +74,7 @@ export function useAnalyticsPeriodo(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_periodo', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_deals_periodo' as any).select('*');
+      let q = supabase.from('analytics_deals_periodo').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -91,7 +91,7 @@ export function useAnalyticsMotivosPerda(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_motivos_perda', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_motivos_perda' as any).select('*');
+      let q = supabase.from('analytics_motivos_perda').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -108,7 +108,7 @@ export function useAnalyticsCanalOrigem(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_canal_origem', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_canal_origem' as any).select('*');
+      let q = supabase.from('analytics_canal_origem').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -125,7 +125,7 @@ export function useAnalyticsFunilVisual(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_funil_visual', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_funil_visual' as any).select('*');
+      let q = supabase.from('analytics_funil_visual').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -142,7 +142,7 @@ export function useAnalyticsEvolucao(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_evolucao_mensal', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_evolucao_mensal' as any).select('*');
+      let q = supabase.from('analytics_evolucao_mensal').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
@@ -159,7 +159,7 @@ export function useAnalyticsLTV() {
   return useQuery({
     queryKey: ['analytics_ltv_cohort', activeCompany],
     queryFn: async () => {
-      let q = supabase.from('analytics_ltv_cohort' as any).select('*');
+      let q = supabase.from('analytics_ltv_cohort').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       q = q.order('cohort_mes', { ascending: false }).limit(24);
@@ -175,7 +175,7 @@ export function useAnalyticsEsforco() {
   return useQuery({
     queryKey: ['analytics_esforco_vendedor', activeCompany],
     queryFn: async () => {
-      let q = supabase.from('analytics_esforco_vendedor' as any).select('*');
+      let q = supabase.from('analytics_esforco_vendedor').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       q = q.order('total_perdidos', { ascending: false });
@@ -191,7 +191,7 @@ export function useAnalyticsCanalEsforco(pipelineId?: string | null) {
   return useQuery({
     queryKey: ['analytics_canal_esforco', activeCompany, pipelineId],
     queryFn: async () => {
-      let q = supabase.from('analytics_canal_esforco' as any).select('*');
+      let q = supabase.from('analytics_canal_esforco').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);

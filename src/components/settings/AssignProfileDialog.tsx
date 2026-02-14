@@ -24,7 +24,7 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
   const handleSave = () => {
     if (!profileId) return;
     assignMutation.mutate(
-      { user_id: userId, access_profile_id: profileId, empresa: empresa === 'all' ? null : empresa as any },
+      { user_id: userId, access_profile_id: profileId, empresa: empresa === 'all' ? null : empresa as 'BLUE' | 'TOKENIZA' },
       { onSuccess: () => onOpenChange(false) }
     );
   };

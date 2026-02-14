@@ -68,7 +68,7 @@ export function GlobalSearch() {
         .ilike('titulo', searchTerm)
         .limit(5);
       if (activeCompany !== 'ALL') {
-        dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as any);
+        dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
 
       // Build orgs query with empresa filter
@@ -99,13 +99,14 @@ export function GlobalSearch() {
         });
       });
 
-      dealsRes.data?.forEach((d: any) => {
+      dealsRes.data?.forEach((d) => {
+        const dealData = d as unknown as { id: string; titulo: string; valor: number | null };
         items.push({
-          id: d.id,
-          label: d.titulo,
-          sublabel: d.valor ? `R$ ${Number(d.valor).toLocaleString('pt-BR')}` : undefined,
+          id: dealData.id,
+          label: dealData.titulo,
+          sublabel: dealData.valor ? `R$ ${Number(dealData.valor).toLocaleString('pt-BR')}` : undefined,
           type: 'deal',
-          path: `/pipeline?deal=${d.id}`,
+          path: `/pipeline?deal=${dealData.id}`,
         });
       });
 

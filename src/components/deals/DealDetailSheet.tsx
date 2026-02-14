@@ -38,6 +38,7 @@ import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
+import type { DealActivityMetadata } from '@/types/metadata';
 
 function formatBRL(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
@@ -332,34 +333,38 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                             <>
                               {a.descricao && <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p>}
                               {/* Sprint 2: Show extracted data from SDR IA auto-creation */}
-                              {a.tipo === 'CRIACAO' && (a.metadata as any)?.origem === 'SDR_IA' && (a.metadata as any)?.dados_extraidos && (
-                                <div className="flex flex-wrap gap-1.5 mt-1.5">
-                                  {(a.metadata as any).dados_extraidos.necessidade_principal && (
-                                    <Badge variant="secondary" className="text-[10px]">
-                                      📋 {(a.metadata as any).dados_extraidos.necessidade_principal}
-                                    </Badge>
-                                  )}
-                                  {(a.metadata as any).dados_extraidos.valor_mencionado && (
-                                    <Badge variant="secondary" className="text-[10px]">
-                                      💰 R$ {Number((a.metadata as any).dados_extraidos.valor_mencionado).toLocaleString('pt-BR')}
-                                    </Badge>
-                                  )}
-                                  {(a.metadata as any).dados_extraidos.urgencia && (
-                                    <Badge variant="outline" className="text-[10px]">
-                                      ⚡ {(a.metadata as any).dados_extraidos.urgencia}
-                                    </Badge>
-                                  )}
-                                  {(a.metadata as any).dados_extraidos.decisor_identificado && (
-                                    <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
-                                  )}
-                                  {(a.metadata as any).dados_extraidos.prazo_mencionado && (
-                                    <Badge variant="outline" className="text-[10px]">
-                                      📅 {(a.metadata as any).dados_extraidos.prazo_mencionado}
-                                    </Badge>
-                                  )}
-                                  <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
-                                </div>
-                              )}
+                              {a.tipo === 'CRIACAO' && (() => {
+                                const meta = a.metadata as unknown as DealActivityMetadata | null;
+                                if (!meta?.origem || meta.origem !== 'SDR_IA' || !meta.dados_extraidos) return null;
+                                return (
+                                  <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                    {meta.dados_extraidos.necessidade_principal && (
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        📋 {meta.dados_extraidos.necessidade_principal}
+                                      </Badge>
+                                    )}
+                                    {meta.dados_extraidos.valor_mencionado && (
+                                      <Badge variant="secondary" className="text-[10px]">
+                                        💰 R$ {Number(meta.dados_extraidos.valor_mencionado).toLocaleString('pt-BR')}
+                                      </Badge>
+                                    )}
+                                    {meta.dados_extraidos.urgencia && (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        ⚡ {meta.dados_extraidos.urgencia}
+                                      </Badge>
+                                    )}
+                                    {meta.dados_extraidos.decisor_identificado && (
+                                      <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
+                                    )}
+                                    {meta.dados_extraidos.prazo_mencionado && (
+                                      <Badge variant="outline" className="text-[10px]">
+                                        📅 {meta.dados_extraidos.prazo_mencionado}
+                                      </Badge>
+                                    )}
+                                    <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+                                  </div>
+                                );
+                              })()}
                             </>
                           )}
                         </div>
@@ -382,7 +387,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                   {renderInlineField('Canal de origem', 'canal_origem', deal.canal_origem)}
                   {renderInlineField('Notas', 'notas', deal.notas)}
                   {renderInlineField('Etiqueta', 'etiqueta', deal.etiqueta)}
-                  <DealTagsEditor dealId={deal.id} tags={(deal as any).tags ?? []} />
+                  <DealTagsEditor dealId={deal.id} tags={(deal as unknown as { tags?: string[] }).tags ?? []} />
                   {deal.data_previsao_fechamento && (
                     <div className="py-2 px-2">
                       <span className="text-xs text-muted-foreground">Previsão de fechamento</span>

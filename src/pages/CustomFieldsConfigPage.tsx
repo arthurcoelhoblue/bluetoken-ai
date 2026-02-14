@@ -106,8 +106,8 @@ function CustomFieldsContent() {
         toast.success('Campo criado');
       }
       setDialogOpen(false);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -119,8 +119,8 @@ function CustomFieldsContent() {
     try {
       await deleteField.mutateAsync(f.id);
       toast.success('Campo excluído');
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -129,7 +129,7 @@ function CustomFieldsContent() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3 flex-wrap">
-        <Select value={filterEntity} onValueChange={v => setFilterEntity(v as any)}>
+        <Select value={filterEntity} onValueChange={v => setFilterEntity(v as CustomFieldEntityType | 'ALL')}>
           <SelectTrigger className="w-[160px]"><SelectValue placeholder="Entidade" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="ALL">Todas entidades</SelectItem>
