@@ -18,7 +18,7 @@ import {
   useResumeDealCadence,
   useCancelDealCadence,
 } from '@/hooks/useCadenciasCRM';
-import type { DealCadenciaStatus } from '@/types/cadencias';
+import type { DealCadenciaStatus } from '@/types/cadence';
 
 interface Props {
   dealId: string;

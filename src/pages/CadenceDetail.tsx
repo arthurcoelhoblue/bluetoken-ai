@@ -1,10 +1,12 @@
 // ========================================
-// PATCH 4.2 - Detalhe da Cadência
+// PATCH 8.3 - Detalhe da Cadência (Unificado)
 // ========================================
 
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCadence } from '@/hooks/useCadences';
+import { supabase } from '@/integrations/supabase/client';
 import {
   EMPRESA_LABELS,
   CANAL_LABELS,
@@ -14,6 +16,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Skeleton } from '@/components/ui/skeleton';
 import {
   Bot,
   GitBranch,
@@ -23,6 +27,7 @@ import {
   PauseCircle,
   XCircle,
   Edit,
+  Briefcase,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -296,9 +301,115 @@ function CadenceDetailContent() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Deals Vinculados */}
+          <LinkedDealsCard cadenceId={cadence.id} />
         </div>
       </div>
     </div>
+  );
+}
+
+// ========================================
+// Deals vinculados via deal_cadence_runs
+// ========================================
+
+const BRIDGE_STATUS_BADGE: Record<string, { label: string; className: string }> = {
+  ACTIVE: { label: 'Ativa', className: 'bg-success text-success-foreground' },
+  PAUSED: { label: 'Pausada', className: 'bg-warning text-warning-foreground' },
+  COMPLETED: { label: 'Concluída', className: 'bg-primary text-primary-foreground' },
+  CANCELLED: { label: 'Cancelada', className: 'bg-destructive text-destructive-foreground' },
+};
+
+function LinkedDealsCard({ cadenceId }: { cadenceId: string }) {
+  const { data: linkedDeals, isLoading } = useQuery({
+    queryKey: ['cadence-linked-deals', cadenceId],
+    queryFn: async () => {
+      // Get all lead_cadence_runs for this cadence
+      const { data: runs } = await supabase
+        .from('lead_cadence_runs')
+        .select('id, status, last_step_ordem, next_step_ordem')
+        .eq('cadence_id', cadenceId);
+
+      if (!runs?.length) return [];
+
+      const runIds = runs.map(r => r.id);
+      const { data: bridges } = await supabase
+        .from('deal_cadence_runs')
+        .select('id, deal_id, cadence_run_id, status, trigger_type')
+        .in('cadence_run_id', runIds);
+
+      if (!bridges?.length) return [];
+
+      // Get deal names
+      const dealIds = [...new Set(bridges.map(b => b.deal_id))];
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, titulo')
+        .in('id', dealIds);
+
+      const dealMap = new Map(deals?.map(d => [d.id, d.titulo]) ?? []);
+      const runMap = new Map(runs.map(r => [r.id, r]));
+
+      // Get total steps
+      const { count } = await supabase
+        .from('cadence_steps')
+        .select('id', { count: 'exact', head: true })
+        .eq('cadence_id', cadenceId);
+
+      const totalSteps = count ?? 0;
+
+      return bridges.map(b => {
+        const run = runMap.get(b.cadence_run_id);
+        return {
+          bridgeId: b.id,
+          dealId: b.deal_id,
+          dealTitulo: dealMap.get(b.deal_id) ?? 'Deal',
+          bridgeStatus: b.status,
+          triggerType: b.trigger_type,
+          lastStep: run?.last_step_ordem ?? 0,
+          totalSteps,
+        };
+      });
+    },
+  });
+
+  if (isLoading) return <Skeleton className="h-24" />;
+  if (!linkedDeals?.length) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <Briefcase className="h-4 w-4" />
+          Deals Vinculados
+          <Badge variant="secondary" className="ml-auto text-xs">{linkedDeals.length}</Badge>
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {linkedDeals.map(d => {
+          const badge = BRIDGE_STATUS_BADGE[d.bridgeStatus] ?? BRIDGE_STATUS_BADGE.ACTIVE;
+          const progress = d.totalSteps > 0 ? (d.lastStep / d.totalSteps) * 100 : 0;
+          return (
+            <div key={d.bridgeId} className="border rounded-md p-2.5 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium truncate">{d.dealTitulo}</span>
+                <Badge className={`text-[10px] ${badge.className}`}>{badge.label}</Badge>
+              </div>
+              <div className="flex items-center gap-2">
+                <Progress value={progress} className="h-1.5 flex-1" />
+                <span className="text-[10px] text-muted-foreground">{d.lastStep}/{d.totalSteps}</span>
+              </div>
+              {d.triggerType !== 'MANUAL' && (
+                <p className="text-[10px] text-muted-foreground">
+                  Trigger: {d.triggerType === 'STAGE_ENTER' ? 'Entrada' : d.triggerType === 'STAGE_EXIT' ? 'Saída' : d.triggerType}
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </CardContent>
+    </Card>
   );
 }
 
