@@ -1,167 +1,112 @@
 
-# Plano de Correções — Auditoria V2
 
-Analisei linha a linha o documento do PO. Abaixo, o plano organizado pela prioridade da auditoria, com o que faremos em cada sprint.
+# Auditoria V2 — Status de Atendimento Linha a Linha
 
----
-
-## Sprint Urgente (Itens Criticos e Altos)
-
-### 1. Migrar Edge Functions de Lovable AI Gateway para Anthropic API
-**Problema 2.1 [CRITICO]**: 8 de 10 edge functions IA usam o gateway Lovable/Gemini. Risco de dependencia e qualidade inferior.
-
-**Acao**: Migrar as 8 functions para chamar a Anthropic API diretamente (mesmo padrao do `sdr-ia-interpret`).
-
-Functions a migrar:
-- `copilot-chat`
-- `next-best-action`
-- `cs-daily-briefing`
-- `cs-trending-topics`
-- `amelia-mass-action`
-- `amelia-learn`
-- `ai-benchmark`
-- `deal-loss-analysis`
-
-**Tecnico**: Substituir o fetch para `ai.gateway.lovable.dev` por chamada direta a `https://api.anthropic.com/v1/messages` usando `ANTHROPIC_API_KEY` (secret). Modelo: `claude-sonnet-4-20250514`. Manter system prompt e logica de enriquecimento intactos.
-
-**Pre-requisito**: Configurar secret `ANTHROPIC_API_KEY` no projeto.
+Analisei cada item do relatório contra o codigo atual. Resultado: **a maioria foi atendida, mas 3 itens ficaram pendentes**.
 
 ---
 
-### 2. Configurar pg_cron para Edge Functions CS
-**Problema 2.2 [CRITICO]**: 7 functions CS foram criadas para rodar periodicamente mas nenhum CRON foi configurado. O modulo CS "nao pulsa".
+## Itens Atendidos (OK)
 
-**Acao**: Criar migration SQL com `pg_cron` + `pg_net` para agendar chamadas HTTP as functions.
-
-| Function | Cron |
-|----------|------|
-| cs-health-calculator | Diario 6h |
-| cs-nps-auto | Diario 9h |
-| cs-churn-predictor | Diario 7h |
-| cs-incident-detector | A cada 2h |
-| cs-renewal-alerts | Diario 8h |
-| cs-daily-briefing | Diario 8h30 |
-| cadence-runner | A cada 15min |
-
-**Tecnico**: Migration usando `cron.schedule()` + `net.http_post()` com `SUPABASE_URL` e `service_role_key`.
-
----
-
-### 3. Fix GlobalSearch: PipelinePage e OrganizationsPage
-**Problema 2.3 [ALTO]** e **2.11 [MEDIO]**: Busca global e NBA navegam para `/pipeline?deal=ID` e `/organizacoes?open=ID`, mas essas paginas nao leem os query params.
-
-**Acao**:
-- **PipelinePage**: Adicionar `useSearchParams` para ler `deal`. Se presente, abrir `DealDetailSheet` com o `deal` ID automaticamente.
-- **OrganizationsPage**: Adicionar `useSearchParams` para ler `open`. Se presente, definir `selectedOrgId` com o valor.
-
-**Arquivos**: `src/pages/PipelinePage.tsx`, `src/pages/OrganizationsPage.tsx`
+| Item | Evidencia no Codigo |
+|------|-------------------|
+| 2.1 [CRITICO] Migrar IA para Anthropic | `copilot-chat`, `next-best-action`, `cs-daily-briefing`, `cs-trending-topics`, `amelia-mass-action`, `amelia-learn`, `deal-loss-analysis` - todos usando `api.anthropic.com/v1/messages` com `claude-sonnet-4-20250514` |
+| 2.3 [ALTO] GlobalSearch navegacao | `PipelinePage.tsx` le `searchParams.get('deal')` na linha 44. `OrganizationsPage.tsx` le `searchParams.get('open')` na linha 24 |
+| 2.4 [ALTO] NPS via WhatsApp | Botao "Enviar NPS via WhatsApp" em `CSClienteDetailPage.tsx` linha 146, chama `cs-nps-auto` com `tipo: 'NPS'` |
+| 2.5 [ALTO] ErrorBoundary granular | `App.tsx` tem `ErrorBoundary` individual em cada rota (Pipeline, CS, Admin, Conversas) - linhas 100-158 |
+| 2.6 [ALTO] cs-nps-auto janela 24h | Logica corrigida: busca clientes ativos e filtra os que nao tem NPS nos ultimos 90 dias via query individual |
+| 2.7 [MEDIO] Dashboard CS briefing | `CSDailyBriefingCard` criado e integrado no topo do `CSDashboardPage` (linha 44) |
+| 2.8 [MEDIO] CSClienteDetail tabs | Tabs "Deals" (linha 131) e "Renovacao" (linha 132) adicionadas com conteudo funcional |
+| 2.10 [MEDIO] Paginacao contatos/deals | `useContacts` com `PAGE_SIZE=25` e `range()`. `useDeals` com `.limit(500)` |
+| 2.11 [MEDIO] NBA navegacao | Resolvido junto com 2.3 (PipelinePage le `?deal=`) |
+| 2.12 [BAIXO] classification.ts | Linha 6: `export type { EmpresaTipo } from './enums'` - corrigido |
+| NavLink orfao | Deletado - busca por "NavLink" em `src/components` retorna zero resultados |
 
 ---
 
-### 4. Fix cs-nps-auto: Janela de 24h perde clientes
-**Problema 2.6 [ALTO]**: Logica busca clientes com `data_primeiro_ganho` entre 90 e 91 dias atras. Se o CRON nao rodar naquele dia, o cliente e perdido.
+## Itens NAO Atendidos (3 pendentes)
 
-**Acao**: Mudar logica para "clientes ativos sem NPS nos ultimos 90 dias" usando LEFT JOIN em `cs_surveys`.
+### 1. [CRITICO] 2.2 — Zero CRON jobs (pg_cron)
+**Status: NAO FEITO**
 
-**Arquivo**: `supabase/functions/cs-nps-auto/index.ts`
+Nao existe nenhuma migration com `cron.schedule`. A busca por "cron" nas migrations retorna zero resultados. As 7 edge functions CS que deviam rodar automaticamente continuam sem agendamento.
 
----
+Impacto: O modulo CS "nao pulsa" — health scores nao recalculam, NPS nao e disparado automaticamente, churn nao e predito, briefing nao e gerado, alertas de renovacao nao sao enviados.
 
-### 5. ErrorBoundary granular por secao
-**Problema 2.5 [ALTO]**: Um unico ErrorBoundary envolve todas as rotas. Erro no CS derruba pipeline.
+**Acao**: Criar migration SQL com:
+- `CREATE EXTENSION IF NOT EXISTS pg_cron;`
+- 7 chamadas `cron.schedule()` com `net.http_post()` para as edge functions
 
-**Acao**: Agrupar rotas em `App.tsx` com `ErrorBoundary` por secao:
-- Pipeline/Deals
-- CS Module
-- Conversas/Atendimentos
-- Admin/Settings
+### 2. [MEDIO] 2.9 — Playbooks CS nao executam
+**Status: NAO ESTAVA NO PLANO**
 
-**Arquivo**: `src/App.tsx`
+O plano aprovado nao incluia este item. Os playbooks continuam sendo apenas CRUD — nenhuma engine dispara a execucao dos steps.
 
----
+**Acao**: Criar edge function `cs-playbook-runner` que:
+- Recebe trigger_type e customer_id
+- Busca playbooks ativos com aquele trigger
+- Executa os steps (notificacao, tarefa, email, WhatsApp)
+- Integrar com triggers existentes (health change, incident, renewal)
 
-## Sprint Funcional (Itens Medios)
+### 3. [BAIXO] 2.13 — CS Pesquisas page read-only
+**Status: NAO ESTAVA NO PLANO**
 
-### 6. Dashboard CS com briefing IA da Amelia
-**Problema 2.7 [MEDIO]**: Edge function `cs-daily-briefing` existe mas Dashboard CS nao a chama.
+A pagina `/cs/pesquisas` continua sem botao para enviar nova pesquisa.
 
-**Acao**: Adicionar componente `CSDailyBriefingCard` no topo do `CSDashboardPage` que chama a function e exibe o briefing.
-
-**Arquivos**: Novo `src/components/cs/CSDailyBriefingCard.tsx`, editar `src/pages/cs/CSDashboardPage.tsx`
-
----
-
-### 7. CSClienteDetail: Adicionar tabs Deals e Renovacao
-**Problema 2.8 [MEDIO]**: Faltam 4 tabs planejadas. Prioridade: Deals associados e Renovacao.
-
-**Acao**: Adicionar 2 tabs ao `CSClienteDetailPage`:
-- **Deals**: Listar deals do contato via `contact_id`
-- **Renovacao**: Mostrar datas de renovacao, historico, e botao para registrar renovacao
-
-**Arquivo**: `src/pages/cs/CSClienteDetailPage.tsx`
+**Acao**: Adicionar botao "Enviar Pesquisa" que abre dialog para selecionar cliente e tipo (NPS/CSAT), chamando `cs-nps-auto`.
 
 ---
 
-### 8. Botao "Enviar NPS via WhatsApp" no CSClienteDetail
-**Problema 2.4 [ALTO]**: O "Registrar NPS" e data entry manual. Nao envia ao cliente.
+## Ressalva: ai-benchmark ainda usa Google API
 
-**Acao**: Adicionar botao "Enviar NPS via WhatsApp" que chama `cs-nps-auto` com `customer_id` e `tipo: NPS`. Separar visualmente do "Registrar" manual.
+O `ai-benchmark` foi parcialmente migrado — ele usa Google Direct API como primario (com `GOOGLE_API_KEY`) e Anthropic como fallback. Nao depende mais do gateway Lovable, mas ainda prioriza Google/Gemini. O relatorio pedia migracao total para Anthropic.
 
-**Arquivo**: `src/pages/cs/CSClienteDetailPage.tsx`
-
----
-
-### 9. Paginacao em Contatos e Deals
-**Problema 2.10 [MEDIO]**: Contatos com `.limit(200)` e deals sem limit.
-
-**Acao**:
-- `useContacts`: Implementar paginacao com `range()` e `PAGE_SIZE=25` (mesmo padrao CS)
-- `useDeals`: Adicionar `.limit()` na query do Kanban (ou paginacao se aplicavel)
-
-**Arquivos**: `src/hooks/useContacts.ts`, `src/hooks/useDeals.ts`
+Alem disso, `sdr-ia-interpret` e `integration-health-check` ainda referenciam `ai.gateway.lovable.dev` (2 funcoes que nao estavam na lista de 8).
 
 ---
 
-### 10. Limpeza: NavLink orfao e classification.ts
-**Problema 2.12 [BAIXO]**: `classification.ts` re-exporta `EmpresaTipo` de `sgt.ts` ao inves de `enums.ts`.
-**Problema residual**: `NavLink.tsx` e orfao.
+## Resumo
 
-**Acao**:
-- Deletar `src/components/NavLink.tsx`
-- Em `classification.ts`: mudar `export type { EmpresaTipo } from './sgt'` para `from './enums'`
+| Categoria | Total | Atendido | Pendente |
+|-----------|-------|----------|----------|
+| CRITICO | 2 | 1 | 1 (pg_cron) |
+| ALTO | 4 | 4 | 0 |
+| MEDIO | 5 | 3 | 2 (playbooks, pesquisas) |
+| BAIXO | 2 | 1 | 1 (pesquisas) |
+| **Total** | **13** | **10** | **3** |
 
 ---
 
-## Resumo de Arquivos Impactados
+## Plano de Resolucao dos 3 Pendentes
 
+### Passo 1: pg_cron migration (CRITICO)
+Criar migration SQL que habilita `pg_cron` e agenda as 7 functions:
+
+```text
+cs-health-calculator  -> 0 6 * * *    (diario 6h)
+cs-nps-auto           -> 0 9 * * *    (diario 9h)
+cs-churn-predictor    -> 0 7 * * *    (diario 7h)
+cs-incident-detector  -> 0 */2 * * *  (cada 2h)
+cs-renewal-alerts     -> 0 8 * * *    (diario 8h)
+cs-daily-briefing     -> 30 8 * * *   (diario 8h30)
+cadence-runner        -> */15 * * * * (cada 15min)
+```
+
+### Passo 2: ai-benchmark full Anthropic
+Remover a logica Google Direct do `ai-benchmark` e usar apenas Anthropic como provider.
+
+### Passo 3: Botao "Enviar Pesquisa" em CSPesquisasPage
+Adicionar dialog simples com select de cliente + tipo, chamando `cs-nps-auto`.
+
+### Passo 4: Playbooks Engine (maior esforco)
+Criar `cs-playbook-runner` edge function + integrar com triggers de health change e resolucao de incidencia.
+
+### Arquivos impactados
 | Arquivo | Mudanca |
 |---------|---------|
-| 8 edge functions IA | Migrar para Anthropic API |
-| Migration SQL nova | pg_cron para 7 functions |
-| `src/pages/PipelinePage.tsx` | Ler `?deal=` param |
-| `src/pages/OrganizationsPage.tsx` | Ler `?open=` param |
-| `supabase/functions/cs-nps-auto/index.ts` | Janela NPS 90d sem survey |
-| `src/App.tsx` | ErrorBoundary por secao |
-| `src/pages/cs/CSDashboardPage.tsx` | Briefing IA card |
-| `src/pages/cs/CSClienteDetailPage.tsx` | Tabs + botao WhatsApp NPS |
-| `src/hooks/useContacts.ts` | Paginacao |
-| `src/hooks/useDeals.ts` | Limit na query |
-| `src/components/NavLink.tsx` | Deletar |
-| `src/types/classification.ts` | Fix import |
+| Nova migration SQL | pg_cron + cron.schedule para 7 functions |
+| `supabase/functions/ai-benchmark/index.ts` | Remover Google, usar so Anthropic |
+| `src/pages/cs/CSPesquisasPage.tsx` | Botao enviar pesquisa |
+| Nova edge function `cs-playbook-runner` | Engine de execucao de playbooks |
+| Triggers SQL | Chamar playbook-runner em health change e incident resolve |
 
----
-
-## Ordem de Execucao
-
-Pela dependencia e impacto, a ordem e:
-
-1. Configurar secret `ANTHROPIC_API_KEY`
-2. Migrar as 8 edge functions para Anthropic
-3. Criar migration pg_cron
-4. Fix GlobalSearch (PipelinePage + OrganizationsPage + NBA)
-5. Fix cs-nps-auto janela
-6. ErrorBoundary granular
-7. Dashboard CS briefing
-8. CSClienteDetail tabs + NPS WhatsApp
-9. Paginacao contatos/deals
-10. Limpeza (NavLink, classification.ts)
