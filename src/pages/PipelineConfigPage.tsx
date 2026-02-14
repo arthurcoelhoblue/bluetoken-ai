@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { Settings, Plus, Trash2, GripVertical, Clock } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Settings, Plus, Trash2, GripVertical, Clock, Zap } from 'lucide-react';
+import { AutoRulesTab } from '@/components/pipeline/AutoRulesTab';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage } from '@/hooks/usePipelineConfig';
 import { useQuery } from '@tanstack/react-query';
@@ -255,7 +257,22 @@ export default function PipelineConfigPage() {
         description="Gerencie pipelines e stages do CRM."
       />
       <div className="px-6 pb-8">
-        <PipelineConfigContent />
+        <Tabs defaultValue="funis" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="funis">
+              <Settings className="h-3.5 w-3.5 mr-1.5" />Funis e Stages
+            </TabsTrigger>
+            <TabsTrigger value="regras">
+              <Zap className="h-3.5 w-3.5 mr-1.5" />Regras Automáticas
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="funis">
+            <PipelineConfigContent />
+          </TabsContent>
+          <TabsContent value="regras">
+            <AutoRulesTab />
+          </TabsContent>
+        </Tabs>
       </div>
     </AppLayout>
   );
