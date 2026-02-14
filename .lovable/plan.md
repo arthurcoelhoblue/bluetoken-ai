@@ -1,144 +1,117 @@
 
-# Reducao de `as any` -- Melhoria 3.2 do Relatorio PO
+
+# Validacao com Zod (4.4) -- Melhoria do Relatorio PO
 
 ## Resumo
 
-O codebase possui **~640 ocorrencias** de `as any` espalhadas por **36 arquivos**. A grande maioria e desnecessaria -- as tabelas e views ja existem nos tipos gerados automaticamente. Remover esses casts melhora a seguranca de tipos, facilita refatoracoes futuras e previne bugs silenciosos.
+Atualmente, apenas **4 formularios** no projeto usam Zod para validacao (Login, Signup, Forgot Password e Template). Os demais **~10 formularios criticos** utilizam validacao manual com `if (!campo.trim())` e `toast.error()`, sem mensagens inline nos campos, sem limites de comprimento e sem sanitizacao adequada. Nenhuma edge function usa validacao de schema no servidor.
 
 ---
 
-## Diagnostico: Categorias de `as any`
+## Diagnostico: Estado Atual
 
-| Categoria | Qtd aprox. | Risco | Solucao |
-|-----------|-----------|-------|---------|
-| A. `.from('tabela' as any)` em tabelas/views que JA existem nos tipos | ~300 | ALTO | Remover o `as any` - tipos ja funcionam |
-| B. `data as any` em `.insert()` / `.update()` / `.upsert()` | ~50 | MEDIO | Usar `TablesInsert<'tabela'>` ou ajustar o tipo do payload |
-| C. `(obj as any).campo` para acessar campos de relacoes ou metadata | ~40 | MEDIO | Criar interfaces tipadas para metadata |
-| D. `as unknown as TipoCustom` nos retornos | ~50 | BAIXO | Substituir por cast tipado via generics do Supabase |
-| E. `v as any` em event handlers de UI (Select, Tabs) | ~10 | BAIXO | Usar o tipo enum correto |
-| F. `catch (e: any)` | ~5 | BAIXO | Usar `catch (e: unknown)` com type guard |
+| Formulario | Validacao Atual | Risco |
+|------------|----------------|-------|
+| ContactCreateDialog | `if (!nome.trim())` + toast | ALTO -- sem validacao de email/telefone |
+| OrgCreateDialog | `if (!nome.trim())` + toast | ALTO -- CNPJ sem formato, email sem validacao |
+| CreateDealDialog | `if (!titulo.trim())` + toast | MEDIO -- valor negativo possivel |
+| CreateUserDialog | `if (!nome \|\| !email \|\| !password)` + toast | ALTO -- email invalido aceito |
+| FaqFormDialog | `if (!pergunta.trim())` + toast | BAIXO |
+| EmailFromDealDialog | `if (!to.trim())` + toast | ALTO -- email invalido enviado ao servidor |
+| MetaAnualDialog | Nenhuma | MEDIO -- valores negativos possiveis |
+| AccessProfileEditor | `if (!nome.trim())` | BAIXO |
+| CaptureFormBuilderPage | Nenhuma | MEDIO |
+| GeneralTab (Settings) | useForm sem zodResolver | MEDIO -- sem limites em numeros |
+| **Edge Functions** | `if (!field)` manual | ALTO -- sem validacao de tipo/formato |
 
 ---
 
 ## Plano de Implementacao
 
-### Fase 1: `.from()` sem `as any` (maior impacto, zero risco)
+### Fase 1: Criar schemas centralizados em `src/schemas/`
 
-Todas estas tabelas/views ja existem em `types.ts`. Basta remover o `as any`:
+Criar arquivos de schema Zod organizados por dominio, seguindo o padrao ja existente em `src/schemas/auth.ts`:
 
-**Arquivos afetados:**
-- `src/hooks/useAnalytics.ts` -- 11 ocorrencias (analytics_funnel, analytics_conversion, etc.)
-- `src/hooks/useGamification.ts` -- 4 ocorrencias (seller_leaderboard, seller_badges, seller_badge_awards, seller_points_log)
-- `src/hooks/useMetas.ts` -- 11 ocorrencias (sazonalidade_indices, metas_vendedor, meta_progresso, comissao_regras, comissao_lancamentos, comissao_resumo_mensal)
-- `src/components/cockpit/CriticalAlerts.tsx` -- 8 ocorrencias (deals, pipelines, deal_activities)
-- `src/hooks/useOrganizationsPage.ts` -- 1 ocorrencia (organizations_with_stats)
-- `src/hooks/useWorkbench.ts` -- verificar ocorrencias
-- `src/hooks/useAtendimentos.ts` -- verificar ocorrencias
-- `src/hooks/useSdrIaStats.ts` -- verificar ocorrencias
-- `src/hooks/usePatch12.ts` -- verificar ocorrencias
+**Arquivos a criar:**
 
-**Acao:** Remover `as any` do parametro `.from()`. Exemplo:
-```typescript
-// Antes:
-supabase.from('analytics_funnel' as any).select('*')
+1. **`src/schemas/contacts.ts`** -- Schema para contatos e organizacoes
+   - `contactCreateSchema`: nome (min 2, max 100), email (opcional, formato valido), telefone (opcional, regex), cpf (opcional, regex), tipo (enum)
+   - `organizationCreateSchema`: nome (min 2, max 200), cnpj (opcional, regex 14 digitos), email (opcional, formato), estado (max 2)
 
-// Depois:
-supabase.from('analytics_funnel').select('*')
-```
+2. **`src/schemas/deals.ts`** -- Schema para deals
+   - `createDealSchema`: titulo (min 2, max 200), valor (number >= 0), temperatura (enum FRIO/MORNO/QUENTE)
 
-### Fase 2: Insert/Update tipados
+3. **`src/schemas/users.ts`** -- Schema para criacao de usuarios
+   - `createUserSchema`: nome (min 2, max 100), email (email valido), password (min 6), empresa (enum)
 
-Substituir `data as any` por casts tipados usando os tipos gerados.
+4. **`src/schemas/knowledge.ts`** -- Schema para FAQ
+   - `faqCreateSchema`: pergunta (min 5, max 500), resposta (min 10, max 5000), categoria (enum)
 
-**Arquivos afetados:**
-- `src/hooks/useMetas.ts` -- upsert/update de metas e comissoes
-- `src/hooks/useCustomFields.ts` -- insert/update de custom_field_definitions e custom_field_values
-- `src/hooks/useOrganizations.ts` -- insert/update de organizations
-- `src/hooks/useOrganizationsPage.ts` -- insert/update de organizations
+5. **`src/schemas/email.ts`** -- Schema para envio de email
+   - `sendEmailSchema`: to (email valido), subject (min 1, max 200), body (min 1, max 10000)
 
-**Acao:** Alinhar os tipos `FormData` do app com `TablesInsert`/`TablesUpdate` gerados, ou usar cast explicito:
-```typescript
-// Antes:
-supabase.from('metas_vendedor').upsert(payload as any)
+6. **`src/schemas/settings.ts`** -- Schema para configuracoes
+   - `generalSettingsSchema`: horario_inicio (regex HH:MM), horario_fim, max_por_dia (1-50), intervalo_minutos (1-1440), tom (enum), auto_escalar_apos (1-20)
 
-// Depois:
-supabase.from('metas_vendedor').upsert(payload)
-// (ajustando o tipo do payload para corresponder a TablesInsert<'metas_vendedor'>)
-```
+7. **`src/schemas/captureForms.ts`** -- Schema para builder de formularios
+   - `captureFormSaveSchema`: nome (min 2, max 100), pipeline_id (uuid opcional), fields (array)
 
-### Fase 3: Metadata e relacoes tipadas
+### Fase 2: Migrar formularios para useForm + zodResolver
 
-Substituir `(obj as any).campo` por interfaces explicitas.
+Refatorar cada componente para usar `react-hook-form` com `zodResolver`, substituindo os `useState` avulsos por form controlado com mensagens de erro inline:
 
-**Arquivos afetados:**
-- `src/components/deals/DealDetailSheet.tsx` -- `(a.metadata as any)?.dados_extraidos` (6 ocorrencias)
-- `src/components/cockpit/CriticalAlerts.tsx` -- `(deal as any).id`, `(deal as any).owner_id`
-- `src/hooks/useLeadMessages.ts` -- `(msg.lead_cadence_runs as any)?.cadences?.nome`
-- `src/pages/ConversasPage.tsx` -- `(a as any).modo`
-- `src/components/contacts/ContactDetailSheet.tsx` -- cast em update
-- `src/components/settings/UserAccessList.tsx` -- `(u as any).is_vendedor`
-- `src/components/copilot/CopilotPanel.tsx` -- `(error as any)?.status`
+**Componentes a alterar:**
 
-**Acao:** Criar interfaces:
-```typescript
-interface DealActivityMetadata {
-  origem?: 'SDR_IA' | 'MANUAL';
-  dados_extraidos?: {
-    valor_mencionado?: number;
-    necessidade_principal?: string;
-    urgencia?: 'ALTA' | 'MEDIA' | 'BAIXA';
-    decisor_identificado?: boolean;
-    prazo_mencionado?: string;
-  };
-  [key: string]: unknown;
-}
-```
+1. **`ContactCreateDialog.tsx`** -- Substituir `useState<Partial<ContactFormData>>` por `useForm` com `contactCreateSchema`
+2. **`OrgCreateDialog.tsx`** -- Mesmo padrao, com `organizationCreateSchema`
+3. **`CreateDealDialog.tsx`** -- Migrar para `useForm` com `createDealSchema`
+4. **`CreateUserDialog.tsx`** -- Migrar para `useForm` com `createUserSchema`
+5. **`FaqFormDialog.tsx`** -- Migrar para `useForm` com `faqCreateSchema`
+6. **`EmailFromDealDialog.tsx`** -- Migrar para `useForm` com `sendEmailSchema`
+7. **`GeneralTab.tsx`** -- Adicionar `zodResolver(generalSettingsSchema)` ao useForm existente
+8. **`AccessProfileEditor.tsx`** -- Adicionar schema basico para nome
+9. **`CaptureFormBuilderPage.tsx`** -- Validacao no save com `captureFormSaveSchema`
 
-### Fase 4: Event handlers e error catching
+### Fase 3: Bonus -- Remover `as any` residuais nos formularios
 
-**Arquivos afetados:**
-- `src/pages/TemplatesPage.tsx` -- `v as any` em Select (2 ocorrencias)
-- `src/pages/AmeliaMassActionPage.tsx` -- `v as any` em Tabs
-- `src/pages/CustomFieldsConfigPage.tsx` -- `v as any` em Select
-- `src/pages/PipelineConfigPage.tsx` -- `stage as any` e `catch (e: any)`
-- `src/components/settings/AssignProfileDialog.tsx` -- `empresa as any`
-- `src/components/layout/GlobalSearch.tsx` -- `activeCompany as any`
+- `ContactCreateDialog.tsx` linha 50: `value: any` no setter
+- `CreateDealDialog.tsx` linha 115: `v as any` no Select de temperatura
+- `EmailFromDealDialog.tsx` linha 62: `catch (e: any)`
+- `TemplateFormDialog.tsx` linha 79: `payload: any`
 
-**Acao:** Usar os tipos enum corretos:
-```typescript
-// Antes:
-setCanalFilter(v === 'all' ? null : v as any)
+### Fase 4: Adicionar validacao server-side nas edge functions criticas
 
-// Depois:
-setCanalFilter(v === 'all' ? null : v as CanalTipo)
-```
+Usar Zod via `https://esm.sh/zod@3` nas edge functions:
 
-### Fase 5: Remover `as unknown as TipoCustom` redundantes
-
-Onde o tipo retornado pelo Supabase ja corresponde ao tipo do app, remover o double-cast.
+1. **`capture-form-submit`** -- Validar slug (string), answers (record), metadata (object)
+2. **`admin-create-user`** -- Validar email (formato), nome (min 2), password (min 6)
+3. **`email-send`** -- Validar to (email), subject (string), html (string)
 
 ---
 
 ## Ordem de Execucao
 
 ```text
-1. Fase 1 (hooks: useAnalytics, useGamification, useMetas + cockpit) -- maior volume
-2. Fase 2 (hooks: useCustomFields, useOrganizations, useMetas inserts)
-3. Fase 3 (DealDetailSheet metadata, CriticalAlerts, ConversasPage)
-4. Fase 4 (pages: Templates, Amelia, CustomFields, Pipeline, Settings)
-5. Fase 5 (limpeza residual de double-casts)
+1. Fase 1 -- Criar os 7 arquivos de schemas (~15 min)
+2. Fase 2 -- Migrar os 9 componentes para useForm+Zod (~30 min)
+3. Fase 3 -- Limpar as any residuais nos formularios (~5 min)
+4. Fase 4 -- Validacao Zod nas 3 edge functions criticas (~10 min)
 ```
 
 ## Impacto Esperado
 
-- Reducao de ~90% das ocorrencias de `as any` (de ~640 para ~60)
-- As ~60 restantes serao casos onde o tipo do app diverge intencionalmente do tipo gerado (ex: joins complexos com `select` customizado)
-- Zero mudanca de comportamento em runtime -- apenas melhorias de tipagem em compile-time
+- 100% dos formularios com validacao estruturada e mensagens inline
+- Limites de comprimento em todos os campos de texto (prevencao de payloads enormes)
+- Validacao de formato em emails, telefones, CPF e CNPJ
+- Validacao duplicada client + server nas rotas mais criticas
+- Zero mudanca de comportamento para o usuario final -- apenas melhor feedback de erros
 
 ## Detalhes Tecnicos
 
+- Zod ja esta instalado (`zod@3.25.76`) e configurado com `@hookform/resolvers`
+- O padrao `useForm + zodResolver` ja existe em 4 componentes (auth + templates) e sera replicado
+- Schemas ficam em `src/schemas/*.ts`, separados por dominio
+- Edge functions importam Zod via `https://esm.sh/zod@3`
 - Nenhuma migracao de banco necessaria
-- Nenhuma edge function afetada
-- Utiliza os helpers `Tables`, `TablesInsert`, `TablesUpdate` e `Enums` ja exportados por `src/integrations/supabase/types.ts`
-- O arquivo `types.ts` NAO sera editado (gerado automaticamente)
-- Pode ser necessario ajustar interfaces em `src/types/*.ts` para alinhar com os tipos gerados
+- Nenhuma alteracao de tipo em `src/types/` -- os schemas Zod geram seus proprios tipos via `z.infer`
+
