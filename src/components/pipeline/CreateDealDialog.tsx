@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -6,12 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Badge } from '@/components/ui/badge';
 import { useCreateDeal } from '@/hooks/useDeals';
 import { useContacts, useCreateContact } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useDealAutoFill } from '@/hooks/useDealAutoFill';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
 import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
+import { Brain } from 'lucide-react';
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -80,6 +83,18 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   };
 
   const contactId = form.watch('contact_id');
+  const { data: autoFill } = useDealAutoFill(contactId || undefined);
+
+  // Auto-fill fields when AI suggestions arrive
+  useEffect(() => {
+    if (!autoFill) return;
+    const current = form.getValues();
+    if (autoFill.titulo && !current.titulo) form.setValue('titulo', autoFill.titulo);
+    if (autoFill.valor && current.valor === 0) form.setValue('valor', autoFill.valor);
+    if (autoFill.temperatura && current.temperatura === 'FRIO') form.setValue('temperatura', autoFill.temperatura);
+  }, [autoFill, form]);
+
+  const hasAiSuggestions = autoFill && (autoFill.titulo || autoFill.valor || autoFill.temperatura);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -89,6 +104,12 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            {hasAiSuggestions && (
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-primary/5 border border-primary/20 text-xs text-primary">
+                <Brain className="h-4 w-4 shrink-0" />
+                Campos pré-preenchidos pela Amélia com base nas conversas.
+              </div>
+            )}
             <FormField control={form.control} name="titulo" render={({ field }) => (
               <FormItem>
                 <FormLabel>Título *</FormLabel>

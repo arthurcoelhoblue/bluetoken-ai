@@ -1,6 +1,10 @@
+import { useState } from 'react';
 import { ConversationView } from '@/components/messages/ConversationView';
 import { ConversationTakeoverBar } from './ConversationTakeoverBar';
 import { ManualMessageInput } from './ManualMessageInput';
+import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
+import { Button } from '@/components/ui/button';
+import { Mail } from 'lucide-react';
 import type { LeadMessageWithContext } from '@/types/messaging';
 import type { AtendimentoModo } from '@/types/conversas';
 
@@ -9,6 +13,8 @@ interface ConversationPanelProps {
   empresa: string;
   telefone?: string | null;
   leadNome?: string | null;
+  contactEmail?: string | null;
+  dealId?: string | null;
   messages: LeadMessageWithContext[];
   isLoading?: boolean;
   error?: Error | null;
@@ -23,6 +29,8 @@ export function ConversationPanel({
   empresa,
   telefone,
   leadNome,
+  contactEmail,
+  dealId,
   messages,
   isLoading,
   error,
@@ -31,6 +39,8 @@ export function ConversationPanel({
   assumidoPorNome,
   maxHeight = '400px',
 }: ConversationPanelProps) {
+  const [emailOpen, setEmailOpen] = useState(false);
+
   return (
     <div className="space-y-3">
       <ConversationTakeoverBar
@@ -50,12 +60,37 @@ export function ConversationPanel({
         emptyMessage="Nenhuma mensagem enviada para este lead."
       />
 
-      <ManualMessageInput
-        leadId={leadId}
-        empresa={empresa}
-        telefone={telefone}
-        modo={modo}
-      />
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <ManualMessageInput
+            leadId={leadId}
+            empresa={empresa}
+            telefone={telefone}
+            modo={modo}
+          />
+        </div>
+        {contactEmail && (
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => setEmailOpen(true)}
+            title="Enviar email"
+            className="shrink-0"
+          >
+            <Mail className="h-4 w-4" />
+          </Button>
+        )}
+      </div>
+
+      {contactEmail && (
+        <EmailFromDealDialog
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+          dealId={dealId || ''}
+          contactEmail={contactEmail}
+          contactNome={leadNome || null}
+        />
+      )}
     </div>
   );
 }

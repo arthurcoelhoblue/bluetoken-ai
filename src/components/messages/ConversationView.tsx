@@ -23,6 +23,7 @@ import { ptBR } from 'date-fns/locale';
 import type { LeadMessageWithContext, MensagemEstado, MensagemDirecao } from '@/types/messaging';
 import type { CanalTipo } from '@/types/cadence';
 import { EmailPreviewDialog } from './EmailPreviewDialog';
+import { SentimentBadge } from './SentimentBadge';
 
 interface ConversationViewProps {
   messages: LeadMessageWithContext[];
@@ -165,13 +166,18 @@ function MessageBubble({
 
           {/* Footer */}
           <div className="flex items-center justify-between mt-2 gap-2">
-            <Badge
-              variant="secondary"
-              className={`text-[10px] py-0 px-1.5 ${getEstadoColor(message.estado)}`}
-            >
-              {getEstadoIcon(message.estado)}
-              <span className="ml-0.5">{message.estado}</span>
-            </Badge>
+            <div className="flex items-center gap-1.5">
+              <Badge
+                variant="secondary"
+                className={`text-[10px] py-0 px-1.5 ${getEstadoColor(message.estado)}`}
+              >
+                {getEstadoIcon(message.estado)}
+                <span className="ml-0.5">{message.estado}</span>
+              </Badge>
+              {!isOutbound && (
+                <SentimentBadge messageId={message.id} />
+              )}
+            </div>
             <span className="text-[10px] opacity-60">
               {format(new Date(message.created_at), 'HH:mm', { locale: ptBR })}
             </span>
