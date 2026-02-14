@@ -185,48 +185,7 @@ async function checkAnthropic(): Promise<HealthCheckResult> {
   }
 }
 
-async function checkLovableAI(): Promise<HealthCheckResult> {
-  const apiKey = Deno.env.get("LOVABLE_API_KEY");
-  if (!apiKey) {
-    return { status: "error", message: "LOVABLE_API_KEY não configurada" };
-  }
-
-  const start = Date.now();
-  try {
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-lite",
-        max_tokens: 1,
-        messages: [{ role: "user", content: "ping" }],
-      }),
-    });
-
-    const latencyMs = Date.now() - start;
-
-    if (response.ok) {
-      return { status: "online", latencyMs, details: { provider: "Lovable AI Gateway" } };
-    } else if (response.status === 401) {
-      return { status: "error", message: "API Key inválida", latencyMs };
-    } else if (response.status === 429) {
-      return { status: "online", message: "Rate limit atingido", latencyMs };
-    } else if (response.status === 402) {
-      return { status: "error", message: "Créditos insuficientes", latencyMs };
-    } else {
-      return { status: "offline", message: `Status: ${response.status}`, latencyMs };
-    }
-  } catch (error) {
-    return { 
-      status: "offline", 
-      message: error instanceof Error ? error.message : "Erro de conexão",
-      latencyMs: Date.now() - start
-    };
-  }
-}
+// checkLovableAI removido — PATCH Auditoria V2: redirecionado para checkAnthropic
 
 async function checkSMTP(): Promise<HealthCheckResult> {
   const host = Deno.env.get("SMTP_HOST");
@@ -349,7 +308,7 @@ serve(async (req) => {
       case "lovable_ai":
       case "gemini":
       case "gpt":
-        result = await checkLovableAI();
+        result = await checkAnthropic();
         break;
       case "email":
         result = await checkSMTP();
