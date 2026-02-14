@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useContactsPage, PAGE_SIZE } from '@/hooks/useContactsPage';
 import { Button } from '@/components/ui/button';
@@ -22,6 +23,7 @@ import { ContactDetailSheet } from '@/components/contacts/ContactDetailSheet';
 const TIPO_OPTIONS = ['LEAD', 'CLIENTE', 'PARCEIRO', 'FORNECEDOR', 'OUTRO'] as const;
 
 function ContatosContent() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -30,6 +32,17 @@ function ContatosContent() {
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [selectedContactId, setSelectedContactId] = useState<string | null>(null);
+
+  // Handle ?open=ID from GlobalSearch
+  useEffect(() => {
+    const openId = searchParams.get('open');
+    if (openId) {
+      setSelectedContactId(openId);
+      // Clean up query param
+      searchParams.delete('open');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   const { data, isLoading, error } = useContactsPage({
     search: searchTerm,
