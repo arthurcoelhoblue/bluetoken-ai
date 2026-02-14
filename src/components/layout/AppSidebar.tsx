@@ -113,6 +113,7 @@ const navGroups: NavGroup[] = [
       { title: 'Clientes CS', url: '/cs/clientes', icon: Users, screenKey: 'cs_clientes' },
       { title: 'Pesquisas', url: '/cs/pesquisas', icon: ClipboardList, screenKey: 'cs_pesquisas' },
       { title: 'Incidências', url: '/cs/incidencias', icon: AlertCircle, screenKey: 'cs_incidencias' },
+      { title: 'Playbooks', url: '/cs/playbooks', icon: BookOpen, screenKey: 'cs_playbooks' },
     ],
   },
   {
