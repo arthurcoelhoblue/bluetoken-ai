@@ -64,7 +64,6 @@ export function useSgtEvents(options: UseSgtEventsOptions = {}) {
       const { data, error, count } = await query;
 
       if (error) {
-        console.error('[useSgtEvents] Erro ao buscar eventos:', error);
         throw error;
       }
 
@@ -107,7 +106,6 @@ export function useSgtEventDetails(eventId: string | null) {
         .single();
 
       if (eventError) {
-        console.error('[useSgtEventDetails] Erro ao buscar evento:', eventError);
         throw eventError;
       }
 

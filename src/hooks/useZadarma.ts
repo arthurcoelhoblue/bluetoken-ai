@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { ZadarmaConfig, ZadarmaExtension, Call, CallStats, EmpresaTipo } from '@/types/patch13';
+import type { ZadarmaConfig, ZadarmaExtension, Call, CallStats, EmpresaTipo } from '@/types/telephony';
 
 // ─── Config ────────────────────────────────────────
 export function useZadarmaConfig(empresa: EmpresaTipo | null) {

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, Layers } from 'lucide-react';
 import { useAllStageProjections } from '@/hooks/usePatch12';
-import type { StageProjection } from '@/types/patch12';
+import type { StageProjection } from '@/types/projection';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 

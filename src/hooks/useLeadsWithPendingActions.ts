@@ -33,7 +33,6 @@ export function useLeadsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         .limit(100);
 
       if (intentsError) {
-        console.error('Erro ao buscar intents pendentes:', intentsError);
         throw intentsError;
       }
 
@@ -50,7 +49,6 @@ export function useLeadsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         .in('lead_id', leadIds);
 
       if (contactsError) {
-        console.error('Erro ao buscar contatos:', contactsError);
         throw contactsError;
       }
 

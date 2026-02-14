@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { MassActionMessagePreview } from "@/types/patch12";
+import type { MassActionMessagePreview } from "@/types/projection";
 
 describe("usePatch12 logic", () => {
   it("updates approval for specific deal in previews", () => {

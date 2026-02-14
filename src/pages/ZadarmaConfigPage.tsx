@@ -22,7 +22,7 @@ import {
   useCallStats,
   useZadarmaProxy,
 } from '@/hooks/useZadarma';
-import type { EmpresaTipo } from '@/types/patch13';
+import type { EmpresaTipo } from '@/types/telephony';
 
 const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
 

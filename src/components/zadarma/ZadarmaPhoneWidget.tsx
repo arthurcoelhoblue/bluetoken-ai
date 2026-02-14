@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
-import type { EmpresaTipo } from '@/types/patch13';
-import type { DialEvent, PhoneWidgetState } from '@/types/patch13';
+import type { EmpresaTipo } from '@/types/telephony';
+import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
 const DIALPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 

@@ -26,7 +26,7 @@ import {
   useUpdateMessageApproval,
   useExecuteMassAction,
 } from '@/hooks/usePatch12';
-import type { MassActionJobStatus } from '@/types/patch12';
+import type { MassActionJobStatus } from '@/types/projection';
 import { toast } from '@/hooks/use-toast';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

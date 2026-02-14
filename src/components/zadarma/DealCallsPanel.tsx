@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Play, ChevronDown, ChevronUp } from 'lucide-react';
 import { useDealCalls } from '@/hooks/useZadarma';
-import type { Call } from '@/types/patch13';
+import type { Call } from '@/types/telephony';
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);

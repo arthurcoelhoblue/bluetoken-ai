@@ -35,7 +35,6 @@ export function useCadenceRunsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         .limit(100);
 
       if (intentsError) {
-        console.error('Erro ao buscar intents pendentes:', intentsError);
         throw intentsError;
       }
 
@@ -61,7 +60,6 @@ export function useCadenceRunsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         .in('id', runIds);
 
       if (runsError) {
-        console.error('Erro ao buscar runs:', runsError);
         throw runsError;
       }
 
@@ -74,7 +72,6 @@ export function useCadenceRunsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         .in('lead_id', leadIds);
 
       if (contactsError) {
-        console.error('Erro ao buscar contatos:', contactsError);
         throw contactsError;
       }
 
