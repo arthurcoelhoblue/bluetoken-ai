@@ -9,7 +9,6 @@ import {
   CommandEmpty,
   CommandGroup,
   CommandItem,
-  CommandSeparator,
 } from '@/components/ui/command';
 import { User, Briefcase, Building2, Search } from 'lucide-react';
 
@@ -52,22 +51,40 @@ export function GlobalSearch() {
       setIsSearching(true);
       const searchTerm = `%${query}%`;
 
+      // Build contacts query with empresa filter
+      let contactsQuery = supabase
+        .from('contacts')
+        .select('id, nome, email, telefone, empresa')
+        .ilike('nome', searchTerm)
+        .limit(5);
+      if (activeCompany !== 'ALL') {
+        contactsQuery = contactsQuery.eq('empresa', activeCompany);
+      }
+
+      // Build deals query — filter via pipeline join for empresa isolation
+      let dealsQuery = supabase
+        .from('deals')
+        .select('id, titulo, valor, pipelines!inner(empresa)')
+        .ilike('titulo', searchTerm)
+        .limit(5);
+      if (activeCompany !== 'ALL') {
+        dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as any);
+      }
+
+      // Build orgs query with empresa filter
+      let orgsQuery = supabase
+        .from('organizations')
+        .select('id, nome, empresa')
+        .ilike('nome', searchTerm)
+        .limit(5);
+      if (activeCompany !== 'ALL') {
+        orgsQuery = orgsQuery.eq('empresa', activeCompany);
+      }
+
       const [contactsRes, dealsRes, orgsRes] = await Promise.all([
-        supabase
-          .from('contacts')
-          .select('id, nome, email, telefone')
-          .ilike('nome', searchTerm)
-          .limit(5),
-        supabase
-          .from('deals')
-          .select('id, titulo, valor')
-          .ilike('titulo', searchTerm)
-          .limit(5),
-        supabase
-          .from('organizations')
-          .select('id, nome')
-          .ilike('nome', searchTerm)
-          .limit(5),
+        contactsQuery,
+        dealsQuery,
+        orgsQuery,
       ]);
 
       const items: SearchResult[] = [];
@@ -78,17 +95,17 @@ export function GlobalSearch() {
           label: c.nome,
           sublabel: c.email || c.telefone || undefined,
           type: 'contact',
-          path: `/contatos`,
+          path: `/contatos?open=${c.id}`,
         });
       });
 
-      dealsRes.data?.forEach((d) => {
+      dealsRes.data?.forEach((d: any) => {
         items.push({
           id: d.id,
           label: d.titulo,
           sublabel: d.valor ? `R$ ${Number(d.valor).toLocaleString('pt-BR')}` : undefined,
           type: 'deal',
-          path: `/pipeline`,
+          path: `/pipeline?deal=${d.id}`,
         });
       });
 
@@ -97,7 +114,7 @@ export function GlobalSearch() {
           id: o.id,
           label: o.nome,
           type: 'organization',
-          path: `/organizacoes`,
+          path: `/organizacoes?open=${o.id}`,
         });
       });
 
@@ -106,7 +123,7 @@ export function GlobalSearch() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, activeCompany]);
 
   const handleSelect = useCallback(
     (result: SearchResult) => {
@@ -168,7 +185,7 @@ export function GlobalSearch() {
               Digite pelo menos 2 caracteres para buscar
             </div>
           )}
-          {Object.entries(grouped).map(([type, items], idx) => {
+          {Object.entries(grouped).map(([type, items]) => {
             const Icon = iconMap[type as keyof typeof iconMap];
             return (
               <CommandGroup key={type} heading={groupLabel[type as keyof typeof groupLabel]}>

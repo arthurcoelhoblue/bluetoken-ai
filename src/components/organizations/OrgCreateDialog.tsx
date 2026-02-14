@@ -32,7 +32,7 @@ export function OrgCreateDialog({ open, onOpenChange }: Props) {
       toast.error('Razão social é obrigatória');
       return;
     }
-    const empresa = activeCompany === 'all' ? 'BLUE' : activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
     try {
       await create.mutateAsync({ ...form, nome: form.nome.trim(), empresa } as OrganizationFormData);
       toast.success('Organização criada com sucesso');

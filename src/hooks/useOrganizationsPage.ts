@@ -22,8 +22,8 @@ export function useOrganizationsPage(opts: {
         .order('nome', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (activeCompany !== 'all') {
-        query = query.eq('empresa', activeCompany.toUpperCase());
+      if (activeCompany !== 'ALL') {
+        query = query.eq('empresa', activeCompany);
       }
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,cnpj.ilike.%${search}%,nome_fantasia.ilike.%${search}%`);

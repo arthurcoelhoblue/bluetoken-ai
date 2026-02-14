@@ -5,9 +5,8 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { WorkbenchTarefa, WorkbenchSLAAlert, WorkbenchPipelineSummary, RecentDeal } from '@/types/workbench';
 
 function empresaFilter(activeCompany: string): string | null {
-  if (activeCompany === 'blue') return 'BLUE';
-  if (activeCompany === 'tokeniza') return 'TOKENIZA';
-  return null; // 'all'
+  if (activeCompany === 'ALL') return null;
+  return activeCompany; // already 'BLUE' | 'TOKENIZA'
 }
 
 export function useWorkbenchTarefas() {

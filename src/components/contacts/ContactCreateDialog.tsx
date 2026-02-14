@@ -36,7 +36,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
       toast.error('Nome é obrigatório');
       return;
     }
-    const empresa = activeCompany === 'all' ? 'BLUE' : activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
     try {
       await create.mutateAsync({ ...form, nome: form.nome.trim(), empresa } as ContactFormData);
       toast.success('Contato criado com sucesso');

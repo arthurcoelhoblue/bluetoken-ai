@@ -19,7 +19,7 @@ interface CreateDealDialogProps {
 
 export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: CreateDealDialogProps) {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'all' ? 'BLUE' : activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA';
+  const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
 
   const [titulo, setTitulo] = useState('');
   const [valor, setValor] = useState('');

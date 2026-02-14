@@ -9,9 +9,8 @@ export function useCadenciasCRM() {
     queryKey: ['cadencias-crm', activeCompany],
     queryFn: async () => {
       let query = supabase.from('cadencias_crm').select('*');
-      if (activeCompany !== 'all') {
-        const emp = activeCompany === 'blue' ? 'BLUE' : 'TOKENIZA';
-        query = query.eq('empresa', emp) as any;
+      if (activeCompany !== 'ALL') {
+        query = query.eq('empresa', activeCompany) as any;
       }
       const { data, error } = await query;
       if (error) throw error;

@@ -30,7 +30,7 @@ export default function MetasPage() {
   const [mes, setMes] = useState(now.getMonth() + 1);
   const { hasRole, user } = useAuth();
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'blue' ? 'BLUE' : activeCompany === 'tokeniza' ? 'TOKENIZA' : undefined;
+  const empresa = activeCompany === 'ALL' ? undefined : activeCompany;
   const isAdmin = hasRole('ADMIN');
 
   const { data: ranking = [], isLoading: loadingRanking } = useMetaProgresso(ano, mes);

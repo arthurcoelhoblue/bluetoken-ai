@@ -51,7 +51,7 @@ const statusVariant = (s: MassActionJobStatus) => {
 export default function AmeliaMassActionPage() {
   const { user } = useAuth();
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'blue' ? 'BLUE' : activeCompany === 'tokeniza' ? 'TOKENIZA' : undefined;
+  const empresa = activeCompany === 'ALL' ? undefined : activeCompany;
   const { data: allPipelines = [] } = usePipelines();
   const firstPipeline = allPipelines[0];
   const { data: deals = [], isLoading: loadingDeals } = useDeals({ pipelineId: firstPipeline?.id || null });

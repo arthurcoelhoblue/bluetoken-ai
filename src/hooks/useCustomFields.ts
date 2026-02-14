@@ -14,8 +14,8 @@ export function useCustomFieldDefinitions(entityType?: CustomFieldEntityType) {
         .select('*')
         .order('posicao', { ascending: true });
 
-      if (activeCompany !== 'all') {
-        query = query.eq('empresa', activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA');
+      if (activeCompany !== 'ALL') {
+        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
       if (entityType) {
         query = query.eq('entity_type', entityType);

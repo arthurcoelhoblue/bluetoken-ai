@@ -16,8 +16,8 @@ import type {
 } from '@/types/analytics';
 
 function empresaFilter(activeCompany: string) {
-  if (activeCompany === 'all') return null;
-  return activeCompany.toUpperCase() as 'BLUE' | 'TOKENIZA';
+  if (activeCompany === 'ALL') return null;
+  return activeCompany as 'BLUE' | 'TOKENIZA';
 }
 
 export function useAnalyticsFunnel(pipelineId?: string | null) {
