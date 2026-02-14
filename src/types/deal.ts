@@ -91,6 +91,11 @@ export interface Deal {
   score_valor: number;
   score_urgencia: number;
   score_probabilidade: number;
+  scoring_dimensoes: Record<string, number> | null;
+  proxima_acao_sugerida: string | null;
+  scoring_updated_at: string | null;
+  origem: string | null;
+  contexto_sdr: Record<string, unknown> | null;
   stage_origem_id: string | null;
   stage_fechamento_id: string | null;
   status: 'ABERTO' | 'GANHO' | 'PERDIDO';

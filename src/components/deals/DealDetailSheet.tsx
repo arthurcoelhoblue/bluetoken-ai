@@ -36,6 +36,7 @@ import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
 import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
 import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
+import { InsightsTab } from '@/components/deals/DealInsightsTab';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
 import type { DealActivityMetadata } from '@/types/metadata';
@@ -262,7 +263,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
                   <TabsTrigger value="dados">Dados</TabsTrigger>
                   <TabsTrigger value="campos">Campos</TabsTrigger>
-                  <TabsTrigger value="scores">Scores</TabsTrigger>
+                  <TabsTrigger value="insights">
+                    <Sparkles className="h-3 w-3 mr-1" />
+                    IA
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* Timeline */}
@@ -405,22 +409,9 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                   />
                 </TabsContent>
 
-                {/* Scores IA */}
-                <TabsContent value="scores" className="px-6 mt-3 space-y-4">
-                  {[
-                    { label: 'Engajamento', value: deal.score_engajamento },
-                    { label: 'Intenção', value: deal.score_intencao },
-                    { label: 'Valor', value: deal.score_valor },
-                    { label: 'Urgência', value: deal.score_urgencia },
-                  ].map(s => (
-                    <div key={s.label} className="space-y-1">
-                      <div className="flex items-center justify-between text-sm">
-                        <span>{s.label}</span>
-                        <span className="font-medium">{s.value ?? 0}/100</span>
-                      </div>
-                      <Progress value={s.value ?? 0} className="h-2" />
-                    </div>
-                  ))}
+                {/* IA Insights (upgraded Scores tab) */}
+                <TabsContent value="insights" className="px-6 mt-3 space-y-4 overflow-y-auto pb-4">
+                  <InsightsTab deal={deal} dealId={dealId!} />
                 </TabsContent>
               </Tabs>
             </>

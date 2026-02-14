@@ -18,6 +18,8 @@ const baseDeal: Omit<DealWithRelations, 'id' | 'titulo' | 'stage_id' | 'valor' |
   utm_medium: null, utm_campaign: null, utm_content: null, utm_term: null,
   gclid: null, fbclid: null, score_engajamento: 0, score_intencao: 0,
   score_valor: 0, score_urgencia: 0, score_probabilidade: 0,
+  scoring_dimensoes: null, proxima_acao_sugerida: null, scoring_updated_at: null,
+  origem: null, contexto_sdr: null,
   stage_origem_id: null, stage_fechamento_id: null, status: "ABERTO",
   created_at: "", updated_at: "", contacts: null, pipeline_stages: null, owner: null,
 };

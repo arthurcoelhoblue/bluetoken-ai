@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useMemo } from 'react';
 import { useGrabScroll } from '@/hooks/useGrabScroll';
 import {
   DndContext,
@@ -15,6 +15,8 @@ import { KanbanColumn } from './KanbanColumn';
 import { DealCard } from './DealCard';
 import { useMoveDeal } from '@/hooks/useDeals';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Button } from '@/components/ui/button';
+import { Sparkles, GripVertical } from 'lucide-react';
 import type { KanbanColumn as KanbanColumnType, DealWithRelations } from '@/types/deal';
 
 interface KanbanBoardProps {
@@ -24,11 +26,43 @@ interface KanbanBoardProps {
   onDealClick?: (dealId: string) => void;
 }
 
+function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): number {
+  const prob = deal.score_probabilidade || 50;
+  const days = Math.floor((Date.now() - new Date(deal.updated_at).getTime()) / 86400000);
+  const daysNorm = Math.min(days / 30, 1) * 100;
+  const slaPct = slaMinutos ? Math.min((days * 24 * 60) / slaMinutos, 1.5) * 100 : 0;
+  const valorNorm = Math.min((deal.valor ?? 0) / 100000, 1) * 100;
+
+  return (100 - prob) * 0.4 + daysNorm * 0.3 + slaPct * 0.2 + valorNorm * 0.1;
+}
+
 export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
   useGrabScroll(scrollRef);
+
+  const [iaSort, setIaSort] = useState(() => {
+    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
+  });
+
+  const toggleIaSort = useCallback(() => {
+    setIaSort(prev => {
+      const next = !prev;
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  const sortedColumns = useMemo(() => {
+    if (!iaSort) return columns;
+    return columns.map(col => ({
+      ...col,
+      deals: [...col.deals].sort((a, b) =>
+        calcUrgencyScore(b, col.stage.sla_minutos) - calcUrgencyScore(a, col.stage.sla_minutos)
+      ),
+    }));
+  }, [columns, iaSort]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -36,13 +70,15 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
+    if (iaSort) return; // Disable drag in IA sort mode
     const deal = event.active.data.current?.deal as DealWithRelations | undefined;
     if (deal) setActiveDeal(deal);
-  }, []);
+  }, [iaSort]);
 
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDeal(null);
+      if (iaSort) return; // Disable drag in IA sort mode
       const { active, over } = event;
       if (!over) return;
 
@@ -62,7 +98,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
 
       moveDeal.mutate({ dealId, toStageId, posicao_kanban: 0 });
     },
-    [columns, wonLost, moveDeal]
+    [columns, wonLost, moveDeal, iaSort]
   );
 
   if (isLoading) {
@@ -86,9 +122,22 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
+      {/* IA Sort toggle */}
+      <div className="flex items-center justify-end mb-3 gap-2">
+        <Button
+          variant={iaSort ? 'default' : 'outline'}
+          size="sm"
+          className="gap-1.5 text-xs"
+          onClick={toggleIaSort}
+        >
+          {iaSort ? <Sparkles className="h-3.5 w-3.5" /> : <GripVertical className="h-3.5 w-3.5" />}
+          {iaSort ? 'Ordenação IA' : 'Ordenação Manual'}
+        </Button>
+      </div>
+
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
         <div className="flex gap-4 pb-4 min-h-[400px]" style={{ minWidth: 'max-content' }}>
-          {columns.map(col => (
+          {sortedColumns.map(col => (
             <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
           ))}
         </div>
