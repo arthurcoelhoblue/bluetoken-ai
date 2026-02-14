@@ -11,8 +11,8 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const SYSTEM_PROMPT = `Você é a Amélia, consultora de vendas IA do Blue CRM (Grupo Blue).
-Você ajuda vendedores a fechar mais negócios com insights do CRM.
+const SYSTEM_PROMPT = `Você é a Amélia, consultora de vendas e sucesso do cliente IA do Blue CRM (Grupo Blue).
+Você ajuda vendedores a fechar mais negócios e CSMs a reter clientes com insights do CRM.
 
 Diretrizes:
 - Responda SEMPRE em português brasileiro, de forma direta e acionável.
@@ -20,12 +20,13 @@ Diretrizes:
 - NÃO invente dados — use apenas o que foi fornecido no contexto.
 - Se não tiver dados suficientes, diga claramente o que falta.
 - Seja concisa: prefira bullets e respostas curtas.
-- Foque em ações práticas que o vendedor pode tomar agora.
+- Foque em ações práticas que o vendedor/CSM pode tomar agora.
 - Quando sugerir mensagens, adapte ao perfil DISC e estágio do funil se disponíveis.
 - Para leads Tokeniza, foque em investimentos tokenizados e rentabilidade.
-- Para leads Blue, foque em IR/tributação cripto e compliance.`;
+- Para leads Blue, foque em IR/tributação cripto e compliance.
+- Para contexto de Customer Success, foque em retenção, saúde do cliente, ações proativas para reduzir churn e expandir receita.`;
 
-type ContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL';
+type ContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL' | 'CUSTOMER';
 
 interface CopilotRequest {
   messages: Array<{ role: string; content: string }>;
@@ -82,6 +83,9 @@ serve(async (req) => {
           break;
         case 'GERAL':
           contextBlock = await enrichGeralContext(supabase, empresa);
+          break;
+        case 'CUSTOMER':
+          contextBlock = await enrichCustomerContext(supabase, contextId);
           break;
       }
     } catch (enrichError) {
@@ -426,4 +430,98 @@ async function enrichGeralContext(supabase: any, empresa: string): Promise<strin
   }
 
   return parts.length > 0 ? parts.join('\n\n') : 'Contexto geral — sem dados específicos carregados.';
+}
+
+async function enrichCustomerContext(supabase: any, customerId: string | undefined): Promise<string> {
+  if (!customerId) return 'Nenhum cliente CS selecionado.';
+
+  const [customerRes, incidentsRes, healthLogRes, dealsRes] = await Promise.all([
+    supabase
+      .from('cs_customers')
+      .select('*, contacts(nome, email, telefone)')
+      .eq('id', customerId)
+      .maybeSingle(),
+    supabase
+      .from('cs_incidents')
+      .select('titulo, gravidade, status, created_at')
+      .eq('customer_id', customerId)
+      .in('status', ['ABERTA', 'EM_ANDAMENTO'])
+      .order('created_at', { ascending: false })
+      .limit(10),
+    supabase
+      .from('cs_health_log')
+      .select('score, status, dimensoes, motivo_mudanca, created_at')
+      .eq('customer_id', customerId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    // Deals linked to this contact
+    supabase
+      .from('cs_customers')
+      .select('contact_id')
+      .eq('id', customerId)
+      .single(),
+  ]);
+
+  const parts: string[] = [];
+
+  if (customerRes.data) {
+    const c = customerRes.data;
+    const contact = c.contacts;
+    parts.push(`**Cliente CS**: ${contact?.nome || '-'} | Email: ${contact?.email || '-'} | Tel: ${contact?.telefone || '-'}`);
+    parts.push(`**Health Score**: ${c.health_score ?? 'N/A'}/100 (${c.health_status || 'N/A'})`);
+
+    if (healthLogRes.data?.dimensoes) {
+      const d = healthLogRes.data.dimensoes as any;
+      parts.push(`**Dimensões**: NPS=${d.nps ?? '-'}, CSAT=${d.csat ?? '-'}, Engajamento=${d.engajamento ?? '-'}, Financeiro=${d.financeiro ?? '-'}, Tempo=${d.tempo ?? '-'}, Sentimento=${d.sentimento ?? '-'}`);
+    }
+
+    if (c.ultimo_nps != null) {
+      const cat = c.nps_categoria || '-';
+      parts.push(`**Último NPS**: ${c.ultimo_nps} (${cat})`);
+    }
+    if (c.ultimo_csat != null) {
+      parts.push(`**Último CSAT**: ${c.ultimo_csat} | Média: ${c.media_csat ?? '-'}`);
+    }
+
+    parts.push(`**MRR**: R$ ${c.valor_mrr?.toLocaleString('pt-BR') || '0'} | Renovação: ${c.proxima_renovacao ? new Date(c.proxima_renovacao).toLocaleDateString('pt-BR') : 'N/A'}`);
+
+    if (c.notas_csm) {
+      parts.push(`**Notas CSM**: "${c.notas_csm.substring(0, 300)}"`);
+    }
+    if (c.tags && c.tags.length > 0) {
+      parts.push(`**Tags**: ${c.tags.join(', ')}`);
+    }
+  }
+
+  if (incidentsRes.data && incidentsRes.data.length > 0) {
+    const byGrav: Record<string, number> = {};
+    incidentsRes.data.forEach((i: any) => { byGrav[i.gravidade] = (byGrav[i.gravidade] || 0) + 1; });
+    const summary = Object.entries(byGrav).map(([g, n]) => `${n} ${g}`).join(', ');
+    parts.push(`**Incidências Abertas**: ${incidentsRes.data.length} (${summary})`);
+
+    const list = incidentsRes.data.slice(0, 5).map((i: any) =>
+      `- [${i.gravidade}] ${i.titulo} (${new Date(i.created_at).toLocaleDateString('pt-BR')})`
+    ).join('\n');
+    parts.push(list);
+  }
+
+  // Fetch deals for this contact
+  if (dealsRes.data?.contact_id) {
+    const { data: deals } = await supabase
+      .from('deals')
+      .select('titulo, status, valor, created_at')
+      .eq('contact_id', dealsRes.data.contact_id)
+      .order('created_at', { ascending: false })
+      .limit(10);
+
+    if (deals && deals.length > 0) {
+      const dealsList = deals.map((d: any) =>
+        `- ${d.titulo || 'Sem título'} | ${d.status} | R$ ${d.valor || 0}`
+      ).join('\n');
+      parts.push(`**Deals vinculados**:\n${dealsList}`);
+    }
+  }
+
+  return parts.length > 0 ? parts.join('\n\n') : 'Sem dados disponíveis para este cliente CS.';
 }
