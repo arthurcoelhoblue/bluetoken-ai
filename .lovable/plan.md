@@ -1,128 +1,116 @@
 
+# Sazonalidade nas Metas + Configuracao de Motivos de Perda
 
-# Fase 3: Cockpit Executivo + Templates CRUD + Envio em Massa
+## 1. Sazonalidade como Default nas Metas
 
-## 8. Cockpit Executivo
+### Situacao Atual
+- A tabela `metas_vendedor` armazena `meta_valor` e `meta_deals` por vendedor/mes/ano
+- O gestor edita meta individualmente, mes a mes, para cada vendedor
+- Nao existe conceito de meta anual nem distribuicao automatica
 
-Transformar a shell page em um dashboard gerencial que mostra KPIs consolidados em uma unica tela. Usa inteiramente dados que ja existem via hooks `useAnalytics` e `useWorkbench`.
-
-### Layout do Cockpit
+### O que vamos fazer
+Adicionar um modo de "Meta Anual" na pagina de Metas. O gestor informa o valor anual e o sistema distribui automaticamente usando indices de sazonalidade que vem pre-preenchidos com os dados reais do relatorio SGT:
 
 ```text
-+---------------------------------------------+
-|  KPIs: Win Rate | Ticket Medio | Pipeline    |
-|         Ciclo   | Deals Ativos | SLA Alerts  |
-+---------------------------------------------+
-|  Funil Resumido (top 5 stages)  | Evolucao   |
-|  com barras horizontais         | mini chart  |
-+---------------------------------------------+
-|  Top 5 Vendedores   |  Motivos de Perda      |
-|  (ranking compacto)  |  (top 5 barras)        |
-+---------------------------------------------+
-|  Canais de Origem    |  Tarefas Atrasadas     |
-|  (mini tabela)       |  (SLA alerts count)    |
-+---------------------------------------------+
+Indices Default (do relatorio):
+Jan: 0.63  |  Fev: 0.75  |  Mar: 1.22  |  Abr: 0.73
+Mai: 2.28  |  Jun: 0.73  |  Jul: 0.84  |  Ago: 0.96
+Set: 0.32  |  Out: 1.21  |  Nov: 1.07  |  Dez: 2.47
+```
+
+O gestor pode ajustar qualquer indice antes de aplicar. Ao confirmar, o sistema gera os 12 registros em `metas_vendedor` com os valores proporcionais.
+
+### Implementacao
+
+**Nova tabela**: `sazonalidade_indices`
+- empresa (text), mes (int 1-12), indice (numeric), updated_at, updated_by
+- Unique: (empresa, mes)
+- Seed com os indices default do relatorio
+- RLS: ADMIN pode CRUD, demais podem ler
+
+**Hook**: `useSazonalidade()` em `src/hooks/useMetas.ts`
+- Query para ler indices por empresa
+- Mutation para atualizar indices
+
+**Dialog**: `src/components/metas/MetaAnualDialog.tsx`
+- Select de vendedor (ou "Todos")
+- Input de meta anual (valor e deals)
+- Grid 12 meses mostrando indices (editaveis) e valores calculados
+- Preview: `meta_mes = (meta_anual * indice) / soma_indices`
+- Botao "Aplicar" que faz upsert nos 12 meses
+
+**Pagina `MetasPage.tsx`**:
+- Adicionar botao "Definir Meta Anual" ao lado do seletor de mes (visivel so para ADMIN)
+- Ao clicar, abre o MetaAnualDialog
+
+### Configuracao dos Indices
+
+Adicionar uma tab "Comercial" nas Configuracoes (`Settings.tsx`) onde o admin pode ajustar os indices de sazonalidade e os motivos de perda.
+
+---
+
+## 2. Configuracao de Motivos de Perda
+
+### Situacao Atual
+- A tabela `deal_loss_categories` ja existe com 7 categorias: Preco, Concorrencia, Timing, Sem Necessidade, Sem Resposta, Produto Inadequado, Outro
+- Tem colunas: id, codigo, label, descricao, posicao
+- Usada em `DealCard.tsx`, `DealDetailSheet.tsx` e `PendenciasPerda.tsx`
+- **Nao existe UI para gerenciar essas categorias**
+
+### O que vamos fazer
+Criar um CRUD de motivos de perda na nova tab "Comercial" das Configuracoes.
+
+**Componente**: `src/components/settings/LossCategoriesConfig.tsx`
+- Lista draggable (reordenavel) com as categorias existentes
+- Cada item mostra: codigo, label, descricao, botao editar/excluir
+- Botao "Adicionar Categoria"
+- Dialog de edicao: label, codigo (auto-gerado do label em UPPER_SNAKE), descricao
+- Protecao: `PRODUTO_INADEQUADO` nao pode ser removido (usado na logica de bypass de tempo minimo)
+
+**Hook**: `useLossCategoriesAdmin()` em `src/hooks/useDeals.ts`
+- `useCreateLossCategory()` - INSERT
+- `useUpdateLossCategory()` - UPDATE
+- `useDeleteLossCategory()` - DELETE
+- `useReorderLossCategories()` - UPDATE posicao em batch
+
+---
+
+## 3. Nova Tab "Comercial" nas Configuracoes
+
+**Arquivo**: `src/pages/admin/Settings.tsx`
+- Adicionar tab "Comercial" com icone `BarChart3`
+- Grid cols-6 no TabsList
+
+**Componente**: `src/components/settings/ComercialTab.tsx`
+- Secao 1: **Indices de Sazonalidade** - grid 4x3 com os 12 meses, input numerico para cada indice, botao salvar
+- Secao 2: **Motivos de Perda** - componente LossCategoriesConfig
+
+---
+
+## Detalhes Tecnicos
+
+### Migracao SQL
+1. Criar tabela `sazonalidade_indices` com seed dos valores default
+2. RLS: leitura para autenticados, escrita para ADMIN
+
+### Calculo de distribuicao
+```text
+Para meta anual de R$ 120.000 com os indices default:
+soma_indices = 0.63+0.75+1.22+0.73+2.28+0.73+0.84+0.96+0.32+1.21+1.07+2.47 = 13.21
+meta_jan = 120000 * (0.63/13.21) = R$ 5.723
+meta_mai = 120000 * (2.28/13.21) = R$ 20.711
+meta_dez = 120000 * (2.47/13.21) = R$ 22.437
 ```
 
 ### Arquivos
-
-**`src/pages/CockpitPage.tsx`** (reescrever)
-- Importar hooks: `useAnalyticsConversion`, `useAnalyticsFunnel`, `useAnalyticsVendedor`, `useAnalyticsMotivosPerda`, `useAnalyticsCanalOrigem`, `useAnalyticsEvolucao`, `useWorkbenchSLAAlerts`
-- Usar `usePipelines` para filtro de pipeline (como no AnalyticsPage)
-- 6 KPI cards no topo (Total Deals, Win Rate, Valor Ganho, Pipeline Aberto, Ticket Medio, Ciclo Medio)
-- Grid 2x2 com resumos compactos de funil, evolucao, vendedores e perdas
-- Sem tabs -- tudo visivel numa tela so (diferente do AnalyticsPage que usa tabs)
-
-Nao precisa de novos hooks nem mudancas no banco.
-
----
-
-## 9. Templates CRUD
-
-A tabela `message_templates` ja existe com 19 registros e RLS configurado (ADMIN pode CRUD, MARKETING/SDR_IA podem ler).
-
-### Colunas existentes
-| Campo | Tipo |
-|-------|------|
-| id | uuid |
-| empresa | BLUE/TOKENIZA |
-| canal | WHATSAPP/EMAIL |
-| codigo | text (unico) |
-| nome | text |
-| descricao | text (nullable) |
-| conteudo | text |
-| ativo | boolean |
-| assunto_template | text (nullable, para email) |
-
-### Arquivos
-
-**`src/hooks/useTemplates.ts`** (novo)
-- `useTemplates(empresa, canal?)` -- lista templates com filtros
-- `useCreateTemplate()` -- mutation INSERT
-- `useUpdateTemplate()` -- mutation UPDATE
-- `useDeleteTemplate()` -- mutation DELETE (ou desativar)
-
-**`src/pages/TemplatesPage.tsx`** (reescrever)
-- Filtros: empresa (BLUE/TOKENIZA/Todas) + canal (WHATSAPP/EMAIL/Todos) + ativo/inativo
-- Tabela com colunas: Nome, Codigo, Canal, Empresa, Ativo, Acoes
-- Botao "Novo Template" abre dialog
-- Clicar em um template abre dialog de edicao
-- Preview do conteudo com highlight de placeholders (`{{primeiro_nome}}`, etc)
-
-**`src/components/templates/TemplateFormDialog.tsx`** (novo)
-- Dialog com form: nome, codigo, empresa, canal, conteudo, assunto (se email), descricao
-- Textarea para conteudo com contagem de caracteres
-- Toggle ativo/inativo
-- Validacao com zod
-
-Nao precisa de migracao no banco -- tabela e RLS ja existem.
-
----
-
-## 11. Envio em Massa (amelia-mass-action execute)
-
-O frontend ja envia `{ jobId, action: 'execute' }` para a edge function, mas a edge function so trata o fluxo de geracao (sem `action`). Precisamos adicionar o branch de execucao.
-
-### Edge Function: `supabase/functions/amelia-mass-action/index.ts`
-
-Adicionar logica para `action === 'execute'`:
-
-```text
-1. Ler body: { jobId, action }
-2. Se action === 'execute':
-   a. Carregar job (status deve ser PREVIEW)
-   b. Filtrar messages_preview onde approved === true
-   c. Para cada mensagem aprovada:
-      - Buscar dados do deal (contact telefone/email)
-      - Se canal === WHATSAPP: chamar whatsapp-send internamente
-      - Se canal === EMAIL: chamar email-send internamente
-      - Registrar sucesso/erro
-   d. Atualizar job: status = DONE, processed = total enviados
-3. Se action nao informado: fluxo atual de geracao (sem mudanca)
-```
-
-A chamada interna sera feita via `fetch` para as edge functions `whatsapp-send` e `email-send` usando a URL do Supabase + service role key.
-
-### Mudancas
-
-**`supabase/functions/amelia-mass-action/index.ts`**
-- Extrair `action` do body junto com `jobId`
-- Branch: se `action === 'execute'`, executar envio real
-- Se sem action, manter fluxo de geracao existente
-- Para cada mensagem aprovada, chamar a edge function correspondente
-- Atualizar status do job para DONE ou FAILED ao final
-
----
-
-## Resumo de arquivos
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/CockpitPage.tsx` | Reescrever com dashboard executivo |
-| `src/hooks/useTemplates.ts` | Criar hook CRUD |
-| `src/pages/TemplatesPage.tsx` | Reescrever com CRUD funcional |
-| `src/components/templates/TemplateFormDialog.tsx` | Criar dialog de form |
-| `supabase/functions/amelia-mass-action/index.ts` | Adicionar branch execute |
-
-Nenhuma migracao de banco necessaria. Nenhuma nova dependencia.
-
+| `src/pages/admin/Settings.tsx` | Adicionar tab "Comercial" |
+| `src/components/settings/ComercialTab.tsx` | Novo - secoes sazonalidade + motivos |
+| `src/components/settings/LossCategoriesConfig.tsx` | Novo - CRUD de categorias de perda |
+| `src/components/metas/MetaAnualDialog.tsx` | Novo - dialog de distribuicao anual |
+| `src/pages/MetasPage.tsx` | Adicionar botao "Meta Anual" |
+| `src/hooks/useMetas.ts` | Adicionar `useSazonalidade` + `useUpsertMetasBatch` |
+| `src/hooks/useDeals.ts` | Adicionar mutations CRUD para loss categories |
+| Migracao SQL | Tabela `sazonalidade_indices` + seed + RLS |
