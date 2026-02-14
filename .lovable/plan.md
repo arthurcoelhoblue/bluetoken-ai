@@ -1,164 +1,128 @@
-# Auditoria Completa: Pontas Soltas do Blue CRM
-
-## Resumo
-
-Apos analise profunda de todo o codebase, organizei os achados em 4 categorias: **Paginas Shell (vazias)**, **UI desconectada do backend**, **Features com TODO/incompletas**, e **Oportunidades de ativacao rapida**.
-
----
-
-## 1. PAGINAS SHELL (so exibem PageShell, sem funcionalidade)
-
-Estas paginas mostram apenas um icone, titulo e descricao. Nao tem logica nem dados.
 
 
-| Pagina                | Arquivo                         | Descricao                                                                      |
-| --------------------- | ------------------------------- | ------------------------------------------------------------------------------ |
-| **Cockpit Executivo** | `src/pages/CockpitPage.tsx`     | Apenas shell. "Patch 7 - Cockpit & Dashboards"                                 |
-| **Renovacao & Churn** | `src/pages/RenovacaoPage.tsx`   | Apenas shell. "Patch 8 - Renovacao & Churn"                                    |
-| **Templates**         | `src/pages/TemplatesPage.tsx`   | Apenas shell. "Incluso no Patch 3"                                             |
-| **Integracoes**       | `src/pages/IntegracoesPage.tsx` | Apenas shell. Ja existe `/admin/settings` com configuracao funcional de canais |
+# Fase 3: Cockpit Executivo + Templates CRUD + Envio em Massa
 
+## 8. Cockpit Executivo
 
-### Acao recomendada
+Transformar a shell page em um dashboard gerencial que mostra KPIs consolidados em uma unica tela. Usa inteiramente dados que ja existem via hooks `useAnalytics` e `useWorkbench`.
 
-- **Integracoes**: Redirecionar para `/admin/settings` (tab Canais) ou mover o conteudo de IntegrationsTab para esta pagina.
-- **Templates**: Criar CRUD basico de templates (a tabela pode ja existir no banco).
-- **Cockpit**: Reaproveitar dados dos hooks `useAnalytics` + `useWorkbench` para montar um dashboard executivo.
-- **Renovacao**: Depende de regras de negocio especificas. Pode ser implementado como um filtro de pipeline com alertas pre-vencimento.
-
----
-
-## 2. UI DESCONECTADA DO BACKEND
-
-### 2.1 Busca Global (TopBar)
-
-- **Arquivo**: `src/components/layout/TopBar.tsx` (linhas 72-76)
-- **Estado**: Placeholder visual apenas (div estatica com "Buscar..."). Nao tem `onClick`, nao tem `CommandDialog`, nao tem atalho `Cmd+K`.
-- **Dependencia**: `cmdk` ja esta instalado no projeto.
-
-### 2.2 Notificacoes (TopBar)
-
-- **Arquivo**: `src/components/layout/TopBar.tsx` (linhas 78-82)
-- **Estado**: Botao com icone de sino e bolinha vermelha fixa. Sem dropdown, sem contagem real, sem backend. Badge vermelho sempre visivel (falso positivo).
-
-### 2.3 Filtros de Leads Quentes (nao funcionais)
-
-- **Arquivo**: `src/pages/admin/LeadsQuentes.tsx` (linhas 191-210)
-- **Estado**: Badges de filtro ("Quentes", "TOKENIZA", "BLUE", etc.) sao renderizados mas nao tem `onClick` funcional nem estado de filtro. Sao puramente visuais.
-
-### 2.4 Pagina de Perfil (Me) - Provider hardcoded
-
-- **Arquivo**: `src/pages/Me.tsx` (linha 146)
-- **Estado**: O campo "Provider" mostra `Google OAuth` hardcoded. Deveria ler `user.app_metadata.provider` ou similar.
-
----
-
-## 3. FEATURES COM TODO / INCOMPLETAS
-
-### 3.1 Patch 12 - Envio real de mensagens em massa
-
-- **Arquivo**: `src/hooks/usePatch12.ts` (linha 162)
-- **Estado**: Contem `// TODO: trigger actual message sending via edge function`. A funcao de confirmar job de envio em massa atualiza o status no banco mas nao dispara efetivamente o envio.
-
-### 3.2 Amelia Page - Central vazia
-
-- **Arquivo**: `src/pages/AmeliaPage.tsx`
-- **Estado**: Usa PageShell + um card de "Acao em Massa". Deveria ser a central de operacoes da SDR IA com metricas, conversas ativas, etc. O DashboardContent (`src/components/dashboard/DashboardContent.tsx`) ja tem essas metricas mas e acessado apenas pela rota `/` quando logado (que redireciona para `/meu-dia`). Esse dashboard antigo do SDR IA ficou orfao.
-
-### 3.3 DashboardContent - Componente orfao
-
-- **Arquivo**: `src/components/dashboard/DashboardContent.tsx`
-- **Estado**: Dashboard completo com stats de eventos SGT, cadencias, leads quentes, graficos de intent, etc. Nao e referenciado por nenhuma rota ativa. Era o dashboard original da rota `/` mas foi substituido pelo WorkbenchPage.
-
----
-
-## 4. OPORTUNIDADES DE ATIVACAO RAPIDA
-
-### 4.1 Rota duplicada de Cadencias
-
-- Existem **duas** entradas no menu para cadencias:
-  - "Cadencias" (`/cadences`) - lista de cadencias SDR com steps
-  - "Cadencias CRM" (`/cadencias-crm`) - cadencias vinculadas a deals com triggers
-- Ambas funcionam, mas a UX pode confundir. Considerar unificar.
-
-### 4.2 Rota de Atendimentos redireciona
-
-- `src/App.tsx` linha 95: `/atendimentos` faz `Navigate to="/conversas"` - OK, mas a TopBar ainda lista "Atendimentos" como titulo (linha 24 da TopBar). Pode ser removido do mapa.
-
-### 4.3 Rotas faltando na TopBar
-
-As seguintes rotas nao tem titulo no `ROUTE_TITLES` da TopBar:
-
-- `/meu-dia` (Workbench)
-- `/organizacoes`
-- `/pendencias`
-- `/relatorios`
-- `/cadencias-crm`
-- `/capture-forms`
-- `/importacao`
-- `/admin/zadarma`
-- `/settings/pipelines`
-- `/settings/custom-fields`
-
-Isso faz o titulo cair no fallback "Blue CRM" para essas paginas.
-
----
-
-## Plano de Implementacao
-
-### Fase 1 - Quick Fixes (sem mudanca de backend)
-
-1. **TopBar - Busca Global**: Implementar `CommandDialog` com busca em leads, deals e contatos usando `cmdk` (ja instalado).
-2. **TopBar - Notificacoes**: Esconder badge vermelho (nao ha backend). Adicionar dropdown vazio com "Nenhuma notificacao".
-3. **TopBar - Rotas faltantes**: Adicionar todos os titulos que estao faltando no `ROUTE_TITLES`.
-4. **Leads Quentes - Filtros**: Conectar os badges de filtro a estado real.
-5. **Me - Provider**: Ler provider do auth metadata em vez de hardcode.
-
-### Fase 2 - Ativar conteudo existente
-
-6. **Amelia Page**: Mover o conteudo do `DashboardContent` (orfao) para a pagina Amelia, que e a central de operacoes da SDR IA.
-7. **Integracoes Page**: Redirecionar `/integracoes` para `/admin/settings` (tab Canais), eliminando a shell.
-
-### Fase 3 - Construir conteudo novo
-
-8. **Cockpit Executivo**: Construir dashboard executivo usando os hooks `useAnalytics` e `useWorkbench` existentes.
-9. **Templates**: Criar CRUD de templates de mensagem.
-10. **Renovacao**: Implementar logica de renovacao/churn.
-11. **Patch 12 TODO**: Conectar o envio em massa ao edge function real.
-
----
-
-## Detalhes Tecnicos
-
-### Busca Global (TopBar)
-
-- Usar `CommandDialog` do `cmdk` (ja em `src/components/ui/command.tsx`)
-- Buscar nas tabelas: `contacts`, `deals`, `lead_contacts`
-- Atalho `Cmd+K` / `Ctrl+K`
-- Debounce de 300ms na busca
-
-### Notificacoes
-
-- Trocar o botao por um `Popover` com mensagem "Nenhuma notificacao"
-- Remover badge vermelho fixo (causa falso positivo)
-- Backend de notificacoes pode ser implementado futuramente
-
-### DashboardContent para Amelia
-
-- Mover imports de `SdrIaMetricsCard`, `IntentChartCard`, `MessagesChartCard`, `CadenceStatusCard`, `ActionsBreakdownCard`, `LeadsQuentesCard` para `AmeliaPage.tsx`
-- Remover `DashboardContent.tsx` apos migracao
-
-### TopBar ROUTE_TITLES adicionais
+### Layout do Cockpit
 
 ```text
-'/meu-dia': 'Meu Dia'
-'/organizacoes': 'Organizacoes'
-'/pendencias': 'Pendencias'
-'/relatorios': 'Relatorios'
-'/cadencias-crm': 'Cadencias CRM'
-'/capture-forms': 'Formularios de Captura'
-'/importacao': 'Importacao'
-'/admin/zadarma': 'Telefonia'
-'/settings/pipelines': 'Configuracao de Funis'
-'/settings/custom-fields': 'Campos Customizaveis'
++---------------------------------------------+
+|  KPIs: Win Rate | Ticket Medio | Pipeline    |
+|         Ciclo   | Deals Ativos | SLA Alerts  |
++---------------------------------------------+
+|  Funil Resumido (top 5 stages)  | Evolucao   |
+|  com barras horizontais         | mini chart  |
++---------------------------------------------+
+|  Top 5 Vendedores   |  Motivos de Perda      |
+|  (ranking compacto)  |  (top 5 barras)        |
++---------------------------------------------+
+|  Canais de Origem    |  Tarefas Atrasadas     |
+|  (mini tabela)       |  (SLA alerts count)    |
++---------------------------------------------+
 ```
+
+### Arquivos
+
+**`src/pages/CockpitPage.tsx`** (reescrever)
+- Importar hooks: `useAnalyticsConversion`, `useAnalyticsFunnel`, `useAnalyticsVendedor`, `useAnalyticsMotivosPerda`, `useAnalyticsCanalOrigem`, `useAnalyticsEvolucao`, `useWorkbenchSLAAlerts`
+- Usar `usePipelines` para filtro de pipeline (como no AnalyticsPage)
+- 6 KPI cards no topo (Total Deals, Win Rate, Valor Ganho, Pipeline Aberto, Ticket Medio, Ciclo Medio)
+- Grid 2x2 com resumos compactos de funil, evolucao, vendedores e perdas
+- Sem tabs -- tudo visivel numa tela so (diferente do AnalyticsPage que usa tabs)
+
+Nao precisa de novos hooks nem mudancas no banco.
+
+---
+
+## 9. Templates CRUD
+
+A tabela `message_templates` ja existe com 19 registros e RLS configurado (ADMIN pode CRUD, MARKETING/SDR_IA podem ler).
+
+### Colunas existentes
+| Campo | Tipo |
+|-------|------|
+| id | uuid |
+| empresa | BLUE/TOKENIZA |
+| canal | WHATSAPP/EMAIL |
+| codigo | text (unico) |
+| nome | text |
+| descricao | text (nullable) |
+| conteudo | text |
+| ativo | boolean |
+| assunto_template | text (nullable, para email) |
+
+### Arquivos
+
+**`src/hooks/useTemplates.ts`** (novo)
+- `useTemplates(empresa, canal?)` -- lista templates com filtros
+- `useCreateTemplate()` -- mutation INSERT
+- `useUpdateTemplate()` -- mutation UPDATE
+- `useDeleteTemplate()` -- mutation DELETE (ou desativar)
+
+**`src/pages/TemplatesPage.tsx`** (reescrever)
+- Filtros: empresa (BLUE/TOKENIZA/Todas) + canal (WHATSAPP/EMAIL/Todos) + ativo/inativo
+- Tabela com colunas: Nome, Codigo, Canal, Empresa, Ativo, Acoes
+- Botao "Novo Template" abre dialog
+- Clicar em um template abre dialog de edicao
+- Preview do conteudo com highlight de placeholders (`{{primeiro_nome}}`, etc)
+
+**`src/components/templates/TemplateFormDialog.tsx`** (novo)
+- Dialog com form: nome, codigo, empresa, canal, conteudo, assunto (se email), descricao
+- Textarea para conteudo com contagem de caracteres
+- Toggle ativo/inativo
+- Validacao com zod
+
+Nao precisa de migracao no banco -- tabela e RLS ja existem.
+
+---
+
+## 11. Envio em Massa (amelia-mass-action execute)
+
+O frontend ja envia `{ jobId, action: 'execute' }` para a edge function, mas a edge function so trata o fluxo de geracao (sem `action`). Precisamos adicionar o branch de execucao.
+
+### Edge Function: `supabase/functions/amelia-mass-action/index.ts`
+
+Adicionar logica para `action === 'execute'`:
+
+```text
+1. Ler body: { jobId, action }
+2. Se action === 'execute':
+   a. Carregar job (status deve ser PREVIEW)
+   b. Filtrar messages_preview onde approved === true
+   c. Para cada mensagem aprovada:
+      - Buscar dados do deal (contact telefone/email)
+      - Se canal === WHATSAPP: chamar whatsapp-send internamente
+      - Se canal === EMAIL: chamar email-send internamente
+      - Registrar sucesso/erro
+   d. Atualizar job: status = DONE, processed = total enviados
+3. Se action nao informado: fluxo atual de geracao (sem mudanca)
+```
+
+A chamada interna sera feita via `fetch` para as edge functions `whatsapp-send` e `email-send` usando a URL do Supabase + service role key.
+
+### Mudancas
+
+**`supabase/functions/amelia-mass-action/index.ts`**
+- Extrair `action` do body junto com `jobId`
+- Branch: se `action === 'execute'`, executar envio real
+- Se sem action, manter fluxo de geracao existente
+- Para cada mensagem aprovada, chamar a edge function correspondente
+- Atualizar status do job para DONE ou FAILED ao final
+
+---
+
+## Resumo de arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| `src/pages/CockpitPage.tsx` | Reescrever com dashboard executivo |
+| `src/hooks/useTemplates.ts` | Criar hook CRUD |
+| `src/pages/TemplatesPage.tsx` | Reescrever com CRUD funcional |
+| `src/components/templates/TemplateFormDialog.tsx` | Criar dialog de form |
+| `supabase/functions/amelia-mass-action/index.ts` | Adicionar branch execute |
+
+Nenhuma migracao de banco necessaria. Nenhuma nova dependencia.
+
