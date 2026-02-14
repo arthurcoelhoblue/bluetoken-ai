@@ -25,7 +25,7 @@ function formatPercent(value: number) {
   return `${value.toFixed(1)}%`;
 }
 
-export default function CockpitPage() {
+function CockpitContent() {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
   const { data: pipelines } = usePipelines();
 
@@ -66,7 +66,6 @@ export default function CockpitPage() {
   const slaCount = slaAlerts?.length ?? 0;
 
   return (
-    <AppLayout>
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Cockpit Executivo</h1>
@@ -283,6 +282,13 @@ export default function CockpitPage() {
           </Card>
         </div>
       </div>
+  );
+}
+
+export default function CockpitPage() {
+  return (
+    <AppLayout>
+      <CockpitContent />
     </AppLayout>
   );
 }
