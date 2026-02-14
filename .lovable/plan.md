@@ -1,185 +1,61 @@
 
-# Analise de Prontidao para Migracao do Pipedrive
 
-## Resumo Executivo
+# Limpeza do Badge "Patch" com refinamento visual do PageShell
 
-O Blue CRM ja possui a maior parte da infraestrutura necessaria para substituir o Pipedrive. Os 5 pipelines estao configurados com stages reais, o Kanban funciona, o detalhe do deal e completo, e os relatorios estao robustos. Porem, existem lacunas operacionais que impediriam o uso diario pela equipe.
+## Contexto
 
----
+O componente `PageShell` hoje exibe um badge com texto de patch e usa um layout centralizado (`min-h-[60vh]`, `text-center`) que funciona como placeholder de pagina vazia. Porem, 5 das 6 paginas que usam o componente tem conteudo real abaixo dele, o que significa que o cabecalho ocupa 60% da tela antes do conteudo util aparecer. Ao remover o badge, vamos aproveitar para transformar o PageShell em um cabecalho de pagina profissional e compacto.
 
-## O que ja esta pronto (Paridade com Pipedrive)
+## Alteracoes
 
-| Funcionalidade Pipedrive | Status no CRM | Observacao |
-|--------------------------|---------------|------------|
-| Kanban de Deals | PRONTO | Com drag-and-drop, SLA, progresso |
-| Detalhe do Deal | PRONTO | Timeline, atividades, campos custom, scores |
-| Contatos / Pessoas | PRONTO | Busca, filtros, paginacao, detalhe |
-| Organizacoes | PRONTO | CRUD completo com stats |
-| Funis (Pipelines) | PRONTO | 5 funis reais configurados |
-| Motivos de Perda | PRONTO | 7 categorias + CRUD para admin |
-| Campos Personalizados | PRONTO | 55 campos configurados (EAV) |
-| Relatorios / Analytics | PRONTO | Funil, conversao, vendedores, LTV, esforco |
-| Templates de Mensagem | PRONTO | 19 templates |
-| Cadencias Automatizadas | PRONTO | WhatsApp + Email, 5 cadencias ativas |
-| WhatsApp Integrado | PRONTO | Inbound + Outbound + SDR IA |
-| Telefonia (Zadarma) | PRONTO | Click-to-call, historico no deal |
-| Email SMTP | PRONTO | Envio via cadencias |
-| Importacao Pipedrive | PRONTO | Wizard JSON com mapeamento |
-| Controle de Acesso | PRONTO | RBAC granular por tela |
-| Metas e Comissoes | PRONTO | Ranking, sazonalidade, meta anual |
+### 1. `src/components/layout/PageShell.tsx` - Redesign como Page Header
 
----
+**Antes:** Componente centralizado ocupando 60vh com badge de patch.
 
-## O que falta (Gaps Criticos para Migracao)
+**Depois:** Cabecalho de pagina elegante e compacto, alinhado a esquerda, com icone, titulo e descricao em linha. Remover a prop `patchInfo`, o import do `Badge` e a linha do badge. Reduzir o padding e remover o `min-h-[60vh]`. Usar layout horizontal (flex-row) com icone menor ao lado do titulo para um visual profissional de cabecalho.
 
-### Gap 1: Dados Reais Nao Importados
-**Impacto: BLOQUEANTE**
+A prop `patchInfo` sera removida da interface e todos os usos deixam de ser obrigatorios.
 
-O wizard de importacao nunca foi executado. Ha apenas 105 contatos (provavelmente de teste), 0 organizacoes e 1 deal. Para migrar a equipe, e necessario:
+### 2. Paginas com conteudo (5 arquivos) - Remover `patchInfo`
 
-- Exportar deals, persons e organizations do Pipedrive (JSON)
-- Executar o wizard de importacao mapeando pipelines e stages
-- Validar integridade dos dados pos-importacao
+| Arquivo | Antes | Depois |
+|---------|-------|--------|
+| `ImportacaoPage.tsx` | `patchInfo="Patch 11"` | Remover prop, descricao atualizada para "Importe deals, contatos e organizacoes do Pipedrive para o CRM." |
+| `CustomFieldsConfigPage.tsx` | `patchInfo="Patch 2 — Campos Customizáveis"` | Remover prop |
+| `PipelineConfigPage.tsx` | `patchInfo="Patch 2 — Pipelines Reais"` | Remover prop |
+| `AmeliaPage.tsx` | `patchInfo="Patch 6 + 12"` | Remover prop |
+| `admin/PendenciasPerda.tsx` | `patchInfo="Gestão"` | Remover prop |
 
-**Acao:** Nao requer desenvolvimento. E uma acao operacional usando a ferramenta ja existente em /importacao.
+### 3. `IntegracoesPage.tsx` - Pagina placeholder (caso especial)
 
----
+Esta pagina nao tem conteudo real, apenas o PageShell. Ao inves de usar o PageShell como cabecalho, vamos manter um layout centralizado inline (sem o componente PageShell) com uma mensagem profissional tipo "Em breve" ou simplesmente manter como cabecalho normal, ja que a configuracao de integracoes ja existe em Settings > Integracoes.
 
-### Gap 2: Roles dos Vendedores
-**Impacto: BLOQUEANTE**
+**Decisao:** Remover o `patchInfo` e manter o PageShell como cabecalho. A descricao ja e informativa.
 
-Nenhum usuario tem a role CLOSER, que e necessaria para acessar:
-- Conversas
-- Metas e Comissoes
-- Cockpit Executivo
-- Relatorios
-- Acao em Massa
+## Resultado Visual Esperado
 
-Atualmente todos sao ADMIN ou READONLY. Os vendedores precisam receber a role CLOSER.
+Antes (cada pagina):
+```text
+        [   icone grande   ]
+        Titulo Centralizado
+    Descricao centralizada aqui
+        [ Patch 11 ]
 
-**Acao:** Configuracao via Settings > Controle de Acesso (ja existe a tela).
+--- conteudo real comeca aqui, la embaixo ---
+```
 
----
+Depois:
+```text
+[icone] Titulo da Pagina
+        Descricao compacta aqui
 
-### Gap 3: Filtro por Vendedor no Pipeline
-**Impacto: IMPORTANTE**
+--- conteudo real comeca logo abaixo ---
+```
 
-O Pipedrive permite filtrar o Kanban por vendedor responsavel. O CRM so filtra por temperatura. Isso dificulta o gestor ver o funil de cada vendedor.
+## Resumo de Impacto
 
-**Acao:** Adicionar select de vendedor nos filtros do Pipeline (componente PipelineFilters.tsx).
+- 7 arquivos editados
+- Zero risco funcional
+- UI mais profissional e compacta
+- Conteudo das paginas fica visivel sem scroll
 
----
-
-### Gap 4: Envio de Email Direto do Deal
-**Impacto: IMPORTANTE**
-
-No Pipedrive, voce envia email direto do deal. No CRM, email so sai via cadencias automatizadas. Falta:
-- Botao "Enviar Email" na timeline do deal
-- Dialog com destinatario pre-preenchido, assunto, corpo
-- Usar a edge function email-send existente
-- Registrar como atividade do tipo EMAIL
-
-**Acao:** Criar componente EmailFromDeal na timeline do DealDetailSheet.
-
----
-
-### Gap 5: Visao de Agenda / Atividades Pendentes
-**Impacto: MODERADO**
-
-O Pipedrive tem uma visao de calendario/agenda. O CRM tem tarefas pendentes no Workbench (Meu Dia), mas nao uma visao de calendario dedicada. O "Meu Dia" ja mostra tarefas hoje/atrasadas e SLA, o que cobre a necessidade basica.
-
-**Acao:** Pode ser implementado depois. O Workbench ja supre a necessidade minima.
-
----
-
-### Gap 6: Produtos/Itens no Deal
-**Impacto: BAIXO**
-
-Pipedrive permite associar produtos a deals. O CRM so tem valor total. Se a operacao nao depende de detalhamento por produto, isso pode ser adiado.
-
-**Acao:** Adiavel. Pode ser implementado como fase 2.
-
----
-
-### Gap 7: Metas Nao Configuradas
-**Impacto: MODERADO**
-
-A infraestrutura de metas esta pronta (ranking, comissoes, meta anual com sazonalidade), mas nenhuma meta foi cadastrada. Sem metas, o ranking aparece vazio.
-
-**Acao:** Configuracao operacional. Usar o botao "Meta Anual" para definir metas com sazonalidade para 2026.
-
----
-
-## Plano de Acao Consolidado
-
-### Fase 1: Ajustes de Codigo (o que implementar)
-
-1. **Filtro por vendedor no Pipeline**
-   - Adicionar select de owner nos PipelineFilters
-   - Passar ownerId para useDeals (ja suporta o parametro)
-
-2. **Envio de email direto do deal**
-   - Novo componente `EmailFromDealDialog`
-   - Botao na toolbar de atividades do DealDetailSheet
-   - Usa edge function email-send existente
-   - Registra deal_activity tipo EMAIL
-
-3. **Mapeamento de owner na importacao**
-   - Adicionar secao de mapeamento de owners no wizard
-   - Mapear user_id do Pipedrive para profile.id do CRM
-   - Gravar owner_id nos deals e contacts importados
-
-### Fase 2: Configuracao Operacional (sem codigo)
-
-4. Atribuir role CLOSER aos vendedores via Settings
-5. Exportar JSONs do Pipedrive (deals, persons, organizations)
-6. Executar importacao via /importacao
-7. Cadastrar metas 2026 usando Meta Anual com sazonalidade
-8. Configurar regras de comissao
-9. Validar dados importados
-
-### Fase 3: Pos-Migracao (melhorias futuras)
-
-10. Visao de calendario/agenda
-11. Produtos/itens no deal
-12. Sincronizacao bi-direcional em tempo real (pipedrive-sync ja existe mas desativado)
-
----
-
-## Detalhes Tecnicos da Fase 1
-
-### 1. Filtro por Vendedor no Pipeline
-
-**Arquivo:** `src/components/pipeline/PipelineFilters.tsx`
-- Adicionar select com lista de vendedores (query profiles com role CLOSER ou ADMIN)
-- Passar selectedOwnerId como prop
-
-**Arquivo:** `src/pages/PipelinePage.tsx`
-- Novo estado `ownerId`
-- Passar para useDeals (o hook ja aceita o parametro)
-
-### 2. Email Direto do Deal
-
-**Novo componente:** `src/components/deals/EmailFromDealDialog.tsx`
-- Props: dealId, contactEmail, contactNome
-- Campos: destinatario (pre-preenchido), assunto, corpo (textarea)
-- Botao enviar chama supabase.functions.invoke('email-send')
-- onSuccess: registra deal_activity tipo EMAIL
-
-**Arquivo:** `src/components/deals/DealDetailSheet.tsx`
-- Adicionar botao Mail ao lado dos tipos de atividade
-- Ao clicar, abre EmailFromDealDialog
-
-### 3. Mapeamento de Owner na Importacao
-
-**Arquivo:** `src/pages/ImportacaoPage.tsx`
-- Nova secao no step "mapping": mapeamento de user_id Pipedrive para profile CRM
-- Extrair user_ids unicos dos deals
-
-**Arquivo:** `src/hooks/useImportacao.ts`
-- Adicionar `owner_mapping` ao ImportConfig
-- Na importacao de deals, usar owner_mapping para definir owner_id
-- Na importacao de contacts, usar owner_mapping se disponivel
-
-**Arquivo:** `src/types/importacao.ts`
-- owner_mapping ja existe no tipo ImportConfig (ja previsto)
