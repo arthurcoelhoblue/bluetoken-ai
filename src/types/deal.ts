@@ -17,6 +17,7 @@ export interface PipelineStage {
   cor: string;
   is_won: boolean;
   is_lost: boolean;
+  is_priority: boolean;
   sla_minutos: number | null;
   tempo_minimo_dias: number | null;
   created_at: string;

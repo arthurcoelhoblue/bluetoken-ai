@@ -4264,6 +4264,7 @@ export type Database = {
           created_at: string
           id: string
           is_lost: boolean
+          is_priority: boolean
           is_won: boolean
           nome: string
           pipeline_id: string
@@ -4277,6 +4278,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_lost?: boolean
+          is_priority?: boolean
           is_won?: boolean
           nome: string
           pipeline_id: string
@@ -4290,6 +4292,7 @@ export type Database = {
           created_at?: string
           id?: string
           is_lost?: boolean
+          is_priority?: boolean
           is_won?: boolean
           nome?: string
           pipeline_id?: string
