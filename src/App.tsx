@@ -54,6 +54,12 @@ const CaptureFormsPage = lazy(() => import("./pages/CaptureFormsPage"));
 const CaptureFormBuilderPage = lazy(() => import("./pages/CaptureFormBuilderPage"));
 const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
 
+// CS Module pages
+const CSDashboardPage = lazy(() => import("./pages/cs/CSDashboardPage"));
+const CSClientesPage = lazy(() => import("./pages/cs/CSClientesPage"));
+const CSClienteDetailPage = lazy(() => import("./pages/cs/CSClienteDetailPage"));
+const CSPesquisasPage = lazy(() => import("./pages/cs/CSPesquisasPage"));
+const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -143,6 +149,13 @@ const App = () => (
                 
                 {/* Public form route */}
                 <Route path="/f/:slug" element={<PublicFormPage />} />
+
+                {/* CS Module routes */}
+                <Route path="/cs" element={<ProtectedRoute><CSDashboardPage /></ProtectedRoute>} />
+                <Route path="/cs/clientes" element={<ProtectedRoute><CSClientesPage /></ProtectedRoute>} />
+                <Route path="/cs/clientes/:id" element={<ProtectedRoute><CSClienteDetailPage /></ProtectedRoute>} />
+                <Route path="/cs/pesquisas" element={<ProtectedRoute><CSPesquisasPage /></ProtectedRoute>} />
+                <Route path="/cs/incidencias" element={<ProtectedRoute><CSIncidenciasPage /></ProtectedRoute>} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

@@ -1368,6 +1368,353 @@ export type Database = {
           },
         ]
       }
+      cs_customers: {
+        Row: {
+          contact_id: string
+          created_at: string
+          csm_id: string | null
+          data_primeiro_ganho: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          health_score: number | null
+          health_status: Database["public"]["Enums"]["cs_health_status"] | null
+          id: string
+          is_active: boolean | null
+          media_csat: number | null
+          notas_csm: string | null
+          nps_categoria: Database["public"]["Enums"]["cs_nps_categoria"] | null
+          proxima_renovacao: string | null
+          risco_churn_pct: number | null
+          sentiment_score: number | null
+          tags: string[] | null
+          ultimo_contato_em: string | null
+          ultimo_csat: number | null
+          ultimo_nps: number | null
+          updated_at: string
+          valor_mrr: number | null
+        }
+        Insert: {
+          contact_id: string
+          created_at?: string
+          csm_id?: string | null
+          data_primeiro_ganho?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          health_score?: number | null
+          health_status?: Database["public"]["Enums"]["cs_health_status"] | null
+          id?: string
+          is_active?: boolean | null
+          media_csat?: number | null
+          notas_csm?: string | null
+          nps_categoria?: Database["public"]["Enums"]["cs_nps_categoria"] | null
+          proxima_renovacao?: string | null
+          risco_churn_pct?: number | null
+          sentiment_score?: number | null
+          tags?: string[] | null
+          ultimo_contato_em?: string | null
+          ultimo_csat?: number | null
+          ultimo_nps?: number | null
+          updated_at?: string
+          valor_mrr?: number | null
+        }
+        Update: {
+          contact_id?: string
+          created_at?: string
+          csm_id?: string | null
+          data_primeiro_ganho?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          health_score?: number | null
+          health_status?: Database["public"]["Enums"]["cs_health_status"] | null
+          id?: string
+          is_active?: boolean | null
+          media_csat?: number | null
+          notas_csm?: string | null
+          nps_categoria?: Database["public"]["Enums"]["cs_nps_categoria"] | null
+          proxima_renovacao?: string | null
+          risco_churn_pct?: number | null
+          sentiment_score?: number | null
+          tags?: string[] | null
+          ultimo_contato_em?: string | null
+          ultimo_csat?: number | null
+          ultimo_nps?: number | null
+          updated_at?: string
+          valor_mrr?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_customers_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_customers_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_customers_csm_id_fkey"
+            columns: ["csm_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cs_customers_csm_id_fkey"
+            columns: ["csm_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cs_customers_csm_id_fkey"
+            columns: ["csm_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_customers_csm_id_fkey"
+            columns: ["csm_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      cs_health_log: {
+        Row: {
+          created_at: string
+          customer_id: string
+          dimensoes: Json
+          id: string
+          motivo_mudanca: string | null
+          score: number
+          status: Database["public"]["Enums"]["cs_health_status"]
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          dimensoes?: Json
+          id?: string
+          motivo_mudanca?: string | null
+          score: number
+          status: Database["public"]["Enums"]["cs_health_status"]
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          dimensoes?: Json
+          id?: string
+          motivo_mudanca?: string | null
+          score?: number
+          status?: Database["public"]["Enums"]["cs_health_status"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_health_log_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cs_incidents: {
+        Row: {
+          created_at: string
+          customer_id: string
+          descricao: string | null
+          detectado_por_ia: boolean | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          gravidade: Database["public"]["Enums"]["cs_gravidade"]
+          id: string
+          impacto_health: number | null
+          origem: string | null
+          resolucao: string | null
+          resolved_at: string | null
+          responsavel_id: string | null
+          status: Database["public"]["Enums"]["cs_incident_status"]
+          tipo: Database["public"]["Enums"]["cs_incident_tipo"]
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          descricao?: string | null
+          detectado_por_ia?: boolean | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          gravidade?: Database["public"]["Enums"]["cs_gravidade"]
+          id?: string
+          impacto_health?: number | null
+          origem?: string | null
+          resolucao?: string | null
+          resolved_at?: string | null
+          responsavel_id?: string | null
+          status?: Database["public"]["Enums"]["cs_incident_status"]
+          tipo?: Database["public"]["Enums"]["cs_incident_tipo"]
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          descricao?: string | null
+          detectado_por_ia?: boolean | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          gravidade?: Database["public"]["Enums"]["cs_gravidade"]
+          id?: string
+          impacto_health?: number | null
+          origem?: string | null
+          resolucao?: string | null
+          resolved_at?: string | null
+          responsavel_id?: string | null
+          status?: Database["public"]["Enums"]["cs_incident_status"]
+          tipo?: Database["public"]["Enums"]["cs_incident_tipo"]
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_incidents_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_incidents_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cs_incidents_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "cs_incidents_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_incidents_responsavel_id_fkey"
+            columns: ["responsavel_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      cs_playbooks: {
+        Row: {
+          created_at: string
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          is_active: boolean | null
+          nome: string
+          steps: Json | null
+          trigger_config: Json | null
+          trigger_type: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_active?: boolean | null
+          nome: string
+          steps?: Json | null
+          trigger_config?: Json | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_active?: boolean | null
+          nome?: string
+          steps?: Json | null
+          trigger_config?: Json | null
+          trigger_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      cs_surveys: {
+        Row: {
+          canal_envio: string | null
+          contexto_atividade_id: string | null
+          created_at: string
+          customer_id: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em: string
+          id: string
+          keywords_ia: Json | null
+          nota: number | null
+          pergunta: string | null
+          respondido_em: string | null
+          sentiment_ia: string | null
+          sentiment_score: number | null
+          texto_resposta: string | null
+          tipo: Database["public"]["Enums"]["cs_survey_tipo"]
+        }
+        Insert: {
+          canal_envio?: string | null
+          contexto_atividade_id?: string | null
+          created_at?: string
+          customer_id: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em?: string
+          id?: string
+          keywords_ia?: Json | null
+          nota?: number | null
+          pergunta?: string | null
+          respondido_em?: string | null
+          sentiment_ia?: string | null
+          sentiment_score?: number | null
+          texto_resposta?: string | null
+          tipo: Database["public"]["Enums"]["cs_survey_tipo"]
+        }
+        Update: {
+          canal_envio?: string | null
+          contexto_atividade_id?: string | null
+          created_at?: string
+          customer_id?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          enviado_em?: string
+          id?: string
+          keywords_ia?: Json | null
+          nota?: number | null
+          pergunta?: string | null
+          respondido_em?: string | null
+          sentiment_ia?: string | null
+          sentiment_score?: number | null
+          texto_resposta?: string | null
+          tipo?: Database["public"]["Enums"]["cs_survey_tipo"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_surveys_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_field_definitions: {
         Row: {
           created_at: string
@@ -5888,6 +6235,19 @@ export type Database = {
       cadence_run_status: "ATIVA" | "CONCLUIDA" | "CANCELADA" | "PAUSADA"
       canal_tipo: "WHATSAPP" | "EMAIL" | "SMS"
       classificacao_origem: "AUTOMATICA" | "MANUAL"
+      cs_gravidade: "BAIXA" | "MEDIA" | "ALTA" | "CRITICA"
+      cs_health_status: "SAUDAVEL" | "ATENCAO" | "EM_RISCO" | "CRITICO"
+      cs_incident_status: "ABERTA" | "EM_ANDAMENTO" | "RESOLVIDA" | "FECHADA"
+      cs_incident_tipo:
+        | "RECLAMACAO"
+        | "ATRASO"
+        | "ERRO_OPERACIONAL"
+        | "FALHA_COMUNICACAO"
+        | "INSATISFACAO"
+        | "SOLICITACAO"
+        | "OUTRO"
+      cs_nps_categoria: "PROMOTOR" | "NEUTRO" | "DETRATOR"
+      cs_survey_tipo: "NPS" | "CSAT" | "CES"
       custom_field_entity_type: "CONTACT" | "ORGANIZATION" | "DEAL"
       custom_field_value_type:
         | "TEXT"
@@ -6133,6 +6493,20 @@ export const Constants = {
       cadence_run_status: ["ATIVA", "CONCLUIDA", "CANCELADA", "PAUSADA"],
       canal_tipo: ["WHATSAPP", "EMAIL", "SMS"],
       classificacao_origem: ["AUTOMATICA", "MANUAL"],
+      cs_gravidade: ["BAIXA", "MEDIA", "ALTA", "CRITICA"],
+      cs_health_status: ["SAUDAVEL", "ATENCAO", "EM_RISCO", "CRITICO"],
+      cs_incident_status: ["ABERTA", "EM_ANDAMENTO", "RESOLVIDA", "FECHADA"],
+      cs_incident_tipo: [
+        "RECLAMACAO",
+        "ATRASO",
+        "ERRO_OPERACIONAL",
+        "FALHA_COMUNICACAO",
+        "INSATISFACAO",
+        "SOLICITACAO",
+        "OUTRO",
+      ],
+      cs_nps_categoria: ["PROMOTOR", "NEUTRO", "DETRATOR"],
+      cs_survey_tipo: ["NPS", "CSAT", "CES"],
       custom_field_entity_type: ["CONTACT", "ORGANIZATION", "DEAL"],
       custom_field_value_type: [
         "TEXT",
