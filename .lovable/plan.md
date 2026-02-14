@@ -1,170 +1,194 @@
 
-# Amelia Learning System -- Incremento: Deteccao de Sequencias Causais
+# Plano Completo: Resolucao de Todos os Itens da Auditoria Tecnica
 
-## Contexto
-
-O plano base ja cobre analise de padroes isolados (agrupamento por motivo de perda, frequencia de takeover, etc). Este incremento adiciona **deteccao de cadeias de eventos** que historicamente culminam em perda de deal ou cancelamento, com **alertas preventivos** quando um deal/lead ativo entra numa cadeia de risco.
+Este plano cobre **todos os 26 itens pendentes e parciais** identificados no relatorio de auditoria, organizados em 8 blocos de trabalho sequenciais.
 
 ---
 
-## O que muda no plano original
+## Bloco 1: Limpeza de Codigo e Consolidacao de Tipos
 
-### 1. Nova coluna na tabela `amelia_learnings`
+**Objetivo:** Eliminar divida tecnica estrutural.
 
-Adicionar campo para armazenar sequencias detectadas:
+### 1.1 Consolidar arquivos de tipo duplicados
+- Atualizar todos os imports de `@/types/patch12` para `@/types/projection` (5 arquivos: `usePatch12.ts`, `usePatch12.test.ts`, `AmeliaMassActionPage.tsx`, `ProjecaoStageCard.tsx`)
+- Atualizar todos os imports de `@/types/patch13` para `@/types/telephony` (4 arquivos: `useZadarma.ts`, `DealCallsPanel.tsx`, `ZadarmaConfigPage.tsx`, `ZadarmaPhoneWidget.tsx`)
+- Renomear `usePatch12.ts` para `useProjections.ts` e atualizar imports
+- Deletar `src/types/patch12.ts` e `src/types/patch13.ts` (re-exports orfaos)
 
-```text
-amelia_learnings (campos adicionais ao plano base)
-  sequencia_eventos   JSONB NULL   -- array ordenado de eventos que formam o padrao
-                                    -- ex: ["RECLAMACAO", "SEM_RESPOSTA_48H", "OBJECAO_PRECO", "PERDA"]
-  sequencia_match_pct  NUMERIC NULL -- % dos casos onde essa sequencia resultou no desfecho
-  sequencia_janela_dias INT NULL   -- janela temporal em dias onde a sequencia ocorre
-```
+### 1.2 Remover console.log/warn/error de producao
+- Substituir os ~155 `console.error` em hooks e componentes por tratamento silencioso (os erros ja sao capturados pelo React Query e ErrorBoundary)
+- Manter apenas: `ErrorBoundary.tsx`, `NotFound.tsx`, e edge functions (onde logs sao uteis)
+- Nos hooks, remover `console.error` antes do `throw error` (redundante -- React Query ja captura)
 
-Isso permite que a IA registre padroes como: "Em 70% dos casos, a sequencia RECLAMACAO -> SILENCIO_48H -> OBJECAO_PRECO resulta em PERDA dentro de 14 dias".
+### 1.3 Corrigir `score_probabilidade` no DealCard
+- O campo `score_probabilidade` ja existe no tipo `DealWithRelations` e na tabela `deals`
+- Remover os 5 casts `(deal as any).score_probabilidade` no `DealCard.tsx` e acessar diretamente como `deal.score_probabilidade`
 
-### 2. Nova analise na edge function `amelia-learn`: Mineracao de Sequencias
-
-Adicionar uma 6a etapa de analise alem das 5 ja planejadas:
-
-**Analise de Sequencias de Perda (deals):**
-- Buscar todos os deals PERDIDOS nos ultimos 90 dias
-- Para cada deal, reconstruir a timeline completa: `deal_activities` + `lead_message_intents` (se houver lead vinculado)
-- Ordenar eventos cronologicamente e extrair a sequencia de "tipos" (ex: NOTA, CHAMADA, RECLAMACAO, PERDA)
-- Enviar batch de ~20-30 timelines para a IA com o prompt: "Identifique sequencias de 2-4 eventos que aparecem em 50%+ dos deals perdidos mas em menos de 20% dos deals ganhos"
-- Salvar sequencias detectadas como aprendizados tipo `SEQUENCIA_PERDA`
-
-**Analise de Sequencias de Cancelamento/Churn (conversas):**
-- Buscar leads com `opt_out = true` ou deals perdidos com categoria `CANCELAMENTO`
-- Reconstruir timeline de intents: sequencia de `lead_message_intents` ordenada cronologicamente
-- Extrair padroes de intents que precedem o desfecho negativo
-- Ex: RECLAMACAO -> DUVIDA_TECNICA -> OBJECAO_RISCO -> OPT_OUT aparece em 4 de 6 cancelamentos
-- Salvar como aprendizados tipo `SEQUENCIA_CHURN`
-
-### 3. Novo modulo: Monitor de Sequencias Ativas (alerta preventivo)
-
-Esta e a peca mais importante -- **deteccao em tempo real** de que um deal/lead ativo esta entrando numa sequencia de risco.
-
-**Como funciona:**
-
-Quando `amelia-learn` roda e gera sequencias validadas, essas sequencias ficam disponiveis como "regras".
-
-Adicionar um check no `sdr-ia-interpret` (que ja roda a cada mensagem inbound):
-- Apos interpretar a mensagem, buscar sequencias VALIDADAS da empresa
-- Verificar se os ultimos N intents do lead formam o inicio de alguma sequencia de risco
-- Se match >= 50% da sequencia: gerar alerta AMELIA_ALERTA com prioridade ALTA
-
-Exemplo concreto:
-```text
-Sequencia validada: [RECLAMACAO, SEM_RESPOSTA_48H, OBJECAO_PRECO] -> PERDA (70%)
-
-Lead "Maria" acaba de enviar mensagem classificada como RECLAMACAO.
-Historico recente: ja teve uma OBJECAO_PRECO ha 3 dias.
-
-Amelia detecta: 2 de 3 eventos da sequencia ja ocorreram.
-Gera alerta: "Lead Maria esta num padrao que resultou em perda em 70% dos casos. 
-Recomendacao: contato humano imediato para reverter."
-```
-
-Tambem adicionar verificacao no hook `useDealDetail` quando o deal e aberto:
-- Se o deal tem atividades que matcham inicio de sequencia de risco, mostrar banner de alerta no detalhe do deal
-
-### 4. Novo tipo de aprendizado e alerta
-
-Adicionar aos tipos existentes do plano base:
-
-```text
-Tipos de aprendizado (incremento):
-  SEQUENCIA_PERDA    -- Cadeia de eventos que leva a perda de deal
-  SEQUENCIA_CHURN    -- Cadeia de intents que leva a cancelamento/opt-out
-  SEQUENCIA_SUCESSO  -- (bonus) Cadeia que leva a ganho -- para reforcar bons padroes
-
-Tipos de notificacao (incremento):
-  AMELIA_SEQUENCIA   -- "Este lead/deal esta num padrao de risco detectado"
-```
-
-### 5. Evolucao do Card AmeliaInsightsCard
-
-O card no Workbench (ja planejado) ganha uma subseccao:
-
-```text
---- Padroes de Sequencia Ativos ---
-[!] Lead Maria: 2/3 eventos de padrao de PERDA detectados (70% historico)
-    Sequencia: RECLAMACAO -> [SEM_RESPOSTA_48H] -> OBJECAO_PRECO -> PERDA
-    Recomendacao: Contato humano imediato
-    [Ver Lead] [Ignorar]
-
-[!] Deal #456 (Pipeline Comercial): 3/4 eventos de padrao de CHURN
-    Sequencia: OBJECAO_PRECO -> SILENCIO -> RECLAMACAO -> [CANCELAMENTO]
-    Recomendacao: Reuniao de retencao
-    [Ver Deal] [Ignorar]
-```
+### 1.4 Reduzir `as any` nos hooks principais
+- **`usePipelineConfig.ts`**: Tipar corretamente os payloads de insert/update usando tipos do Supabase gerados
+- **`useContactsPage.ts`**: Usar casting para tipo da view `contacts_with_stats` em vez de `as any`
+- **`useCadenciasCRM.ts`**: Tipar retornos de queries corretamente
+- **`useAmeliaLearnings.ts`**: Substituir `'amelia_learnings' as any` por tipo correto (a tabela ja esta no schema)
+- **`useDealDetail.ts`**: Substituir `'deals_full_detail' as any` por casting tipado
+- Objetivo: reduzir de ~279 para menos de 50 ocorrencias de `as any`
 
 ---
 
-## Fontes de dados para reconstrucao de timeline
+## Bloco 2: Paginacao Real (Server-side)
 
-| Tabela | Eventos extraidos | Uso |
-|--------|------------------|-----|
-| `deal_activities` | NOTA, CHAMADA, REUNIAO, EMAIL, TAREFA, PERDA, GANHO, MUDANCA_ESTAGIO | Timeline do deal |
-| `lead_message_intents` | RECLAMACAO, OBJECAO_PRECO, INTERESSE_COMPRA, OPT_OUT, etc | Timeline de intents do lead |
-| `conversation_takeover_log` | ASSUMIR, DEVOLVER | Momentos de intervencao humana |
-| `lead_messages` | INBOUND sem resposta (gap temporal) | Detectar SEM_RESPOSTA_XH |
+**Objetivo:** Substituir paginacao client-side por `.range()` onde possivel.
 
-A IA recebe essas timelines e identifica subsequencias recorrentes.
+### 2.1 `useContactsPage.ts`
+- A view `contacts_with_stats` ja suporta `count: 'exact'`
+- Implementar `.range(from, to)` baseado em pagina e pageSize
+- Mover logica de paginacao do componente para o hook
 
----
+### 2.2 `useOrganizationsPage.ts`
+- Mesmo padrao: adicionar `.range()` na query
+- Propagar page/pageSize como parametros do hook
 
-## Controle de custos (incremental)
+### 2.3 `useSgtEvents.ts`
+- Adicionar `.range()` para eventos SGT (ja tem `.limit()`)
 
-| Item | Impacto |
-|------|---------|
-| Mineracao de sequencias | +1 chamada IA por execucao (batch de timelines) |
-| Check de sequencia no sdr-ia-interpret | +1 query simples (buscar sequencias validadas) -- sem chamada IA extra |
-| Total incremental | ~120 chamadas/mes adicionais (1 chamada x 4 execucoes/dia x 30 dias) |
-
-O check no `sdr-ia-interpret` nao gera chamada IA adicional -- e apenas um match de array contra as sequencias ja salvas no banco.
+### 2.4 `useAtendimentos.ts` (manter client-side)
+- Conforme ja documentado, a paginacao client-side e necessaria aqui pela complexidade do merge de 4 tabelas
+- Adicionar comentario explicativo no codigo
 
 ---
 
-## Arquivos afetados (incremento ao plano base)
+## Bloco 3: Realtime Subscriptions
 
-| Acao | Arquivo | Descricao |
-|------|---------|-----------|
-| Ajustar | Migration `amelia_learnings` | Adicionar colunas sequencia_eventos, match_pct, janela_dias |
-| Ajustar | `supabase/functions/amelia-learn/index.ts` | Adicionar etapa 6: mineracao de sequencias |
-| Ajustar | `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar check de sequencia ativa apos interpretar |
-| Ajustar | `src/components/workbench/AmeliaInsightsCard.tsx` | Subseccao de sequencias ativas |
-| Ajustar | `src/types/learning.ts` | Novos tipos SEQUENCIA_PERDA, SEQUENCIA_CHURN |
+**Objetivo:** Adicionar subscricoes realtime para dados criticos.
 
-Nenhum arquivo novo -- tudo se encaixa nos mesmos arquivos do plano base, apenas com logica adicional.
+### 3.1 Kanban (deals)
+- Em `useDeals.ts`, adicionar subscription `postgres_changes` na tabela `deals` filtrada por `pipeline_id`
+- Invalidar query `['deals']` ao receber evento `UPDATE` ou `INSERT`
+- Migration: `ALTER PUBLICATION supabase_realtime ADD TABLE public.deals;`
 
----
+### 3.2 Workbench SLA Alerts
+- Em `useWorkbench.ts`, adicionar channel para `workbench_sla_alerts` (view materializada precisa de tabela base)
+- Alternativa: reduzir `refetchInterval` de 60s para 30s e adicionar realtime na tabela `deals` para invalidar SLA
 
-## Exemplos concretos de sequencias que a Amelia detectaria
-
-### Vendas (Pipeline)
-| Sequencia | Desfecho | Alerta |
-|-----------|----------|--------|
-| OBJECAO_PRECO -> SILENCIO_72H -> RECLAMACAO | PERDA 65% | "Deal esta seguindo padrao de perda por preco. Agende reuniao de valor." |
-| INTERESSE_COMPRA -> REUNIAO -> SEM_FOLLOWUP_48H | PERDA 55% | "Lead demonstrou interesse mas nao houve followup. Acao imediata recomendada." |
-| MUDANCA_ESTAGIO_RAPIDA -> MUDANCA_ESTAGIO_RAPIDA -> SEM_ATIVIDADE | PERDA 60% | "Deal avancou rapido mas parou. Pode ser otimismo excessivo do vendedor." |
-
-### Sucesso do Cliente / Retencao
-| Sequencia | Desfecho | Alerta |
-|-----------|----------|--------|
-| RECLAMACAO -> DUVIDA_TECNICA -> OBJECAO_RISCO | CANCELAMENTO 70% | "Cliente esta num padrao pre-cancelamento. Acione CS proativamente." |
-| RECLAMACAO -> RECLAMACAO -> SEM_RESPOSTA | OPT_OUT 80% | "Duas reclamacoes sem resolucao. Risco altissimo de churn." |
-
-### Sucesso (reforco positivo)
-| Sequencia | Desfecho | Insight |
-|-----------|----------|---------|
-| DUVIDA_PRODUTO -> REUNIAO -> NOTA_POSITIVA | GANHO 72% | "Leads que fazem perguntas e depois tem reuniao convertem bem. Priorize agendamento apos duvidas." |
+### 3.3 Tarefas do Workbench
+- Subscription na tabela `deal_activities` filtrada por `user_id` para tarefas pendentes
+- Invalidar queries de tarefas ao receber eventos
 
 ---
 
-## Resumo da mudanca
+## Bloco 4: RenovacaoPage -- Remover Hardcode
 
-O plano original analisa padroes **isolados** (frequencia de um evento). Este incremento adiciona analise de **sequencias temporais** -- cadeias de 2-4 eventos que, quando ocorrem em ordem dentro de uma janela de tempo, predizem um desfecho com alta probabilidade. A Amelia nao so aprende essas sequencias como **monitora deals/leads ativos** e alerta preventivamente quando detecta o inicio de uma cadeia de risco.
+**Objetivo:** Eliminar dependencia de `nome.includes('renovacao')`.
 
-Tudo se encaixa nos mesmos arquivos e infraestrutura do plano base, com custo incremental minimo (~120 chamadas IA/mes adicionais).
+### 4.1 Adicionar campo `tipo` na tabela `pipelines`
+- Migration: `ALTER TABLE pipelines ADD COLUMN tipo TEXT DEFAULT 'COMERCIAL';`
+- Valores: `COMERCIAL`, `RENOVACAO`, `POS_VENDA`, `CUSTOM`
+- Atualizar pipelines existentes que contenham "renovacao" no nome
+
+### 4.2 Atualizar `RenovacaoPage.tsx`
+- Filtrar por `p.tipo === 'RENOVACAO'` em vez de `nome.includes('renovacao')`
+- Atualizar mensagem de fallback para instruir a marcar o tipo do pipeline
+
+### 4.3 Atualizar `PipelineConfigPage`
+- Adicionar campo `tipo` no formulario de criacao/edicao de pipeline
+
+---
+
+## Bloco 5: Copilot-Chat -- Enriquecimento Completo
+
+**Objetivo:** Completar o enriquecimento de contexto no copilot.
+
+### 5.1 `enrichLeadContext`
+- Ja busca organizacao via telefone -- manter
+- Adicionar busca de `custom_field_values` para o contato vinculado ao lead (via `contacts.legacy_lead_id`)
+- Adicionar intents recentes do lead (`lead_message_intents` ultimos 5)
+
+### 5.2 `enrichPipelineContext`
+- Corrigir campos: `p.total_deals` e `p.valor_total` nao existem na view `workbench_pipeline_summary`
+- Usar `p.deals_abertos`, `p.valor_aberto`, `p.valor_ganho` (campos reais)
+- Adicionar filtro por `empresa`
+
+### 5.3 `enrichGeralContext`
+- Mesma correcao de campos da pipeline
+- Adicionar metricas basicas: total de deals abertos, valor total, SLA estourados
+
+---
+
+## Bloco 6: Funcionalidades IA-First (Auditoria Secao 7)
+
+**Objetivo:** Implementar os itens IA-first pendentes.
+
+### 6.1 Score de Probabilidade no DealCard (ja implementado parcialmente)
+- A funcao `fn_calc_deal_score` e o trigger `trg_update_deal_score` ja existem
+- O `DealCard.tsx` ja exibe o score (com `as any` -- corrigido no Bloco 1)
+- Verificar que o trigger esta ativo e os scores estao sendo calculados
+
+### 6.2 Auto-preenchimento de campos via conversa
+- No `sdr-ia-interpret`, quando acao = `CRIAR_TAREFA_CLOSER`:
+  - Extrair dados da conversa (valor mencionado, necessidade, urgencia) -- ja existe parcialmente
+  - Preencher `score_engajamento`, `score_intencao`, `score_valor`, `score_urgencia` no deal criado
+  - Isso alimenta o `fn_calc_deal_score` automaticamente
+
+### 6.3 Analise de sentimento nas mensagens
+- Adicionar campo `sentimento` (POSITIVO/NEUTRO/NEGATIVO) no retorno do `sdr-ia-interpret`
+- Salvar no `lead_message_intents` (necessita coluna nova)
+- Exibir indicador visual no historico de mensagens
+
+---
+
+## Bloco 7: Seguranca e Configuracao
+
+### 7.1 Revisar RLS da tabela `amelia_learnings`
+- Confirmar que politicas de leitura filtram por empresa
+- Confirmar que escrita so e possivel via service_role
+
+### 7.2 Validar publication realtime
+- Garantir que apenas tabelas necessarias estao na publication `supabase_realtime`
+
+---
+
+## Bloco 8: Testes e Validacao
+
+### 8.1 Atualizar testes existentes
+- `usePatch12.test.ts` -- renomear para `useProjections.test.ts`
+- `useDeals.test.ts` -- remover `as any` nos mocks
+- `useContacts.test.ts` -- atualizar se houver mudancas de tipo
+
+### 8.2 Validar score de probabilidade
+- Testar que deals abertos recebem score ao mudar de estagio/temperatura
+- Verificar que deals fechados tem score = 0
+
+---
+
+## Resumo de Arquivos Afetados
+
+| Bloco | Arquivos | Tipo |
+|-------|----------|------|
+| 1 | ~20 arquivos com imports, `DealCard.tsx`, hooks | Refactor |
+| 2 | `useContactsPage.ts`, `useOrganizationsPage.ts`, `useSgtEvents.ts` | Refactor |
+| 3 | `useDeals.ts`, `useWorkbench.ts` + migration realtime | Feature |
+| 4 | `RenovacaoPage.tsx`, `PipelineConfigPage.tsx` + migration | Feature |
+| 5 | `copilot-chat/index.ts` | Bugfix + Feature |
+| 6 | `sdr-ia-interpret/index.ts`, `DealCard.tsx` + migration | Feature |
+| 7 | Migrations RLS | Security |
+| 8 | Arquivos de teste | Test |
+
+## Ordem de Execucao Recomendada
+
+1. **Bloco 1** (limpeza) -- sem risco, fundacao para o resto
+2. **Bloco 4** (RenovacaoPage) -- migration simples + refactor
+3. **Bloco 2** (paginacao) -- refactor de hooks
+4. **Bloco 5** (copilot) -- bugfix nos campos errados
+5. **Bloco 3** (realtime) -- migration + subscriptions
+6. **Bloco 6** (IA-first) -- migration + edge function
+7. **Bloco 7** (seguranca) -- validacao
+8. **Bloco 8** (testes) -- final
+
+---
+
+## Estimativa
+
+- **Migrations necessarias**: 3 (realtime, tipo pipeline, sentimento)
+- **Arquivos modificados**: ~30
+- **Arquivos deletados**: 2 (patch12.ts, patch13.ts)
+- **Arquivos renomeados**: 1 (usePatch12 -> useProjections)
+- **Risco**: Baixo a medio (maioria e refactor sem mudanca de comportamento)
