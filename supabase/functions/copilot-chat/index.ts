@@ -3,7 +3,6 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
 // PATCH 7 — Copilot Chat (Amélia IA)
-// Edge function para o assistente copilot dos vendedores
 // Enriquece contexto com dados do CRM e chama Lovable AI Gateway
 // ========================================
 
@@ -61,7 +60,6 @@ serve(async (req) => {
       );
     }
 
-    // Create Supabase client for context enrichment
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseKey);
@@ -87,13 +85,10 @@ serve(async (req) => {
           break;
       }
     } catch (enrichError) {
-      console.warn('[Copilot] Erro no enriquecimento (prosseguindo sem contexto):', enrichError);
+      console.warn('[Copilot] Erro no enriquecimento:', enrichError);
       contextBlock = '⚠️ Não foi possível carregar dados do CRM para este contexto.';
     }
 
-    // ========================================
-    // MONTAR MENSAGENS PARA A IA
-    // ========================================
     const systemContent = contextBlock
       ? `${SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
       : SYSTEM_PROMPT;
@@ -103,9 +98,6 @@ serve(async (req) => {
       ...messages.map(m => ({ role: m.role, content: m.content })),
     ];
 
-    // ========================================
-    // CHAMAR LOVABLE AI GATEWAY
-    // ========================================
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 
     const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
@@ -121,9 +113,7 @@ serve(async (req) => {
       }),
     });
 
-    // Handle rate limit / payment errors
     if (aiResponse.status === 429) {
-      console.warn('[Copilot] Rate limit atingido (429)');
       return new Response(
         JSON.stringify({ error: 'Rate limit atingido. Tente novamente em alguns segundos.' }),
         { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -131,9 +121,8 @@ serve(async (req) => {
     }
 
     if (aiResponse.status === 402) {
-      console.warn('[Copilot] Créditos insuficientes (402)');
       return new Response(
-        JSON.stringify({ error: 'Créditos de IA insuficientes. Adicione créditos ao workspace.' }),
+        JSON.stringify({ error: 'Créditos de IA insuficientes.' }),
         { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -151,19 +140,11 @@ serve(async (req) => {
     const content = aiData.choices?.[0]?.message?.content || 'Sem resposta da IA.';
     const tokensInput = aiData.usage?.prompt_tokens || 0;
     const tokensOutput = aiData.usage?.completion_tokens || 0;
-    const model = aiData.model || 'google/gemini-3-flash-preview';
+    const model = aiData.model || 'google/gemini-3-pro-preview';
     const latencyMs = Date.now() - startTime;
 
-    console.log(`[Copilot] Resposta OK — modelo: ${model}, tokens: ${tokensInput}+${tokensOutput}, latência: ${latencyMs}ms`);
-
     return new Response(
-      JSON.stringify({
-        content,
-        model,
-        tokens_input: tokensInput,
-        tokens_output: tokensOutput,
-        latency_ms: latencyMs,
-      }),
+      JSON.stringify({ content, model, tokens_input: tokensInput, tokens_output: tokensOutput, latency_ms: latencyMs }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 
@@ -183,7 +164,7 @@ serve(async (req) => {
 async function enrichLeadContext(supabase: any, leadId: string | undefined, empresa: string): Promise<string> {
   if (!leadId) return 'Nenhum lead selecionado.';
 
-  const [classResult, msgsResult, stateResult, contactResult] = await Promise.all([
+  const [classResult, msgsResult, stateResult, contactResult, intentsResult] = await Promise.all([
     supabase
       .from('lead_classifications')
       .select('icp, persona, temperatura, prioridade, score_interno, justificativa')
@@ -211,6 +192,14 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
       .eq('lead_id', leadId)
       .eq('empresa', empresa)
       .maybeSingle(),
+    // BLOCO 5: Intents recentes do lead
+    supabase
+      .from('lead_message_intents')
+      .select('intent, intent_confidence, intent_summary, acao_recomendada, sentimento, created_at')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa)
+      .order('created_at', { ascending: false })
+      .limit(5),
   ]);
 
   const parts: string[] = [];
@@ -236,20 +225,45 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
     }
   }
 
-  // Buscar organização vinculada ao contato (se houver contact com organization_id)
+  // BLOCO 5: Custom fields do contato vinculado ao lead
   if (contactResult.data?.telefone) {
     const { data: linkedContact } = await supabase
       .from('contacts')
-      .select('organization_id, organizations(nome, website, setor, notas)')
+      .select('id, organization_id, organizations(nome, website, setor, notas)')
       .eq('telefone', contactResult.data.telefone)
       .eq('empresa', empresa)
-      .not('organization_id', 'is', null)
       .maybeSingle();
 
     if (linkedContact?.organizations) {
       const org = linkedContact.organizations;
       parts.push(`**Organização**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
     }
+
+    // Custom field values do contato
+    if (linkedContact?.id) {
+      const { data: cfValues } = await supabase
+        .from('custom_field_values')
+        .select('value_text, value_number, value_boolean, value_date, custom_field_definitions(label)')
+        .eq('entity_id', linkedContact.id)
+        .eq('entity_type', 'CONTACT');
+
+      if (cfValues && cfValues.length > 0) {
+        const fields = cfValues.map((f: any) => {
+          const label = f.custom_field_definitions?.label || 'Campo';
+          const value = f.value_text || f.value_number || f.value_date || f.value_boolean;
+          return `- ${label}: ${value ?? '-'}`;
+        }).join('\n');
+        parts.push(`**Campos Customizados (Contato)**:\n${fields}`);
+      }
+    }
+  }
+
+  // BLOCO 5: Intents recentes
+  if (intentsResult.data && intentsResult.data.length > 0) {
+    const intents = intentsResult.data.map((i: any) =>
+      `- [${i.intent}] conf=${i.intent_confidence} | ${i.intent_summary?.substring(0, 80) || '-'}${i.sentimento ? ` | Sent=${i.sentimento}` : ''}`
+    ).join('\n');
+    parts.push(`**Últimos intents**:\n${intents}`);
   }
 
   if (msgsResult.data && msgsResult.data.length > 0) {
@@ -267,7 +281,7 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
 async function enrichDealContext(supabase: any, dealId: string | undefined): Promise<string> {
   if (!dealId) return 'Nenhum deal selecionado.';
 
-  const [dealResult, activitiesResult, customFieldsResult, contactCustomFieldsResult] = await Promise.all([
+  const [dealResult, activitiesResult, customFieldsResult] = await Promise.all([
     supabase
       .from('deals_full_detail')
       .select('*')
@@ -279,14 +293,11 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
       .eq('deal_id', dealId)
       .order('created_at', { ascending: false })
       .limit(10),
-    // Custom fields do deal
     supabase
       .from('custom_field_values')
       .select('value_text, value_number, value_boolean, value_date, value_json, field_id, custom_field_definitions(label, value_type)')
       .eq('entity_id', dealId)
       .eq('entity_type', 'DEAL'),
-    // Custom fields do contato (busca depois com contact_id)
-    null,
   ]);
 
   const parts: string[] = [];
@@ -304,7 +315,6 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
     if (d.notas) parts.push(`**Notas**: ${d.notas.substring(0, 300)}`);
   }
 
-  // Custom fields do deal
   if (customFieldsResult.data && customFieldsResult.data.length > 0) {
     const fields = customFieldsResult.data.map((f: any) => {
       const label = f.custom_field_definitions?.label || 'Campo';
@@ -314,7 +324,6 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
     parts.push(`**Campos Customizados (Deal)**:\n${fields}`);
   }
 
-  // Buscar custom fields do contato e organização se temos contact_id
   if (contactId) {
     const [contactCfResult, orgResult] = await Promise.all([
       supabase
@@ -360,6 +369,7 @@ async function enrichPipelineContext(supabase: any, empresa: string): Promise<st
     supabase
       .from('workbench_pipeline_summary')
       .select('*')
+      .eq('pipeline_empresa', empresa)
       .limit(10),
     supabase
       .from('workbench_sla_alerts')
@@ -371,7 +381,7 @@ async function enrichPipelineContext(supabase: any, empresa: string): Promise<st
 
   if (pipelinesResult.data && pipelinesResult.data.length > 0) {
     const summary = pipelinesResult.data.map((p: any) =>
-      `- ${p.pipeline_nome}: ${p.total_deals || 0} deals, R$ ${p.valor_total || 0}`
+      `- ${p.pipeline_nome}: ${p.deals_abertos || 0} deals abertos, R$ ${p.valor_aberto || 0} aberto, R$ ${p.valor_ganho || 0} ganho`
     ).join('\n');
     parts.push(`**Pipelines**:\n${summary}`);
   }
@@ -384,18 +394,36 @@ async function enrichPipelineContext(supabase: any, empresa: string): Promise<st
 }
 
 async function enrichGeralContext(supabase: any, empresa: string): Promise<string> {
-  // Light context for general questions
-  const { data: pipelines } = await supabase
-    .from('workbench_pipeline_summary')
-    .select('*')
-    .limit(5);
+  const [pipelinesRes, slaRes] = await Promise.all([
+    supabase
+      .from('workbench_pipeline_summary')
+      .select('*')
+      .eq('pipeline_empresa', empresa)
+      .limit(5),
+    supabase
+      .from('workbench_sla_alerts')
+      .select('deal_id')
+      .limit(50),
+  ]);
 
-  if (pipelines && pipelines.length > 0) {
-    const summary = pipelines.map((p: any) =>
-      `- ${p.pipeline_nome}: ${p.total_deals || 0} deals, R$ ${p.valor_total || 0}`
+  const parts: string[] = [];
+
+  if (pipelinesRes.data && pipelinesRes.data.length > 0) {
+    const totalAbertos = pipelinesRes.data.reduce((s: number, p: any) => s + (p.deals_abertos || 0), 0);
+    const totalValorAberto = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_aberto || 0), 0);
+    const totalValorGanho = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_ganho || 0), 0);
+
+    const summary = pipelinesRes.data.map((p: any) =>
+      `- ${p.pipeline_nome}: ${p.deals_abertos || 0} abertos, R$ ${p.valor_aberto || 0}`
     ).join('\n');
-    return `**Resumo Pipelines**:\n${summary}`;
+
+    parts.push(`**Resumo Geral**: ${totalAbertos} deals abertos, R$ ${totalValorAberto.toLocaleString('pt-BR')} em pipeline, R$ ${totalValorGanho.toLocaleString('pt-BR')} ganho`);
+    parts.push(`**Pipelines**:\n${summary}`);
   }
 
-  return 'Contexto geral — sem dados específicos carregados.';
+  if (slaRes.data && slaRes.data.length > 0) {
+    parts.push(`**SLA Estourados**: ${slaRes.data.length} deals`);
+  }
+
+  return parts.length > 0 ? parts.join('\n\n') : 'Contexto geral — sem dados específicos carregados.';
 }

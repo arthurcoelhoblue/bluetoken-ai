@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { DealWithRelations, DealFormData, DealMoveData, KanbanColumn, PipelineStage } from '@/types/deal';
@@ -10,6 +11,33 @@ interface UseDealsOptions {
 }
 
 export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOptions) {
+  const qc = useQueryClient();
+
+  // Realtime subscription for Kanban live updates
+  useEffect(() => {
+    if (!pipelineId) return;
+
+    const channel = supabase
+      .channel(`deals-pipeline-${pipelineId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'deals',
+          filter: `pipeline_id=eq.${pipelineId}`,
+        },
+        () => {
+          qc.invalidateQueries({ queryKey: ['deals', pipelineId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [pipelineId, qc]);
+
   return useQuery({
     queryKey: ['deals', pipelineId, ownerId, temperatura, tag],
     enabled: !!pipelineId,
@@ -43,7 +71,6 @@ export function useKanbanData(
 ): { columns: KanbanColumn[]; wonLost: KanbanColumn[] } {
   if (!stages || !deals) return { columns: [], wonLost: [] };
 
-  // All stages are now active columns (no more is_won/is_lost separation)
   const buildColumns = (stageList: PipelineStage[]): KanbanColumn[] =>
     stageList.map(stage => {
       const stageDeals = deals.filter(d => d.stage_id === stage.id);
@@ -82,7 +109,6 @@ export function useCreateDeal() {
         .single();
       if (error) throw error;
 
-      // Insert initial history entry
       await supabase.from('deal_stage_history').insert({
         deal_id: deal.id,
         to_stage_id: data.stage_id,

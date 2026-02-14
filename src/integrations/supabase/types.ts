@@ -3070,6 +3070,7 @@ export type Database = {
           resposta_automatica_texto: string | null
           resposta_enviada_em: string | null
           run_id: string | null
+          sentimento: string | null
           tempo_processamento_ms: number | null
           tokens_usados: number | null
         }
@@ -3089,6 +3090,7 @@ export type Database = {
           resposta_automatica_texto?: string | null
           resposta_enviada_em?: string | null
           run_id?: string | null
+          sentimento?: string | null
           tempo_processamento_ms?: number | null
           tokens_usados?: number | null
         }
@@ -3108,6 +3110,7 @@ export type Database = {
           resposta_automatica_texto?: string | null
           resposta_enviada_em?: string | null
           run_id?: string | null
+          sentimento?: string | null
           tempo_processamento_ms?: number | null
           tokens_usados?: number | null
         }
@@ -3747,6 +3750,7 @@ export type Database = {
           id: string
           is_default: boolean
           nome: string
+          tipo: string
           updated_at: string
         }
         Insert: {
@@ -3757,6 +3761,7 @@ export type Database = {
           id?: string
           is_default?: boolean
           nome: string
+          tipo?: string
           updated_at?: string
         }
         Update: {
@@ -3767,6 +3772,7 @@ export type Database = {
           id?: string
           is_default?: boolean
           nome?: string
+          tipo?: string
           updated_at?: string
         }
         Relationships: []
