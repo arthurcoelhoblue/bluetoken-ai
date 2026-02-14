@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Clock, Trophy, XCircle, TrendingUp } from 'lucide-react';
+import { DollarSign, Clock, Trophy, XCircle, TrendingUp, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { supabase } from '@/integrations/supabase/client';
@@ -137,13 +137,25 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
     setCategoriaPerda('');
   };
 
+  // SLA border color
+  const slaMinutos = currentStage?.sla_minutos;
+  const minutosNoStage = days * 24 * 60;
+  const slaPct = slaMinutos ? (minutosNoStage / slaMinutos) * 100 : 0;
+  const slaBorderColor = !slaMinutos ? 'border-l-transparent'
+    : slaPct > 100 ? 'border-l-destructive'
+    : slaPct > 75 ? 'border-l-warning'
+    : 'border-l-success';
+
+  // proxima_acao_sugerida from deal (new column)
+  const proximaAcao = (deal as any).proxima_acao_sugerida as string | null;
+
   return (
     <>
       <Card
         ref={overlay ? undefined : setNodeRef}
         style={overlay ? undefined : style}
         {...(overlay ? {} : { ...attributes, ...listeners })}
-        className={`p-3 cursor-grab active:cursor-grabbing space-y-2 hover:shadow-md transition-shadow border-border/60 ${isClosed ? 'ring-1 ring-muted' : ''}`}
+        className={`p-3 cursor-grab active:cursor-grabbing space-y-2 hover:shadow-md transition-shadow border-border/60 border-l-4 ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
         onClick={() => onDealClick?.(deal.id)}
       >
         <div className="flex items-start justify-between gap-2">
@@ -185,7 +197,10 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
                 <TooltipContent>Probabilidade de fechamento</TooltipContent>
               </Tooltip>
             )}
-            <span className="flex items-center gap-1 text-muted-foreground">
+            <span className={`flex items-center gap-1 ${
+              slaMinutos && slaPct > 100 ? 'text-destructive font-medium' :
+              slaMinutos && slaPct > 75 ? 'text-warning' : 'text-muted-foreground'
+            }`}>
               <Clock className="h-3 w-3" />
               {days}d
             </span>
@@ -203,6 +218,16 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
             <span className="text-[11px] text-muted-foreground truncate">
               {deal.owner.nome ?? deal.owner.email}
             </span>
+          </div>
+        )}
+
+        {/* Proxima acao sugerida footer */}
+        {proximaAcao && !isClosed && (
+          <div className="pt-1 border-t border-border/40">
+            <p className="text-[11px] italic text-muted-foreground line-clamp-2 flex items-center gap-1">
+              <Sparkles className="h-3 w-3 text-primary shrink-0" />
+              {proximaAcao}
+            </p>
           </div>
         )}
 
