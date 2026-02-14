@@ -483,10 +483,12 @@ export type Database = {
       }
       calls: {
         Row: {
+          action_items: Json | null
           answered_at: string | null
           caller_number: string | null
           contact_id: string | null
           created_at: string
+          cs_customer_id: string | null
           deal_id: string | null
           destination_number: string | null
           direcao: string
@@ -496,15 +498,20 @@ export type Database = {
           id: string
           pbx_call_id: string
           recording_url: string | null
+          sentiment: string | null
           started_at: string | null
           status: string
+          summary_ia: string | null
+          transcription: string | null
           user_id: string | null
         }
         Insert: {
+          action_items?: Json | null
           answered_at?: string | null
           caller_number?: string | null
           contact_id?: string | null
           created_at?: string
+          cs_customer_id?: string | null
           deal_id?: string | null
           destination_number?: string | null
           direcao: string
@@ -514,15 +521,20 @@ export type Database = {
           id?: string
           pbx_call_id: string
           recording_url?: string | null
+          sentiment?: string | null
           started_at?: string | null
           status?: string
+          summary_ia?: string | null
+          transcription?: string | null
           user_id?: string | null
         }
         Update: {
+          action_items?: Json | null
           answered_at?: string | null
           caller_number?: string | null
           contact_id?: string | null
           created_at?: string
+          cs_customer_id?: string | null
           deal_id?: string | null
           destination_number?: string | null
           direcao?: string
@@ -532,8 +544,11 @@ export type Database = {
           id?: string
           pbx_call_id?: string
           recording_url?: string | null
+          sentiment?: string | null
           started_at?: string | null
           status?: string
+          summary_ia?: string | null
+          transcription?: string | null
           user_id?: string | null
         }
         Relationships: [
@@ -549,6 +564,13 @@ export type Database = {
             columns: ["contact_id"]
             isOneToOne: false
             referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calls_cs_customer_id_fkey"
+            columns: ["cs_customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
             referencedColumns: ["id"]
           },
           {
@@ -1614,6 +1636,66 @@ export type Database = {
           },
         ]
       }
+      cs_playbook_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string | null
+          current_step: number
+          customer_id: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          next_step_at: string | null
+          playbook_id: string
+          started_at: string | null
+          status: string
+          step_results: Json | null
+          updated_at: string | null
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: number
+          customer_id: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          next_step_at?: string | null
+          playbook_id: string
+          started_at?: string | null
+          status?: string
+          step_results?: Json | null
+          updated_at?: string | null
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string | null
+          current_step?: number
+          customer_id?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          next_step_at?: string | null
+          playbook_id?: string
+          started_at?: string | null
+          status?: string
+          step_results?: Json | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_playbook_runs_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cs_playbook_runs_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "cs_playbooks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cs_playbooks: {
         Row: {
           created_at: string
@@ -2007,6 +2089,8 @@ export type Database = {
       }
       deal_stage_history: {
         Row: {
+          auto_advanced: boolean | null
+          changed_by: string | null
           created_at: string
           deal_id: string
           from_stage_id: string | null
@@ -2016,6 +2100,8 @@ export type Database = {
           to_stage_id: string
         }
         Insert: {
+          auto_advanced?: boolean | null
+          changed_by?: string | null
           created_at?: string
           deal_id: string
           from_stage_id?: string | null
@@ -2025,6 +2111,8 @@ export type Database = {
           to_stage_id: string
         }
         Update: {
+          auto_advanced?: boolean | null
+          changed_by?: string | null
           created_at?: string
           deal_id?: string
           from_stage_id?: string | null
@@ -2162,6 +2250,7 @@ export type Database = {
           categoria_perda_final: string | null
           categoria_perda_ia: string | null
           contact_id: string
+          contexto_sdr: Json | null
           created_at: string
           data_ganho: string | null
           data_perda: string | null
@@ -2179,17 +2268,21 @@ export type Database = {
           motivo_perda_ia: string | null
           notas: string | null
           organization_id: string | null
+          origem: string | null
           owner_id: string | null
           perda_resolvida: boolean | null
           perda_resolvida_em: string | null
           perda_resolvida_por: string | null
           pipeline_id: string
           posicao_kanban: number
+          proxima_acao_sugerida: string | null
           score_engajamento: number | null
           score_intencao: number | null
           score_probabilidade: number
           score_urgencia: number | null
           score_valor: number | null
+          scoring_dimensoes: Json | null
+          scoring_updated_at: string | null
           stage_fechamento_id: string | null
           stage_id: string
           stage_origem_id: string | null
@@ -2211,6 +2304,7 @@ export type Database = {
           categoria_perda_final?: string | null
           categoria_perda_ia?: string | null
           contact_id: string
+          contexto_sdr?: Json | null
           created_at?: string
           data_ganho?: string | null
           data_perda?: string | null
@@ -2228,17 +2322,21 @@ export type Database = {
           motivo_perda_ia?: string | null
           notas?: string | null
           organization_id?: string | null
+          origem?: string | null
           owner_id?: string | null
           perda_resolvida?: boolean | null
           perda_resolvida_em?: string | null
           perda_resolvida_por?: string | null
           pipeline_id: string
           posicao_kanban?: number
+          proxima_acao_sugerida?: string | null
           score_engajamento?: number | null
           score_intencao?: number | null
           score_probabilidade?: number
           score_urgencia?: number | null
           score_valor?: number | null
+          scoring_dimensoes?: Json | null
+          scoring_updated_at?: string | null
           stage_fechamento_id?: string | null
           stage_id: string
           stage_origem_id?: string | null
@@ -2260,6 +2358,7 @@ export type Database = {
           categoria_perda_final?: string | null
           categoria_perda_ia?: string | null
           contact_id?: string
+          contexto_sdr?: Json | null
           created_at?: string
           data_ganho?: string | null
           data_perda?: string | null
@@ -2277,17 +2376,21 @@ export type Database = {
           motivo_perda_ia?: string | null
           notas?: string | null
           organization_id?: string | null
+          origem?: string | null
           owner_id?: string | null
           perda_resolvida?: boolean | null
           perda_resolvida_em?: string | null
           perda_resolvida_por?: string | null
           pipeline_id?: string
           posicao_kanban?: number
+          proxima_acao_sugerida?: string | null
           score_engajamento?: number | null
           score_intencao?: number | null
           score_probabilidade?: number
           score_urgencia?: number | null
           score_valor?: number | null
+          scoring_dimensoes?: Json | null
+          scoring_updated_at?: string | null
           stage_fechamento_id?: string | null
           stage_id?: string
           stage_origem_id?: string | null
@@ -4024,6 +4127,137 @@ export type Database = {
         }
         Relationships: []
       }
+      pipeline_auto_rules: {
+        Row: {
+          created_at: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          from_stage_id: string
+          id: string
+          is_active: boolean
+          pipeline_id: string
+          to_stage_id: string
+          trigger_config: Json
+          trigger_type: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          from_stage_id: string
+          id?: string
+          is_active?: boolean
+          pipeline_id: string
+          to_stage_id: string
+          trigger_config?: Json
+          trigger_type: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          from_stage_id?: string
+          id?: string
+          is_active?: boolean
+          pipeline_id?: string
+          to_stage_id?: string
+          trigger_config?: Json
+          trigger_type?: string
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_auto_rules_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_from_stage_id_fkey"
+            columns: ["from_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_auto_rules_to_stage_id_fkey"
+            columns: ["to_stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           cor: string
@@ -4230,6 +4464,42 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      revenue_forecast_log: {
+        Row: {
+          created_at: string | null
+          detalhes: Json | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          forecast_date: string
+          horizonte_dias: number
+          id: string
+          otimista: number
+          pessimista: number
+          realista: number
+        }
+        Insert: {
+          created_at?: string | null
+          detalhes?: Json | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          forecast_date?: string
+          horizonte_dias: number
+          id?: string
+          otimista?: number
+          pessimista?: number
+          realista?: number
+        }
+        Update: {
+          created_at?: string | null
+          detalhes?: Json | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          forecast_date?: string
+          horizonte_dias?: number
+          id?: string
+          otimista?: number
+          pessimista?: number
+          realista?: number
+        }
+        Relationships: []
       }
       sazonalidade_indices: {
         Row: {
