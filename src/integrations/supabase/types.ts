@@ -50,6 +50,13 @@ export type Database = {
             foreignKeyName: "access_profiles_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "access_profiles_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -477,6 +484,13 @@ export type Database = {
             foreignKeyName: "calls_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -622,6 +636,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "capture_forms_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "capture_forms_created_by_fkey"
             columns: ["created_by"]
@@ -797,6 +818,13 @@ export type Database = {
             foreignKeyName: "comissao_lancamentos_aprovado_por_fkey"
             columns: ["aprovado_por"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -841,6 +869,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "comissao_regras"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "comissao_lancamentos_user_id_fkey"
@@ -1030,6 +1065,13 @@ export type Database = {
             foreignKeyName: "contacts_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -1088,6 +1130,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "conversation_takeover_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "conversation_takeover_log_user_id_fkey"
             columns: ["user_id"]
@@ -1155,6 +1204,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "copilot_messages_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "copilot_messages_user_id_fkey"
             columns: ["user_id"]
@@ -1557,6 +1613,13 @@ export type Database = {
             foreignKeyName: "deal_stage_history_moved_by_fkey"
             columns: ["moved_by"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_stage_history_moved_by_fkey"
+            columns: ["moved_by"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -1786,6 +1849,13 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -1801,6 +1871,13 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
             referencedColumns: ["user_id"]
           },
           {
@@ -2005,6 +2082,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "import_jobs_started_by_fkey"
             columns: ["started_by"]
@@ -2410,6 +2494,13 @@ export type Database = {
             foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
             columns: ["resolvido_por"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_contact_issues_resolvido_por_fkey"
+            columns: ["resolvido_por"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -2567,6 +2658,13 @@ export type Database = {
             foreignKeyName: "lead_contacts_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -2664,6 +2762,13 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_conversation_state_assumido_por_fkey"
+            columns: ["assumido_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "lead_conversation_state_assumido_por_fkey"
             columns: ["assumido_por"]
@@ -2858,6 +2963,13 @@ export type Database = {
             foreignKeyName: "lead_messages_sender_id_fkey"
             columns: ["sender_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "lead_messages_sender_id_fkey"
+            columns: ["sender_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -2952,6 +3064,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cadencias_crm"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "mass_action_jobs_started_by_fkey"
@@ -3057,6 +3176,13 @@ export type Database = {
             foreignKeyName: "metas_vendedor_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -3147,6 +3273,13 @@ export type Database = {
           website?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "organizations_owner_id_fkey"
             columns: ["owner_id"]
@@ -3384,6 +3517,13 @@ export type Database = {
             foreignKeyName: "profiles_gestor_id_fkey"
             columns: ["gestor_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "profiles_gestor_id_fkey"
+            columns: ["gestor_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -3429,6 +3569,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sazonalidade_indices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "sazonalidade_indices_updated_by_fkey"
             columns: ["updated_by"]
@@ -3484,6 +3631,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "seller_badges"
             referencedColumns: ["key"]
+          },
+          {
+            foreignKeyName: "seller_badge_awards_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "seller_badge_awards_user_id_fkey"
@@ -3570,6 +3724,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "seller_points_log_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "seller_points_log_user_id_fkey"
             columns: ["user_id"]
@@ -3697,6 +3858,13 @@ export type Database = {
             foreignKeyName: "system_settings_updated_by_fkey"
             columns: ["updated_by"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "system_settings_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -3756,6 +3924,13 @@ export type Database = {
             foreignKeyName: "user_access_assignments_assigned_by_fkey"
             columns: ["assigned_by"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -3771,6 +3946,13 @@ export type Database = {
             columns: ["assigned_by"]
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_access_assignments_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_esforco_vendedor"
             referencedColumns: ["user_id"]
           },
           {
@@ -3816,6 +3998,13 @@ export type Database = {
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "user_roles_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "user_roles_user_id_fkey"
             columns: ["user_id"]
@@ -3905,6 +4094,13 @@ export type Database = {
             foreignKeyName: "zadarma_extensions_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "zadarma_extensions_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -3926,6 +4122,44 @@ export type Database = {
       }
     }
     Views: {
+      analytics_canal_esforco: {
+        Row: {
+          canal: string | null
+          deals_ganhos: number | null
+          deals_perdidos: number | null
+          empresa: string | null
+          media_atividades_perdidos: number | null
+          media_dias_funil_perdidos: number | null
+          pipeline_id: string | null
+          sem_atividade_pct: number | null
+          total_deals: number | null
+          valor_ganho: number | null
+          win_rate: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deals_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       analytics_canal_origem: {
         Row: {
           canal: string | null
@@ -4012,6 +4246,19 @@ export type Database = {
             referencedColumns: ["pipeline_id"]
           },
         ]
+      }
+      analytics_esforco_vendedor: {
+        Row: {
+          empresa: string | null
+          media_atividades: number | null
+          media_dias_funil: number | null
+          perdidos_menos_24h: number | null
+          sem_atividade_pct: number | null
+          total_perdidos: number | null
+          user_id: string | null
+          vendedor_nome: string | null
+        }
+        Relationships: []
       }
       analytics_evolucao_mensal: {
         Row: {
@@ -4248,6 +4495,13 @@ export type Database = {
             foreignKeyName: "calls_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "calls_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -4283,6 +4537,13 @@ export type Database = {
           vendedor_nome: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "comissao_lancamentos_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "comissao_lancamentos_user_id_fkey"
             columns: ["user_id"]
@@ -4354,6 +4615,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "organizations_with_stats"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "contacts_owner_id_fkey"
@@ -4576,6 +4844,13 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -4591,6 +4866,13 @@ export type Database = {
             columns: ["owner_id"]
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_perda_resolvida_por_fkey"
+            columns: ["perda_resolvida_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
             referencedColumns: ["user_id"]
           },
           {
@@ -4769,6 +5051,13 @@ export type Database = {
             foreignKeyName: "import_jobs_started_by_fkey"
             columns: ["started_by"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "import_jobs_started_by_fkey"
+            columns: ["started_by"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -4807,6 +5096,13 @@ export type Database = {
           vendedor_nome: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "metas_vendedor_user_id_fkey"
             columns: ["user_id"]
@@ -4865,6 +5161,13 @@ export type Database = {
             foreignKeyName: "organizations_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "organizations_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -4898,6 +5201,13 @@ export type Database = {
           valor_total: number | null
         }
         Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
@@ -5008,6 +5318,13 @@ export type Database = {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
             isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
@@ -5045,6 +5362,13 @@ export type Database = {
           stage_nome: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "deals_owner_id_fkey"
             columns: ["owner_id"]
@@ -5142,6 +5466,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workbench_sla_alerts"
             referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deals_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "deals_owner_id_fkey"

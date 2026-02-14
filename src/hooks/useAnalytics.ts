@@ -11,6 +11,8 @@ import type {
   AnalyticsFunilVisual,
   AnalyticsEvolucaoMensal,
   AnalyticsLTVCohort,
+  AnalyticsEsforcoVendedor,
+  AnalyticsCanalEsforco,
 } from '@/types/analytics';
 
 function empresaFilter(activeCompany: string) {
@@ -164,6 +166,39 @@ export function useAnalyticsLTV() {
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as AnalyticsLTVCohort[];
+    },
+  });
+}
+
+export function useAnalyticsEsforco() {
+  const { activeCompany } = useCompany();
+  return useQuery({
+    queryKey: ['analytics_esforco_vendedor', activeCompany],
+    queryFn: async () => {
+      let q = supabase.from('analytics_esforco_vendedor' as any).select('*');
+      const emp = empresaFilter(activeCompany);
+      if (emp) q = q.eq('empresa', emp);
+      q = q.order('total_perdidos', { ascending: false });
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as AnalyticsEsforcoVendedor[];
+    },
+  });
+}
+
+export function useAnalyticsCanalEsforco(pipelineId?: string | null) {
+  const { activeCompany } = useCompany();
+  return useQuery({
+    queryKey: ['analytics_canal_esforco', activeCompany, pipelineId],
+    queryFn: async () => {
+      let q = supabase.from('analytics_canal_esforco' as any).select('*');
+      const emp = empresaFilter(activeCompany);
+      if (emp) q = q.eq('empresa', emp);
+      if (pipelineId) q = q.eq('pipeline_id', pipelineId);
+      q = q.order('total_deals', { ascending: false });
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as AnalyticsCanalEsforco[];
     },
   });
 }
