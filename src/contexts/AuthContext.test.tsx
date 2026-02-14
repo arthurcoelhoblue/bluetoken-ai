@@ -42,7 +42,6 @@ describe("AuthContext permission logic", () => {
   });
 
   it("wildcard resource permissions work", () => {
-    // If a role has 'leads:*' it should match 'leads:read', 'leads:write'
     const roles = ["CLOSER"];
     const perms = ROLE_PERMISSIONS["CLOSER"];
     if (perms && perms.includes("leads:*")) {
@@ -53,5 +52,72 @@ describe("AuthContext permission logic", () => {
 
   it("READONLY has limited access", () => {
     expect(hasPermission(["READONLY"], "deals:write")).toBe(false);
+  });
+});
+
+// ─── Expanded RBAC Tests ──────────────────────────────────
+describe("SDR_IA permissions", () => {
+  it("has leads:* wildcard", () => {
+    expect(hasPermission(["SDR_IA"], "leads:read")).toBe(true);
+    expect(hasPermission(["SDR_IA"], "leads:write")).toBe(true);
+  });
+  it("has conversations:*", () => {
+    expect(hasPermission(["SDR_IA"], "conversations:read")).toBe(true);
+    expect(hasPermission(["SDR_IA"], "conversations:send")).toBe(true);
+  });
+  it("has cadences:*", () => {
+    expect(hasPermission(["SDR_IA"], "cadences:read")).toBe(true);
+  });
+  it("has whatsapp:*", () => {
+    expect(hasPermission(["SDR_IA"], "whatsapp:send")).toBe(true);
+  });
+  it("does NOT have campaigns", () => {
+    expect(hasPermission(["SDR_IA"], "campaigns:read")).toBe(false);
+  });
+});
+
+describe("MARKETING permissions", () => {
+  it("has campaigns:*", () => {
+    expect(hasPermission(["MARKETING"], "campaigns:read")).toBe(true);
+    expect(hasPermission(["MARKETING"], "campaigns:write")).toBe(true);
+  });
+  it("has analytics:*", () => {
+    expect(hasPermission(["MARKETING"], "analytics:read")).toBe(true);
+  });
+  it("has leads:read but NOT leads:write", () => {
+    expect(hasPermission(["MARKETING"], "leads:read")).toBe(true);
+    expect(hasPermission(["MARKETING"], "leads:write")).toBe(false);
+  });
+});
+
+describe("AUDITOR permissions", () => {
+  it("has *:read on any resource", () => {
+    expect(hasPermission(["AUDITOR"], "leads:read")).toBe(true);
+    expect(hasPermission(["AUDITOR"], "deals:read")).toBe(true);
+    expect(hasPermission(["AUDITOR"], "analytics:read")).toBe(true);
+  });
+  it("does NOT have write on anything", () => {
+    expect(hasPermission(["AUDITOR"], "leads:write")).toBe(false);
+    expect(hasPermission(["AUDITOR"], "deals:update")).toBe(false);
+  });
+});
+
+describe("READONLY permissions", () => {
+  it("has dashboard:read", () => {
+    expect(hasPermission(["READONLY"], "dashboard:read")).toBe(true);
+  });
+  it("does NOT have other reads", () => {
+    expect(hasPermission(["READONLY"], "leads:read")).toBe(false);
+    expect(hasPermission(["READONLY"], "deals:read")).toBe(false);
+  });
+});
+
+describe("Combined roles", () => {
+  it("CLOSER + MARKETING combines permissions", () => {
+    const roles = ["CLOSER", "MARKETING"];
+    expect(hasPermission(roles, "leads:read")).toBe(true);
+    expect(hasPermission(roles, "campaigns:write")).toBe(true);
+    expect(hasPermission(roles, "conversations:read")).toBe(true);
+    expect(hasPermission(roles, "analytics:read")).toBe(true);
   });
 });
