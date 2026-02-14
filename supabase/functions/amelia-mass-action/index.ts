@@ -11,7 +11,8 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
-    const { jobId } = await req.json();
+    const body = await req.json();
+    const { jobId, action } = body;
     if (!jobId) throw new Error("jobId is required");
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -19,7 +20,113 @@ serve(async (req) => {
     const lovableApiKey = Deno.env.get("LOVABLE_API_KEY");
     const sb = createClient(supabaseUrl, serviceKey);
 
-    // Load job
+    // ========== EXECUTE BRANCH ==========
+    if (action === "execute") {
+      const { data: job, error: jobErr } = await sb
+        .from("mass_action_jobs")
+        .select("*")
+        .eq("id", jobId)
+        .single();
+      if (jobErr || !job) throw new Error("Job not found: " + jobErr?.message);
+      if (job.status !== "PREVIEW") throw new Error("Job must be in PREVIEW status to execute");
+
+      await sb.from("mass_action_jobs").update({ status: "SENDING" }).eq("id", jobId);
+
+      const messagesPreview: Array<{ deal_id: string; contact_name: string; message: string; approved: boolean }> =
+        job.messages_preview || [];
+      const approved = messagesPreview.filter((m) => m.approved);
+
+      if (approved.length === 0) {
+        await sb.from("mass_action_jobs").update({ status: "DONE", processed: 0 }).eq("id", jobId);
+        return new Response(JSON.stringify({ ok: true, sent: 0 }), {
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const canal = job.canal || "WHATSAPP";
+      let sent = 0;
+      let errors = 0;
+
+      for (const msg of approved) {
+        try {
+          // Get deal + contact info
+          const { data: deal } = await sb
+            .from("deals")
+            .select("id, titulo, contacts(id, nome, telefone, email)")
+            .eq("id", msg.deal_id)
+            .single();
+
+          if (!deal) {
+            errors++;
+            continue;
+          }
+
+          const contact = deal.contacts as any;
+
+          if (canal === "WHATSAPP") {
+            const telefone = contact?.telefone;
+            if (!telefone) { errors++; continue; }
+
+            const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                to: telefone,
+                message: msg.message,
+                deal_id: msg.deal_id,
+                contact_id: contact?.id,
+              }),
+            });
+
+            if (resp.ok) { sent++; } else {
+              console.error("whatsapp-send error:", await resp.text());
+              errors++;
+            }
+          } else if (canal === "EMAIL") {
+            const email = contact?.email;
+            if (!email) { errors++; continue; }
+
+            const resp = await fetch(`${supabaseUrl}/functions/v1/email-send`, {
+              method: "POST",
+              headers: {
+                Authorization: `Bearer ${serviceKey}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify({
+                to: email,
+                subject: job.instrucao ? `Re: ${job.instrucao.substring(0, 50)}` : "Mensagem importante",
+                body: msg.message,
+                deal_id: msg.deal_id,
+                contact_id: contact?.id,
+              }),
+            });
+
+            if (resp.ok) { sent++; } else {
+              console.error("email-send error:", await resp.text());
+              errors++;
+            }
+          }
+        } catch (e) {
+          console.error("Send error for deal:", msg.deal_id, e);
+          errors++;
+        }
+      }
+
+      const finalStatus = errors === approved.length ? "FAILED" : "DONE";
+      await sb.from("mass_action_jobs").update({
+        status: finalStatus,
+        processed: sent,
+      }).eq("id", jobId);
+
+      return new Response(JSON.stringify({ ok: true, sent, errors }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ========== GENERATE BRANCH (existing) ==========
     const { data: job, error: jobErr } = await sb
       .from("mass_action_jobs")
       .select("*")
@@ -27,12 +134,10 @@ serve(async (req) => {
       .single();
     if (jobErr || !job) throw new Error("Job not found: " + jobErr?.message);
 
-    // Update status to GENERATING
     await sb.from("mass_action_jobs").update({ status: "GENERATING" }).eq("id", jobId);
 
     const dealIds: string[] = job.deal_ids || [];
 
-    // Load deals with contacts
     const { data: deals } = await sb
       .from("deals")
       .select("id, titulo, valor, temperatura, status, contacts(id, nome, telefone, email)")
@@ -47,7 +152,6 @@ serve(async (req) => {
 
     const messagesPreview: Array<{ deal_id: string; contact_name: string; message: string; approved: boolean }> = [];
 
-    // Generate messages via Lovable AI
     for (const deal of deals) {
       const contact = deal.contacts as any;
       const contactName = contact?.nome || "Cliente";
@@ -96,40 +200,30 @@ Temperatura: ${deal.temperatura || "não definida"}`;
             const errText = await aiResp.text();
             console.error("AI error:", aiResp.status, errText);
             messagesPreview.push({
-              deal_id: deal.id,
-              contact_name: contactName,
-              message: `[Erro na geração - status ${aiResp.status}]`,
-              approved: false,
+              deal_id: deal.id, contact_name: contactName,
+              message: `[Erro na geração - status ${aiResp.status}]`, approved: false,
             });
           }
         } else {
           messagesPreview.push({
-            deal_id: deal.id,
-            contact_name: contactName,
-            message: "[LOVABLE_API_KEY não configurada]",
-            approved: false,
+            deal_id: deal.id, contact_name: contactName,
+            message: "[LOVABLE_API_KEY não configurada]", approved: false,
           });
         }
       } catch (e) {
         console.error("Error generating for deal:", deal.id, e);
         messagesPreview.push({
-          deal_id: deal.id,
-          contact_name: contactName,
-          message: `[Erro: ${e instanceof Error ? e.message : "unknown"}]`,
-          approved: false,
+          deal_id: deal.id, contact_name: contactName,
+          message: `[Erro: ${e instanceof Error ? e.message : "unknown"}]`, approved: false,
         });
       }
     }
 
-    // Save preview
-    await sb
-      .from("mass_action_jobs")
-      .update({
-        status: "PREVIEW",
-        messages_preview: messagesPreview,
-        processed: messagesPreview.length,
-      })
-      .eq("id", jobId);
+    await sb.from("mass_action_jobs").update({
+      status: "PREVIEW",
+      messages_preview: messagesPreview,
+      processed: messagesPreview.length,
+    }).eq("id", jobId);
 
     return new Response(JSON.stringify({ ok: true, count: messagesPreview.length }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
