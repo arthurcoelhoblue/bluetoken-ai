@@ -157,6 +157,7 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
 
       return atendimentos;
     },
-    refetchInterval: 30000, // Auto-refresh every 30s
+    refetchInterval: 60000, // Auto-refresh every 60s (reduced from 30s for cost optimization)
+    refetchOnWindowFocus: true,
   });
 }

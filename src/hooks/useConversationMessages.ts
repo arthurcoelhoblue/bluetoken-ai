@@ -165,32 +165,8 @@ export function useConversationMessages({
       )
       .subscribe();
     
-    // Channel 2: Mensagens INBOUND não associadas (podem ser do lead)
-    const inboundChannel = supabase
-      .channel(`messages-inbound-unmatched`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'lead_messages',
-        },
-        (payload) => {
-          const newMsg = payload.new as any;
-          // Se for INBOUND e não tiver lead_id, pode ser mensagem não associada
-          if (newMsg.direcao === 'INBOUND' && !newMsg.lead_id) {
-            
-            queryClient.invalidateQueries({ 
-              queryKey: ['conversation-messages', leadId, empresa, telefone] 
-            });
-          }
-        }
-      )
-      .subscribe();
-    
     return () => {
       supabase.removeChannel(leadChannel);
-      supabase.removeChannel(inboundChannel);
     };
   }, [leadId, empresa, telefone, enabled, queryClient]);
   

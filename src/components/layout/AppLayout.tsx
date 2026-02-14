@@ -6,7 +6,6 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { CompanyProvider } from '@/contexts/CompanyContext';
 import { Navigate } from 'react-router-dom';
 import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
-import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -31,8 +30,6 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   if (!isAuthenticated) {
     return <>{children}</>;
   }
-
-  useGamificationNotifications();
 
   return (
     <ThemeProvider>
