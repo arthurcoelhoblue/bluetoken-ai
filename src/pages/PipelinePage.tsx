@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useDeals, useKanbanData } from '@/hooks/useDeals';
@@ -8,13 +9,31 @@ import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { Kanban } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+
+function useOwnerOptions() {
+  return useQuery({
+    queryKey: ['pipeline-owners'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('is_active', true)
+        .order('nome');
+      if (error) throw error;
+      return (data ?? []).map(p => ({ id: p.id, nome: p.nome || p.id }));
+    },
+  });
+}
 
 function PipelineContent() {
   const { activeCompany } = useCompany();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
+  const { data: owners = [] } = useOwnerOptions();
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
+  const [ownerId, setOwnerId] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
@@ -36,6 +55,7 @@ function PipelineContent() {
 
   const { data: deals, isLoading: dealsLoading } = useDeals({
     pipelineId: selectedPipelineId,
+    ownerId: ownerId !== 'all' ? ownerId : undefined,
     temperatura: temperatura !== 'all' ? temperatura : undefined,
   });
 
@@ -63,6 +83,9 @@ function PipelineContent() {
             onPipelineChange={setSelectedPipelineId}
             temperatura={temperatura}
             onTemperaturaChange={setTemperatura}
+            ownerId={ownerId}
+            onOwnerChange={setOwnerId}
+            owners={owners}
             onNewDeal={() => setShowCreateDeal(true)}
           />
 

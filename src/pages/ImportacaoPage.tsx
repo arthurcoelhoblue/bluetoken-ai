@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { Upload, FileJson, ArrowRight, ArrowLeft, Check, AlertTriangle, Loader2, History } from 'lucide-react';
@@ -44,13 +44,25 @@ function ImportacaoContent() {
   const [skipExisting, setSkipExisting] = useState(true);
   const [pipelineMapping, setPipelineMapping] = useState<Record<string, string>>({});
   const [stageMapping, setStageMapping] = useState<Record<string, string>>({});
+  const [ownerMapping, setOwnerMapping] = useState<Record<string, string>>({});
 
   const { data: jobs } = useImportJobs();
   const { mutateAsync: runImport, progress, isPending } = useRunImport();
   const { data: pipelines } = usePipelines();
 
+  // Fetch CRM users for owner mapping
+  const [crmUsers, setCrmUsers] = useState<{ id: string; nome: string }[]>([]);
+  useEffect(() => {
+    import('@/integrations/supabase/client').then(({ supabase }) => {
+      supabase.from('profiles').select('id, nome').eq('is_active', true).order('nome').then(({ data }) => {
+        setCrmUsers((data ?? []).map(u => ({ id: u.id, nome: u.nome || u.id })));
+      });
+    });
+  }, []);
+
   const uniquePipelines = [...new Set(dealsFile.map(d => String(d.pipeline_id)).filter(Boolean))];
   const uniqueStages = [...new Set(dealsFile.map(d => String(d.stage_id)).filter(Boolean))];
+  const uniqueOwners = [...new Set(dealsFile.map(d => String(d.user_id)).filter(v => v && v !== 'undefined'))];
 
   const allStages = pipelines?.flatMap(p =>
     (p.pipeline_stages || []).map((s: any) => ({ ...s, pipeline_name: p.nome }))
@@ -81,6 +93,7 @@ function ImportacaoContent() {
       const config: ImportConfig = {
         pipeline_mapping: pipelineMapping,
         stage_mapping: stageMapping,
+        owner_mapping: ownerMapping,
         skip_existing: skipExisting,
       };
       const result = await runImport({ orgs: orgsFile, persons: personsFile, deals: dealsFile, config });
@@ -101,6 +114,7 @@ function ImportacaoContent() {
     setOrgsFile([]);
     setPipelineMapping({});
     setStageMapping({});
+    setOwnerMapping({});
   };
 
   return (
@@ -215,6 +229,31 @@ function ImportacaoContent() {
                       </div>
                     ))}
                     {uniqueStages.length === 0 && <p className="text-sm text-muted-foreground">Nenhum stage encontrado nos deals.</p>}
+                  </CardContent>
+                </Card>
+
+                {/* Owner mapping */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-base">Mapeamento de Vendedores</CardTitle>
+                    <CardDescription>Associe cada user_id do Pipedrive a um vendedor do CRM</CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {uniqueOwners.map(uid => (
+                      <div key={uid} className="flex items-center gap-4">
+                        <span className="text-sm font-mono w-32 shrink-0">User #{uid}</span>
+                        <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <Select value={ownerMapping[uid] || ''} onValueChange={v => setOwnerMapping(prev => ({ ...prev, [uid]: v }))}>
+                          <SelectTrigger className="w-64"><SelectValue placeholder="Selecionar vendedor CRM" /></SelectTrigger>
+                          <SelectContent>
+                            {crmUsers.map(u => (
+                              <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                    {uniqueOwners.length === 0 && <p className="text-sm text-muted-foreground">Nenhum user_id encontrado nos deals.</p>}
                   </CardContent>
                 </Card>
 
