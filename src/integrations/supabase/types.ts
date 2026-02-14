@@ -1748,6 +1748,7 @@ export type Database = {
           posicao_kanban: number
           score_engajamento: number | null
           score_intencao: number | null
+          score_probabilidade: number
           score_urgencia: number | null
           score_valor: number | null
           stage_fechamento_id: string | null
@@ -1796,6 +1797,7 @@ export type Database = {
           posicao_kanban?: number
           score_engajamento?: number | null
           score_intencao?: number | null
+          score_probabilidade?: number
           score_urgencia?: number | null
           score_valor?: number | null
           stage_fechamento_id?: string | null
@@ -1844,6 +1846,7 @@ export type Database = {
           posicao_kanban?: number
           score_engajamento?: number | null
           score_intencao?: number | null
+          score_probabilidade?: number
           score_urgencia?: number | null
           score_valor?: number | null
           stage_fechamento_id?: string | null
@@ -3361,6 +3364,77 @@ export type Database = {
           },
           {
             foreignKeyName: "metas_vendedor_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          created_at: string
+          empresa: string
+          entity_id: string | null
+          entity_type: string | null
+          id: string
+          lida: boolean
+          link: string | null
+          mensagem: string
+          tipo: string
+          titulo: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          lida?: boolean
+          link?: string | null
+          mensagem: string
+          tipo: string
+          titulo: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          entity_id?: string | null
+          entity_type?: string | null
+          id?: string
+          lida?: boolean
+          link?: string | null
+          mensagem?: string
+          tipo?: string
+          titulo?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_user_id_fkey"
             columns: ["user_id"]
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
@@ -5678,6 +5752,7 @@ export type Database = {
       }
     }
     Functions: {
+      fn_calc_deal_score: { Args: { p_deal_id: string }; Returns: number }
       get_user_empresa: { Args: { _user_id: string }; Returns: string }
       get_user_roles: {
         Args: { _user_id: string }

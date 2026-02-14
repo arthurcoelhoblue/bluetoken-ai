@@ -25,6 +25,7 @@ import {
 } from '@/hooks/useWorkbench';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { WorkbenchGamificationCard } from '@/components/gamification/WorkbenchGamificationCard';
+import { NextBestActionCard } from '@/components/workbench/NextBestActionCard';
 import { toast } from 'sonner';
 
 function formatBRL(value: number) {
@@ -105,6 +106,9 @@ function WorkbenchContent() {
             </div>
           )}
         </div>
+
+        {/* Next Best Action */}
+        <NextBestActionCard />
 
         {/* KPI Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">

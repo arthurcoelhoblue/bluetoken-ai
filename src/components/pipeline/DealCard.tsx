@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Clock, Trophy, XCircle } from 'lucide-react';
+import { DollarSign, Clock, Trophy, XCircle, TrendingUp } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { supabase } from '@/integrations/supabase/client';
@@ -170,10 +170,26 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
             <DollarSign className="h-3 w-3" />
             {formatBRL(deal.valor ?? 0)}
           </span>
-          <span className="flex items-center gap-1 text-muted-foreground">
-            <Clock className="h-3 w-3" />
-            {days}d
-          </span>
+          <div className="flex items-center gap-2">
+            {(deal as any).score_probabilidade > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <span className={`flex items-center gap-0.5 font-medium ${
+                    (deal as any).score_probabilidade > 70 ? 'text-success' :
+                    (deal as any).score_probabilidade >= 40 ? 'text-warning' : 'text-destructive'
+                  }`}>
+                    <TrendingUp className="h-3 w-3" />
+                    {(deal as any).score_probabilidade}%
+                  </span>
+                </TooltipTrigger>
+                <TooltipContent>Probabilidade de fechamento</TooltipContent>
+              </Tooltip>
+            )}
+            <span className="flex items-center gap-1 text-muted-foreground">
+              <Clock className="h-3 w-3" />
+              {days}d
+            </span>
+          </div>
         </div>
 
         {deal.owner && (

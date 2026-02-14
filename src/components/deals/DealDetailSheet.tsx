@@ -329,7 +329,38 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                               </span>
                             </div>
                           ) : (
-                            a.descricao && <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p>
+                            <>
+                              {a.descricao && <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p>}
+                              {/* Sprint 2: Show extracted data from SDR IA auto-creation */}
+                              {a.tipo === 'CRIACAO' && (a.metadata as any)?.origem === 'SDR_IA' && (a.metadata as any)?.dados_extraidos && (
+                                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                                  {(a.metadata as any).dados_extraidos.necessidade_principal && (
+                                    <Badge variant="secondary" className="text-[10px]">
+                                      📋 {(a.metadata as any).dados_extraidos.necessidade_principal}
+                                    </Badge>
+                                  )}
+                                  {(a.metadata as any).dados_extraidos.valor_mencionado && (
+                                    <Badge variant="secondary" className="text-[10px]">
+                                      💰 R$ {Number((a.metadata as any).dados_extraidos.valor_mencionado).toLocaleString('pt-BR')}
+                                    </Badge>
+                                  )}
+                                  {(a.metadata as any).dados_extraidos.urgencia && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      ⚡ {(a.metadata as any).dados_extraidos.urgencia}
+                                    </Badge>
+                                  )}
+                                  {(a.metadata as any).dados_extraidos.decisor_identificado && (
+                                    <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
+                                  )}
+                                  {(a.metadata as any).dados_extraidos.prazo_mencionado && (
+                                    <Badge variant="outline" className="text-[10px]">
+                                      📅 {(a.metadata as any).dados_extraidos.prazo_mencionado}
+                                    </Badge>
+                                  )}
+                                  <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+                                </div>
+                              )}
+                            </>
                           )}
                         </div>
                       </div>

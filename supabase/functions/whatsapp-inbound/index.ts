@@ -592,6 +592,42 @@ serve(async (req) => {
       });
     }
     
+    // SPRINT 2: Notificação para leads quentes
+    if (result.success && result.status === 'MATCHED' && leadContact) {
+      try {
+        const { data: classif } = await supabase
+          .from('lead_classifications')
+          .select('temperatura')
+          .eq('lead_id', leadContact.lead_id)
+          .maybeSingle();
+
+        if (classif && (classif as any).temperatura === 'QUENTE') {
+          // Find owner to notify
+          const { data: ownerData } = await supabase
+            .from('contacts')
+            .select('owner_id')
+            .eq('legacy_lead_id', leadContact.lead_id)
+            .maybeSingle();
+
+          if (ownerData && (ownerData as any).owner_id) {
+            await supabase.from('notifications').insert({
+              user_id: (ownerData as any).owner_id,
+              empresa: leadContact.empresa,
+              tipo: 'LEAD_QUENTE',
+              titulo: `Lead quente respondeu: ${leadContact.nome || 'Sem nome'}`,
+              mensagem: payload.text.substring(0, 200),
+              link: `/leads/${leadContact.lead_id}`,
+              entity_id: leadContact.lead_id,
+              entity_type: 'LEAD',
+            });
+            console.log('[Inbound] Notificação LEAD_QUENTE enviada');
+          }
+        }
+      } catch (notifErr) {
+        console.error('[Inbound] Erro ao criar notificação:', notifErr);
+      }
+    }
+
     // 4. Disparar interpretação IA (PATCH 5G)
     if (result.success && result.messageId && result.status === 'MATCHED') {
       const MAX_RETRIES = 2;
@@ -613,7 +649,7 @@ serve(async (req) => {
             const iaResult = await response.json();
             console.log('[Inbound] Interpretação IA:', iaResult);
             (result as any).iaInterpretation = iaResult;
-            break; // Success, exit retry loop
+            break;
           } else {
             console.error(`[Inbound] Erro ao chamar SDR IA (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, response.status);
             if (attempt < MAX_RETRIES && [500, 502, 503, 504].includes(response.status)) {

@@ -3130,6 +3130,146 @@ async function applyAction(
             .eq('lead_id', leadId)
             .eq('empresa', empresa);
 
+          // ========================================
+          // SPRINT 2: AUTO-CREATE DEAL
+          // ========================================
+          try {
+            console.log('[AutoDeal] Iniciando criação automática de deal...');
+
+            // Find contact by legacy_lead_id
+            const { data: contact } = await supabase
+              .from('contacts')
+              .select('id, nome')
+              .eq('legacy_lead_id', leadId)
+              .maybeSingle();
+
+            if (contact) {
+              // Find default pipeline for empresa
+              const { data: pipeline } = await supabase
+                .from('pipelines')
+                .select('id')
+                .eq('empresa', empresa)
+                .eq('is_default', true)
+                .eq('ativo', true)
+                .maybeSingle();
+
+              if (pipeline) {
+                // Check for existing open deal
+                const { data: existingDeal } = await supabase
+                  .from('deals')
+                  .select('id')
+                  .eq('contact_id', (contact as any).id)
+                  .eq('pipeline_id', (pipeline as any).id)
+                  .eq('status', 'ABERTO')
+                  .maybeSingle();
+
+                if (!existingDeal) {
+                  // Get first stage
+                  const { data: firstStage } = await supabase
+                    .from('pipeline_stages')
+                    .select('id')
+                    .eq('pipeline_id', (pipeline as any).id)
+                    .eq('is_won', false)
+                    .eq('is_lost', false)
+                    .order('posicao', { ascending: true })
+                    .limit(1)
+                    .maybeSingle();
+
+                  if (firstStage) {
+                    // Extract data from detalhes (auto-fill from conversation)
+                    const valorMencionado = detalhes?.valor_mencionado as number | undefined;
+                    const necessidade = detalhes?.necessidade_principal as string | undefined;
+                    const urgencia = detalhes?.urgencia as string | undefined;
+
+                    const temperatura = urgencia === 'ALTA' ? 'QUENTE' : urgencia === 'MEDIA' ? 'MORNO' : 'QUENTE';
+                    const titulo = necessidade
+                      ? `Oportunidade - ${(contact as any).nome} - ${necessidade}`
+                      : `Oportunidade - ${(contact as any).nome}`;
+
+                    const { data: newDeal, error: dealErr } = await supabase
+                      .from('deals')
+                      .insert({
+                        contact_id: (contact as any).id,
+                        pipeline_id: (pipeline as any).id,
+                        stage_id: (firstStage as any).id,
+                        titulo: titulo.substring(0, 200),
+                        valor: valorMencionado ?? 0,
+                        temperatura,
+                        status: 'ABERTO',
+                        posicao_kanban: 0,
+                        moeda: 'BRL',
+                      })
+                      .select('id')
+                      .single();
+
+                    if (newDeal && !dealErr) {
+                      console.log('[AutoDeal] Deal criado:', (newDeal as any).id);
+
+                      // Log CRIACAO activity
+                      await supabase.from('deal_activities').insert({
+                        deal_id: (newDeal as any).id,
+                        tipo: 'CRIACAO',
+                        descricao: 'Deal criado automaticamente pela SDR IA',
+                        metadata: {
+                          origem: 'SDR_IA',
+                          lead_id: leadId,
+                          dados_extraidos: {
+                            valor_mencionado: valorMencionado ?? null,
+                            necessidade_principal: necessidade ?? null,
+                            urgencia: urgencia ?? null,
+                            decisor_identificado: detalhes?.decisor_identificado ?? null,
+                            prazo_mencionado: detalhes?.prazo_mencionado ?? null,
+                          },
+                        },
+                      });
+
+                      // Insert notification for deal owner / closer
+                      const { data: closerProfile } = await supabase
+                        .from('closer_notifications')
+                        .select('closer_email')
+                        .eq('lead_id', leadId)
+                        .eq('empresa', empresa)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+
+                      // Find user by email for notification
+                      let notifyUserId: string | null = null;
+                      if (closerProfile?.closer_email) {
+                        const { data: profile } = await supabase
+                          .from('profiles')
+                          .select('id')
+                          .eq('email', closerProfile.closer_email)
+                          .maybeSingle();
+                        notifyUserId = (profile as any)?.id ?? null;
+                      }
+
+                      if (notifyUserId) {
+                        await supabase.from('notifications').insert({
+                          user_id: notifyUserId,
+                          empresa,
+                          tipo: 'DEAL_AUTO_CRIADO',
+                          titulo: `Novo deal: ${(contact as any).nome}`,
+                          mensagem: `A SDR IA qualificou o lead e criou automaticamente o deal "${titulo.substring(0, 80)}"`,
+                          link: `/pipeline?deal=${(newDeal as any).id}`,
+                          entity_id: (newDeal as any).id,
+                          entity_type: 'DEAL',
+                        });
+                        console.log('[AutoDeal] Notificação enviada para:', notifyUserId);
+                      }
+                    } else {
+                      console.error('[AutoDeal] Erro ao criar deal:', dealErr);
+                    }
+                  }
+                } else {
+                  console.log('[AutoDeal] Deal já existe para este contato/pipeline:', (existingDeal as any).id);
+                }
+              }
+            }
+          } catch (autoDealErr) {
+            console.error('[AutoDeal] Erro:', autoDealErr);
+          }
+
           console.log('[Ação] Tarefa criada para closer + modo MANUAL:', leadId);
           return true;
         }

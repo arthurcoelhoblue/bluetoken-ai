@@ -4,10 +4,10 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { SidebarTrigger } from '@/components/ui/sidebar';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Bell, Sun, Moon, ArrowLeft } from 'lucide-react';
+import { Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalSearch } from './GlobalSearch';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { NotificationBell } from './NotificationBell';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/': 'Meu Dia',
@@ -85,22 +85,7 @@ export function TopBar() {
       <GlobalSearch />
 
       {/* Notifications */}
-      <Popover>
-        <PopoverTrigger asChild>
-          <Button variant="ghost" size="icon" className="relative h-8 w-8">
-            <Bell className="h-4 w-4" />
-          </Button>
-        </PopoverTrigger>
-        <PopoverContent className="w-72 p-4" align="end">
-          <div className="flex items-center gap-2 mb-2">
-            <Bell className="h-4 w-4 text-muted-foreground" />
-            <span className="font-medium text-sm">Notificações</span>
-          </div>
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Nenhuma notificação
-          </p>
-        </PopoverContent>
-      </Popover>
+      <NotificationBell />
 
       {/* Theme toggle */}
       <Button variant="ghost" size="icon" onClick={toggleTheme} className="h-8 w-8">

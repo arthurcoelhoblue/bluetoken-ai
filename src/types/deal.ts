@@ -90,6 +90,7 @@ export interface Deal {
   score_intencao: number;
   score_valor: number;
   score_urgencia: number;
+  score_probabilidade: number;
   stage_origem_id: string | null;
   stage_fechamento_id: string | null;
   status: 'ABERTO' | 'GANHO' | 'PERDIDO';
@@ -198,6 +199,7 @@ export interface DealFullDetail {
   score_intencao: number;
   score_valor: number;
   score_urgencia: number;
+  score_probabilidade: number;
   stage_origem_id: string | null;
   stage_fechamento_id: string | null;
   canal_origem: string | null;
