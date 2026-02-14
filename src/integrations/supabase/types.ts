@@ -2222,6 +2222,127 @@ export type Database = {
           },
         ]
       }
+      knowledge_faq: {
+        Row: {
+          aprovado_em: string | null
+          aprovado_por: string | null
+          categoria: string | null
+          created_at: string
+          criado_por: string | null
+          empresa: string
+          fonte: string
+          id: string
+          motivo_rejeicao: string | null
+          pergunta: string
+          produto_id: string | null
+          resposta: string
+          status: string
+          tags: string[] | null
+          updated_at: string
+          visivel_amelia: boolean
+        }
+        Insert: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          categoria?: string | null
+          created_at?: string
+          criado_por?: string | null
+          empresa?: string
+          fonte?: string
+          id?: string
+          motivo_rejeicao?: string | null
+          pergunta: string
+          produto_id?: string | null
+          resposta: string
+          status?: string
+          tags?: string[] | null
+          updated_at?: string
+          visivel_amelia?: boolean
+        }
+        Update: {
+          aprovado_em?: string | null
+          aprovado_por?: string | null
+          categoria?: string | null
+          created_at?: string
+          criado_por?: string | null
+          empresa?: string
+          fonte?: string
+          id?: string
+          motivo_rejeicao?: string | null
+          pergunta?: string
+          produto_id?: string | null
+          resposta?: string
+          status?: string
+          tags?: string[] | null
+          updated_at?: string
+          visivel_amelia?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_faq_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_aprovado_por_fkey"
+            columns: ["aprovado_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_criado_por_fkey"
+            columns: ["criado_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_faq_produto_id_fkey"
+            columns: ["produto_id"]
+            isOneToOne: false
+            referencedRelation: "product_knowledge"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_sections: {
         Row: {
           conteudo: string

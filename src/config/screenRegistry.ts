@@ -49,7 +49,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'proximas_acoes', label: 'Próx. Ações', group: 'Automação', icon: Clock, url: '/cadences/next-actions' },
   { key: 'templates', label: 'Templates', group: 'Automação', icon: FileText, url: '/templates' },
   { key: 'capture_forms', label: 'Form de Captura', group: 'Automação', icon: ClipboardList, url: '/capture-forms' },
-  { key: 'knowledge_base', label: 'Knowledge Base', group: 'Configuração', icon: BookOpen, url: '/admin/produtos' },
+  { key: 'knowledge_base', label: 'Base de Conhecimento', group: 'Configuração', icon: BookOpen, url: '/admin/produtos' },
   { key: 'integracoes', label: 'Integrações', group: 'Configuração', icon: Plug, url: '/integracoes' },
   { key: 'benchmark_ia', label: 'Benchmark IA', group: 'Configuração', icon: FlaskConical, url: '/admin/ai-benchmark' },
   { key: 'monitor_sgt', label: 'Monitor SGT', group: 'Configuração', icon: Activity, url: '/monitor/sgt-events' },
