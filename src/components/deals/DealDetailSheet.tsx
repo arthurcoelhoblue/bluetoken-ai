@@ -34,6 +34,7 @@ import { CustomFieldsRenderer } from '@/components/contacts/CustomFieldsRenderer
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
 import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
+import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
 
@@ -72,6 +73,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const [lossCategoria, setLossCategoria] = useState('');
   const [editField, setEditField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [emailOpen, setEmailOpen] = useState(false);
 
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
 
@@ -290,6 +292,9 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                         <Button size="sm" onClick={handleAddActivity} disabled={!activityText.trim() || addActivity.isPending}>
                           <Plus className="h-3.5 w-3.5 mr-1" /> Adicionar
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => setEmailOpen(true)} title="Enviar email">
+                          <Mail className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
                       <Textarea
                         value={activityText}
@@ -386,6 +391,17 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Email dialog */}
+      {deal && (
+        <EmailFromDealDialog
+          open={emailOpen}
+          onOpenChange={setEmailOpen}
+          dealId={deal.id}
+          contactEmail={deal.contact_email ?? null}
+          contactNome={deal.contact_nome ?? null}
+        />
+      )}
 
       {/* Loss dialog */}
       <Dialog open={lossOpen} onOpenChange={setLossOpen}>

@@ -3,12 +3,20 @@ import { Button } from '@/components/ui/button';
 import { Plus } from 'lucide-react';
 import type { PipelineWithStages } from '@/types/deal';
 
+interface OwnerOption {
+  id: string;
+  nome: string;
+}
+
 interface PipelineFiltersProps {
   pipelines: PipelineWithStages[];
   selectedPipelineId: string | null;
   onPipelineChange: (id: string) => void;
   temperatura: string;
   onTemperaturaChange: (t: string) => void;
+  ownerId: string;
+  onOwnerChange: (id: string) => void;
+  owners: OwnerOption[];
   onNewDeal: () => void;
 }
 
@@ -18,6 +26,9 @@ export function PipelineFilters({
   onPipelineChange,
   temperatura,
   onTemperaturaChange,
+  ownerId,
+  onOwnerChange,
+  owners,
   onNewDeal,
 }: PipelineFiltersProps) {
   return (
@@ -46,6 +57,19 @@ export function PipelineFilters({
           <SelectItem value="QUENTE">Quente</SelectItem>
           <SelectItem value="MORNO">Morno</SelectItem>
           <SelectItem value="FRIO">Frio</SelectItem>
+        </SelectContent>
+      </Select>
+
+      {/* Owner filter */}
+      <Select value={ownerId} onValueChange={onOwnerChange}>
+        <SelectTrigger className="w-48">
+          <SelectValue placeholder="Vendedor" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">Todos vendedores</SelectItem>
+          {owners.map(o => (
+            <SelectItem key={o.id} value={o.id}>{o.nome}</SelectItem>
+          ))}
         </SelectContent>
       </Select>
 

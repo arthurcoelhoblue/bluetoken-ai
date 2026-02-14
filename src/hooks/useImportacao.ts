@@ -185,6 +185,8 @@ export function useRunImport() {
           }
           const status = STATUS_MAP[d.status || 'open'] || 'ABERTO';
 
+          const ownerId = d.user_id ? config.owner_mapping?.[String(d.user_id)] : undefined;
+
           const insertData: any = {
             titulo: d.title || `Deal ${d.id}`,
             valor: d.value || 0,
@@ -194,6 +196,7 @@ export function useRunImport() {
             stage_id: stageId,
             contact_id: contactId,
             organization_id: orgId,
+            owner_id: ownerId || null,
             notas: d.note || null,
             canal_origem: 'PIPEDRIVE_IMPORT',
           };
