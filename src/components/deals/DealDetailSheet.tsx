@@ -35,6 +35,7 @@ import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
 import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
 import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
+import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
 
@@ -350,6 +351,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                   {renderInlineField('Canal de origem', 'canal_origem', deal.canal_origem)}
                   {renderInlineField('Notas', 'notas', deal.notas)}
                   {renderInlineField('Etiqueta', 'etiqueta', deal.etiqueta)}
+                  <DealTagsEditor dealId={deal.id} tags={(deal as any).tags ?? []} />
                   {deal.data_previsao_fechamento && (
                     <div className="py-2 px-2">
                       <span className="text-xs text-muted-foreground">Previsão de fechamento</span>

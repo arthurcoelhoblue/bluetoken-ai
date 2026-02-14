@@ -1712,6 +1712,7 @@ export type Database = {
           stage_id: string
           stage_origem_id: string | null
           status: string
+          tags: string[] | null
           temperatura: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at: string
@@ -1759,6 +1760,7 @@ export type Database = {
           stage_id: string
           stage_origem_id?: string | null
           status?: string
+          tags?: string[] | null
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo: string
           updated_at?: string
@@ -1806,6 +1808,7 @@ export type Database = {
           stage_id?: string
           stage_origem_id?: string | null
           status?: string
+          tags?: string[] | null
           temperatura?: Database["public"]["Enums"]["temperatura_tipo"] | null
           titulo?: string
           updated_at?: string
