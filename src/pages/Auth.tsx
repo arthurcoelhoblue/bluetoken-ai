@@ -90,8 +90,8 @@ export default function Auth() {
             <Bot className="h-6 w-6 text-primary-foreground" />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-primary-foreground">SDR IA</h1>
-            <p className="text-xs text-primary-foreground/70">Tokeniza & Blue Consult</p>
+            <h1 className="text-xl font-bold text-primary-foreground">Amelia CRM</h1>
+            <p className="text-xs text-primary-foreground/70">Grupo Blue</p>
           </div>
         </div>
       </header>
@@ -102,12 +102,12 @@ export default function Auth() {
           <Card className="glass border-border/30 shadow-lg">
             <CardHeader className="text-center pb-2">
               <CardTitle className="text-2xl font-bold">
-                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo ao SDR IA'}
+                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo ao Amelia CRM'}
               </CardTitle>
               <CardDescription className="text-muted-foreground">
                 {authView === 'forgot-password' 
                   ? 'Enviaremos instruções para redefinir sua senha'
-                  : 'Sistema de Pré-Vendas Automatizado'
+                  : 'Acesse sua plataforma de inteligência comercial'
                 }
               </CardDescription>
             </CardHeader>
@@ -142,26 +142,12 @@ export default function Auth() {
                     </div>
                   </div>
 
-                  {/* Auth Tabs */}
-                  <Tabs defaultValue="login" className="w-full">
-                    <TabsList className="grid w-full grid-cols-2">
-                      <TabsTrigger value="login">Entrar</TabsTrigger>
-                      <TabsTrigger value="signup">Cadastrar</TabsTrigger>
-                    </TabsList>
-                    <TabsContent value="login" className="mt-4">
-                      <LoginForm
-                        onSubmit={handleLogin}
-                        onForgotPassword={() => setAuthView('forgot-password')}
-                        isLoading={isSubmitting}
-                      />
-                    </TabsContent>
-                    <TabsContent value="signup" className="mt-4">
-                      <SignupForm
-                        onSubmit={handleSignup}
-                        isLoading={isSubmitting}
-                      />
-                    </TabsContent>
-                  </Tabs>
+                  {/* Login Form */}
+                  <LoginForm
+                    onSubmit={handleLogin}
+                    onForgotPassword={() => setAuthView('forgot-password')}
+                    isLoading={isSubmitting}
+                  />
                 </>
               )}
 
@@ -176,7 +162,7 @@ export default function Auth() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="text-xs text-primary-foreground/50">
-          © 2024 Tokeniza & Blue Consult. Todos os direitos reservados.
+          © 2025 Grupo Blue. Powered by Amelia IA.
         </p>
       </footer>
     </div>

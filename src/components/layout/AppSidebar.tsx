@@ -187,7 +187,7 @@ export function AppSidebar() {
           </div>
           {!collapsed && (
             <div className="flex flex-col overflow-hidden">
-              <span className="font-bold text-sm truncate">Blue CRM</span>
+              <span className="font-bold text-sm truncate">Amelia CRM</span>
               <span className="text-xs text-muted-foreground truncate">Grupo Blue</span>
             </div>
           )}

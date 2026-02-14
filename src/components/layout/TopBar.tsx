@@ -52,7 +52,7 @@ function getTitle(pathname: string): string {
   if (pathname === '/cadences/new') return 'Nova Cadência';
   if (pathname.startsWith('/cadences/')) return 'Cadência';
   if (pathname.startsWith('/admin/produtos/')) return 'Produto';
-  return 'Blue CRM';
+  return 'Amelia CRM';
 }
 
 export function TopBar() {

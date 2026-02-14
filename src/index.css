@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* SDR IA Tokeniza & Blue Consult - Design System
+/* Amelia CRM - Grupo Blue - Design System
    Enterprise Dashboard - Clean, Professional, Trust-inspiring */
 
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
@@ -301,4 +301,13 @@
 
 .animate-spin-slow {
   animation: spin-slow 3s linear infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-20px); }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
 }
