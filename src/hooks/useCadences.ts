@@ -50,7 +50,6 @@ export function useCadences(filters?: CadencesFilters) {
       const { data: cadences, error } = await query;
 
       if (error) {
-        console.error('Error fetching cadences:', error);
         throw error;
       }
 
@@ -113,7 +112,6 @@ export function useCadence(cadenceId?: string) {
         .single();
 
       if (error) {
-        console.error('Error fetching cadence:', error);
         throw error;
       }
 
@@ -145,7 +143,6 @@ export function useCadence(cadenceId?: string) {
         .order('ordem');
 
       if (error) {
-        console.error('Error fetching cadence steps:', error);
         throw error;
       }
 
@@ -285,7 +282,6 @@ export function useCadenceRuns(
       const { data: runs, error, count } = await query;
 
       if (error) {
-        console.error('Error fetching cadence runs:', error);
         throw error;
       }
 
@@ -402,7 +398,6 @@ export function useCadenceEvents(runId?: string) {
         .order('created_at', { ascending: false });
 
       if (error) {
-        console.error('Error fetching cadence events:', error);
         throw error;
       }
 
@@ -499,7 +494,6 @@ export function useCadenceNextActions(filters?: CadenceNextActionsFilters) {
       const { data: runs, error } = await query;
 
       if (error) {
-        console.error('Error fetching next actions:', error);
         throw error;
       }
 
@@ -643,7 +637,6 @@ export function useCadenceRunDetail(runId?: string) {
         .single();
 
       if (error) {
-        console.error('Error fetching cadence run:', error);
         throw error;
       }
 

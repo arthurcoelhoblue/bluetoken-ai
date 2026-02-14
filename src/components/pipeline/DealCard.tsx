@@ -171,15 +171,15 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
             {formatBRL(deal.valor ?? 0)}
           </span>
           <div className="flex items-center gap-2">
-            {(deal as any).score_probabilidade > 0 && (
+            {deal.score_probabilidade > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <span className={`flex items-center gap-0.5 font-medium ${
-                    (deal as any).score_probabilidade > 70 ? 'text-success' :
-                    (deal as any).score_probabilidade >= 40 ? 'text-warning' : 'text-destructive'
+                    deal.score_probabilidade > 70 ? 'text-success' :
+                    deal.score_probabilidade >= 40 ? 'text-warning' : 'text-destructive'
                   }`}>
                     <TrendingUp className="h-3 w-3" />
-                    {(deal as any).score_probabilidade}%
+                    {deal.score_probabilidade}%
                   </span>
                 </TooltipTrigger>
                 <TooltipContent>Probabilidade de fechamento</TooltipContent>

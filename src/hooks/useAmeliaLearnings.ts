@@ -13,7 +13,7 @@ export function useAmeliaLearnings(statusFilter?: AmeliaLearningStatus) {
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
-        .from('amelia_learnings' as any)
+        .from('amelia_learnings')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(50);
@@ -42,7 +42,7 @@ export function useAmeliaSequenceAlerts() {
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
-        .from('amelia_learnings' as any)
+        .from('amelia_learnings')
         .select('*')
         .in('tipo', ['SEQUENCIA_PERDA', 'SEQUENCIA_CHURN', 'SEQUENCIA_SUCESSO'])
         .eq('status', 'VALIDADO')
@@ -68,7 +68,7 @@ export function useValidateLearning() {
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: 'VALIDADO' | 'REJEITADO' }) => {
       const { error } = await supabase
-        .from('amelia_learnings' as any)
+        .from('amelia_learnings')
         .update({
           status,
           validado_por: user?.id,
@@ -94,7 +94,7 @@ export function useRecentAlerts() {
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
-        .from('amelia_learnings' as any)
+        .from('amelia_learnings')
         .select('*')
         .eq('tipo', 'ALERTA_CRITICO')
         .order('created_at', { ascending: false })

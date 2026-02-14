@@ -48,7 +48,6 @@ export function useUpdateClassification() {
         .eq('id', data.classificationId);
 
       if (error) {
-        console.error('Erro ao atualizar classificação:', error);
         throw error;
       }
 

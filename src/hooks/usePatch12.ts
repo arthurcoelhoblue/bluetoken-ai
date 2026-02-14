@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { StageConversionRate, StageProjection, MassActionJob, MassActionMessagePreview, MassActionJobType } from '@/types/patch12';
+import type { StageConversionRate, StageProjection, MassActionJob, MassActionMessagePreview, MassActionJobType } from '@/types/projection';
 import type { Database } from '@/integrations/supabase/types';
 
 type EmpresaTipo = Database['public']['Enums']['empresa_tipo'];

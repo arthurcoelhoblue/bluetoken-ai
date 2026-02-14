@@ -74,7 +74,6 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       const { data, error } = await query.maybeSingle();
 
       if (error) {
-        console.error('Error fetching lead contact:', error);
         throw error;
       }
 
@@ -118,7 +117,6 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       const { data, error } = await query.maybeSingle();
 
       if (error) {
-        console.error('Error fetching classification:', error);
         throw error;
       }
 
@@ -165,7 +163,6 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       const { data, error } = await query;
 
       if (error) {
-        console.error('Error fetching SGT events:', error);
         throw error;
       }
 
@@ -202,7 +199,6 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       const { data, error } = await query.maybeSingle();
 
       if (error) {
-        console.error('Error fetching cadence run:', error);
         throw error;
       }
 

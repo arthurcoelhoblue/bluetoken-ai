@@ -62,7 +62,6 @@ export function useLeadClassification(
       const { data, error } = await query.maybeSingle();
 
       if (error) {
-        console.error('Erro ao buscar classificação:', error);
         throw error;
       }
 
@@ -136,7 +135,6 @@ export function useLeadsWithClassification(
       const { data: contacts, error: contactsError, count } = await contactsQuery;
 
       if (contactsError) {
-        console.error('Erro ao buscar contatos:', contactsError);
         throw contactsError;
       }
 
@@ -175,7 +173,6 @@ export function useLeadsWithClassification(
         await classificationsQuery;
 
       if (classificationsError) {
-        console.error('Erro ao buscar classificações:', classificationsError);
         throw classificationsError;
       }
 
@@ -270,7 +267,6 @@ export async function getLeadClassification(
   const { data, error } = await query.maybeSingle();
 
   if (error) {
-    console.error('Erro ao buscar classificação:', error);
     throw error;
   }
 

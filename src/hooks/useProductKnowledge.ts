@@ -254,7 +254,7 @@ export function useDeleteKnowledgeDocument() {
         .remove([storagePath]);
 
       if (storageError) {
-        console.error('Storage delete error:', storageError);
+        // Non-critical: DB record will still be deleted
       }
 
       // Delete from database
@@ -281,7 +281,6 @@ export async function getDocumentUrl(storagePath: string): Promise<string | null
     .createSignedUrl(storagePath, 3600); // 1 hour expiry
 
   if (error) {
-    console.error('Error getting document URL:', error);
     return null;
   }
 
