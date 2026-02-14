@@ -972,6 +972,7 @@ export type Database = {
           canal_origem: string | null
           cpf: string | null
           created_at: string
+          ddi: string | null
           email: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           endereco: string | null
@@ -980,16 +981,29 @@ export type Database = {
           is_active: boolean
           is_cliente: boolean
           legacy_lead_id: string | null
+          linkedin_cargo: string | null
+          linkedin_empresa: string | null
+          linkedin_setor: string | null
+          linkedin_url: string | null
           nome: string
           notas: string | null
+          numero_nacional: string | null
+          opt_out: boolean | null
+          opt_out_em: string | null
+          opt_out_motivo: string | null
           organization_id: string | null
+          origem_telefone: string | null
           owner_id: string | null
           pessoa_id: string | null
           primeiro_nome: string | null
+          prioridade_marketing: string | null
           rg: string | null
+          score_marketing: number | null
           sobrenome: string | null
           tags: string[] | null
           telefone: string | null
+          telefone_e164: string | null
+          telefone_valido: boolean | null
           telegram: string | null
           tipo: string | null
           updated_at: string
@@ -998,6 +1012,7 @@ export type Database = {
           canal_origem?: string | null
           cpf?: string | null
           created_at?: string
+          ddi?: string | null
           email?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           endereco?: string | null
@@ -1006,16 +1021,29 @@ export type Database = {
           is_active?: boolean
           is_cliente?: boolean
           legacy_lead_id?: string | null
+          linkedin_cargo?: string | null
+          linkedin_empresa?: string | null
+          linkedin_setor?: string | null
+          linkedin_url?: string | null
           nome: string
           notas?: string | null
+          numero_nacional?: string | null
+          opt_out?: boolean | null
+          opt_out_em?: string | null
+          opt_out_motivo?: string | null
           organization_id?: string | null
+          origem_telefone?: string | null
           owner_id?: string | null
           pessoa_id?: string | null
           primeiro_nome?: string | null
+          prioridade_marketing?: string | null
           rg?: string | null
+          score_marketing?: number | null
           sobrenome?: string | null
           tags?: string[] | null
           telefone?: string | null
+          telefone_e164?: string | null
+          telefone_valido?: boolean | null
           telegram?: string | null
           tipo?: string | null
           updated_at?: string
@@ -1024,6 +1052,7 @@ export type Database = {
           canal_origem?: string | null
           cpf?: string | null
           created_at?: string
+          ddi?: string | null
           email?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           endereco?: string | null
@@ -1032,16 +1061,29 @@ export type Database = {
           is_active?: boolean
           is_cliente?: boolean
           legacy_lead_id?: string | null
+          linkedin_cargo?: string | null
+          linkedin_empresa?: string | null
+          linkedin_setor?: string | null
+          linkedin_url?: string | null
           nome?: string
           notas?: string | null
+          numero_nacional?: string | null
+          opt_out?: boolean | null
+          opt_out_em?: string | null
+          opt_out_motivo?: string | null
           organization_id?: string | null
+          origem_telefone?: string | null
           owner_id?: string | null
           pessoa_id?: string | null
           primeiro_nome?: string | null
+          prioridade_marketing?: string | null
           rg?: string | null
+          score_marketing?: number | null
           sobrenome?: string | null
           tags?: string[] | null
           telefone?: string | null
+          telefone_e164?: string | null
+          telefone_valido?: boolean | null
           telegram?: string | null
           tipo?: string | null
           updated_at?: string
@@ -4710,20 +4752,30 @@ export type Database = {
           is_active: boolean | null
           is_cliente: boolean | null
           legacy_lead_id: string | null
+          linkedin_cargo: string | null
+          linkedin_empresa: string | null
+          linkedin_setor: string | null
+          linkedin_url: string | null
           nome: string | null
           notas: string | null
+          opt_out: boolean | null
           org_nome: string | null
           org_nome_fantasia: string | null
           organization_id: string | null
+          origem_telefone: string | null
           owner_avatar: string | null
           owner_id: string | null
           owner_nome: string | null
           pessoa_id: string | null
           primeiro_nome: string | null
+          prioridade_marketing: string | null
           rg: string | null
+          score_marketing: number | null
           sobrenome: string | null
           tags: string[] | null
           telefone: string | null
+          telefone_e164: string | null
+          telefone_valido: boolean | null
           telegram: string | null
           tipo: string | null
           updated_at: string | null

@@ -113,8 +113,8 @@ const App = () => (
                 {/* Atendimentos redirect → Conversas */}
                 <Route path="/atendimentos" element={<Navigate to="/conversas" replace />} />
                 
-                {/* Leads routes */}
-                <Route path="/leads" element={<ProtectedRoute><LeadsList /></ProtectedRoute>} />
+                {/* Leads routes - redirect to unified Contatos */}
+                <Route path="/leads" element={<Navigate to="/contatos" replace />} />
                 <Route path="/leads/:leadId/:empresa" element={<ProtectedRoute><LeadDetail /></ProtectedRoute>} />
                 
                 {/* Cadences routes */}
