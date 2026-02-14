@@ -36,6 +36,7 @@ import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
 import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
 import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
+import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { InsightsTab } from '@/components/deals/DealInsightsTab';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
@@ -196,10 +197,17 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                         )}
                       </div>
                     </div>
-                    <CopilotPanel
-                      context={{ type: 'DEAL', id: deal.id, empresa: deal.pipeline_empresa ?? '' }}
-                      variant="icon"
-                    />
+                    <div className="flex items-center gap-1">
+                      <ClickToCallButton
+                        phone={deal.contact_telefone}
+                        contactName={deal.contact_nome}
+                        dealId={deal.id}
+                      />
+                      <CopilotPanel
+                        context={{ type: 'DEAL', id: deal.id, empresa: deal.pipeline_empresa ?? '' }}
+                        variant="icon"
+                      />
+                    </div>
                   </div>
                 </SheetHeader>
 
