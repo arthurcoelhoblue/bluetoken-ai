@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Pause, Play } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
+import { CoachingSidebar } from './CoachingSidebar';
 import type { EmpresaTipo } from '@/types/telephony';
 import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
@@ -17,6 +18,7 @@ export function ZadarmaPhoneWidget() {
   const { data: myExtension } = useMyExtension(empresa, profile?.id ?? null);
 
   const [minimized, setMinimized] = useState(true);
+  const [maximized, setMaximized] = useState(false);
   const [phoneState, setPhoneState] = useState<PhoneWidgetState>('idle');
   const [number, setNumber] = useState('');
   const [contactName, setContactName] = useState('');
@@ -67,6 +69,7 @@ export function ZadarmaPhoneWidget() {
   const handleHangup = () => {
     setPhoneState('ended');
     setOnHold(false);
+    setMaximized(false);
     setTimeout(() => {
       setPhoneState('idle');
       setCallTimer(0);
@@ -89,10 +92,9 @@ export function ZadarmaPhoneWidget() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Don't render if user has no extension
   if (!myExtension) return null;
 
-  // Minimized state — floating FAB
+  // Minimized FAB
   if (minimized) {
     return (
       <button
@@ -104,6 +106,72 @@ export function ZadarmaPhoneWidget() {
     );
   }
 
+  const isInCall = phoneState === 'dialing' || phoneState === 'active' || phoneState === 'ended';
+  const showCoaching = maximized && phoneState === 'active';
+
+  // Maximized with coaching sidebar
+  if (maximized && isInCall) {
+    return (
+      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
+          {/* Phone panel */}
+          <div className="w-72 shrink-0 border-r border-border flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
+              <div className="flex items-center gap-2">
+                <Phone className="h-4 w-4" />
+                <span className="text-sm font-medium">Telefonia</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setMaximized(false)}>
+                  <Minimize2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+
+            {/* Call info */}
+            <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
+              <div className="text-center">
+                <p className="text-lg font-semibold">{contactName || number}</p>
+                {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
+                {dealId && <p className="text-xs text-muted-foreground mt-1">Deal vinculado</p>}
+              </div>
+              {onHold && (
+                <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
+              )}
+              <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
+                {phoneState === 'dialing' ? 'Discando...' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
+              </p>
+              <div className="flex items-center justify-center gap-3">
+                {phoneState === 'active' && (
+                  <>
+                    <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
+                      {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
+                    </Button>
+                    <Button variant="outline" size="icon" className={`h-10 w-10 rounded-full ${onHold ? 'bg-warning/20 border-warning' : ''}`} onClick={handleHold}>
+                      {onHold ? <Play className="h-4 w-4 text-warning" /> : <Pause className="h-4 w-4" />}
+                    </Button>
+                  </>
+                )}
+                {phoneState !== 'ended' && (
+                  <Button variant="destructive" size="icon" className="h-12 w-12 rounded-full" onClick={handleHangup}>
+                    <PhoneOff className="h-5 w-5" />
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Coaching sidebar */}
+          <div className="flex-1 min-w-0">
+            <CoachingSidebar dealId={dealId} isActive={showCoaching} />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Normal compact widget
   return (
     <div className="fixed bottom-6 right-6 z-50 w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
       {/* Header */}
@@ -113,6 +181,11 @@ export function ZadarmaPhoneWidget() {
           <span className="text-sm font-medium">Telefonia</span>
         </div>
         <div className="flex items-center gap-1">
+          {isInCall && phoneState === 'active' && (
+            <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setMaximized(true)}>
+              <Maximize2 className="h-3.5 w-3.5" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setMinimized(true)}>
             <Minimize2 className="h-3.5 w-3.5" />
           </Button>
@@ -123,7 +196,7 @@ export function ZadarmaPhoneWidget() {
       </div>
 
       {/* Active call state */}
-      {(phoneState === 'dialing' || phoneState === 'active' || phoneState === 'ended') ? (
+      {isInCall ? (
         <div className="p-6 text-center space-y-4">
           <div>
             <p className="text-lg font-semibold">{contactName || number}</p>

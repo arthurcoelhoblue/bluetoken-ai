@@ -215,6 +215,21 @@ Deno.serve(async (req) => {
           event_type: eventType,
           payload: Object.fromEntries(params),
         });
+
+        // Auto-trigger transcription when recording is available
+        try {
+          await fetch(`${supabaseUrl}/functions/v1/call-transcribe`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${supabaseKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ call_id: existing.id }),
+          });
+          console.log('Auto-transcription triggered for call:', existing.id);
+        } catch (transcribeErr) {
+          console.error('Auto-transcription trigger failed:', transcribeErr);
+        }
       }
     } else {
       await supabase.from('call_events').insert({

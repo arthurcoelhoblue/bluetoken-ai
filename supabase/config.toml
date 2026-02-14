@@ -89,3 +89,9 @@ verify_jwt = false
 
 [functions.weekly-report]
 verify_jwt = false
+
+[functions.call-transcribe]
+verify_jwt = false
+
+[functions.call-coach]
+verify_jwt = false
