@@ -119,7 +119,7 @@ function ImportacaoContent() {
 
   return (
     <>
-      <PageShell icon={Upload} title="Importação Pipedrive" description="Migre dados do Pipedrive para o CRM" patchInfo="Patch 11" />
+      <PageShell icon={Upload} title="Importação Pipedrive" description="Importe deals, contatos e organizações do Pipedrive para o CRM." />
 
       <div className="px-6 pb-8">
         <Tabs defaultValue="wizard">

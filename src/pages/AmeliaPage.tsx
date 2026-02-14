@@ -23,7 +23,6 @@ export default function AmeliaPage() {
           icon={Bot}
           title="Amélia IA"
           description="Central de operações da SDR IA. Métricas, conversas ativas e ações em massa."
-          patchInfo="Patch 6 + 12"
         />
 
         {/* Quick Action: Mass Action */}

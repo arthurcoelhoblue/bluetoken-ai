@@ -157,7 +157,6 @@ export default function PendenciasPerda() {
         icon={AlertTriangle}
         title="Pendências do Gestor"
         description="Resolva divergências e tome decisões sobre situações pendentes."
-        patchInfo="Gestão"
       />
       <div className="px-6 pb-8 space-y-4">
         {isLoading ? (
