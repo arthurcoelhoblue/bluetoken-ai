@@ -2082,11 +2082,6 @@ async function interpretWithAI(
   const startTime = Date.now();
   const isPassiveChat = mode === 'PASSIVE_CHAT';
 
-  const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-  if (!LOVABLE_API_KEY) {
-    throw new Error('LOVABLE_API_KEY não configurada');
-  }
-
   // Selecionar system prompt baseado no modo
   const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : SYSTEM_PROMPT;
 
