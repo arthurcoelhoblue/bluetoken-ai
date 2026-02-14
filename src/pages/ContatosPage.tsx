@@ -14,8 +14,9 @@ import {
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
-  Filter, Plus, Search, Users, X, ChevronLeft, ChevronRight, Linkedin,
+  Filter, Plus, Search, Users, X, Linkedin,
 } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { format } from 'date-fns';
 import { ContactCreateDialog } from '@/components/contacts/ContactCreateDialog';
 import { ContactDetailSheet } from '@/components/contacts/ContactDetailSheet';
@@ -217,20 +218,13 @@ function ContatosContent() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">Página {page + 1} de {totalPages}</p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <DataTablePagination
+                page={page}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                pageSize={PAGE_SIZE}
+                onPageChange={setPage}
+              />
             </>
           )}
         </CardContent>

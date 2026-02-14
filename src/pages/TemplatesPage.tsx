@@ -9,6 +9,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Plus, Pencil, Trash2, FileText, MessageSquare, Mail } from 'lucide-react';
 import {
   useTemplates, useCreateTemplate, useUpdateTemplate, useDeleteTemplate,
+  TEMPLATE_PAGE_SIZE,
   type MessageTemplate, type TemplateInsert, type TemplateUpdate,
 } from '@/hooks/useTemplates';
 import { TemplateFormDialog } from '@/components/templates/TemplateFormDialog';
@@ -16,24 +17,30 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 export default function TemplatesPage() {
   const [canalFilter, setCanalFilter] = useState<'WHATSAPP' | 'EMAIL' | null>(null);
   const [ativoFilter, setAtivoFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data: templates, isLoading } = useTemplates(canalFilter);
+  const { data, isLoading } = useTemplates(canalFilter, page);
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const deleteMutation = useDeleteTemplate();
 
-  const filtered = templates?.filter((t) => {
+  const templates = data?.data ?? [];
+  const totalCount = data?.totalCount ?? 0;
+  const totalPages = data?.totalPages ?? 0;
+
+  const filtered = templates.filter((t) => {
     if (ativoFilter === 'active' && !t.ativo) return false;
     if (ativoFilter === 'inactive' && t.ativo) return false;
     return true;
-  }) ?? [];
+  });
 
   function handleSave(data: TemplateInsert | TemplateUpdate) {
     if ('id' in data && data.id) {
@@ -66,7 +73,7 @@ export default function TemplatesPage() {
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
-          <Select value={canalFilter ?? 'all'} onValueChange={(v) => setCanalFilter(v === 'all' ? null : v as 'WHATSAPP' | 'EMAIL')}>
+          <Select value={canalFilter ?? 'all'} onValueChange={(v) => { setCanalFilter(v === 'all' ? null : v as 'WHATSAPP' | 'EMAIL'); setPage(0); }}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Canal" />
             </SelectTrigger>
@@ -88,7 +95,7 @@ export default function TemplatesPage() {
             </SelectContent>
           </Select>
 
-          <span className="text-sm text-muted-foreground ml-auto">{filtered.length} templates</span>
+          <span className="text-sm text-muted-foreground ml-auto">{totalCount} templates</span>
         </div>
 
         {/* Table */}
@@ -104,50 +111,61 @@ export default function TemplatesPage() {
                 <p>Nenhum template encontrado.</p>
               </div>
             ) : (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nome</TableHead>
-                    <TableHead>Código</TableHead>
-                    <TableHead>Canal</TableHead>
-                    <TableHead>Empresa</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filtered.map((t) => (
-                    <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openEdit(t)}>
-                      <TableCell className="font-medium">{t.nome}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{t.codigo}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className="gap-1">
-                          {t.canal === 'WHATSAPP' ? <MessageSquare className="h-3 w-3" /> : <Mail className="h-3 w-3" />}
-                          {t.canal}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant="secondary">{t.empresa}</Badge>
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={t.ativo ? 'default' : 'outline'}>
-                          {t.ativo ? 'Ativo' : 'Inativo'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
-                          <Button variant="ghost" size="icon" onClick={() => openEdit(t)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
-                          <Button variant="ghost" size="icon" onClick={() => setDeleteId(t.id)}>
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Código</TableHead>
+                      <TableHead>Canal</TableHead>
+                      <TableHead>Empresa</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {filtered.map((t) => (
+                      <TableRow key={t.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openEdit(t)}>
+                        <TableCell className="font-medium">{t.nome}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{t.codigo}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="gap-1">
+                            {t.canal === 'WHATSAPP' ? <MessageSquare className="h-3 w-3" /> : <Mail className="h-3 w-3" />}
+                            {t.canal}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">{t.empresa}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={t.ativo ? 'default' : 'outline'}>
+                            {t.ativo ? 'Ativo' : 'Inativo'}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="icon" onClick={() => openEdit(t)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon" onClick={() => setDeleteId(t.id)}>
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                <div className="px-4 pb-4">
+                  <DataTablePagination
+                    page={page}
+                    totalPages={totalPages}
+                    totalCount={totalCount}
+                    pageSize={TEMPLATE_PAGE_SIZE}
+                    onPageChange={setPage}
+                  />
+                </div>
+              </>
             )}
           </CardContent>
         </Card>

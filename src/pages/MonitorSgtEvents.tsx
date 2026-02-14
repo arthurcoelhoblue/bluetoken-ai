@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 import { useSgtEvents, useSgtEventDetails, type SGTEventsFilters, type SGTEventWithLogs } from '@/hooks/useSgtEvents';
 import { Constants } from '@/integrations/supabase/types';
@@ -354,31 +355,14 @@ function MonitorSgtEventsContent() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {data && data.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">
-                    Página {page} de {data.totalPages}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.max(1, p - 1))}
-                      disabled={page === 1}
-                    >
-                      Anterior
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setPage(p => Math.min(data.totalPages, p + 1))}
-                      disabled={page === data.totalPages}
-                    >
-                      Próximo
-                    </Button>
-                  </div>
-                </div>
+              {data && (
+                <DataTablePagination
+                  page={page - 1}
+                  totalPages={data.totalPages}
+                  totalCount={data.totalCount}
+                  pageSize={15}
+                  onPageChange={(p) => setPage(p + 1)}
+                />
               )}
             </>
           )}

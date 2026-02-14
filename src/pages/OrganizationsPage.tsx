@@ -9,7 +9,8 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Building2, Plus, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Building2, Plus, Search } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { OrgCreateDialog } from '@/components/organizations/OrgCreateDialog';
 import { OrgDetailSheet } from '@/components/organizations/OrgDetailSheet';
 
@@ -125,20 +126,13 @@ function OrganizationsContent() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4">
-                  <p className="text-sm text-muted-foreground">Página {page + 1} de {totalPages}</p>
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
-                      <ChevronLeft className="h-4 w-4" />
-                    </Button>
-                    <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <DataTablePagination
+                page={page}
+                totalPages={totalPages}
+                totalCount={totalCount}
+                pageSize={25}
+                onPageChange={setPage}
+              />
             </>
           )}
         </CardContent>
