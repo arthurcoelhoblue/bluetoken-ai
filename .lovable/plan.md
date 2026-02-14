@@ -1,105 +1,152 @@
 
-# Blocos 4 e 6: Health Calculator + Copilot CS
+# Fase 2: CS Proativo e Automatizado
 
-Estes sao os dois blocos finais do modulo CS Fase 1. O Bloco 4 cria a edge function que calcula o health score de cada cliente CS com base em 6 dimensoes ponderadas. O Bloco 6 enriquece o Copilot da Amelia com dados CS para que CSMs possam perguntar sobre a situacao de clientes.
+A Fase 2 transforma o modulo CS de manual para proativo, com automacoes de NPS, deteccao de incidencias por IA, alertas de renovacao, briefing diario e playbooks ativados por triggers.
 
 ---
 
-## Bloco 4: Edge Function `cs-health-calculator`
+## Bloco 1: NPS Automatico via Cadencia
 
 ### O que faz
-Calcula o health score (0-100) de um ou todos os clientes CS, baseado em 6 dimensoes ponderadas:
+Apos 90 dias de um deal ganho, envia automaticamente uma pesquisa NPS ao cliente via WhatsApp ou email. Usa a tabela `cs_playbooks` (ja criada na Fase 1) para configurar o trigger.
 
-| Dimensao | Peso | Fonte de dados |
-|----------|------|----------------|
-| NPS | 20% | Ultimo NPS em `cs_surveys` |
-| CSAT | 15% | Media dos ultimos 3 CSATs em `cs_surveys` |
-| Engajamento | 20% | Contagem de atividades em `deal_activities` nos ultimos 30 dias para deals do contato |
-| Financeiro | 20% | Ratio deals ganhos vs total para o contato |
-| Tempo | 10% | Meses desde `data_primeiro_ganho` (mais tempo = mais saudavel, cap em 24 meses) |
-| Sentimento | 15% | Media de `sentiment_score` das ultimas pesquisas respondidas |
+### Implementacao
+1. **Edge function `cs-nps-auto`**: Roda via cron (diario), busca clientes com `data_primeiro_ganho` >= 90 dias atras que ainda NAO tem pesquisa NPS registrada. Para cada um:
+   - Cria registro em `cs_surveys` com `tipo=NPS`, `canal_envio=WHATSAPP`, `enviado_em=now()`
+   - Envia mensagem via `whatsapp-send` com template NPS perguntando a nota 0-10
+   - Marca como enviado
 
-### Logica principal
-1. Recebe `customer_id` (individual) ou nenhum (batch para todos ativos)
-2. Para cada cliente: consulta dados das 6 dimensoes
-3. Calcula score ponderado (0-100)
-4. Determina `health_status` pelos thresholds: >=75 SAUDAVEL, >=55 ATENCAO, >=35 EM_RISCO, <35 CRITICO
-5. Se score mudou em relacao ao anterior, salva em `cs_health_log` com breakdown
-6. Atualiza `cs_customers.health_score` e `health_status`
-7. Se cruzou threshold de status (ex: ATENCAO -> EM_RISCO), cria notificacao para o CSM
+2. **Webhook de resposta**: Quando o lead responde com um numero (0-10), o `whatsapp-inbound` ou `bluechat-inbound` detecta que e resposta NPS e:
+   - Atualiza `cs_surveys.nota` e `respondido_em`
+   - Atualiza `cs_customers.ultimo_nps` e `nps_categoria`
+   - Dispara recalculo do health score
 
-### Arquivo
-- `supabase/functions/cs-health-calculator/index.ts`
-- Adicionar `[functions.cs-health-calculator] verify_jwt = false` no config.toml
+### Arquivos
+- `supabase/functions/cs-nps-auto/index.ts` (Criar)
+- `supabase/config.toml` (Adicionar function)
+- Cron job via `cron.schedule` (INSERT SQL)
 
 ---
 
-## Bloco 6: Copilot Enriquecido com Dados CS
+## Bloco 2: Deteccao Automatica de Incidencias por IA
 
-### O que muda
-Adicionar novo `contextType = 'CUSTOMER'` no `copilot-chat` edge function e criar funcao `enrichCustomerContext()`.
+### O que faz
+Analisa sentimento das mensagens inbound dos leads/clientes CS. Quando detecta sequencia de sentimento negativo (2+ mensagens NEGATIVO consecutivas), cria automaticamente uma incidencia em `cs_incidents`.
 
-### Dados injetados no contexto da IA
-- Health score atual, status, breakdown das 6 dimensoes
-- Ultimo NPS e CSAT com datas
-- Incidencias abertas (titulo, gravidade, data)
-- Proxima renovacao e valor MRR
-- Deals vinculados (ganhos e abertos)
-- Notas do CSM
+### Implementacao
+1. **Edge function `cs-incident-detector`**: Roda via cron (a cada 6h) ou pode ser chamada inline pelo `sdr-ia-interpret`.
+   - Busca clientes CS ativos
+   - Para cada cliente, verifica `lead_message_intents` das ultimas 48h
+   - Se encontrar 2+ intents com `sentimento = NEGATIVO` consecutivos:
+     - Cria incidencia em `cs_incidents` com `tipo=RECLAMACAO`, `gravidade=MEDIA`, `detectado_por_ia=true`
+     - Cria notificacao para o CSM
+   - Se encontrar 3+ negativos: gravidade = ALTA
+   - Evita duplicatas verificando se ja existe incidencia aberta recente (24h) para o mesmo cliente
 
-### Alteracoes
-- Atualizar `ContextType` para incluir `'CUSTOMER'`
-- Adicionar case `'CUSTOMER'` no switch
-- Implementar `enrichCustomerContext(supabase, customerId)`
-- Atualizar `SYSTEM_PROMPT` para incluir diretriz CS: "Para contexto de Customer Success, foque em retencao, saude do cliente e acoes proativas"
-
----
-
-## Resumo de arquivos
-
-| Arquivo | Acao |
-|---------|------|
-| `supabase/functions/cs-health-calculator/index.ts` | Criar |
-| `supabase/functions/copilot-chat/index.ts` | Editar (adicionar CUSTOMER context) |
-| `supabase/config.toml` | Adicionar config do cs-health-calculator |
+### Arquivos
+- `supabase/functions/cs-incident-detector/index.ts` (Criar)
+- `supabase/config.toml` (Adicionar function)
 
 ---
 
-## Detalhes tecnicos
+## Bloco 3: Alertas de Renovacao Proativos
 
-### Health Calculator - Pseudocodigo das dimensoes
+### O que faz
+Monitora `cs_customers.proxima_renovacao` e cria notificacoes automaticas nos marcos 60, 30 e 15 dias antes da renovacao.
 
-```text
-NPS (20%):
-  ultimo NPS 0-10 -> normalizado para 0-100 (nota * 10)
-  sem NPS -> score 50 (neutro)
+### Implementacao
+1. **Edge function `cs-renewal-alerts`**: Roda via cron (diario).
+   - Busca clientes com `proxima_renovacao` nos intervalos 60, 30, 15 dias
+   - Verifica se notificacao ja foi enviada para aquele marco (evita duplicatas)
+   - Cria notificacao para o CSM com contexto: health score, MRR, ultimas incidencias
+   - Se health_status = EM_RISCO ou CRITICO, marca notificacao como urgente
 
-CSAT (15%):
-  media ultimos 3 CSATs (0-5) -> normalizado para 0-100 (media * 20)
-  sem CSAT -> score 50
+### Arquivos
+- `supabase/functions/cs-renewal-alerts/index.ts` (Criar)
+- `supabase/config.toml` (Adicionar function)
 
-Engajamento (20%):
-  count atividades 30 dias -> 0 = 0, 1-3 = 40, 4-8 = 70, 9+ = 100
+---
 
-Financeiro (20%):
-  deals ganhos / total deals do contato -> ratio * 100
-  sem deals -> score 50
+## Bloco 4: Briefing Diario do CSM
 
-Tempo (10%):
-  meses desde data_primeiro_ganho, cap 24 -> (meses / 24) * 100
+### O que faz
+Gera um resumo diario para cada CSM com: clientes em risco, renovacoes proximas, incidencias abertas, NPS pendentes, acoes sugeridas pela IA.
 
-Sentimento (15%):
-  media sentiment_score das pesquisas respondidas (ja 0-1) -> * 100
-  sem dados -> score 50
-```
+### Implementacao
+1. **Edge function `cs-daily-briefing`**: Roda via cron (8h da manha).
+   - Para cada CSM (profiles com clientes CS atribuidos):
+     - Conta clientes por health_status
+     - Lista renovacoes nos proximos 30 dias
+     - Lista incidencias abertas
+     - Chama Lovable AI (gemini-3-flash-preview) para gerar resumo actionavel
+     - Salva briefing em `notifications` com tipo `CS_BRIEFING`
+   - O briefing aparece no NotificationBell do CSM
 
-### Copilot - enrichCustomerContext retorna string formatada
-```text
-**Cliente CS**: Nome | Email | Tel
-**Health Score**: 72/100 (ATENCAO)
-**Dimensoes**: NPS=80, CSAT=60, Engajamento=70, Financeiro=85, Tempo=50, Sentimento=65
-**Ultimo NPS**: 7 (Neutro) em 15/01/2026
-**MRR**: R$ 5.000 | Renovacao: 15/04/2026
-**Incidencias Abertas**: 2 (1 Alta, 1 Media)
-**Notas CSM**: "Cliente pediu reuniao para discutir expansao"
-```
+### Arquivos
+- `supabase/functions/cs-daily-briefing/index.ts` (Criar)
+- `supabase/config.toml` (Adicionar function)
+
+---
+
+## Bloco 5: Playbooks CS Ativados por Triggers
+
+### O que faz
+Usa a tabela `cs_playbooks` para definir cadencias CS automaticas ativadas por eventos como: health degradou, renovacao proxima, NPS detrator, incidencia critica.
+
+### Implementacao
+1. **Tela de Playbooks** (`/cs/playbooks`): CRUD para playbooks com:
+   - Trigger type: HEALTH_DEGRADED, RENEWAL_NEAR, NPS_DETRACTOR, INCIDENT_CRITICAL
+   - Steps: array de acoes (enviar email, criar tarefa, notificar CSM, agendar call)
+   - Configuracao: delays entre steps, condicoes de parada
+
+2. **Engine de execucao**: Integrada no `cs-health-calculator` e `cs-renewal-alerts`:
+   - Quando health degrada para EM_RISCO -> busca playbook com trigger HEALTH_DEGRADED
+   - Executa primeiro step, agenda proximos via cadence runner
+
+### Arquivos
+- `src/pages/cs/CSPlaybooksPage.tsx` (Criar)
+- `src/hooks/useCSPlaybooks.ts` (Criar)
+- Atualizar `App.tsx` com rota `/cs/playbooks`
+
+---
+
+## Bloco 6: Health Score Recalculado por Eventos
+
+### O que faz
+Em vez de depender apenas do cron, recalcula o health score em tempo real quando eventos relevantes acontecem: nova pesquisa respondida, nova incidencia, deal ganho/perdido.
+
+### Implementacao
+1. **Trigger SQL**: Apos INSERT em `cs_surveys` (com nota), `cs_incidents`, ou UPDATE em `deals` (status mudou):
+   - Chama `cs-health-calculator` via `pg_net.http_post` para recalcular o score do cliente afetado
+
+### Arquivos
+- Migration SQL para triggers de recalculo
+- Nenhum arquivo frontend novo
+
+---
+
+## Ordem de Execucao
+
+1. **Bloco 3**: Alertas de renovacao (mais simples, valor imediato)
+2. **Bloco 2**: Deteccao de incidencias por IA
+3. **Bloco 6**: Health score por eventos (migration SQL)
+4. **Bloco 1**: NPS automatico
+5. **Bloco 4**: Briefing diario
+6. **Bloco 5**: Playbooks (mais complexo, depende dos anteriores)
+
+---
+
+## Resumo de Entregas
+
+| Item | Tipo | Arquivo |
+|------|------|---------|
+| cs-renewal-alerts | Edge Function | supabase/functions/cs-renewal-alerts/index.ts |
+| cs-incident-detector | Edge Function | supabase/functions/cs-incident-detector/index.ts |
+| cs-nps-auto | Edge Function | supabase/functions/cs-nps-auto/index.ts |
+| cs-daily-briefing | Edge Function | supabase/functions/cs-daily-briefing/index.ts |
+| Triggers recalculo health | Migration SQL | Via migration tool |
+| CSPlaybooksPage | Pagina React | src/pages/cs/CSPlaybooksPage.tsx |
+| useCSPlaybooks | Hook | src/hooks/useCSPlaybooks.ts |
+| config.toml | Update | 4 novas functions |
+| App.tsx | Update | 1 nova rota |
+| Cron jobs | INSERT SQL | 4 cron schedules |
