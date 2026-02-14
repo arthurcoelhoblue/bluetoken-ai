@@ -24,7 +24,9 @@ Diretrizes:
 - Quando sugerir mensagens, adapte ao perfil DISC e estágio do funil se disponíveis.
 - Para leads Tokeniza, foque em investimentos tokenizados e rentabilidade.
 - Para leads Blue, foque em IR/tributação cripto e compliance.
-- Para contexto de Customer Success, foque em retenção, saúde do cliente, ações proativas para reduzir churn e expandir receita.`;
+- Para contexto de Customer Success, foque em retenção, saúde do cliente, ações proativas para reduzir churn e expandir receita.
+- IMPORTANTE: Responda APENAS com base nos dados fornecidos no contexto. Se um módulo não aparece nos dados, diga "Não tenho acesso a essas informações no seu perfil."
+- Mantenha o foco 100% profissional e no contexto de trabalho.`;
 
 type ContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL' | 'CUSTOMER';
 
@@ -66,6 +68,50 @@ serve(async (req) => {
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     // ========================================
+    // EXTRAIR USER_ID E PERMISSÕES
+    // ========================================
+    let userPermissions: Record<string, { view: boolean; edit: boolean }> | null = null;
+    let isAdmin = false;
+
+    const authHeader = req.headers.get('Authorization');
+    if (authHeader) {
+      const token = authHeader.replace('Bearer ', '');
+      const { data: userData } = await supabase.auth.getUser(token);
+      const userId = userData?.user?.id;
+
+      if (userId) {
+        // Check if user is ADMIN
+        const { data: roles } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId);
+
+        isAdmin = roles?.some((r: any) => r.role === 'ADMIN') ?? false;
+
+        if (!isAdmin) {
+          // Fetch access profile permissions
+          const { data: assignment } = await supabase
+            .from('user_access_assignments')
+            .select('access_profile_id')
+            .eq('user_id', userId)
+            .maybeSingle();
+
+          if (assignment?.access_profile_id) {
+            const { data: profile } = await supabase
+              .from('access_profiles')
+              .select('permissions')
+              .eq('id', assignment.access_profile_id)
+              .single();
+
+            if (profile?.permissions) {
+              userPermissions = profile.permissions as Record<string, { view: boolean; edit: boolean }>;
+            }
+          }
+        }
+      }
+    }
+
+    // ========================================
     // ENRIQUECIMENTO DE CONTEXTO
     // ========================================
     let contextBlock = '';
@@ -82,7 +128,7 @@ serve(async (req) => {
           contextBlock = await enrichPipelineContext(supabase, empresa);
           break;
         case 'GERAL':
-          contextBlock = await enrichGeralContext(supabase, empresa);
+          contextBlock = await enrichGeralContext(supabase, empresa, isAdmin, userPermissions);
           break;
         case 'CUSTOMER':
           contextBlock = await enrichCustomerContext(supabase, contextId);
@@ -397,37 +443,100 @@ async function enrichPipelineContext(supabase: any, empresa: string): Promise<st
   return parts.length > 0 ? parts.join('\n\n') : 'Sem dados de pipeline disponíveis.';
 }
 
-async function enrichGeralContext(supabase: any, empresa: string): Promise<string> {
-  const [pipelinesRes, slaRes] = await Promise.all([
-    supabase
-      .from('workbench_pipeline_summary')
-      .select('*')
-      .eq('pipeline_empresa', empresa)
-      .limit(5),
-    supabase
-      .from('workbench_sla_alerts')
-      .select('deal_id')
-      .limit(50),
-  ]);
+function canView(perms: Record<string, { view: boolean; edit: boolean }> | null, key: string): boolean {
+  if (!perms) return false;
+  return perms[key]?.view ?? false;
+}
 
+async function enrichGeralContext(
+  supabase: any,
+  empresa: string,
+  isAdmin: boolean,
+  userPermissions: Record<string, { view: boolean; edit: boolean }> | null,
+): Promise<string> {
   const parts: string[] = [];
+  const hasPipeline = isAdmin || canView(userPermissions, 'pipeline');
+  const hasLeads = isAdmin || canView(userPermissions, 'leads');
+  const hasCS = isAdmin || canView(userPermissions, 'cs_dashboard');
+  const hasMetas = isAdmin || canView(userPermissions, 'metas');
 
-  if (pipelinesRes.data && pipelinesRes.data.length > 0) {
-    const totalAbertos = pipelinesRes.data.reduce((s: number, p: any) => s + (p.deals_abertos || 0), 0);
-    const totalValorAberto = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_aberto || 0), 0);
-    const totalValorGanho = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_ganho || 0), 0);
+  const queries: Promise<void>[] = [];
 
-    const summary = pipelinesRes.data.map((p: any) =>
-      `- ${p.pipeline_nome}: ${p.deals_abertos || 0} abertos, R$ ${p.valor_aberto || 0}`
-    ).join('\n');
-
-    parts.push(`**Resumo Geral**: ${totalAbertos} deals abertos, R$ ${totalValorAberto.toLocaleString('pt-BR')} em pipeline, R$ ${totalValorGanho.toLocaleString('pt-BR')} ganho`);
-    parts.push(`**Pipelines**:\n${summary}`);
+  // Pipeline data
+  if (hasPipeline) {
+    queries.push((async () => {
+      const [pipelinesRes, slaRes] = await Promise.all([
+        supabase.from('workbench_pipeline_summary').select('*').eq('pipeline_empresa', empresa).limit(5),
+        supabase.from('workbench_sla_alerts').select('deal_id').limit(50),
+      ]);
+      if (pipelinesRes.data && pipelinesRes.data.length > 0) {
+        const totalAbertos = pipelinesRes.data.reduce((s: number, p: any) => s + (p.deals_abertos || 0), 0);
+        const totalValorAberto = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_aberto || 0), 0);
+        const totalValorGanho = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_ganho || 0), 0);
+        const summary = pipelinesRes.data.map((p: any) =>
+          `- ${p.pipeline_nome}: ${p.deals_abertos || 0} abertos, R$ ${p.valor_aberto || 0}`
+        ).join('\n');
+        parts.push(`**Resumo Pipeline**: ${totalAbertos} deals abertos, R$ ${totalValorAberto.toLocaleString('pt-BR')} em pipeline, R$ ${totalValorGanho.toLocaleString('pt-BR')} ganho`);
+        parts.push(`**Pipelines**:\n${summary}`);
+      }
+      if (slaRes.data && slaRes.data.length > 0) {
+        parts.push(`**SLA Estourados**: ${slaRes.data.length} deals`);
+      }
+    })());
   }
 
-  if (slaRes.data && slaRes.data.length > 0) {
-    parts.push(`**SLA Estourados**: ${slaRes.data.length} deals`);
+  // Leads count
+  if (hasLeads) {
+    queries.push((async () => {
+      const { count } = await supabase
+        .from('lead_contacts')
+        .select('*', { count: 'exact', head: true })
+        .eq('empresa', empresa)
+        .eq('ativo', true);
+      if (count != null) {
+        parts.push(`**Leads Ativos**: ${count}`);
+      }
+    })());
   }
+
+  // CS summary
+  if (hasCS) {
+    queries.push((async () => {
+      const { data: csData } = await supabase
+        .from('cs_customers')
+        .select('health_status, valor_mrr')
+        .eq('empresa', empresa)
+        .eq('is_active', true);
+      if (csData && csData.length > 0) {
+        const totalMRR = csData.reduce((s: number, c: any) => s + (c.valor_mrr || 0), 0);
+        const criticos = csData.filter((c: any) => c.health_status === 'CRITICO' || c.health_status === 'EM_RISCO').length;
+        parts.push(`**CS**: ${csData.length} clientes ativos, MRR total R$ ${totalMRR.toLocaleString('pt-BR')}, ${criticos} em risco/crítico`);
+      }
+    })());
+  }
+
+  // Metas progress
+  if (hasMetas) {
+    queries.push((async () => {
+      const now = new Date();
+      const { data: metasData } = await supabase
+        .from('metas_vendedor')
+        .select('nome_vendedor, valor_meta, valor_realizado')
+        .eq('empresa', empresa)
+        .eq('ano', now.getFullYear())
+        .eq('mes', now.getMonth() + 1)
+        .limit(10);
+      if (metasData && metasData.length > 0) {
+        const summary = metasData.map((m: any) => {
+          const pct = m.valor_meta > 0 ? Math.round((m.valor_realizado / m.valor_meta) * 100) : 0;
+          return `- ${m.nome_vendedor || 'Vendedor'}: ${pct}% da meta`;
+        }).join('\n');
+        parts.push(`**Metas do Mês**:\n${summary}`);
+      }
+    })());
+  }
+
+  await Promise.all(queries);
 
   return parts.length > 0 ? parts.join('\n\n') : 'Contexto geral — sem dados específicos carregados.';
 }

@@ -8,6 +8,8 @@ import { Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
+import { CopilotPanel } from '@/components/copilot/CopilotPanel';
+import { useCompany } from '@/contexts/CompanyContext';
 
 const ROUTE_TITLES: Record<string, string> = {
   '/': 'Meu Dia',
@@ -60,6 +62,7 @@ export function TopBar() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const { activeCompany } = useCompany();
   const title = getTitle(location.pathname);
 
   const getInitials = (name: string | null, email: string) => {
@@ -83,6 +86,9 @@ export function TopBar() {
 
       {/* Global Search */}
       <GlobalSearch />
+
+      {/* Amélia Copilot */}
+      <CopilotPanel context={{ type: 'GERAL', empresa: activeCompany }} variant="icon" />
 
       {/* Notifications */}
       <NotificationBell />

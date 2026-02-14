@@ -42,7 +42,10 @@ const QUICK_SUGGESTIONS: Record<CopilotContextType, string[]> = {
     'Qual o gargalo atual do pipeline?',
   ],
   GERAL: [
-    'Como melhorar minha taxa de conversão?',
+    'Como está minha performance esta semana?',
+    'Quais ações devo priorizar hoje?',
+    'Dicas para melhorar minha taxa de conversão',
+    'Resumo do meu pipeline atual',
   ],
 };
 
