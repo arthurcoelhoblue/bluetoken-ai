@@ -240,7 +240,6 @@ export default function PipelineConfigPage() {
         icon={Settings}
         title="Configuração de Funis"
         description="Gerencie pipelines e stages do CRM."
-        patchInfo="Patch 2 — Pipelines Reais"
       />
       <div className="px-6 pb-8">
         <PipelineConfigContent />

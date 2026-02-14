@@ -273,7 +273,6 @@ export default function CustomFieldsConfigPage() {
         icon={SlidersHorizontal}
         title="Campos Customizáveis"
         description="Defina campos personalizados para Contatos, Organizações e Deals."
-        patchInfo="Patch 2 — Campos Customizáveis"
       />
       <div className="px-6 pb-8">
         <CustomFieldsContent />

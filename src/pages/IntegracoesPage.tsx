@@ -8,8 +8,7 @@ export default function IntegracoesPage() {
       <PageShell
         icon={Webhook}
         title="Integrações"
-        description="Status e configuração de SGT, Pipedrive (legado), WhatsApp Cloud API, Email SMTP, Mautic, Tokeniza, Notion, Chatwoot, GA4."
-        patchInfo="Evolução contínua"
+        description="Status e configuração de SGT, Pipedrive, WhatsApp, Email SMTP, Mautic, Tokeniza, Notion e mais."
       />
     </AppLayout>
   );

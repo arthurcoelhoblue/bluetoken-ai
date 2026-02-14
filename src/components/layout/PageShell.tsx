@@ -1,22 +1,21 @@
 import type { LucideIcon } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
 
 interface PageShellProps {
   icon: LucideIcon;
   title: string;
   description: string;
-  patchInfo: string;
 }
 
-export function PageShell({ icon: Icon, title, description, patchInfo }: PageShellProps) {
+export function PageShell({ icon: Icon, title, description }: PageShellProps) {
   return (
-    <div className="flex flex-col items-center justify-center min-h-[60vh] p-6 text-center gap-4 animate-fade-in">
-      <div className="h-20 w-20 rounded-2xl bg-primary/10 flex items-center justify-center">
-        <Icon className="h-10 w-10 text-primary" />
+    <div className="flex items-start gap-4 p-6 pb-2 animate-fade-in">
+      <div className="h-11 w-11 rounded-xl bg-primary/10 flex items-center justify-center shrink-0">
+        <Icon className="h-5 w-5 text-primary" />
       </div>
-      <h2 className="text-2xl font-bold">{title}</h2>
-      <p className="text-muted-foreground max-w-md">{description}</p>
-      <Badge variant="secondary" className="mt-2">{patchInfo}</Badge>
+      <div className="space-y-1">
+        <h2 className="text-xl font-bold leading-tight">{title}</h2>
+        <p className="text-sm text-muted-foreground max-w-lg">{description}</p>
+      </div>
     </div>
   );
 }
