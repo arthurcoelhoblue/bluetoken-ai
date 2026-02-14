@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useOrganizationsPage } from '@/hooks/useOrganizationsPage';
 import { Button } from '@/components/ui/button';
@@ -15,11 +16,12 @@ import { OrgCreateDialog } from '@/components/organizations/OrgCreateDialog';
 import { OrgDetailSheet } from '@/components/organizations/OrgDetailSheet';
 
 function OrganizationsContent() {
+  const [searchParams] = useSearchParams();
   const [searchInput, setSearchInput] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(null);
+  const [selectedOrgId, setSelectedOrgId] = useState<string | null>(searchParams.get('open'));
 
   const { data, isLoading, error } = useOrganizationsPage({ search: searchTerm, page });
 

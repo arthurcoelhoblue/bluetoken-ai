@@ -78,16 +78,13 @@ serve(async (req) => {
       });
     }
 
-    // NPS mode: find customers at ~90 days (original logic)
-    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
-    const ninetyOneDaysAgo = new Date(Date.now() - 91 * 24 * 60 * 60 * 1000);
+    // NPS mode: find active customers who haven't received NPS in last 90 days
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
     const { data: customers } = await supabase
       .from('cs_customers')
       .select('id, contact_id, empresa, contacts(nome, primeiro_nome, telefone, email)')
-      .eq('is_active', true)
-      .gte('data_primeiro_ganho', ninetyOneDaysAgo.toISOString())
-      .lte('data_primeiro_ganho', ninetyDaysAgo.toISOString());
+      .eq('is_active', true);
 
     if (!customers || customers.length === 0) {
       return new Response(JSON.stringify({ sent: 0 }), {
@@ -95,18 +92,25 @@ serve(async (req) => {
       });
     }
 
-    let sent = 0;
-
+    // Filter out customers who already have NPS in last 90 days
+    const eligibleCustomers: typeof customers = [];
     for (const customer of customers) {
-      const { data: existingSurvey } = await supabase
+      const { data: recentSurvey } = await supabase
         .from('cs_surveys')
         .select('id')
         .eq('customer_id', customer.id)
         .eq('tipo', 'NPS')
+        .gte('enviado_em', ninetyDaysAgo)
         .limit(1);
 
-      if (existingSurvey && existingSurvey.length > 0) continue;
+      if (!recentSurvey || recentSurvey.length === 0) {
+        eligibleCustomers.push(customer);
+      }
+    }
 
+    let sent = 0;
+
+    for (const customer of eligibleCustomers) {
       const contact = (customer as any).contacts;
       if (!contact) continue;
 

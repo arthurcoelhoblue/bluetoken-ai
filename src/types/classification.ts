@@ -3,7 +3,7 @@
 // ========================================
 
 // Re-exportar tipos comuns do SGT
-export type { EmpresaTipo } from './sgt';
+export type { EmpresaTipo } from './enums';
 
 // Temperatura do lead
 export type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';

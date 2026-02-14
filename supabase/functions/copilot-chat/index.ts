@@ -54,9 +54,9 @@ serve(async (req) => {
       );
     }
 
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      console.error('[Copilot] LOVABLE_API_KEY não configurada');
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (!ANTHROPIC_API_KEY) {
+      console.error('[Copilot] ANTHROPIC_API_KEY não configurada');
       return new Response(
         JSON.stringify({ error: 'Configuração de IA ausente' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -150,16 +150,22 @@ serve(async (req) => {
 
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 
-    const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+    // Build Anthropic messages (system is separate param)
+    const anthropicMessages = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+
+    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-pro-preview',
-        messages: aiMessages,
-        stream: false,
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 2048,
+        temperature: 0.4,
+        system: systemContent,
+        messages: anthropicMessages,
       }),
     });
 
@@ -170,16 +176,9 @@ serve(async (req) => {
       );
     }
 
-    if (aiResponse.status === 402) {
-      return new Response(
-        JSON.stringify({ error: 'Créditos de IA insuficientes.' }),
-        { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     if (!aiResponse.ok) {
       const errorText = await aiResponse.text();
-      console.error('[Copilot] Erro da IA Gateway:', aiResponse.status, errorText);
+      console.error('[Copilot] Erro Anthropic:', aiResponse.status, errorText);
       return new Response(
         JSON.stringify({ error: 'Erro ao processar resposta da IA' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -187,10 +186,10 @@ serve(async (req) => {
     }
 
     const aiData = await aiResponse.json();
-    const content = aiData.choices?.[0]?.message?.content || 'Sem resposta da IA.';
-    const tokensInput = aiData.usage?.prompt_tokens || 0;
-    const tokensOutput = aiData.usage?.completion_tokens || 0;
-    const model = aiData.model || 'google/gemini-3-pro-preview';
+    const content = aiData.content?.[0]?.text || 'Sem resposta da IA.';
+    const tokensInput = aiData.usage?.input_tokens || 0;
+    const tokensOutput = aiData.usage?.output_tokens || 0;
+    const model = 'claude-sonnet-4-20250514';
     const latencyMs = Date.now() - startTime;
 
     return new Response(
