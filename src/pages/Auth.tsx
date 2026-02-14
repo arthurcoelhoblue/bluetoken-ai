@@ -102,7 +102,7 @@ export default function Auth() {
           <Card className="glass border-border/30 shadow-lg">
             <CardHeader className="text-center pb-2">
               <CardTitle className="text-2xl font-bold">
-                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo ao Amélia CRM'}
+                {authView === 'forgot-password' ? 'Recuperar Senha' : 'Bem-vindo à Amélia CRM'}
               </CardTitle>
               <CardDescription className="text-muted-foreground">
                 {authView === 'forgot-password' 
