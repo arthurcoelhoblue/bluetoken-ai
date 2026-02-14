@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import type { MassActionMessagePreview } from "@/types/projection";
 
-describe("usePatch12 logic", () => {
+describe("useProjections logic", () => {
   it("updates approval for specific deal in previews", () => {
     const previews: MassActionMessagePreview[] = [
       { deal_id: "d1", contact_name: "A", message: "hi", approved: true },

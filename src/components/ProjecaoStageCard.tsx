@@ -6,7 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { TrendingUp, Layers } from 'lucide-react';
-import { useAllStageProjections } from '@/hooks/usePatch12';
+import { useAllStageProjections } from '@/hooks/useProjections';
 import type { StageProjection } from '@/types/projection';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });

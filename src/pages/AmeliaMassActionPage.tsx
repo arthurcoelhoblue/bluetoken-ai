@@ -25,7 +25,7 @@ import {
   useGenerateMessages,
   useUpdateMessageApproval,
   useExecuteMassAction,
-} from '@/hooks/usePatch12';
+} from '@/hooks/useProjections';
 import type { MassActionJobStatus } from '@/types/projection';
 import { toast } from '@/hooks/use-toast';
 
