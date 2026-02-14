@@ -1,117 +1,121 @@
 
-# Testes (3.6) -- Melhoria do Relatorio PO
+
+# Paginacao Real (3.5) -- Melhoria do Relatorio PO
 
 ## Resumo
 
-O projeto possui apenas **5 arquivos de teste** com **~20 assertions** no total, todos focados em logica pura extraida de hooks. O item 3.6 do relatorio do PO pede ampliar a cobertura de testes para cobrir schemas Zod, logica de permissoes, utilitarios e configuracoes.
+O projeto possui **5 paginas com paginacao server-side** funcional (usando `.range()` + `count: 'exact'`), porem com UI duplicada e inconsistente (apenas botoes Anterior/Proxima, sem numeros de pagina). Alem disso, **3 paginas carregam TODOS os registros** sem nenhuma paginacao, o que pode causar lentidao e atingir o limite de 1000 rows do Supabase.
+
+O componente `Pagination` do shadcn/ui ja existe em `src/components/ui/pagination.tsx` mas **nao e utilizado em nenhuma pagina**.
 
 ---
 
 ## Diagnostico: Estado Atual
 
-| Arquivo | Tipo | Assertions |
-|---------|------|-----------|
-| `src/test/example.test.ts` | Placeholder | 2 |
-| `src/hooks/useDeals.test.ts` | Logica Kanban | 5 |
-| `src/hooks/useContacts.test.ts` | Logica filtros | 4 |
-| `src/hooks/usePatch12.test.ts` | Logica aprovacao | 5 |
-| `src/contexts/AuthContext.test.tsx` | Permissoes RBAC | 6 |
-| **TOTAL** | | **~22** |
-
-**Gaps identificados:**
-- Zero testes para os 8 schemas Zod (auth, contacts, deals, users, knowledge, email, settings, captureForms)
-- Zero testes para `screenRegistry` (getScreenByUrl, getScreensByGroup)
-- Zero testes para logica de `buildPermissionsFromRoles` (nao exportada, mas replicavel)
-- Zero testes para utilitarios (`src/lib/utils.ts`)
+| Pagina | Paginacao Server | UI | Problema |
+|--------|-----------------|-----|----------|
+| ContatosPage | `.range()` + count | Prev/Next manual | UI duplicada, sem numeros de pagina, page 0-based |
+| OrganizationsPage | `.range()` + count | Prev/Next manual | UI duplicada, hardcoded `/ 25` |
+| LeadsList | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
+| CadenceRunsList | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
+| MonitorSgtEvents | `.range()` + count | Prev/Next manual | UI duplicada, page 1-based |
+| **CadencesList** | **Nenhuma** | Nenhuma | Carrega TODAS cadencias |
+| **Atendimentos** | **Nenhuma** | Nenhuma | Carrega TODOS atendimentos |
+| **TemplatesPage** | **Nenhuma** | Nenhuma | Carrega TODOS templates |
 
 ---
 
 ## Plano de Implementacao
 
-### 1. Testes de Schemas Zod (~80 assertions)
+### Fase 1: Criar componente reutilizavel `DataTablePagination`
 
-Criar **`src/schemas/__tests__/schemas.test.ts`** cobrindo todos os 8 schemas:
+Criar `src/components/ui/data-table-pagination.tsx` que encapsula toda a logica de paginacao:
 
-**auth schemas:**
-- `loginSchema`: aceita email+senha validos; rejeita email invalido; rejeita senha < 6 chars
-- `signupSchema`: aceita dados completos; rejeita senhas diferentes (refine); rejeita nome < 2 chars; rejeita email invalido
-- `forgotPasswordSchema`: aceita email valido; rejeita vazio
+- Utiliza os primitivos `Pagination`, `PaginationContent`, `PaginationItem`, `PaginationLink`, `PaginationEllipsis`, `PaginationPrevious`, `PaginationNext` ja existentes
+- Props: `page` (0-based), `totalPages`, `totalCount`, `pageSize`, `onPageChange`
+- Exibe: "Mostrando X-Y de Z registros" + botoes de pagina com ellipsis inteligente
+- Logica de ellipsis: mostra primeira, ultima e 2 vizinhas da pagina atual
 
-**contacts schemas:**
-- `contactCreateSchema`: aceita nome valido; rejeita nome < 2; aceita email vazio (optional); rejeita email invalido; aceita CPF formatado e sem formato; rejeita CPF invalido
-- `organizationCreateSchema`: aceita nome valido; rejeita nome < 2; aceita CNPJ 14 digitos; rejeita CNPJ invalido; valida estado max 2 chars
+### Fase 2: Refatorar as 5 paginas que ja tem paginacao
 
-**deals schema:**
-- `createDealSchema`: aceita titulo+valor; rejeita titulo < 2; rejeita valor negativo; default FRIO; aceita QUENTE
+Substituir o bloco duplicado de Prev/Next em cada pagina pelo novo componente:
 
-**users schema:**
-- `createUserSchema`: aceita dados completos; rejeita email invalido; rejeita senha < 6; rejeita nome < 2
+1. **ContatosPage** -- Substituir bloco linhas 220-233 por `<DataTablePagination />`
+2. **OrganizationsPage** -- Substituir bloco linhas 128-141; corrigir hardcoded `/ 25` para usar `ORG_PAGE_SIZE`
+3. **LeadsList** -- Substituir bloco linhas 548-574; normalizar page para 0-based
+4. **CadenceRunsList** -- Substituir bloco linhas 516-538; normalizar page para 0-based
+5. **MonitorSgtEvents** -- Substituir bloco linhas 357-378; normalizar page para 0-based
 
-**knowledge schema:**
-- `faqCreateSchema`: aceita pergunta >= 5 e resposta >= 10; rejeita pergunta < 5; rejeita resposta < 10
+### Fase 3: Adicionar paginacao server-side nas 3 paginas sem paginacao
 
-**email schema:**
-- `sendEmailSchema`: aceita email+assunto+corpo; rejeita email invalido; rejeita assunto vazio; respeita max 200 no assunto
+#### 3a. TemplatesPage + useTemplates
 
-**settings schema:**
-- `generalSettingsSchema`: aceita HH:MM valido; rejeita formato invalido; respeita min/max de max_por_dia (1-50); respeita min/max de intervalo_minutos
+- Adicionar `page` e `count: 'exact'` + `.range()` ao hook `useTemplates`
+- Adicionar `<DataTablePagination />` na UI
+- PAGE_SIZE = 25
 
-**captureForms schema:**
-- `captureFormSaveSchema`: aceita form com fields; rejeita fields vazio; rejeita nome < 2
+#### 3b. CadencesList + useCadences
 
-### 2. Testes de screenRegistry (~15 assertions)
+- O hook `useCadences()` ja retorna tudo sem paginacao; adicionar parametros `page`/`pageSize` com `.range()` e `count: 'exact'`
+- Adicionar `<DataTablePagination />` na UI
+- PAGE_SIZE = 25
 
-Criar **`src/config/__tests__/screenRegistry.test.ts`**:
+#### 3c. Atendimentos + useAtendimentos
 
-- `getScreenByUrl('/')` retorna dashboard
-- `getScreenByUrl('/pipeline')` retorna pipeline
-- `getScreenByUrl('/pipeline/123')` retorna pipeline (startsWith)
-- `getScreenByUrl('/naoexiste')` retorna undefined
-- `getScreensByGroup()` retorna todas as groups
-- `SCREEN_REGISTRY` tem todas as keys unicas
-- `SCREEN_GROUPS` nao tem duplicatas
-
-### 3. Testes de RBAC expandidos (~20 assertions)
-
-Expandir **`src/contexts/AuthContext.test.tsx`** com novos cenarios:
-
-- SDR_IA tem permissao em leads, conversations, cadences, whatsapp
-- MARKETING tem permissao em campaigns e analytics
-- AUDITOR tem *:read em tudo mas nao write
-- Multiplos roles combinados (CLOSER + MARKETING)
-- READONLY so tem dashboard:read
-
-### 4. Testes de utilitarios (~10 assertions)
-
-Criar **`src/lib/__tests__/utils.test.ts`**:
-
-- `cn()` combina classes corretamente
-- `cn()` resolve conflitos Tailwind (merge)
-- `cn()` ignora valores falsy
+- Este hook faz logica complexa client-side (joins manuais entre 4 tabelas). A paginacao aqui sera **client-side** com slice, pois a logica de merge impede `.range()` direto
+- Adicionar estado `page` e fatiar o array final com `.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)`
+- Adicionar `<DataTablePagination />` na UI
 
 ---
 
-## Arquivos a Criar/Modificar
+## Detalhes do Componente DataTablePagination
 
-| Acao | Arquivo | Assertions |
-|------|---------|-----------|
-| Criar | `src/schemas/__tests__/schemas.test.ts` | ~80 |
-| Criar | `src/config/__tests__/screenRegistry.test.ts` | ~15 |
-| Modificar | `src/contexts/AuthContext.test.tsx` | +20 |
-| Criar | `src/lib/__tests__/utils.test.ts` | ~10 |
+```text
+Props:
+  page: number          -- pagina atual (0-based)
+  totalPages: number    -- total de paginas
+  totalCount: number    -- total de registros
+  pageSize: number      -- registros por pagina
+  onPageChange: (page: number) => void
+
+Renderizacao:
+  [Mostrando 1-25 de 342 registros]
+  [< Anterior] [1] [2] [3] [...] [14] [Proxima >]
+
+Logica de numeros visiveis:
+  - Sempre mostra pagina 1 e ultima
+  - Mostra 2 vizinhas da pagina atual
+  - Ellipsis entre gaps > 1
+  - Maximo ~7 botoes numericos visiveis
+```
+
+---
+
+## Ordem de Execucao
+
+```text
+1. Criar DataTablePagination (componente reutilizavel)
+2. Refatorar ContatosPage + OrganizationsPage (0-based, mais simples)
+3. Refatorar LeadsList + CadenceRunsList + MonitorSgtEvents (normalizar indexacao)
+4. Adicionar paginacao em TemplatesPage (hook simples)
+5. Adicionar paginacao em CadencesList (hook simples)
+6. Adicionar paginacao client-side em Atendimentos (slice)
+```
 
 ## Impacto Esperado
 
-- De **~22 assertions** para **~145+ assertions**
-- Cobertura dos schemas Zod garante que as regras de validacao implementadas no item 4.4 estao corretas
-- Testes de screenRegistry previnem regressoes na navegacao/permissoes
-- Zero dependencia de Supabase ou APIs externas -- todos os testes sao unitarios puros
-- Execucao rapida (< 2 segundos)
+- Componente de paginacao unificado com numeros de pagina e ellipsis
+- 8 paginas com paginacao consistente (vs 5 atualmente com UI duplicada)
+- Reducao de ~80 linhas de codigo duplicado
+- Prevencao do limite de 1000 rows em TemplatesPage e CadencesList
+- Melhor experiencia do usuario com indicador "Mostrando X-Y de Z"
+- Zero mudanca de banco de dados
 
 ## Detalhes Tecnicos
 
-- Vitest ja configurado com `jsdom`, `globals: true` e setup file
-- Path alias `@/` ja funciona nos testes
-- Padrao existente: `describe/it/expect` importados de `vitest`
-- Sem necessidade de mocks de Supabase -- testes focam em logica pura e schemas
-- Zod `.safeParse()` sera usado para testar aceitacao/rejeicao de schemas
+- O componente usa os primitivos shadcn/ui ja existentes em `pagination.tsx`
+- Nenhuma dependencia nova necessaria
+- Hooks existentes que ja usam `.range()` mantem a mesma API
+- Hooks novos (useTemplates, useCadences) recebem parametro `page` opcional para backwards compatibility
+- Atendimentos usa paginacao client-side por limitacao arquitetural do hook (merge de 4 tabelas)
+
