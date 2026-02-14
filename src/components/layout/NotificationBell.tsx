@@ -11,6 +11,10 @@ const TIPO_LABELS: Record<string, string> = {
   SLA_ESTOURADO: '⚠️ SLA',
   DEAL_PARADO: '⏳ Deal Parado',
   DEAL_AUTO_CRIADO: '✨ Novo Deal',
+  AMELIA_INSIGHT: '🧠 Insight Amélia',
+  AMELIA_ALERTA: '🚨 Alerta Amélia',
+  AMELIA_CORRECAO: '📝 Correção Amélia',
+  AMELIA_SEQUENCIA: '⛓️ Sequência Risco',
 };
 
 function timeAgo(dateStr: string): string {
