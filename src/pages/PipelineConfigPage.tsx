@@ -51,8 +51,8 @@ function PipelineConfigContent() {
       toast.success('Pipeline criado');
       setNewName('');
       setNewDialogOpen(false);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -64,8 +64,8 @@ function PipelineConfigContent() {
     try {
       await deletePipeline.mutateAsync(id);
       toast.success('Pipeline excluído');
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -82,8 +82,8 @@ function PipelineConfigContent() {
       toast.success('Stage adicionado');
       setNewStageName('');
       setNewStageDialogOpen(null);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -91,9 +91,9 @@ function PipelineConfigContent() {
     const parsed = value === '' ? null : parseInt(value, 10);
     if (parsed !== null && isNaN(parsed)) return;
     try {
-      await updateStage.mutateAsync({ id: stage.id, tempo_minimo_dias: parsed } as any);
-    } catch (e: any) {
-      toast.error(e.message);
+      await updateStage.mutateAsync({ id: stage.id, tempo_minimo_dias: parsed } as Record<string, unknown> & { id: string });
+    } catch (e: unknown) {
+      toast.error((e as Error).message);
     }
   };
 
@@ -177,7 +177,7 @@ function PipelineConfigContent() {
                                 min={0}
                                 className="h-7 w-20 text-xs"
                                 placeholder="dias"
-                                defaultValue={(stage as any).tempo_minimo_dias ?? ''}
+                                defaultValue={(stage as unknown as { tempo_minimo_dias?: number | null }).tempo_minimo_dias ?? ''}
                                 onBlur={e => handleUpdateTempoMinimo(stage, e.target.value)}
                               />
                             </div>
@@ -192,7 +192,7 @@ function PipelineConfigContent() {
                                 try {
                                   await deleteStage.mutateAsync(stage.id);
                                   toast.success('Stage removido');
-                                } catch (e: any) { toast.error(e.message); }
+                                } catch (e: unknown) { toast.error((e as Error).message); }
                               }}
                             >
                               <Trash2 className="h-3.5 w-3.5" />

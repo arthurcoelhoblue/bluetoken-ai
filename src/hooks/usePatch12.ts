@@ -1,6 +1,9 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { StageConversionRate, StageProjection, MassActionJob, MassActionMessagePreview, MassActionJobType } from '@/types/patch12';
+import type { Database } from '@/integrations/supabase/types';
+
+type EmpresaTipo = Database['public']['Enums']['empresa_tipo'];
 
 // ── Projeção ──
 
@@ -12,7 +15,7 @@ export function useStageProjections(userId: string | undefined, empresa: string 
       const { data, error } = await supabase
         .from('pipeline_stage_projection')
         .select('*')
-        .eq('empresa', empresa! as any)
+        .eq('empresa', empresa! as EmpresaTipo)
         .eq('owner_id', userId!);
       if (error) throw error;
       return (data ?? []) as unknown as StageProjection[];
@@ -28,7 +31,7 @@ export function useAllStageProjections(empresa: string | undefined) {
       const { data, error } = await supabase
         .from('pipeline_stage_projection')
         .select('*')
-        .eq('empresa', empresa! as any);
+        .eq('empresa', empresa! as EmpresaTipo);
       if (error) throw error;
       return (data ?? []) as unknown as StageProjection[];
     },
@@ -45,7 +48,7 @@ export function useMassActionJobs(empresa: string | undefined) {
       const { data, error } = await supabase
         .from('mass_action_jobs')
         .select('*')
-        .eq('empresa', empresa! as any)
+        .eq('empresa', empresa! as EmpresaTipo)
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -90,7 +93,7 @@ export function useCreateMassAction() {
       const { data, error } = await supabase
         .from('mass_action_jobs')
         .insert({
-          empresa: params.empresa as any,
+          empresa: params.empresa as EmpresaTipo,
           tipo: params.tipo,
           deal_ids: params.deal_ids,
           cadence_id: params.cadence_id || null,
@@ -142,7 +145,7 @@ export function useUpdateMessageApproval() {
 
       const { error } = await supabase
         .from('mass_action_jobs')
-        .update({ messages_preview: updated as any })
+        .update({ messages_preview: updated as unknown as Database['public']['Tables']['mass_action_jobs']['Update']['messages_preview'] })
         .eq('id', jobId);
       if (error) throw error;
     },
@@ -154,14 +157,12 @@ export function useExecuteMassAction() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (jobId: string) => {
-      // Update status and trigger the edge function for actual sending
       const { error: updateError } = await supabase
         .from('mass_action_jobs')
-        .update({ status: 'RUNNING' as any, started_at: new Date().toISOString() })
+        .update({ status: 'RUNNING', started_at: new Date().toISOString() })
         .eq('id', jobId);
       if (updateError) throw updateError;
 
-      // Trigger actual message sending via edge function
       const { error: fnError } = await supabase.functions.invoke('amelia-mass-action', {
         body: { jobId, action: 'execute' },
       });

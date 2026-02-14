@@ -4,9 +4,11 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { WorkbenchTarefa, WorkbenchSLAAlert, WorkbenchPipelineSummary, RecentDeal } from '@/types/workbench';
 
-function empresaFilter(activeCompany: string): string | null {
+type EmpresaEnum = 'BLUE' | 'TOKENIZA';
+
+function empresaFilter(activeCompany: string): EmpresaEnum | null {
   if (activeCompany === 'ALL') return null;
-  return activeCompany; // already 'BLUE' | 'TOKENIZA'
+  return activeCompany as EmpresaEnum;
 }
 
 export function useWorkbenchTarefas() {
@@ -19,7 +21,7 @@ export function useWorkbenchTarefas() {
     enabled: !!user?.id,
     queryFn: async (): Promise<WorkbenchTarefa[]> => {
       let query = supabase
-        .from('workbench_tarefas' as any)
+        .from('workbench_tarefas')
         .select('*')
         .eq('owner_id', user!.id)
         .order('tarefa_prazo', { ascending: true, nullsFirst: false });
@@ -46,7 +48,7 @@ export function useWorkbenchSLAAlerts() {
     refetchInterval: 60_000,
     queryFn: async (): Promise<WorkbenchSLAAlert[]> => {
       let query = supabase
-        .from('workbench_sla_alerts' as any)
+        .from('workbench_sla_alerts')
         .select('*')
         .eq('owner_id', user!.id)
         .order('sla_percentual', { ascending: false });
@@ -72,7 +74,7 @@ export function useWorkbenchPipelineSummary() {
     enabled: !!user?.id,
     queryFn: async (): Promise<WorkbenchPipelineSummary[]> => {
       let query = supabase
-        .from('workbench_pipeline_summary' as any)
+        .from('workbench_pipeline_summary')
         .select('*')
         .eq('owner_id', user!.id);
 
@@ -113,13 +115,14 @@ export function useWorkbenchRecentDeals() {
         .limit(20);
 
       if (empresa) {
-        query = query.eq('pipelines.empresa', empresa as any);
+        query = query.eq('pipelines.empresa', empresa);
       }
 
       const { data, error } = await query;
       if (error) throw error;
 
-      return (data ?? []).map((d: any) => ({
+      type DealRow = typeof data[number];
+      return (data ?? []).map((d: DealRow) => ({
         id: d.id,
         titulo: d.titulo,
         valor: d.valor,
@@ -127,10 +130,10 @@ export function useWorkbenchRecentDeals() {
         created_at: d.created_at,
         updated_at: d.updated_at,
         temperatura: d.temperatura,
-        contact_nome: d.contacts?.nome ?? '',
-        stage_nome: d.pipeline_stages?.nome ?? '',
-        stage_cor: d.pipeline_stages?.cor ?? '#6366f1',
-        pipeline_nome: d.pipelines?.nome ?? '',
+        contact_nome: (d.contacts as unknown as { nome: string })?.nome ?? '',
+        stage_nome: (d.pipeline_stages as unknown as { nome: string; cor: string })?.nome ?? '',
+        stage_cor: (d.pipeline_stages as unknown as { nome: string; cor: string })?.cor ?? '#6366f1',
+        pipeline_nome: (d.pipelines as unknown as { nome: string; empresa: string })?.nome ?? '',
       }));
     },
   });

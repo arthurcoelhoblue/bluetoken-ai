@@ -66,7 +66,7 @@ export default function TemplatesPage() {
 
         {/* Filters */}
         <div className="flex items-center gap-3 flex-wrap">
-          <Select value={canalFilter ?? 'all'} onValueChange={(v) => setCanalFilter(v === 'all' ? null : v as any)}>
+          <Select value={canalFilter ?? 'all'} onValueChange={(v) => setCanalFilter(v === 'all' ? null : v as 'WHATSAPP' | 'EMAIL')}>
             <SelectTrigger className="w-[160px]">
               <SelectValue placeholder="Canal" />
             </SelectTrigger>
@@ -77,7 +77,7 @@ export default function TemplatesPage() {
             </SelectContent>
           </Select>
 
-          <Select value={ativoFilter} onValueChange={(v) => setAtivoFilter(v as any)}>
+          <Select value={ativoFilter} onValueChange={(v) => setAtivoFilter(v as 'all' | 'active' | 'inactive')}>
             <SelectTrigger className="w-[150px]">
               <SelectValue />
             </SelectTrigger>

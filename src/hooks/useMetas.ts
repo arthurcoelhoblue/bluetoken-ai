@@ -27,7 +27,7 @@ export function useSazonalidade() {
     queryKey: ['sazonalidade', empresa],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('sazonalidade_indices' as any)
+        .from('sazonalidade_indices')
         .select('*')
         .eq('empresa', empresa)
         .order('mes');
@@ -44,8 +44,8 @@ export function useUpdateSazonalidade() {
     mutationFn: async (indices: { id: string; indice: number }[]) => {
       for (const idx of indices) {
         const { error } = await supabase
-          .from('sazonalidade_indices' as any)
-          .update({ indice: idx.indice, updated_by: user?.id, updated_at: new Date().toISOString() } as any)
+          .from('sazonalidade_indices')
+          .update({ indice: idx.indice, updated_by: user?.id ?? null, updated_at: new Date().toISOString() })
           .eq('id', idx.id);
         if (error) throw error;
       }
@@ -54,7 +54,7 @@ export function useUpdateSazonalidade() {
       qc.invalidateQueries({ queryKey: ['sazonalidade'] });
       toast({ title: 'Índices de sazonalidade salvos' });
     },
-    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Erro', description: (e as Error).message, variant: 'destructive' }),
   });
 }
 
@@ -64,8 +64,8 @@ export function useUpsertMetasBatch() {
     mutationFn: async (metas: { user_id: string; empresa: string; ano: number; mes: number; meta_valor: number; meta_deals: number }[]) => {
       for (const m of metas) {
         const { error } = await supabase
-          .from('metas_vendedor' as any)
-          .upsert(m as any, { onConflict: 'user_id,empresa,ano,mes' });
+          .from('metas_vendedor')
+          .upsert(m, { onConflict: 'user_id,empresa,ano,mes' });
         if (error) throw error;
       }
     },
@@ -73,7 +73,7 @@ export function useUpsertMetasBatch() {
       qc.invalidateQueries({ queryKey: ['meta-progresso'] });
       toast({ title: 'Metas anuais distribuídas com sucesso' });
     },
-    onError: (e: any) => toast({ title: 'Erro ao distribuir metas', description: e.message, variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Erro ao distribuir metas', description: (e as Error).message, variant: 'destructive' }),
   });
 }
 
@@ -83,12 +83,12 @@ export function useMetaProgresso(ano: number, mes: number) {
     queryKey: ['meta-progresso', empresa, ano, mes],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('meta_progresso' as any)
+        .from('meta_progresso')
         .select('*')
         .eq('empresa', empresa)
         .eq('ano', ano)
         .eq('mes', mes)
-        .order('realizado_valor' as any, { ascending: false });
+        .order('realizado_valor', { ascending: false });
       if (error) throw error;
       return (data || []) as unknown as MetaProgresso[];
     },
@@ -103,7 +103,7 @@ export function useMyMetaProgresso(ano: number, mes: number) {
     enabled: !!user?.id,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('meta_progresso' as any)
+        .from('meta_progresso')
         .select('*')
         .eq('empresa', empresa)
         .eq('ano', ano)
@@ -121,15 +121,15 @@ export function useUpsertMeta() {
   return useMutation({
     mutationFn: async (payload: { user_id: string; empresa: string; ano: number; mes: number; meta_valor: number; meta_deals: number }) => {
       const { error } = await supabase
-        .from('metas_vendedor' as any)
-        .upsert(payload as any, { onConflict: 'user_id,empresa,ano,mes' });
+        .from('metas_vendedor')
+        .upsert(payload, { onConflict: 'user_id,empresa,ano,mes' });
       if (error) throw error;
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['meta-progresso'] });
       toast({ title: 'Meta salva com sucesso' });
     },
-    onError: (e: any) => toast({ title: 'Erro ao salvar meta', description: e.message, variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Erro ao salvar meta', description: (e as Error).message, variant: 'destructive' }),
   });
 }
 
@@ -139,7 +139,7 @@ export function useComissaoRegras() {
     queryKey: ['comissao-regras', empresa],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('comissao_regras' as any)
+        .from('comissao_regras')
         .select('*')
         .eq('empresa', empresa)
         .order('created_at', { ascending: false });
@@ -153,12 +153,12 @@ export function useUpsertComissaoRegra() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: Partial<ComissaoRegra> & { empresa: string; nome: string; tipo: string }) => {
-      const { id, created_at, updated_at, ...rest } = payload as any;
+      const { id, created_at, updated_at, ...rest } = payload;
       if (id) {
-        const { error } = await supabase.from('comissao_regras' as any).update(rest).eq('id', id);
+        const { error } = await supabase.from('comissao_regras').update(rest).eq('id', id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('comissao_regras' as any).insert(rest);
+        const { error } = await supabase.from('comissao_regras').insert(rest);
         if (error) throw error;
       }
     },
@@ -166,7 +166,7 @@ export function useUpsertComissaoRegra() {
       qc.invalidateQueries({ queryKey: ['comissao-regras'] });
       toast({ title: 'Regra salva' });
     },
-    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Erro', description: (e as Error).message, variant: 'destructive' }),
   });
 }
 
@@ -176,18 +176,19 @@ export function useComissaoLancamentos(ano: number, mes: number) {
     queryKey: ['comissao-lancamentos', empresa, ano, mes],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('comissao_lancamentos' as any)
+        .from('comissao_lancamentos')
         .select('*, deals:deal_id(titulo), profiles:user_id(nome), comissao_regras:regra_id(nome)')
         .eq('empresa', empresa)
         .eq('referencia_ano', ano)
         .eq('referencia_mes', mes)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data || []).map((d: any) => ({
+      type LancamentoRow = typeof data[number];
+      return (data || []).map((d: LancamentoRow) => ({
         ...d,
-        deal_titulo: d.deals?.titulo,
-        vendedor_nome: d.profiles?.nome,
-        regra_nome: d.comissao_regras?.nome,
+        deal_titulo: (d.deals as unknown as { titulo: string } | null)?.titulo,
+        vendedor_nome: (d.profiles as unknown as { nome: string } | null)?.nome,
+        regra_nome: (d.comissao_regras as unknown as { nome: string } | null)?.nome,
       })) as ComissaoLancamento[];
     },
   });
@@ -198,7 +199,7 @@ export function useUpdateComissaoStatus() {
   const { user } = useAuth();
   return useMutation({
     mutationFn: async ({ id, status }: { id: string; status: ComissaoStatus }) => {
-      const updates: any = { status };
+      const updates: Record<string, unknown> = { status };
       if (status === 'APROVADO') {
         updates.aprovado_por = user?.id;
         updates.aprovado_em = new Date().toISOString();
@@ -206,7 +207,7 @@ export function useUpdateComissaoStatus() {
       if (status === 'PAGO') {
         updates.pago_em = new Date().toISOString();
       }
-      const { error } = await supabase.from('comissao_lancamentos' as any).update(updates).eq('id', id);
+      const { error } = await supabase.from('comissao_lancamentos').update(updates).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -214,7 +215,7 @@ export function useUpdateComissaoStatus() {
       qc.invalidateQueries({ queryKey: ['meta-progresso'] });
       toast({ title: 'Status atualizado' });
     },
-    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+    onError: (e: unknown) => toast({ title: 'Erro', description: (e as Error).message, variant: 'destructive' }),
   });
 }
 
@@ -224,7 +225,7 @@ export function useComissaoResumo(ano: number, mes: number) {
     queryKey: ['comissao-resumo', empresa, ano, mes],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('comissao_resumo_mensal' as any)
+        .from('comissao_resumo_mensal')
         .select('*')
         .eq('empresa', empresa)
         .eq('ano', ano)

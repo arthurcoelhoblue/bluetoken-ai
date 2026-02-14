@@ -101,7 +101,7 @@ export function UserAccessList() {
                 </TableCell>
                 <TableCell className="text-center">
                   <Switch
-                    checked={(u as any).is_vendedor ?? false}
+                    checked={(u as UserWithAccess & { is_vendedor?: boolean }).is_vendedor ?? false}
                     onCheckedChange={(val) => handleToggleVendedor(u.id, val)}
                   />
                 </TableCell>

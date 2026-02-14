@@ -14,7 +14,7 @@ export function useLeaderboard() {
   return useQuery({
     queryKey: ['seller_leaderboard', activeCompany],
     queryFn: async () => {
-      let q = supabase.from('seller_leaderboard' as any).select('*');
+      let q = supabase.from('seller_leaderboard').select('*');
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       q = q.order('ranking_posicao', { ascending: true }).limit(20);
@@ -30,7 +30,7 @@ export function useAllBadges() {
     queryKey: ['seller_badges'],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('seller_badges' as any)
+        .from('seller_badges')
         .select('*')
         .order('categoria', { ascending: true });
       if (error) throw error;
@@ -46,7 +46,7 @@ export function useMyBadges() {
     queryKey: ['my_badges', user?.id, activeCompany],
     enabled: !!user?.id,
     queryFn: async () => {
-      let q = supabase.from('seller_badge_awards' as any).select('*').eq('user_id', user!.id);
+      let q = supabase.from('seller_badge_awards').select('*').eq('user_id', user!.id);
       const emp = empresaFilter(activeCompany);
       if (emp) q = q.eq('empresa', emp);
       const { data, error } = await q;
@@ -62,7 +62,7 @@ export function useRecentAwards() {
     queryKey: ['recent_awards', activeCompany],
     queryFn: async () => {
       let q = supabase
-        .from('seller_points_log' as any)
+        .from('seller_points_log')
         .select('*')
         .order('created_at', { ascending: false })
         .limit(10);

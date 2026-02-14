@@ -34,7 +34,7 @@ export function useCreateOrganization() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: OrganizationFormData) => {
-      const { error } = await supabase.from('organizations').insert(data as any);
+      const { error } = await supabase.from('organizations').insert(data);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['organizations'] }),
@@ -45,7 +45,7 @@ export function useUpdateOrganization() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<OrganizationFormData> & { id: string }) => {
-      const { error } = await supabase.from('organizations').update(data as any).eq('id', id);
+      const { error } = await supabase.from('organizations').update(data).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['organizations'] }),

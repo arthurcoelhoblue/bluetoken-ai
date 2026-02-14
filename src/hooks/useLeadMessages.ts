@@ -59,7 +59,7 @@ export function useLeadMessages({ leadId, empresa, enabled = true }: UseLeadMess
         lido_em: msg.lido_em,
         created_at: msg.created_at,
         updated_at: msg.updated_at,
-        cadencia_nome: (msg.lead_cadence_runs as any)?.cadences?.nome,
+        cadencia_nome: (msg.lead_cadence_runs as unknown as { cadences?: { nome?: string } } | null)?.cadences?.nome,
       }));
     },
     enabled: enabled && !!leadId,
@@ -102,7 +102,7 @@ export function useRunMessages({ runId, enabled = true }: UseRunMessagesOptions)
         lido_em: msg.lido_em,
         created_at: msg.created_at,
         updated_at: msg.updated_at,
-        template_nome: (msg.message_templates as any)?.nome,
+        template_nome: (msg.message_templates as unknown as { nome?: string } | null)?.nome,
       }));
     },
     enabled: enabled && !!runId,

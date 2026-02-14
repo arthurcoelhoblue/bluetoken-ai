@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useAtendimentos } from '@/hooks/useAtendimentos';
+import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -55,7 +55,7 @@ function ConversasContent() {
     } else if (statusFilter === 'RESPONDIDO') {
       result = result.filter(a => a.ultima_direcao === 'OUTBOUND');
     } else if (statusFilter === 'VENDEDOR') {
-      result = result.filter(a => (a as any).modo === 'MANUAL');
+      result = result.filter(a => (a as Atendimento & { modo?: string }).modo === 'MANUAL');
     }
 
     return result;
@@ -64,7 +64,7 @@ function ConversasContent() {
   // Stats
   const totalCount = atendimentos.length;
   const aguardandoCount = atendimentos.filter(a => a.ultima_direcao === 'INBOUND').length;
-  const manualCount = atendimentos.filter(a => (a as any).modo === 'MANUAL').length;
+  const manualCount = atendimentos.filter(a => (a as Atendimento & { modo?: string }).modo === 'MANUAL').length;
 
   return (
     <div className="container mx-auto px-4 py-6 space-y-6">
@@ -153,7 +153,7 @@ function ConversasContent() {
       ) : (
         <div className="space-y-2">
           {filtered.map((a) => {
-            const isModoManual = (a as any).modo === 'MANUAL';
+            const isModoManual = (a as Atendimento & { modo?: string }).modo === 'MANUAL';
             const tempoSemResposta = a.ultimo_contato
               ? formatDistanceToNow(new Date(a.ultimo_contato), { locale: ptBR, addSuffix: true })
               : null;

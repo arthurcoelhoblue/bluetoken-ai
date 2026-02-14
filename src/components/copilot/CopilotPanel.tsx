@@ -74,7 +74,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
 
       if (error) {
         // Check for rate limit or payment errors
-        const status = (error as any)?.status || (error as any)?.context?.status;
+        const status = (error as Record<string, unknown>)?.status ?? (error as Record<string, unknown> & { context?: { status?: number } })?.context?.status;
         if (status === 429) {
           toast({ title: 'Rate limit', description: 'Muitas requisições. Aguarde alguns segundos.', variant: 'destructive' });
         } else if (status === 402) {

@@ -16,7 +16,7 @@ export function useOrganizationsPage(opts: {
     queryKey: ['organizations_with_stats', activeCompany, search, page],
     queryFn: async (): Promise<{ data: OrganizationWithStats[]; count: number }> => {
       let query = supabase
-        .from('organizations_with_stats' as any)
+        .from('organizations_with_stats')
         .select('*', { count: 'exact' })
         .eq('ativo', true)
         .order('nome', { ascending: true })
@@ -42,7 +42,7 @@ export function useOrgDetail(id: string | null) {
     enabled: !!id,
     queryFn: async (): Promise<OrganizationWithStats | null> => {
       const { data, error } = await supabase
-        .from('organizations_with_stats' as any)
+        .from('organizations_with_stats')
         .select('*')
         .eq('id', id!)
         .maybeSingle();
@@ -56,7 +56,7 @@ export function useCreateOrgPage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: OrganizationFormData) => {
-      const { error } = await supabase.from('organizations').insert(data as any);
+      const { error } = await supabase.from('organizations').insert(data);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -70,7 +70,7 @@ export function useUpdateOrgPage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<OrganizationFormData> & { id: string }) => {
-      const { error } = await supabase.from('organizations').update(data as any).eq('id', id);
+      const { error } = await supabase.from('organizations').update(data).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -92,7 +92,7 @@ export function useOrgContacts(orgId: string | null) {
         .eq('organization_id', orgId!)
         .order('nome', { ascending: true });
       if (error) throw error;
-      return (data ?? []) as any[];
+      return data ?? [];
     },
   });
 }

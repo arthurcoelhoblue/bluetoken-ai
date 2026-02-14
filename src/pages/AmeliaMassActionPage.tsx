@@ -118,8 +118,8 @@ export default function AmeliaMassActionPage() {
       // Trigger AI generation
       generateMsgs.mutate(job.id);
       toast({ title: 'Amélia está gerando mensagens...' });
-    } catch (e: any) {
-      toast({ title: 'Erro', description: e.message, variant: 'destructive' });
+    } catch (e: unknown) {
+      toast({ title: 'Erro', description: (e as Error).message, variant: 'destructive' });
     }
   };
 
@@ -373,7 +373,7 @@ export default function AmeliaMassActionPage() {
             <DialogHeader>
               <DialogTitle>Configurar Ação em Massa</DialogTitle>
             </DialogHeader>
-            <Tabs value={configTab} onValueChange={v => setConfigTab(v as any)}>
+            <Tabs value={configTab} onValueChange={v => setConfigTab(v as 'cadencia' | 'adhoc')}>
               <TabsList className="w-full">
                 <TabsTrigger value="cadencia" className="flex-1"><Zap className="h-4 w-4 mr-1" /> Cadência Modelo</TabsTrigger>
                 <TabsTrigger value="adhoc" className="flex-1"><FileText className="h-4 w-4 mr-1" /> Campanha Ad-hoc</TabsTrigger>

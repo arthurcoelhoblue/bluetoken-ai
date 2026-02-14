@@ -24,8 +24,8 @@ export function CriticalAlerts() {
       const oneDayAgo = new Date(Date.now() - 86400_000).toISOString();
 
       // Get active deals
-      let dealsQ = supabase
-        .from('deals' as any)
+      const dealsQ = supabase
+        .from('deals')
         .select('id, titulo, updated_at, owner_id, pipeline_id')
         .eq('status', 'ABERTO');
       const { data: activeDeals } = await dealsQ;
@@ -33,31 +33,31 @@ export function CriticalAlerts() {
       let filteredDeals = activeDeals ?? [];
       if (emp) {
         const { data: pips } = await supabase
-          .from('pipelines' as any)
+          .from('pipelines')
           .select('id')
           .eq('empresa', emp);
-        const pipIds = new Set((pips ?? []).map((p: any) => p.id));
-        filteredDeals = filteredDeals.filter((d: any) => pipIds.has(d.pipeline_id));
+        const pipIds = new Set((pips ?? []).map((p) => p.id));
+        filteredDeals = filteredDeals.filter((d) => pipIds.has(d.pipeline_id));
       }
 
       // Check which have no activity in 24h
       let semAtividade = 0;
       let semOwner = 0;
       for (const deal of filteredDeals) {
-        if (!(deal as any).owner_id) {
+        if (!deal.owner_id) {
           semOwner++;
         }
         const { count } = await supabase
-          .from('deal_activities' as any)
+          .from('deal_activities')
           .select('id', { count: 'exact', head: true })
-          .eq('deal_id', (deal as any).id)
+          .eq('deal_id', deal.id)
           .gte('created_at', oneDayAgo);
         if ((count ?? 0) === 0) semAtividade++;
       }
 
       // 2. Deals perdidos com categoria "esgotado" mas menos de 3 atividades
-      let lostQ = supabase
-        .from('deals' as any)
+      const lostQ = supabase
+        .from('deals')
         .select('id, pipeline_id')
         .eq('status', 'PERDIDO')
         .eq('categoria_perda_closer', 'ESGOTADO');
@@ -65,19 +65,19 @@ export function CriticalAlerts() {
       let filteredLost = lostDeals ?? [];
       if (emp) {
         const { data: pips } = await supabase
-          .from('pipelines' as any)
+          .from('pipelines')
           .select('id')
           .eq('empresa', emp);
-        const pipIds = new Set((pips ?? []).map((p: any) => p.id));
-        filteredLost = filteredLost.filter((d: any) => pipIds.has(d.pipeline_id));
+        const pipIds = new Set((pips ?? []).map((p) => p.id));
+        filteredLost = filteredLost.filter((d) => pipIds.has(d.pipeline_id));
       }
 
       let inconsistencia = 0;
       for (const deal of filteredLost) {
         const { count } = await supabase
-          .from('deal_activities' as any)
+          .from('deal_activities')
           .select('id', { count: 'exact', head: true })
-          .eq('deal_id', (deal as any).id);
+          .eq('deal_id', deal.id);
         if ((count ?? 0) < 3) inconsistencia++;
       }
 
