@@ -97,6 +97,48 @@ export function groupSectionsByType(sections: KnowledgeSection[]): Record<Knowle
   return grouped;
 }
 
+// FAQ types
+export const FAQ_CATEGORIAS = [
+  'Produto',
+  'Processo Interno',
+  'Jurídico / Compliance',
+  'Comercial / Vendas',
+  'Financeiro',
+  'Operacional',
+  'Outros',
+] as const;
+
+export type FaqStatus = 'RASCUNHO' | 'PENDENTE' | 'APROVADO' | 'REJEITADO';
+export type FaqFonte = 'MANUAL' | 'IMPORTACAO' | 'CONVERSA';
+
+export interface KnowledgeFaq {
+  id: string;
+  empresa: string;
+  pergunta: string;
+  resposta: string;
+  categoria: string | null;
+  tags: string[];
+  fonte: FaqFonte;
+  status: FaqStatus;
+  motivo_rejeicao: string | null;
+  criado_por: string | null;
+  aprovado_por: string | null;
+  aprovado_em: string | null;
+  produto_id: string | null;
+  visivel_amelia: boolean;
+  created_at: string;
+  updated_at: string;
+  // Joined fields
+  autor?: { id: string; nome: string } | null;
+}
+
+export const FAQ_STATUS_CONFIG: Record<FaqStatus, { label: string; color: string }> = {
+  RASCUNHO: { label: 'Rascunho', color: 'bg-muted text-muted-foreground' },
+  PENDENTE: { label: 'Pendente', color: 'bg-warning/10 text-warning border-warning/30' },
+  APROVADO: { label: 'Aprovado', color: 'bg-green-500/10 text-green-600 border-green-500/30' },
+  REJEITADO: { label: 'Rejeitado', color: 'bg-destructive/10 text-destructive border-destructive/30' },
+};
+
 // Format knowledge for SDR prompt
 export function formatKnowledgeForSDR(
   product: ProductKnowledge,
@@ -121,5 +163,16 @@ export function formatKnowledgeForSDR(
     }
   });
 
+  return parts.join('\n');
+}
+
+// Format FAQ items for SDR prompt
+export function formatFaqForSDR(faqs: KnowledgeFaq[]): string {
+  if (faqs.length === 0) return '';
+  const parts: string[] = ['## FAQ - Base de Conhecimento\n'];
+  faqs.forEach(faq => {
+    parts.push(`**P: ${faq.pergunta}**`);
+    parts.push(`R: ${faq.resposta}\n`);
+  });
   return parts.join('\n');
 }
