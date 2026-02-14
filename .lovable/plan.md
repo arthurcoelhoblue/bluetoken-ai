@@ -1,212 +1,257 @@
 
-# Leads vs Contacts -- Unificacao (8.1)
 
-## Situacao Atual
+# Sprint 2 -- IA-First de Verdade
 
-O sistema possui **duas entidades paralelas** para representar pessoas:
+Implementacao dos 6 itens do roadmap da auditoria tecnica (Secao 7 + Secao 9, Sprint 2).
 
-| Aspecto | `lead_contacts` (Legacy) | `contacts` (CRM) |
-|---|---|---|
-| Registros | 1.799 | 124 |
-| ID primario | `lead_id` (TEXT, sem FK) | `id` (UUID, com FKs) |
-| Usado por | Mensagens, Cadencias, Classificacoes, Conversas, SGT, Intents | Deals, Pipeline, Organizacoes, Custom Fields |
-| Dados unicos | telefone_e164, opt_out, LinkedIn, Mautic, Chatwoot, score_marketing | CPF, RG, Telegram, endereco, foto_url, is_cliente, tags, tipo |
-| Ponte | -- | `legacy_lead_id` (apenas 123 preenchidos de 1.799) |
+---
 
-### Problemas
+## Escopo
 
-1. Ao criar um deal no Pipeline, o usuario escolhe de `contacts` (124). Os 1.799 leads do SGT/Cadencias ficam invisiveis para o CRM.
-2. A tela de Leads (`/leads`) lê de `lead_contacts` + `lead_classifications`. A tela de Contatos (`/contatos`) lê de `contacts`. Sao mundos separados.
-3. Conversas e mensagens usam `lead_id` (TEXT). Deals usam `contact_id` (UUID FK). Nao ha como navegar de um deal para suas mensagens diretamente.
-4. Dados enriquecidos (LinkedIn, Mautic, scores) ficam presos em `lead_contacts` e nao aparecem no CRM.
+| # | Item | Esforco | Impacto |
+|---|------|---------|---------|
+| 14 | Next Best Action no "Meu Dia" | 3d | DIFERENCIAL |
+| 15 | Deal auto-creation de lead qualificado | 2d | Reduz friccao |
+| 16 | Auto-fill de campos via conversa (valor, necessidade) | 2d | Reduz registro |
+| 17 | Notificacoes proativas (browser push + email digest) | 3d | Engajamento |
+| 18 | Scoring de probabilidade nos deal cards | 2d | Inteligencia visual |
+| 19 | Copilot enriquecido (custom fields, organizations) | JA FEITO | -- |
 
-## Estrategia: `contacts` como Entidade Unica
+O item 19 ja foi implementado -- o `copilot-chat` ja busca custom fields de deals e contatos, e dados de organizacoes. Nao sera incluido nesta sprint.
 
-A tabela `contacts` sera a **unica fonte de verdade** para pessoas. O `lead_contacts` sera mantido temporariamente como cache de automacao, mas toda a navegacao e UI convergira para `contacts`.
+---
 
-### Principios
+## Item 14: Next Best Action no "Meu Dia"
 
-- **Sem breaking change nos webhooks/edge functions** -- o SGT e WhatsApp continuam gravando em `lead_contacts` como antes
-- **Migracao de dados** via SQL para sincronizar os 1.799 leads existentes para `contacts`
-- **Bridge column** `legacy_lead_id` na tabela `contacts` garante a ponte para as tabelas `lead_*`
-- **Progressivo** -- a UI converge primeiro, e futuramente as tabelas `lead_*` podem ser migradas para usar `contact_id` UUID
+### O que muda
+O WorkbenchPage ganha um card de destaque no topo: "O que fazer agora" com 3-5 sugestoes priorizadas por IA baseadas nos dados reais do vendedor.
 
-## Plano de Implementacao
+### Implementacao
 
-### Fase 1: Enriquecer `contacts` e Sincronizar Dados (DB)
+**Nova edge function `next-best-action`:**
+- Recebe `user_id` e `empresa`
+- Busca: tarefas pendentes, SLA alerts, deals parados ha mais tempo, leads quentes sem follow-up, cadencias com acoes pendentes
+- Envia tudo como contexto ao Lovable AI Gateway (google/gemini-3-flash-preview) com tool calling
+- Retorna array estruturado: `[{ titulo, motivo, deal_id?, lead_id?, prioridade, tipo_acao }]`
+- Usa tool calling para extrair output estruturado (nao JSON livre)
 
-**1.1 - Adicionar colunas faltantes em `contacts`**
+**Novo hook `useNextBestAction`:**
+- Chama a edge function via `supabase.functions.invoke`
+- Cache de 5 minutos (staleTime)
+- Botao de refresh manual
 
-Colunas de `lead_contacts` que nao existem em `contacts`:
+**UI no WorkbenchPage:**
+- Card "Proximo Passo" entre o greeting e os KPI cards
+- Lista de 3-5 acoes com icone por tipo (tarefa, follow-up, SLA, deal parado)
+- Click na acao navega para o deal ou contato relevante
+- Skeleton loading enquanto IA processa
+- Badge de prioridade (ALTA/MEDIA/BAIXA)
 
+### Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/next-best-action/index.ts` | Novo |
+| `src/hooks/useNextBestAction.ts` | Novo |
+| `src/components/workbench/NextBestActionCard.tsx` | Novo |
+| `src/pages/WorkbenchPage.tsx` | Editar (adicionar card) |
+
+---
+
+## Item 15: Deal Auto-Creation de Lead Qualificado
+
+### O que muda
+Quando o SDR IA determina `CRIAR_TAREFA_CLOSER`, alem de pausar cadencia e notificar closer, o sistema cria automaticamente um deal no pipeline default da empresa.
+
+### Implementacao
+
+**Alterar `sdr-ia-interpret` (case CRIAR_TAREFA_CLOSER):**
+1. Buscar pipeline default da empresa (`is_default = true`)
+2. Buscar primeiro stage ativo (posicao mais baixa, nao won/lost)
+3. Buscar ou criar `contact` vinculado ao `lead_id` (usando `legacy_lead_id`)
+4. Criar deal com:
+   - `titulo`: intent_summary ou "Oportunidade - {nome_lead}"
+   - `contact_id`: contact encontrado/criado
+   - `pipeline_id` e `stage_id` do default
+   - `temperatura`: QUENTE (lead qualificado)
+   - `valor`: extraido de `acao_detalhes.valor_mencionado` se disponivel (vem do auto-fill, item 16)
+   - `canal_origem`: 'SDR_IA'
+5. Registrar activity `CRIACAO` no deal com metadata indicando origem SDR IA
+
+**Salvaguardas:**
+- Verificar se ja existe deal aberto para o mesmo contact_id no mesmo pipeline (evitar duplicatas)
+- Logar a criacao no `lead_cadence_events`
+
+### Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Editar (case CRIAR_TAREFA_CLOSER) |
+
+---
+
+## Item 16: Auto-Fill de Campos via Conversa
+
+### O que muda
+O SDR IA ja extrai dados via frameworks (SPIN, GPCT, BANT). Agora esses dados sao usados para pre-preencher o deal criado automaticamente (item 15) e ficam visiveis no deal detail.
+
+### Implementacao
+
+**Alterar prompt do SDR IA:**
+- Adicionar campo `dados_extraidos` no output da tool call:
+  ```
+  dados_extraidos: {
+    valor_mencionado: number | null,
+    necessidade_principal: string | null,
+    urgencia: "ALTA" | "MEDIA" | "BAIXA" | null,
+    decisor_identificado: boolean,
+    prazo_mencionado: string | null
+  }
+  ```
+- Salvar esses dados em `acao_detalhes` do intent
+
+**No deal auto-creation (item 15):**
+- Usar `valor_mencionado` como valor do deal
+- Usar `necessidade_principal` como sufixo do titulo
+- Usar `urgencia` para definir temperatura (ALTA=QUENTE, MEDIA=MORNO, BAIXA=FRIO)
+- Registrar todos os dados como metadata da activity CRIACAO
+
+**UI no DealDetailSheet:**
+- Na aba de atividades, a activity CRIACAO com origem SDR_IA mostra os dados extraidos como badges informativos
+
+### Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Editar (prompt + parsing + auto-creation) |
+| `src/components/deals/DealDetailSheet.tsx` | Editar (mostrar dados extraidos na activity) |
+
+---
+
+## Item 17: Notificacoes Proativas (Browser Push)
+
+### O que muda
+O vendedor recebe notificacoes em tempo real via browser quando:
+- Lead quente respondeu
+- SLA estourou
+- Deal parado ha mais de X dias
+- SDR IA qualificou lead e criou deal
+
+### Implementacao
+
+**Fase A: Notificacoes in-app (realtime):**
+
+Nova tabela `notifications`:
 ```
-telefone_e164        TEXT
-ddi                  TEXT
-numero_nacional      TEXT
-telefone_valido      BOOLEAN DEFAULT true
-opt_out              BOOLEAN DEFAULT false
-opt_out_em           TIMESTAMPTZ
-opt_out_motivo       TEXT
-score_marketing      INTEGER
-prioridade_marketing TEXT
-linkedin_url         TEXT
-linkedin_cargo       TEXT
-linkedin_empresa     TEXT
-linkedin_setor       TEXT
-origem_telefone      TEXT DEFAULT 'MANUAL'
+id UUID PK
+user_id UUID FK profiles
+empresa TEXT
+tipo TEXT (LEAD_QUENTE, SLA_ESTOURADO, DEAL_PARADO, DEAL_AUTO_CRIADO)
+titulo TEXT
+mensagem TEXT
+link TEXT (rota para navegar)
+entity_id TEXT
+entity_type TEXT (DEAL, LEAD, CONTACT)
+lida BOOLEAN DEFAULT false
+created_at TIMESTAMPTZ
 ```
 
-**1.2 - Migrar dados de `lead_contacts` para `contacts`**
+- Realtime subscription na tabela `notifications` filtrado por `user_id`
+- Componente `NotificationBell` no TopBar com badge de contagem
+- Dropdown com lista de notificacoes recentes
+- Click navega para o link da notificacao e marca como lida
 
-Query de sincronizacao:
+**Fase B: Emissores de notificacao:**
 
-```sql
-INSERT INTO contacts (
-  legacy_lead_id, empresa, nome, primeiro_nome, email, telefone,
-  telefone_e164, ddi, numero_nacional, telefone_valido,
-  opt_out, opt_out_em, opt_out_motivo,
-  score_marketing, prioridade_marketing,
-  linkedin_url, linkedin_cargo, linkedin_empresa, linkedin_setor,
-  origem_telefone, pessoa_id, owner_id,
-  canal_origem, tipo
-)
-SELECT
-  lc.lead_id,
-  lc.empresa,
-  COALESCE(lc.nome, 'Lead ' || LEFT(lc.lead_id, 8)),
-  lc.primeiro_nome,
-  lc.email,
-  lc.telefone,
-  lc.telefone_e164, lc.ddi, lc.numero_nacional, lc.telefone_valido,
-  lc.opt_out, lc.opt_out_em, lc.opt_out_motivo,
-  lc.score_marketing, lc.prioridade_marketing,
-  lc.linkedin_url, lc.linkedin_cargo, lc.linkedin_empresa, lc.linkedin_setor,
-  lc.origem_telefone, lc.pessoa_id, lc.owner_id,
-  'SGT', 'LEAD'
-FROM lead_contacts lc
-WHERE NOT EXISTS (
-  SELECT 1 FROM contacts c WHERE c.legacy_lead_id = lc.lead_id
-);
+1. `sdr-ia-interpret` (CRIAR_TAREFA_CLOSER): insere notificacao para o closer/owner
+2. Trigger SQL em `deals` quando `updated_at` muda e deal esta parado ha >7 dias: insere notificacao
+3. `whatsapp-inbound` quando lead com classificacao QUENTE responde: insere notificacao
+
+**Fase C: Browser Push (nativa):**
+- Solicitar permissao de notificacao via `Notification.requestPermission()`
+- Quando chegar notificacao via realtime, disparar `new Notification(titulo, { body: mensagem })`
+- Preferencia de notificacoes por tipo na pagina de perfil (/me)
+
+### Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| Migracao SQL | Nova tabela + RLS + realtime |
+| `src/hooks/useNotifications.ts` | Novo |
+| `src/components/layout/NotificationBell.tsx` | Novo |
+| `src/components/layout/TopBar.tsx` | Editar (adicionar NotificationBell) |
+| `src/pages/Me.tsx` | Editar (preferencias de notificacao) |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Editar (inserir notificacao) |
+| `supabase/functions/whatsapp-inbound/index.ts` | Editar (inserir notificacao) |
+
+---
+
+## Item 18: Scoring de Probabilidade nos Deal Cards
+
+### O que muda
+Cada deal card no kanban mostra um percentual de probabilidade de fechamento calculado por uma formula baseada em dados historicos.
+
+### Implementacao
+
+**Nova funcao SQL `fn_calc_deal_score(deal_id UUID)`:**
+Calcula score composto (0-100%) baseado em:
+1. **Taxa historica do stage** (view `stage_conversion_rates` ja existe): peso 40%
+2. **Tempo no stage vs media**: peso 20% (deals que ficam muito tempo perdem score)
+3. **Temperatura**: QUENTE=+15, MORNO=+5, FRIO=-10: peso 15%
+4. **Engagement scores** (ja existem `score_engajamento`, `score_intencao`, `score_valor`, `score_urgencia` no deal): peso 25% (media dos 4)
+
+**Trigger de atualizacao:**
+- Trigger `AFTER UPDATE ON deals` quando `stage_id` ou `temperatura` muda
+- Salva resultado em nova coluna `score_probabilidade INTEGER` na tabela `deals`
+
+**UI no DealCard:**
+- Barra circular ou badge com percentual ao lado da temperatura
+- Cor: verde (>70%), amarelo (40-70%), vermelho (<40%)
+- Tooltip com breakdown do score
+
+### Arquivos
+
+| Arquivo | Acao |
+|---------|------|
+| Migracao SQL | Coluna + funcao + trigger |
+| `src/types/deal.ts` | Editar (adicionar score_probabilidade) |
+| `src/components/pipeline/DealCard.tsx` | Editar (mostrar score) |
+
+---
+
+## Ordem de Implementacao
+
+A sequencia respeita dependencias:
+
+```text
+1. [DB] Migracao: tabela notifications + coluna score_probabilidade + funcao scoring
+2. [Backend] Edge function next-best-action
+3. [Backend] sdr-ia-interpret: auto-fill (dados_extraidos) + auto-creation de deal + notificacoes
+4. [Backend] whatsapp-inbound: notificacao de lead quente
+5. [Frontend] NotificationBell + useNotifications + realtime
+6. [Frontend] NextBestActionCard + useNextBestAction
+7. [Frontend] DealCard com score de probabilidade
+8. [Frontend] DealDetailSheet: dados extraidos na activity
 ```
-
-**1.3 - Criar trigger de sincronizacao automatica**
-
-Trigger `AFTER INSERT OR UPDATE ON lead_contacts` que faz upsert automatico em `contacts` com base no `lead_id`, garantindo que novos leads do SGT aparecem automaticamente no CRM.
-
-**1.4 - Atualizar view `contacts_with_stats`**
-
-Recriar a view para incluir as novas colunas (telefone_e164, score_marketing, linkedin_*, etc).
-
-### Fase 2: Unificar a UI (Frontend)
-
-**2.1 - Eliminar pagina `/leads` separada**
-
-A tela de Leads sera absorvida pela tela de Contatos. O que muda:
-
-| Antes | Depois |
-|---|---|
-| `/contatos` mostra 124 registros de `contacts` | `/contatos` mostra TODOS (incluindo os 1.799 migrados) |
-| `/leads` mostra `lead_contacts` + `lead_classifications` | `/leads` redireciona para `/contatos` |
-| LeadDetail lê de `lead_contacts` | LeadDetail continua existindo como rota legacy mas pode ser acessado via ContactDetail |
-
-**2.2 - Enriquecer `ContactDetailSheet`**
-
-Adicionar abas/secoes que hoje so existem na LeadDetail:
-- Classificacao IA (via `legacy_lead_id` -> `lead_classifications`)
-- Mensagens/Conversas (via `legacy_lead_id` -> `lead_messages`)
-- Cadencia ativa (via `legacy_lead_id` -> `lead_cadence_runs`)
-- Estado da conversa (via `legacy_lead_id` -> `lead_conversation_state`)
-- Eventos SGT (via `legacy_lead_id` -> `sgt_events`)
-- Intents IA (via `legacy_lead_id` -> `lead_message_intents`)
-
-**2.3 - Adicionar filtros de classificacao na tela de Contatos**
-
-Trazer os filtros de ICP, Temperatura e Prioridade da LeadsList para a ContatosPage, fazendo JOIN com `lead_classifications` via `legacy_lead_id`.
-
-**2.4 - Redirect de `/leads` para `/contatos`**
-
-Manter a rota `/leads/:leadId/:empresa` funcionando (redirect para o contato equivalente) para nao quebrar links externos, bookmarks e notificacoes.
-
-### Fase 3: Adaptar Hooks de Ponte (Frontend)
-
-**3.1 - Criar hook `useContactLeadBridge`**
-
-Hook que, dado um `contact.id`, retorna o `legacy_lead_id` e permite buscar dados das tabelas `lead_*`:
-
-```typescript
-function useContactLeadBridge(contactId: string) {
-  // 1. Busca legacy_lead_id do contact
-  // 2. Retorna dados de lead_classifications, lead_messages, etc.
-}
-```
-
-**3.2 - Adaptar ConversationPanel para aceitar contactId**
-
-Hoje a ConversationPanel recebe `leadId`. Adicionar suporte para receber `contactId` e resolver internamente o `legacy_lead_id`.
-
-**3.3 - Atualizar Conversas (`/conversas`)**
-
-A tela de Conversas hoje navega para `/leads/:leadId/:empresa`. Mudar para navegar para `/contatos?open=CONTACT_ID` ou para uma nova rota unificada.
 
 ---
 
 ## Detalhes Tecnicos
 
-### Migracao SQL (1 migracao, 4 operacoes)
+### Modelos de IA utilizados
+- **Next Best Action**: google/gemini-3-flash-preview (rapido, custo baixo, chamado 1x por sessao)
+- **SDR IA (auto-fill)**: mantém modelo atual (Anthropic Claude via API direta, conforme configuracao existente)
 
-| Operacao | Descricao |
-|---|---|
-| `ALTER TABLE contacts ADD COLUMN ...` | 14 colunas novas de lead_contacts |
-| `INSERT INTO contacts SELECT FROM lead_contacts` | Migrar ~1.676 leads nao vinculados |
-| `CREATE FUNCTION fn_sync_lead_to_contact()` | Trigger de sincronizacao automatica |
-| `CREATE TRIGGER trg_sync_lead_contact` | Liga funcao ao lead_contacts |
-| `CREATE OR REPLACE VIEW contacts_with_stats` | View atualizada com campos novos |
+### Tabelas novas
+- `notifications` com RLS por `user_id = auth.uid()`
 
-### Arquivos Frontend
+### Colunas novas
+- `deals.score_probabilidade` INTEGER DEFAULT 0
 
-| Arquivo | Acao | Descricao |
-|---|---|---|
-| `src/hooks/useContactLeadBridge.ts` | **Novo** | Hook ponte contact -> lead_* |
-| `src/components/contacts/ContactDetailSheet.tsx` | **Editar** | Adicionar abas de Classificacao, Mensagens, Cadencia, Intents |
-| `src/pages/ContatosPage.tsx` | **Editar** | Adicionar filtros de ICP/Temperatura/Prioridade |
-| `src/hooks/useContactsPage.ts` | **Editar** | Suportar filtros de classificacao via join |
-| `src/types/contactsPage.ts` | **Editar** | Adicionar campos novos ao tipo |
-| `src/App.tsx` | **Editar** | Redirect `/leads` -> `/contatos` |
-| `src/components/layout/AppSidebar.tsx` | **Editar** | Remover item "Leads" do menu (absorvido por Contatos) |
-| `src/config/screenRegistry.ts` | **Editar** | Atualizar registro de telas |
+### Edge functions novas
+- `next-best-action`
 
-### O que NAO muda nesta fase
+### Edge functions modificadas
+- `sdr-ia-interpret` (auto-creation + auto-fill + notificacao)
+- `whatsapp-inbound` (notificacao lead quente)
 
-- **Edge functions** (sgt-webhook, whatsapp-inbound, cadence-runner, sdr-ia-interpret, bluechat-inbound) continuam gravando em `lead_contacts` e `lead_messages` usando `lead_id` TEXT. O trigger automatico sincroniza para `contacts`.
-- **Tabelas `lead_*`** continuam existindo. A migracao completa para `contact_id` UUID seria uma Fase 2 futura.
-- **Rota `/leads/:leadId/:empresa`** continua funcionando como fallback, redirecionando para o contato equivalente.
-
-### Fluxo de dados apos unificacao
-
-```text
-SGT Webhook / WhatsApp Inbound
-    |
-    v
-lead_contacts (INSERT/UPDATE)
-    |
-    v
-trg_sync_lead_contact (trigger)
-    |
-    +-- UPSERT contacts (legacy_lead_id = lead_id)
-    |
-    v
-contacts_with_stats (view)
-    |
-    v
-ContatosPage (UI unificada)
-    |
-    +-- ContactDetailSheet
-         |
-         +-- Dados basicos (contacts)
-         +-- Classificacao IA (lead_classifications via legacy_lead_id)
-         +-- Mensagens (lead_messages via legacy_lead_id)
-         +-- Cadencia (lead_cadence_runs via legacy_lead_id)
-         +-- Intents IA (lead_message_intents via legacy_lead_id)
-         +-- Deals (deals via contact_id)
-         +-- Campos Custom (custom_field_values via contact_id)
-```
