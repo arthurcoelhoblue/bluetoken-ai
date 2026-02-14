@@ -26,6 +26,7 @@ import {
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { WorkbenchGamificationCard } from '@/components/gamification/WorkbenchGamificationCard';
 import { NextBestActionCard } from '@/components/workbench/NextBestActionCard';
+import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
 import { toast } from 'sonner';
 
 function formatBRL(value: number) {
@@ -50,6 +51,7 @@ function getTaskUrgency(prazo: string | null): 'overdue' | 'today' | 'upcoming' 
 }
 
 function WorkbenchContent() {
+  useGamificationNotifications();
   const { profile } = useAuth();
   const navigate = useNavigate();
   const { data: tarefas, isLoading: loadingTarefas } = useWorkbenchTarefas();

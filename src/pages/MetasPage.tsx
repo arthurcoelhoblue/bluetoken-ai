@@ -22,10 +22,12 @@ import { MESES_LABEL, type ComissaoStatus, type MetaProgresso } from '@/types/me
 import { LeaderboardCard } from '@/components/gamification/LeaderboardCard';
 import { BadgeShowcase } from '@/components/gamification/BadgeShowcase';
 import { RecentPointsFeed } from '@/components/gamification/RecentPointsFeed';
+import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 export default function MetasPage() {
+  useGamificationNotifications();
   const now = new Date();
   const [ano, setAno] = useState(now.getFullYear());
   const [mes, setMes] = useState(now.getMonth() + 1);
