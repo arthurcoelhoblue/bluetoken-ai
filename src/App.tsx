@@ -60,6 +60,7 @@ const CSClientesPage = lazy(() => import("./pages/cs/CSClientesPage"));
 const CSClienteDetailPage = lazy(() => import("./pages/cs/CSClienteDetailPage"));
 const CSPesquisasPage = lazy(() => import("./pages/cs/CSPesquisasPage"));
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
+const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -156,6 +157,7 @@ const App = () => (
                 <Route path="/cs/clientes/:id" element={<ProtectedRoute><CSClienteDetailPage /></ProtectedRoute>} />
                 <Route path="/cs/pesquisas" element={<ProtectedRoute><CSPesquisasPage /></ProtectedRoute>} />
                 <Route path="/cs/incidencias" element={<ProtectedRoute><CSIncidenciasPage /></ProtectedRoute>} />
+                <Route path="/cs/playbooks" element={<ProtectedRoute><CSPlaybooksPage /></ProtectedRoute>} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
