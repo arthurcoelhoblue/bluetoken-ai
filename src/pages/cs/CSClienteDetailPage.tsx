@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, HeartPulse, Plus, Send, User } from 'lucide-react';
+import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock } from 'lucide-react';
 import { healthStatusConfig, gravidadeConfig, incidentStatusConfig, npsConfig } from '@/types/customerSuccess';
 import type { CSIncidentTipo, CSGravidade } from '@/types/customerSuccess';
 import { format } from 'date-fns';
@@ -22,6 +22,7 @@ import { ptBR } from 'date-fns/locale';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
+import { supabase } from '@/integrations/supabase/client';
 
 export default function CSClienteDetailPage() {
   const { id } = useParams<{ id: string }>();
@@ -35,6 +36,33 @@ export default function CSClienteDetailPage() {
 
   const [npsScore, setNpsScore] = useState('');
   const [incidentForm, setIncidentForm] = useState({ titulo: '', descricao: '', tipo: 'RECLAMACAO' as CSIncidentTipo, gravidade: 'MEDIA' as CSGravidade });
+  const [sendingNpsWa, setSendingNpsWa] = useState(false);
+  const [deals, setDeals] = useState<any[] | null>(null);
+  const [dealsLoading, setDealsLoading] = useState(false);
+
+  const loadDeals = async () => {
+    if (deals || !customer?.contact_id) return;
+    setDealsLoading(true);
+    const { data } = await supabase.from('deals').select('id, titulo, valor, status, created_at, pipeline_stages:stage_id(nome, cor)').eq('contact_id', customer.contact_id).order('created_at', { ascending: false }).limit(50);
+    setDeals(data ?? []);
+    setDealsLoading(false);
+  };
+
+  const handleSendNpsWhatsApp = async () => {
+    if (!customer) return;
+    setSendingNpsWa(true);
+    try {
+      const { error } = await supabase.functions.invoke('cs-nps-auto', {
+        body: { customer_id: customer.id, tipo: 'NPS' },
+      });
+      if (error) throw error;
+      toast.success('NPS enviado via WhatsApp');
+    } catch {
+      toast.error('Erro ao enviar NPS via WhatsApp');
+    } finally {
+      setSendingNpsWa(false);
+    }
+  };
 
   if (isLoading) return <LoadingSpinner />;
   if (!customer) return <div className="p-6"><p>Cliente não encontrado</p></div>;
@@ -100,6 +128,8 @@ export default function CSClienteDetailPage() {
             <Tabs defaultValue="pesquisas">
               <TabsList>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
+                <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
+                <TabsTrigger value="renovacao">Renovação</TabsTrigger>
                 <TabsTrigger value="incidencias">Incidências</TabsTrigger>
                 <TabsTrigger value="health-log">Health Log</TabsTrigger>
               </TabsList>
@@ -107,15 +137,62 @@ export default function CSClienteDetailPage() {
               <TabsContent value="pesquisas" className="mt-4 space-y-4">
                 <Card>
                   <CardHeader className="pb-2"><CardTitle className="text-sm">Registrar NPS</CardTitle></CardHeader>
-                  <CardContent className="flex items-end gap-3">
-                    <div className="flex-1"><Label>Nota (0-10)</Label><Input type="number" min={0} max={10} value={npsScore} onChange={e => setNpsScore(e.target.value)} placeholder="0-10" /></div>
-                    <Button onClick={handleSendNps} disabled={createSurvey.isPending}><Send className="h-4 w-4 mr-1" /> Registrar</Button>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-end gap-3">
+                      <div className="flex-1"><Label>Nota (0-10)</Label><Input type="number" min={0} max={10} value={npsScore} onChange={e => setNpsScore(e.target.value)} placeholder="0-10" /></div>
+                      <Button onClick={handleSendNps} disabled={createSurvey.isPending}><Send className="h-4 w-4 mr-1" /> Registrar</Button>
+                    </div>
+                    <div className="border-t pt-3">
+                      <Button variant="outline" onClick={handleSendNpsWhatsApp} disabled={sendingNpsWa}>
+                        <MessageCircle className="h-4 w-4 mr-1" /> Enviar NPS via WhatsApp
+                      </Button>
+                      <p className="text-xs text-muted-foreground mt-1">Envia pesquisa NPS automatizada ao cliente pelo WhatsApp</p>
+                    </div>
                   </CardContent>
                 </Card>
                 {surveys?.map(s => (
                   <Card key={s.id}><CardContent className="pt-4 flex items-center justify-between"><div><Badge variant="outline">{s.tipo}</Badge><span className="ml-2 text-sm">{s.pergunta || 'Pesquisa'}</span><p className="text-xs text-muted-foreground mt-1">{format(new Date(s.enviado_em), "dd/MM/yy HH:mm", { locale: ptBR })}</p></div><div className="text-right">{s.nota != null ? <span className="text-2xl font-bold">{s.nota}</span> : <Badge variant="secondary">Pendente</Badge>}</div></CardContent></Card>
                 ))}
                 {surveys?.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma pesquisa registrada</p>}
+              </TabsContent>
+
+              <TabsContent value="deals" className="mt-4 space-y-3">
+                {dealsLoading && <LoadingSpinner />}
+                {deals?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum deal associado a este contato</p>}
+                {deals?.map(d => (
+                  <Card key={d.id}>
+                    <CardContent className="pt-4 flex items-center justify-between">
+                      <div>
+                        <p className="font-medium text-sm flex items-center gap-2">
+                          <Briefcase className="h-3 w-3" />{d.titulo}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {d.created_at ? format(new Date(d.created_at), "dd/MM/yy", { locale: ptBR }) : ''} · {d.pipeline_stages?.nome || '—'}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium text-sm">R$ {d.valor?.toLocaleString('pt-BR') ?? '0'}</p>
+                        <Badge variant="outline" className="capitalize">{d.status?.toLowerCase()}</Badge>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </TabsContent>
+
+              <TabsContent value="renovacao" className="mt-4 space-y-4">
+                <Card>
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm flex items-center gap-2"><CalendarClock className="h-4 w-4" /> Renovação</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div><span className="text-muted-foreground">Próxima renovação</span><p className="font-medium">{customer.proxima_renovacao ? format(new Date(customer.proxima_renovacao), 'dd/MM/yyyy') : '—'}</p></div>
+                      <div><span className="text-muted-foreground">1º Ganho</span><p className="font-medium">{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yyyy') : '—'}</p></div>
+                      <div><span className="text-muted-foreground">MRR</span><p className="font-medium">R$ {customer.valor_mrr?.toLocaleString('pt-BR') ?? '0'}</p></div>
+                      <div><span className="text-muted-foreground">Risco Churn</span><p className="font-medium">{customer.risco_churn_pct ?? 0}%</p></div>
+                    </div>
+                  </CardContent>
+                </Card>
               </TabsContent>
 
               <TabsContent value="incidencias" className="mt-4 space-y-4">
