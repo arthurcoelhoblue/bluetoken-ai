@@ -6,5 +6,5 @@
 ## ✅ Bloco 4: RenovacaoPage — CONCLUÍDO
 ## ✅ Bloco 5: Copilot-Chat Enrichment — CONCLUÍDO
 ## ✅ Bloco 6: IA-First (sentimento + scores) — CONCLUÍDO
-## 🔲 Bloco 7: Segurança RLS — PENDENTE (próxima iteração)
-## 🔲 Bloco 8: Testes — PENDENTE (próxima iteração)
+## ✅ Bloco 7: Segurança RLS — CONCLUÍDO
+## ✅ Bloco 8: Testes — CONCLUÍDO
