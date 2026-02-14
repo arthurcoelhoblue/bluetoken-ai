@@ -4,8 +4,9 @@ import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
 import { AccessControlTab } from "@/components/settings/AccessControlTab";
+import { ComercialTab } from "@/components/settings/ComercialTab";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Plug, Webhook, Brain, Bot, Shield } from "lucide-react";
+import { Plug, Webhook, Brain, Bot, Shield, BarChart3 } from "lucide-react";
 
 export default function Settings() {
   return (
@@ -19,10 +20,14 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="channels" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-none lg:inline-flex">
+        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-none lg:inline-flex">
           <TabsTrigger value="channels" className="gap-2">
             <Plug className="h-4 w-4" />
             <span className="hidden sm:inline">Canais</span>
+          </TabsTrigger>
+          <TabsTrigger value="comercial" className="gap-2">
+            <BarChart3 className="h-4 w-4" />
+            <span className="hidden sm:inline">Comercial</span>
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2">
             <Brain className="h-4 w-4" />
@@ -44,6 +49,10 @@ export default function Settings() {
 
         <TabsContent value="channels">
           <IntegrationsTab />
+        </TabsContent>
+
+        <TabsContent value="comercial">
+          <ComercialTab />
         </TabsContent>
 
         <TabsContent value="ai">

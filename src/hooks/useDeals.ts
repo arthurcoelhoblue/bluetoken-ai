@@ -174,3 +174,51 @@ export function useLossCategories() {
     },
   });
 }
+
+// ─── Loss Categories CRUD (Admin) ───
+
+export function useCreateLossCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { codigo: string; label: string; descricao?: string; posicao: number }) => {
+      const { error } = await supabase.from('deal_loss_categories').insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['deal_loss_categories'] }),
+  });
+}
+
+export function useUpdateLossCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ...updates }: { id: string; codigo?: string; label?: string; descricao?: string | null }) => {
+      const { error } = await supabase.from('deal_loss_categories').update(updates).eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['deal_loss_categories'] }),
+  });
+}
+
+export function useDeleteLossCategory() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('deal_loss_categories').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['deal_loss_categories'] }),
+  });
+}
+
+export function useReorderLossCategories() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: { id: string; posicao: number }[]) => {
+      for (const item of items) {
+        const { error } = await supabase.from('deal_loss_categories').update({ posicao: item.posicao }).eq('id', item.id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['deal_loss_categories'] }),
+  });
+}

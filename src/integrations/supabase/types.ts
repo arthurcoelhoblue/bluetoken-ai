@@ -3403,6 +3403,55 @@ export type Database = {
           },
         ]
       }
+      sazonalidade_indices: {
+        Row: {
+          empresa: string
+          id: string
+          indice: number
+          mes: number
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          empresa: string
+          id?: string
+          indice?: number
+          mes: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          empresa?: string
+          id?: string
+          indice?: number
+          mes?: number
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sazonalidade_indices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "sazonalidade_indices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sazonalidade_indices_updated_by_fkey"
+            columns: ["updated_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       seller_badge_awards: {
         Row: {
           awarded_at: string

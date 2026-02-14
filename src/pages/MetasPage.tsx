@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { Target, ChevronLeft, ChevronRight, Trophy, Crown, DollarSign, TrendingUp, PieChart, Edit2 } from 'lucide-react';
+import { Target, ChevronLeft, ChevronRight, Trophy, Crown, DollarSign, TrendingUp, PieChart, Edit2, CalendarRange } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { ProjecaoStageCard } from '@/components/ProjecaoStageCard';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { MetaAnualDialog } from '@/components/metas/MetaAnualDialog';
 import { Progress } from '@/components/ui/progress';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -41,6 +42,7 @@ export default function MetasPage() {
   const [editMeta, setEditMeta] = useState<MetaProgresso | null>(null);
   const [metaValor, setMetaValor] = useState('');
   const [metaDeals, setMetaDeals] = useState('');
+  const [metaAnualOpen, setMetaAnualOpen] = useState(false);
 
   const prevMonth = () => {
     if (mes === 1) { setMes(12); setAno(a => a - 1); }
@@ -97,6 +99,11 @@ export default function MetasPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setMetaAnualOpen(true)}>
+                <CalendarRange className="h-4 w-4 mr-1" /> Meta Anual
+              </Button>
+            )}
             <Button variant="outline" size="icon" onClick={prevMonth}><ChevronLeft className="h-4 w-4" /></Button>
             <span className="font-medium min-w-[140px] text-center">{MESES_LABEL[mes]} {ano}</span>
             <Button variant="outline" size="icon" onClick={nextMonth}><ChevronRight className="h-4 w-4" /></Button>
@@ -307,6 +314,14 @@ export default function MetasPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Meta Anual Dialog */}
+        <MetaAnualDialog
+          open={metaAnualOpen}
+          onOpenChange={setMetaAnualOpen}
+          ano={ano}
+          vendedores={ranking}
+        />
       </div>
     </AppLayout>
   );

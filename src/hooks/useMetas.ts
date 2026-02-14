@@ -10,6 +10,73 @@ function useEmpresa() {
   return activeCompany === 'all' ? 'BLUE' : activeCompany.toUpperCase();
 }
 
+// ─── Sazonalidade ───
+
+export interface SazonalidadeIndice {
+  id: string;
+  empresa: string;
+  mes: number;
+  indice: number;
+  updated_at: string;
+  updated_by: string | null;
+}
+
+export function useSazonalidade() {
+  const empresa = useEmpresa();
+  return useQuery({
+    queryKey: ['sazonalidade', empresa],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('sazonalidade_indices' as any)
+        .select('*')
+        .eq('empresa', empresa)
+        .order('mes');
+      if (error) throw error;
+      return (data || []) as unknown as SazonalidadeIndice[];
+    },
+  });
+}
+
+export function useUpdateSazonalidade() {
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  return useMutation({
+    mutationFn: async (indices: { id: string; indice: number }[]) => {
+      for (const idx of indices) {
+        const { error } = await supabase
+          .from('sazonalidade_indices' as any)
+          .update({ indice: idx.indice, updated_by: user?.id, updated_at: new Date().toISOString() } as any)
+          .eq('id', idx.id);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['sazonalidade'] });
+      toast({ title: 'Índices de sazonalidade salvos' });
+    },
+    onError: (e: any) => toast({ title: 'Erro', description: e.message, variant: 'destructive' }),
+  });
+}
+
+export function useUpsertMetasBatch() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (metas: { user_id: string; empresa: string; ano: number; mes: number; meta_valor: number; meta_deals: number }[]) => {
+      for (const m of metas) {
+        const { error } = await supabase
+          .from('metas_vendedor' as any)
+          .upsert(m as any, { onConflict: 'user_id,empresa,ano,mes' });
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['meta-progresso'] });
+      toast({ title: 'Metas anuais distribuídas com sucesso' });
+    },
+    onError: (e: any) => toast({ title: 'Erro ao distribuir metas', description: e.message, variant: 'destructive' }),
+  });
+}
+
 export function useMetaProgresso(ano: number, mes: number) {
   const empresa = useEmpresa();
   return useQuery({
