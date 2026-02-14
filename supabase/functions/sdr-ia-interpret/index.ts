@@ -3603,47 +3603,45 @@ serve(async (req) => {
       );
     }
 
-    // PATCH 3: Check MANUAL mode — skip AI response generation but still log intent
+    // PATCH 3: Check MANUAL mode — skip AI call entirely to save costs
     const modoAtendimento = conversationState?.modo || 'SDR_IA';
     if (modoAtendimento === 'MANUAL') {
-      console.log('[SDR-IA] 🚫 Modo MANUAL — registrando intent sem gerar resposta automática');
+      console.log('[SDR-IA] 🚫 Modo MANUAL — registrando intent MANUAL_MODE sem chamar IA');
       
-      // Still interpret for intent logging purposes, but force no response
-      const { response: aiResponse, tokensUsados, tempoMs, modeloUsado } = await interpretWithAI(
-        message.conteudo,
-        message.empresa,
-        historico,
-        leadNome,
-        cadenciaNome,
-        classificacao,
-        pessoaContext,
-        conversationState,
-        mode,
-        triageSummary
-      );
-
-      // Override: never respond in MANUAL mode
-      aiResponse.deve_responder = false;
-      aiResponse.acao = 'NENHUMA';
+      // Build a static response — NO AI call
+      const manualResponse = {
+        intent: 'MANUAL_MODE' as LeadIntentTipo,
+        confidence: 1.0,
+        resposta_automatica: null as string | null,
+        deve_responder: false,
+        acao: 'NENHUMA' as SdrAcaoTipo,
+        temperatura_sugerida: null as TemperaturaTipo | null,
+        resumo_interno: 'Modo MANUAL ativo — mensagem registrada sem processamento IA',
+        framework_updates: null,
+        proxima_pergunta: null as string | null,
+        estado_funil: conversationState?.estado_funil || 'DIAGNOSTICO',
+        perfil_disc: conversationState?.perfil_disc || null,
+        canal_preferido: conversationState?.canal_preferido || 'WHATSAPP',
+      };
 
       const intentId = await saveInterpretation(
         supabase,
         message,
-        aiResponse,
-        tokensUsados,
-        tempoMs,
+        manualResponse,
+        0,    // tokensUsados = 0
+        0,    // tempoMs = 0
         false,
         false,
         null,
-        modeloUsado
+        'none' // modeloUsado
       );
 
       return new Response(
         JSON.stringify({
           success: true,
           intentId,
-          intent: aiResponse.intent,
-          confidence: aiResponse.confidence,
+          intent: 'MANUAL_MODE',
+          confidence: 1.0,
           acao: 'NENHUMA',
           acaoAplicada: false,
           respostaEnviada: false,
