@@ -115,7 +115,7 @@ serve(async (req) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-3-flash-preview',
+        model: 'google/gemini-2.5-pro',
         messages: aiMessages,
         stream: false,
       }),
@@ -236,6 +236,22 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
     }
   }
 
+  // Buscar organização vinculada ao contato (se houver contact com organization_id)
+  if (contactResult.data?.telefone) {
+    const { data: linkedContact } = await supabase
+      .from('contacts')
+      .select('organization_id, organizations(nome, website, setor, notas)')
+      .eq('telefone', contactResult.data.telefone)
+      .eq('empresa', empresa)
+      .not('organization_id', 'is', null)
+      .maybeSingle();
+
+    if (linkedContact?.organizations) {
+      const org = linkedContact.organizations;
+      parts.push(`**Organização**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
+    }
+  }
+
   if (msgsResult.data && msgsResult.data.length > 0) {
     const msgs = msgsResult.data.reverse();
     const formatted = msgs.map((m: any) => {
@@ -251,7 +267,7 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
 async function enrichDealContext(supabase: any, dealId: string | undefined): Promise<string> {
   if (!dealId) return 'Nenhum deal selecionado.';
 
-  const [dealResult, activitiesResult] = await Promise.all([
+  const [dealResult, activitiesResult, customFieldsResult, contactCustomFieldsResult] = await Promise.all([
     supabase
       .from('deals_full_detail')
       .select('*')
@@ -263,18 +279,70 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
       .eq('deal_id', dealId)
       .order('created_at', { ascending: false })
       .limit(10),
+    // Custom fields do deal
+    supabase
+      .from('custom_field_values')
+      .select('value_text, value_number, value_boolean, value_date, value_json, field_id, custom_field_definitions(label, value_type)')
+      .eq('entity_id', dealId)
+      .eq('entity_type', 'DEAL'),
+    // Custom fields do contato (busca depois com contact_id)
+    null,
   ]);
 
   const parts: string[] = [];
+  let contactId: string | null = null;
 
   if (dealResult.data) {
     const d = dealResult.data;
+    contactId = d.contact_id;
     parts.push(`**Deal**: ${d.titulo || '-'}`);
     parts.push(`**Status**: ${d.status} | Valor: R$ ${d.valor || 0} | Temperatura: ${d.temperatura || '-'}`);
     if (d.stage_nome) parts.push(`**Estágio**: ${d.stage_nome} (Pipeline: ${d.pipeline_nome || '-'})`);
     if (d.contact_nome) parts.push(`**Contato**: ${d.contact_nome} | ${d.contact_email || '-'} | ${d.contact_telefone || '-'}`);
+    if (d.org_nome) parts.push(`**Organização**: ${d.org_nome}`);
     if (d.motivo_perda) parts.push(`**Motivo Perda**: ${d.motivo_perda}`);
     if (d.notas) parts.push(`**Notas**: ${d.notas.substring(0, 300)}`);
+  }
+
+  // Custom fields do deal
+  if (customFieldsResult.data && customFieldsResult.data.length > 0) {
+    const fields = customFieldsResult.data.map((f: any) => {
+      const label = f.custom_field_definitions?.label || 'Campo';
+      const value = f.value_text || f.value_number || f.value_date || f.value_boolean || (f.value_json ? JSON.stringify(f.value_json) : null);
+      return `- ${label}: ${value ?? '-'}`;
+    }).join('\n');
+    parts.push(`**Campos Customizados (Deal)**:\n${fields}`);
+  }
+
+  // Buscar custom fields do contato e organização se temos contact_id
+  if (contactId) {
+    const [contactCfResult, orgResult] = await Promise.all([
+      supabase
+        .from('custom_field_values')
+        .select('value_text, value_number, value_boolean, value_date, value_json, custom_field_definitions(label)')
+        .eq('entity_id', contactId)
+        .eq('entity_type', 'CONTACT'),
+      supabase
+        .from('contacts')
+        .select('organization_id, organizations(nome, website, setor, notas)')
+        .eq('id', contactId)
+        .maybeSingle(),
+    ]);
+
+    if (contactCfResult.data && contactCfResult.data.length > 0) {
+      const fields = contactCfResult.data.map((f: any) => {
+        const label = f.custom_field_definitions?.label || 'Campo';
+        const value = f.value_text || f.value_number || f.value_date || f.value_boolean || (f.value_json ? JSON.stringify(f.value_json) : null);
+        return `- ${label}: ${value ?? '-'}`;
+      }).join('\n');
+      parts.push(`**Campos Customizados (Contato)**:\n${fields}`);
+    }
+
+    if (orgResult.data?.organizations) {
+      const org = orgResult.data.organizations;
+      parts.push(`**Organização Detalhada**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
+      if (org.notas) parts.push(`**Notas Org**: ${org.notas.substring(0, 200)}`);
+    }
   }
 
   if (activitiesResult.data && activitiesResult.data.length > 0) {
