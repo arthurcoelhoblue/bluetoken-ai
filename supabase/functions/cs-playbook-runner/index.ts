@@ -309,13 +309,13 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
       // CS-Renovation Bridge (Patch 7 T4)
       if (!customer) break;
 
-      // Find renovation pipeline
+      // Find renovation pipeline by tipo (not name) per architecture convention
       const { data: pipelines } = await supabase
         .from('pipelines')
         .select('id, pipeline_stages(id, posicao, is_won, is_lost)')
         .eq('empresa', empresa)
         .eq('ativo', true)
-        .ilike('nome', '%renova%')
+        .eq('tipo', 'RENOVACAO')
         .limit(1);
 
       const pipeline = pipelines?.[0];

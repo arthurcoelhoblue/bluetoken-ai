@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Sparkles, RefreshCw, CheckSquare, MessageSquare,
-  AlertTriangle, Clock, Flame,
+  AlertTriangle, Clock, Flame, HeartPulse,
 } from 'lucide-react';
 import { useNextBestAction, type NextBestAction } from '@/hooks/useNextBestAction';
 
@@ -15,6 +15,7 @@ const ACTION_ICONS: Record<string, React.ReactNode> = {
   SLA: <AlertTriangle className="h-4 w-4" />,
   DEAL_PARADO: <Clock className="h-4 w-4" />,
   LEAD_QUENTE: <Flame className="h-4 w-4" />,
+  CS_RISCO: <HeartPulse className="h-4 w-4" />,
 };
 
 const PRIORITY_STYLES: Record<string, string> = {
@@ -24,8 +25,11 @@ const PRIORITY_STYLES: Record<string, string> = {
 };
 
 export function NextBestActionCard() {
-  const { data: acoes, isLoading, isError, refresh, isFetching } = useNextBestAction();
+  const { data, isLoading, isError, refresh, isFetching } = useNextBestAction();
   const navigate = useNavigate();
+
+  const acoes = data?.acoes ?? [];
+  const narrativaDia = data?.narrativa_dia ?? '';
 
   const handleClick = (acao: NextBestAction) => {
     if (acao.deal_id) navigate(`/pipeline?deal=${acao.deal_id}`);
@@ -60,29 +64,40 @@ export function NextBestActionCard() {
           <div className="space-y-2">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-14 w-full" />)}
           </div>
-        ) : acoes && acoes.length > 0 ? (
-          acoes.slice(0, 5).map((acao, i) => (
-            <button
-              key={i}
-              onClick={() => handleClick(acao)}
-              className="w-full flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left"
-            >
-              <div className="mt-0.5 shrink-0 text-muted-foreground">
-                {ACTION_ICONS[acao.tipo_acao] ?? <Sparkles className="h-4 w-4" />}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium leading-tight">{acao.titulo}</p>
-                <p className="text-xs text-muted-foreground mt-0.5">{acao.motivo}</p>
-              </div>
-              <Badge variant="outline" className={`text-[10px] shrink-0 ${PRIORITY_STYLES[acao.prioridade] ?? ''}`}>
-                {acao.prioridade}
-              </Badge>
-            </button>
-          ))
         ) : (
-          <p className="text-sm text-muted-foreground text-center py-4">
-            Tudo em dia! Nenhuma ação urgente 🎉
-          </p>
+          <>
+            {/* Narrativa do dia */}
+            {narrativaDia && (
+              <p className="text-[13px] text-muted-foreground leading-relaxed pb-2 border-b border-border/40 mb-2">
+                {narrativaDia}
+              </p>
+            )}
+
+            {acoes.length > 0 ? (
+              acoes.slice(0, 5).map((acao, i) => (
+                <button
+                  key={i}
+                  onClick={() => handleClick(acao)}
+                  className="w-full flex items-start gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left"
+                >
+                  <div className="mt-0.5 shrink-0 text-muted-foreground">
+                    {ACTION_ICONS[acao.tipo_acao] ?? <Sparkles className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium leading-tight">{acao.titulo}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{acao.motivo}</p>
+                  </div>
+                  <Badge variant="outline" className={`text-[10px] shrink-0 ${PRIORITY_STYLES[acao.prioridade] ?? ''}`}>
+                    {acao.prioridade}
+                  </Badge>
+                </button>
+              ))
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                Tudo em dia! Nenhuma ação urgente 🎉
+              </p>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
