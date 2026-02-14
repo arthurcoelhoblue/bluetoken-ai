@@ -2717,68 +2717,7 @@ O AGENTE SEMPRE DEVE:
     }
   }
 
-  async function tryLovableAI(systemPrompt: string, userPrompt: string, model: string, provider: ModelProvider): Promise<AICallResult> {
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    if (!LOVABLE_API_KEY) {
-      return { success: false, error: 'LOVABLE_API_KEY não configurada' };
-    }
-    
-    try {
-      console.log(`[IA] Tentando ${provider} (${model}) via Lovable AI...`);
-      
-      const makeCall = async () => {
-        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userPrompt },
-            ],
-            temperature: 0.3,
-          }),
-        });
-        
-        if (!response.ok) {
-          const errText = await response.text();
-          
-          if (RETRYABLE_STATUSES.includes(response.status)) {
-            throw new Error(`${provider} ${response.status}: ${errText}`);
-          }
-          
-          // Non-retryable errors
-          if (response.status === 429) {
-            return { success: false as const, error: 'Rate limit Lovable AI excedido' };
-          }
-          if (response.status === 402) {
-            return { success: false as const, error: 'Créditos Lovable AI insuficientes' };
-          }
-          
-          return { success: false as const, error: `${provider} ${response.status}: ${errText}` };
-        }
-        
-        const data = await response.json();
-        const content = data.choices?.[0]?.message?.content;
-        const tokens = (data.usage?.prompt_tokens || 0) + (data.usage?.completion_tokens || 0);
-        
-        if (!content) {
-          return { success: false as const, error: `Resposta vazia do ${provider}` };
-        }
-        
-        console.log(`[IA] ✅ ${provider} respondeu:`, { tokens, contentPreview: content.substring(0, 100) });
-        return { success: true as const, content, tokensUsados: tokens, provider };
-      };
-      
-      return await withRetry(makeCall, provider);
-    } catch (err) {
-      console.error(`[IA] Erro ${provider} (após retries):`, err);
-      return { success: false, error: String(err) };
-    }
-  }
+  // tryLovableAI removido — PATCH Auditoria V2: todas as chamadas IA usam Anthropic ou Google Direct
   
   // Buscar configuração de prioridade de modelos do banco
   const modelPriority = await getModelPriority();
@@ -2803,18 +2742,20 @@ O AGENTE SEMPRE DEVE:
         aiResult = await tryAnthropic(activeSystemPrompt, userPrompt, model);
         break;
       case 'GEMINI': {
-        // Tentar Google Direct primeiro se GOOGLE_API_KEY configurada
+        // Tentar Google Direct se GOOGLE_API_KEY configurada
         const googleKey = Deno.env.get('GOOGLE_API_KEY');
         if (googleKey) {
           aiResult = await tryGoogleDirect(activeSystemPrompt, userPrompt, model);
           if (aiResult.success) break;
-          console.log('[IA] Google Direct falhou, tentando Lovable AI Gateway...');
+          console.log('[IA] Google Direct falhou, fallback para Anthropic...');
         }
-        aiResult = await tryLovableAI(activeSystemPrompt, userPrompt, model, providerId);
+        // Fallback para Anthropic em vez do gateway Lovable
+        aiResult = await tryAnthropic(activeSystemPrompt, userPrompt, 'claude-sonnet-4-20250514');
         break;
       }
       case 'GPT':
-        aiResult = await tryLovableAI(activeSystemPrompt, userPrompt, model, providerId);
+        // GPT agora faz fallback para Anthropic em vez do gateway Lovable
+        aiResult = await tryAnthropic(activeSystemPrompt, userPrompt, 'claude-sonnet-4-20250514');
         break;
     }
     
