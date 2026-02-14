@@ -1,6 +1,8 @@
 import { useEffect } from "react";
 import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
+import { generalSettingsSchema, type GeneralSettingsFormData } from "@/schemas/settings";
 import {
   Card,
   CardContent,
@@ -44,21 +46,11 @@ const DIAS_SEMANA = [
   { id: "dom", label: "Dom" },
 ];
 
-interface FormValues {
-  horario_inicio: string;
-  horario_fim: string;
-  dias: string[];
-  max_por_dia: number;
-  intervalo_minutos: number;
-  tom: "profissional" | "informal" | "formal";
-  auto_escalar_apos: number;
-  qualificacao_automatica: boolean;
-}
-
 export function GeneralTab() {
   const { settings, updateSetting, isLoading } = useSystemSettings("amelia");
 
-  const form = useForm<FormValues>({
+  const form = useForm<GeneralSettingsFormData>({
+    resolver: zodResolver(generalSettingsSchema),
     defaultValues: {
       horario_inicio: "08:00",
       horario_fim: "18:00",
@@ -93,7 +85,7 @@ export function GeneralTab() {
     }
   }, [settings, form]);
 
-  const onSubmit = async (data: FormValues) => {
+  const onSubmit = async (data: GeneralSettingsFormData) => {
     await Promise.all([
       updateSetting.mutateAsync({
         category: "amelia",

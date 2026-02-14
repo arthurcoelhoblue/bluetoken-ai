@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Label } from '@/components/ui/label';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Loader2, Send } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { sendEmailSchema, type SendEmailFormData } from '@/schemas/email';
 
 interface Props {
   open: boolean;
@@ -18,51 +20,42 @@ interface Props {
 }
 
 export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, contactNome, onSent }: Props) {
-  const [to, setTo] = useState(contactEmail || '');
-  const [subject, setSubject] = useState('');
-  const [body, setBody] = useState('');
-  const [sending, setSending] = useState(false);
+  const form = useForm<SendEmailFormData>({
+    resolver: zodResolver(sendEmailSchema),
+    defaultValues: { to: contactEmail || '', subject: '', body: '' },
+  });
 
   const handleOpen = (isOpen: boolean) => {
     if (isOpen) {
-      setTo(contactEmail || '');
-      setSubject('');
-      setBody('');
+      form.reset({ to: contactEmail || '', subject: '', body: '' });
     }
     onOpenChange(isOpen);
   };
 
-  const handleSend = async () => {
-    if (!to.trim() || !subject.trim() || !body.trim()) {
-      toast.error('Preencha todos os campos');
-      return;
-    }
-    setSending(true);
+  const handleSend = async (data: SendEmailFormData) => {
     try {
-      const { data, error } = await supabase.functions.invoke('email-send', {
+      const { data: result, error } = await supabase.functions.invoke('email-send', {
         body: {
-          to: to.trim(),
-          subject: subject.trim(),
-          html: `<div style="font-family:sans-serif;white-space:pre-wrap;">${body}</div>`,
+          to: data.to.trim(),
+          subject: data.subject.trim(),
+          html: `<div style="font-family:sans-serif;white-space:pre-wrap;">${data.body}</div>`,
         },
       });
       if (error) throw error;
-      if (!data?.success) throw new Error(data?.error || 'Falha ao enviar');
+      if (!result?.success) throw new Error(result?.error || 'Falha ao enviar');
 
-      // Register activity
       await supabase.from('deal_activities').insert({
         deal_id: dealId,
         tipo: 'EMAIL',
-        descricao: `Email para ${to}: ${subject}`,
+        descricao: `Email para ${data.to}: ${data.subject}`,
       });
 
       toast.success('Email enviado com sucesso');
       onOpenChange(false);
       onSent?.();
-    } catch (e: any) {
-      toast.error(e.message || 'Erro ao enviar email');
-    } finally {
-      setSending(false);
+    } catch (e: unknown) {
+      const message = e instanceof Error ? e.message : 'Erro ao enviar email';
+      toast.error(message);
     }
   };
 
@@ -72,27 +65,38 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
         <DialogHeader>
           <DialogTitle>Enviar Email</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Destinatário</Label>
-            <Input value={to} onChange={e => setTo(e.target.value)} placeholder="email@exemplo.com" type="email" />
-          </div>
-          <div className="space-y-2">
-            <Label>Assunto</Label>
-            <Input value={subject} onChange={e => setSubject(e.target.value)} placeholder="Assunto do email" />
-          </div>
-          <div className="space-y-2">
-            <Label>Mensagem</Label>
-            <Textarea value={body} onChange={e => setBody(e.target.value)} placeholder="Escreva sua mensagem..." rows={6} />
-          </div>
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSend} disabled={sending}>
-            {sending ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
-            Enviar
-          </Button>
-        </DialogFooter>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSend)} className="space-y-4">
+            <FormField control={form.control} name="to" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Destinatário</FormLabel>
+                <FormControl><Input {...field} placeholder="email@exemplo.com" type="email" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="subject" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Assunto</FormLabel>
+                <FormControl><Input {...field} placeholder="Assunto do email" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <FormField control={form.control} name="body" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Mensagem</FormLabel>
+                <FormControl><Textarea {...field} placeholder="Escreva sua mensagem..." rows={6} /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Send className="h-4 w-4 mr-1" />}
+                Enviar
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );

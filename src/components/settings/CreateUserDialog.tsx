@@ -1,14 +1,16 @@
-import { useState } from 'react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { useAccessProfiles } from '@/hooks/useAccessControl';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { createUserSchema, type CreateUserFormData } from '@/schemas/users';
 
 interface Props {
   open: boolean;
@@ -29,62 +31,39 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
   });
   const queryClient = useQueryClient();
 
-  const [nome, setNome] = useState('');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [profileId, setProfileId] = useState('');
-  const [empresa, setEmpresa] = useState('all');
-  const [gestorId, setGestorId] = useState('none');
-  const [isVendedor, setIsVendedor] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const form = useForm<CreateUserFormData>({
+    resolver: zodResolver(createUserSchema),
+    defaultValues: {
+      nome: '', email: '', password: '', profileId: '', empresa: 'all', gestorId: 'none', isVendedor: false,
+    },
+  });
 
   const availableProfiles = profiles.filter(p => p.nome !== SUPER_ADMIN_NAME);
 
-  const resetForm = () => {
-    setNome('');
-    setEmail('');
-    setPassword('');
-    setProfileId('');
-    setEmpresa('all');
-    setGestorId('none');
-    setIsVendedor(false);
-  };
-
-  const handleSubmit = async () => {
-    if (!nome.trim() || !email.trim() || !password.trim()) {
-      toast.error('Preencha todos os campos obrigatórios');
-      return;
-    }
-    if (password.length < 6) {
-      toast.error('Senha deve ter no mínimo 6 caracteres');
-      return;
-    }
-
-    setIsSubmitting(true);
+  const handleSubmit = async (data: CreateUserFormData) => {
     try {
-      const { data, error } = await supabase.functions.invoke('admin-create-user', {
+      const { data: result, error } = await supabase.functions.invoke('admin-create-user', {
         body: {
-          email: email.trim(),
-          nome: nome.trim(),
-          password,
-          access_profile_id: profileId || undefined,
-          empresa: empresa === 'all' ? undefined : empresa,
-          gestor_id: gestorId === 'none' ? undefined : gestorId,
-          is_vendedor: isVendedor,
+          email: data.email.trim(),
+          nome: data.nome.trim(),
+          password: data.password,
+          access_profile_id: data.profileId || undefined,
+          empresa: data.empresa === 'all' ? undefined : data.empresa,
+          gestor_id: data.gestorId === 'none' ? undefined : data.gestorId,
+          is_vendedor: data.isVendedor,
         },
       });
 
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (result?.error) throw new Error(result.error);
 
-      toast.success(`Usuário ${nome} criado com sucesso`);
+      toast.success(`Usuário ${data.nome} criado com sucesso`);
       queryClient.invalidateQueries({ queryKey: ['users-with-profiles'] });
-      resetForm();
+      form.reset();
       onOpenChange(false);
-    } catch (err: any) {
-      toast.error(err.message || 'Erro ao criar usuário');
-    } finally {
-      setIsSubmitting(false);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'Erro ao criar usuário';
+      toast.error(message);
     }
   };
 
@@ -95,80 +74,95 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
           <DialogTitle>Novo Usuário</DialogTitle>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-2">
-            <Label>Nome *</Label>
-            <Input value={nome} onChange={e => setNome(e.target.value)} placeholder="Nome completo" />
-          </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+            <FormField control={form.control} name="nome" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Nome *</FormLabel>
+                <FormControl><Input {...field} placeholder="Nome completo" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
 
-          <div className="space-y-2">
-            <Label>Email *</Label>
-            <Input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="email@empresa.com" />
-          </div>
+            <FormField control={form.control} name="email" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Email *</FormLabel>
+                <FormControl><Input type="email" {...field} placeholder="email@empresa.com" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
 
-          <div className="space-y-2">
-            <Label>Senha temporária *</Label>
-            <Input type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Mínimo 6 caracteres" />
-          </div>
+            <FormField control={form.control} name="password" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Senha temporária *</FormLabel>
+                <FormControl><Input type="password" {...field} placeholder="Mínimo 6 caracteres" /></FormControl>
+                <FormMessage />
+              </FormItem>
+            )} />
 
-          <div className="space-y-2">
-            <Label>Perfil de Acesso</Label>
-            <Select value={profileId} onValueChange={setProfileId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione (opcional)" />
-              </SelectTrigger>
-              <SelectContent>
-                {availableProfiles.map(p => (
-                  <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <FormField control={form.control} name="profileId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Perfil de Acesso</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione (opcional)" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {availableProfiles.map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-          <div className="space-y-2">
-            <Label>Gestor</Label>
-            <Select value={gestorId} onValueChange={setGestorId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Selecione o gestor" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Nenhum</SelectItem>
-                {allUsers.map(u => (
-                  <SelectItem key={u.id} value={u.id}>{u.nome || u.email}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+            <FormField control={form.control} name="gestorId" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Gestor</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione o gestor" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {allUsers.map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.nome || u.email}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-          <div className="flex items-center justify-between rounded-lg border p-3">
-            <div className="space-y-0.5">
-              <Label>Vendedor</Label>
-              <p className="text-xs text-muted-foreground">Este usuário participa de metas, comissões e rankings</p>
-            </div>
-            <Switch checked={isVendedor} onCheckedChange={setIsVendedor} />
-          </div>
+            <FormField control={form.control} name="isVendedor" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <FormLabel>Vendedor</FormLabel>
+                  <FormDescription>Este usuário participa de metas, comissões e rankings</FormDescription>
+                </div>
+                <FormControl>
+                  <Switch checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
+              </FormItem>
+            )} />
 
-          <div className="space-y-2">
-            <Label>Empresa</Label>
-            <Select value={empresa} onValueChange={setEmpresa}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="BLUE">Blue</SelectItem>
-                <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-        </div>
+            <FormField control={form.control} name="empresa" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Empresa</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    <SelectItem value="all">Todas</SelectItem>
+                    <SelectItem value="BLUE">Blue</SelectItem>
+                    <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormItem>
+            )} />
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={isSubmitting}>
-            {isSubmitting ? 'Criando...' : 'Criar Usuário'}
-          </Button>
-        </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+              <Button type="submit" disabled={form.formState.isSubmitting}>
+                {form.formState.isSubmitting ? 'Criando...' : 'Criar Usuário'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   );
