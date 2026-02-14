@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { usePipelines } from '@/hooks/usePipelines';
@@ -10,6 +10,7 @@ import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
 
 function useOwnerOptions() {
   return useQuery({
@@ -31,12 +32,16 @@ function PipelineContent() {
   const { activeCompany } = useCompany();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
   const { data: owners = [] } = useOwnerOptions();
+  const { activeOffers } = useActiveTokenizaOffers();
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
   const [ownerId, setOwnerId] = useState('all');
+  const [tag, setTag] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
+
+  const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
 
   useEffect(() => {
     if (pipelines && pipelines.length > 0) {
@@ -50,6 +55,7 @@ function PipelineContent() {
   useEffect(() => {
     setSelectedPipelineId(null);
     setTemperatura('all');
+    setTag('all');
   }, [activeCompany]);
 
   const selectedPipeline = pipelines?.find(p => p.id === selectedPipelineId);
@@ -58,6 +64,7 @@ function PipelineContent() {
     pipelineId: selectedPipelineId,
     ownerId: ownerId !== 'all' ? ownerId : undefined,
     temperatura: temperatura !== 'all' ? temperatura : undefined,
+    tag: tag !== 'all' ? tag : undefined,
   });
 
   const { columns, wonLost } = useKanbanData(deals, selectedPipeline?.pipeline_stages);
@@ -88,6 +95,9 @@ function PipelineContent() {
             onOwnerChange={setOwnerId}
             owners={owners}
             onNewDeal={() => setShowCreateDeal(true)}
+            tag={tag}
+            onTagChange={setTag}
+            availableTags={availableTags}
           />
 
           <div className="flex-1 min-h-0 flex flex-col">

@@ -18,6 +18,9 @@ interface PipelineFiltersProps {
   onOwnerChange: (id: string) => void;
   owners: OwnerOption[];
   onNewDeal: () => void;
+  tag: string;
+  onTagChange: (t: string) => void;
+  availableTags: string[];
 }
 
 export function PipelineFilters({
@@ -30,6 +33,9 @@ export function PipelineFilters({
   onOwnerChange,
   owners,
   onNewDeal,
+  tag,
+  onTagChange,
+  availableTags,
 }: PipelineFiltersProps) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -72,6 +78,21 @@ export function PipelineFilters({
           ))}
         </SelectContent>
       </Select>
+
+      {/* Tag filter */}
+      {availableTags.length > 0 && (
+        <Select value={tag} onValueChange={onTagChange}>
+          <SelectTrigger className="w-48">
+            <SelectValue placeholder="Tag" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">Todas as tags</SelectItem>
+            {availableTags.map(t => (
+              <SelectItem key={t} value={t}>{t}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      )}
 
       <div className="ml-auto">
         <Button onClick={onNewDeal} size="sm">

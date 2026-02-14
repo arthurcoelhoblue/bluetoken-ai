@@ -6,11 +6,12 @@ interface UseDealsOptions {
   pipelineId: string | null;
   ownerId?: string;
   temperatura?: string;
+  tag?: string;
 }
 
-export function useDeals({ pipelineId, ownerId, temperatura }: UseDealsOptions) {
+export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOptions) {
   return useQuery({
-    queryKey: ['deals', pipelineId, ownerId, temperatura],
+    queryKey: ['deals', pipelineId, ownerId, temperatura, tag],
     enabled: !!pipelineId,
     queryFn: async (): Promise<DealWithRelations[]> => {
       let query = supabase
@@ -25,6 +26,7 @@ export function useDeals({ pipelineId, ownerId, temperatura }: UseDealsOptions) 
 
       if (ownerId) query = query.eq('owner_id', ownerId);
       if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
+      if (tag) query = query.contains('tags', [tag]);
 
       query = query.order('posicao_kanban', { ascending: true });
 
