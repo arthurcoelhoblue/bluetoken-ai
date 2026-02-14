@@ -47,7 +47,7 @@ const PipelineConfigPage = lazy(() => import("./pages/PipelineConfigPage"));
 const CustomFieldsConfigPage = lazy(() => import("./pages/CustomFieldsConfigPage"));
 const OrganizationsPage = lazy(() => import("./pages/OrganizationsPage"));
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
-const CadenciasCRMPage = lazy(() => import("./pages/CadenciasPage"));
+
 const ImportacaoPage = lazy(() => import("./pages/ImportacaoPage"));
 const ZadarmaConfigPage = lazy(() => import("./pages/ZadarmaConfigPage"));
 const CaptureFormsPage = lazy(() => import("./pages/CaptureFormsPage"));
@@ -101,7 +101,7 @@ const App = () => (
                 <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><TemplatesPage /></ProtectedRoute>} />
                 <Route path="/integracoes" element={<Navigate to="/admin/settings" replace />} />
                 <Route path="/relatorios" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><AnalyticsPage /></ProtectedRoute>} />
-                <Route path="/cadencias-crm" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenciasCRMPage /></ProtectedRoute>} />
+                <Route path="/cadencias-crm" element={<Navigate to="/cadences" replace />} />
                 <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormsPage /></ProtectedRoute>} />
                 <Route path="/capture-forms/:id/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormBuilderPage /></ProtectedRoute>} />
                 

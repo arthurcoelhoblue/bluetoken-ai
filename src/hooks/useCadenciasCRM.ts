@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
-import type { CadenciaCRM, DealCadenciaStatus, CadenceStageTrigger, StartDealCadencePayload } from '@/types/cadencias';
+import type { CadenciaCRM, DealCadenciaStatus, StartDealCadencePayload } from '@/types/cadence';
 
 export function useCadenciasCRM() {
   const { activeCompany } = useCompany();
@@ -117,49 +117,6 @@ export function useCancelDealCadence() {
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-cadencia-status', vars.dealId] });
-      qc.invalidateQueries({ queryKey: ['cadencias-crm'] });
-    },
-  });
-}
-
-export function useCadenceStageTriggers(pipelineId: string | null) {
-  return useQuery({
-    queryKey: ['cadence-stage-triggers', pipelineId],
-    enabled: !!pipelineId,
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from('cadence_stage_triggers')
-        .select('*')
-        .eq('pipeline_id', pipelineId!);
-      if (error) throw error;
-      return (data ?? []) as unknown as CadenceStageTrigger[];
-    },
-  });
-}
-
-export function useCreateStageTrigger() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (payload: { pipeline_id: string; stage_id: string; cadence_id: string; trigger_type: string }) => {
-      const { error } = await supabase.from('cadence_stage_triggers').insert(payload);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cadence-stage-triggers'] });
-      qc.invalidateQueries({ queryKey: ['cadencias-crm'] });
-    },
-  });
-}
-
-export function useDeleteStageTrigger() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (id: string) => {
-      const { error } = await supabase.from('cadence_stage_triggers').delete().eq('id', id);
-      if (error) throw error;
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['cadence-stage-triggers'] });
       qc.invalidateQueries({ queryKey: ['cadencias-crm'] });
     },
   });

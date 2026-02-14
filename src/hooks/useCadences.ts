@@ -696,3 +696,65 @@ export function useCadenceRunDetail(runId?: string) {
     enabled: !!runId,
   });
 }
+
+// ========================================
+// Stage Trigger Hooks (CRM)
+// ========================================
+
+export function useCadenceStageTriggers(pipelineId: string | null) {
+  return useQuery({
+    queryKey: ['cadence-stage-triggers', pipelineId],
+    enabled: !!pipelineId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('cadence_stage_triggers')
+        .select('*')
+        .eq('pipeline_id', pipelineId!);
+      if (error) throw error;
+      return (data ?? []) as unknown as import('@/types/cadence').CadenceStageTrigger[];
+    },
+  });
+}
+
+export function useCreateStageTrigger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: { pipeline_id: string; stage_id: string; cadence_id: string; trigger_type: string }) => {
+      const { error } = await supabase.from('cadence_stage_triggers').insert(payload);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cadence-stage-triggers'] });
+      qc.invalidateQueries({ queryKey: ['cadences'] });
+    },
+  });
+}
+
+export function useDeleteStageTrigger() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from('cadence_stage_triggers').delete().eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cadence-stage-triggers'] });
+      qc.invalidateQueries({ queryKey: ['cadences'] });
+    },
+  });
+}
+
+// ========================================
+// useCadenceDealStats - CRM deal stats for cadences
+// ========================================
+
+export function useCadenciasCRMView() {
+  return useQuery({
+    queryKey: ['cadencias-crm-view'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('cadencias_crm').select('*');
+      if (error) throw error;
+      return (data ?? []) as unknown as import('@/types/cadence').CadenciaCRM[];
+    },
+  });
+}
