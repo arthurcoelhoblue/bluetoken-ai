@@ -64,15 +64,16 @@ export default function CSClientesPage() {
                   <TableHead>NPS</TableHead>
                   <TableHead>CSAT</TableHead>
                   <TableHead>MRR</TableHead>
+                  <TableHead>Churn Risk</TableHead>
                   <TableHead>Últ. Contato</TableHead>
                   <TableHead>Renovação</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado</TableCell></TableRow>
                 ) : filtered.map((c) => (
                   <TableRow key={c.id} className="cursor-pointer hover:bg-accent/50" onClick={() => navigate(`/cs/clientes/${c.id}`)}>
                     <TableCell>
@@ -97,6 +98,17 @@ export default function CSClientesPage() {
                     </TableCell>
                     <TableCell>{c.media_csat != null ? c.media_csat.toFixed(1) : '—'}</TableCell>
                     <TableCell className="font-medium">R$ {(c.valor_mrr ?? 0).toLocaleString('pt-BR')}</TableCell>
+                    <TableCell>
+                      {(c.risco_churn_pct ?? 0) > 0 ? (
+                        <Badge variant="outline" className={
+                          (c.risco_churn_pct ?? 0) > 70 ? 'bg-red-100 text-red-800' :
+                          (c.risco_churn_pct ?? 0) > 40 ? 'bg-orange-100 text-orange-800' :
+                          'bg-yellow-100 text-yellow-800'
+                        }>
+                          {c.risco_churn_pct}%
+                        </Badge>
+                      ) : <span className="text-muted-foreground text-xs">—</span>}
+                    </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {c.ultimo_contato_em ? format(new Date(c.ultimo_contato_em), 'dd/MM/yy', { locale: ptBR }) : '—'}
                     </TableCell>

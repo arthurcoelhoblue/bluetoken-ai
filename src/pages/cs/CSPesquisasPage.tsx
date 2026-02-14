@@ -7,6 +7,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ClipboardList } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { CSTrendingTopicsCard } from '@/components/cs/CSTrendingTopicsCard';
 
 export default function CSPesquisasPage() {
   const { data: surveys } = useCSSurveys();
@@ -52,9 +53,13 @@ export default function CSPesquisasPage() {
           <TabsList>
             <TabsTrigger value="pendentes">Pendentes ({pendentes.length})</TabsTrigger>
             <TabsTrigger value="respondidas">Respondidas ({respondidas.length})</TabsTrigger>
+            <TabsTrigger value="analise">Análise IA</TabsTrigger>
           </TabsList>
           <TabsContent value="pendentes" className="mt-4">{renderTable(pendentes)}</TabsContent>
           <TabsContent value="respondidas" className="mt-4">{renderTable(respondidas)}</TabsContent>
+          <TabsContent value="analise" className="mt-4">
+            <CSTrendingTopicsCard />
+          </TabsContent>
         </Tabs>
       </div>
     </div>
