@@ -39,8 +39,6 @@ import {
 import {
   AlertTriangle,
   Bot,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   Filter,
   GitBranch,
@@ -48,6 +46,7 @@ import {
   User,
   Search,
 } from 'lucide-react';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -513,34 +512,13 @@ function CadenceRunsListContent() {
                 </Table>
               </div>
 
-              {/* Pagination */}
-              {data.totalPages > 1 && (
-                <div className="flex items-center justify-between mt-4 pt-4 border-t">
-                  <p className="text-sm text-muted-foreground">
-                    Página {data.page} de {data.totalPages}
-                  </p>
-                  <div className="flex gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page === 1}
-                      onClick={() => setPage((p) => p - 1)}
-                    >
-                      <ChevronLeft className="h-4 w-4" />
-                      Anterior
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= data.totalPages}
-                      onClick={() => setPage((p) => p + 1)}
-                    >
-                      Próxima
-                      <ChevronRight className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </div>
-              )}
+              <DataTablePagination
+                page={page - 1}
+                totalPages={data.totalPages}
+                totalCount={data.totalCount}
+                pageSize={20}
+                onPageChange={(p) => setPage(p + 1)}
+              />
             </>
           )}
         </CardContent>

@@ -20,13 +20,15 @@ export interface MessageTemplate {
 export type TemplateInsert = Omit<MessageTemplate, 'id' | 'created_at' | 'updated_at'>;
 export type TemplateUpdate = Partial<TemplateInsert> & { id: string };
 
-export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null) {
+const TEMPLATE_PAGE_SIZE = 25;
+
+export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null, page: number = 0) {
   const { activeCompany } = useCompany();
 
   return useQuery({
-    queryKey: ['message_templates', activeCompany, canal],
+    queryKey: ['message_templates', activeCompany, canal, page],
     queryFn: async () => {
-      let q = supabase.from('message_templates' as any).select('*');
+      let q = supabase.from('message_templates' as any).select('*', { count: 'exact' });
 
       if (activeCompany !== 'ALL') {
         q = q.eq('empresa', activeCompany);
@@ -34,14 +36,22 @@ export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null) {
       if (canal) {
         q = q.eq('canal', canal);
       }
-      q = q.order('nome', { ascending: true });
+      q = q.order('nome', { ascending: true })
+        .range(page * TEMPLATE_PAGE_SIZE, (page + 1) * TEMPLATE_PAGE_SIZE - 1);
 
-      const { data, error } = await q;
+      const { data, error, count } = await q;
       if (error) throw error;
-      return (data ?? []) as unknown as MessageTemplate[];
+      const totalCount = count ?? 0;
+      return {
+        data: (data ?? []) as unknown as MessageTemplate[],
+        totalCount,
+        totalPages: Math.ceil(totalCount / TEMPLATE_PAGE_SIZE),
+      };
     },
   });
 }
+
+export { TEMPLATE_PAGE_SIZE };
 
 export function useCreateTemplate() {
   const qc = useQueryClient();

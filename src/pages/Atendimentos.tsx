@@ -7,13 +7,22 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Skeleton } from '@/components/ui/skeleton';
 import { AtendimentoCard } from '@/components/atendimentos/AtendimentoCard';
 import { useAtendimentos } from '@/hooks/useAtendimentos';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
+
+const ATENDIMENTO_PAGE_SIZE = 25;
 
 export default function Atendimentos() {
   const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | null>(null);
+  const [page, setPage] = useState(0);
   const { data: atendimentos, isLoading, refetch, isFetching } = useAtendimentos({ empresaFilter });
 
-  const aguardando = atendimentos?.filter(a => a.ultima_direcao === 'INBOUND') ?? [];
-  const respondidos = atendimentos?.filter(a => a.ultima_direcao === 'OUTBOUND') ?? [];
+  const allItems = atendimentos ?? [];
+  const totalCount = allItems.length;
+  const totalPages = Math.ceil(totalCount / ATENDIMENTO_PAGE_SIZE);
+  const paginatedItems = allItems.slice(page * ATENDIMENTO_PAGE_SIZE, (page + 1) * ATENDIMENTO_PAGE_SIZE);
+
+  const aguardando = allItems.filter(a => a.ultima_direcao === 'INBOUND');
+  const respondidos = allItems.filter(a => a.ultima_direcao === 'OUTBOUND');
 
   return (
     <AppLayout>
@@ -32,7 +41,7 @@ export default function Atendimentos() {
           <div className="flex items-center gap-2">
             <Select
               value={empresaFilter ?? 'ALL'}
-              onValueChange={(v) => setEmpresaFilter(v === 'ALL' ? null : v as 'TOKENIZA' | 'BLUE')}
+              onValueChange={(v) => { setEmpresaFilter(v === 'ALL' ? null : v as 'TOKENIZA' | 'BLUE'); setPage(0); }}
             >
               <SelectTrigger className="w-[140px]">
                 <SelectValue placeholder="Empresa" />
@@ -54,7 +63,7 @@ export default function Atendimentos() {
           <Card>
             <CardHeader className="pb-2">
               <CardDescription>Total de conversas</CardDescription>
-              <CardTitle className="text-2xl">{atendimentos?.length ?? '—'}</CardTitle>
+              <CardTitle className="text-2xl">{totalCount || '—'}</CardTitle>
             </CardHeader>
           </Card>
           <Card>
@@ -76,7 +85,7 @@ export default function Atendimentos() {
           <div className="space-y-3">
             {[1, 2, 3].map(i => <Skeleton key={i} className="h-24 w-full" />)}
           </div>
-        ) : !atendimentos || atendimentos.length === 0 ? (
+        ) : totalCount === 0 ? (
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
@@ -85,11 +94,20 @@ export default function Atendimentos() {
             </CardContent>
           </Card>
         ) : (
-          <div className="space-y-3">
-            {atendimentos.map(a => (
-              <AtendimentoCard key={`${a.lead_id}_${a.empresa}`} atendimento={a} />
-            ))}
-          </div>
+          <>
+            <div className="space-y-3">
+              {paginatedItems.map(a => (
+                <AtendimentoCard key={`${a.lead_id}_${a.empresa}`} atendimento={a} />
+              ))}
+            </div>
+            <DataTablePagination
+              page={page}
+              totalPages={totalPages}
+              totalCount={totalCount}
+              pageSize={ATENDIMENTO_PAGE_SIZE}
+              onPageChange={setPage}
+            />
+          </>
         )}
       </div>
     </AppLayout>

@@ -6,6 +6,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCadences, useCadenciasCRMView, useCadenceStageTriggers, useCreateStageTrigger, useDeleteStageTrigger } from '@/hooks/useCadences';
+import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import {
   EMPRESA_LABELS,
   CANAL_LABELS,
@@ -58,6 +59,8 @@ function CadencesListContent() {
   const [filters, setFilters] = useState<CadencesFilters>({});
   const [searchInput, setSearchInput] = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const [page, setPage] = useState(0);
+  const CADENCE_PAGE_SIZE = 25;
 
   const { data: cadences, isLoading, error } = useCadences(filters);
   const { data: crmStats } = useCadenciasCRMView();
@@ -68,11 +71,13 @@ function CadencesListContent() {
 
   const handleSearch = () => {
     setFilters((prev) => ({ ...prev, searchTerm: searchInput }));
+    setPage(0);
   };
 
   const handleClearFilters = () => {
     setFilters({});
     setSearchInput('');
+    setPage(0);
   };
 
   const hasActiveFilters =
@@ -218,86 +223,100 @@ function CadencesListContent() {
                 <div className="text-center py-12 text-muted-foreground">
                   Nenhuma cadência encontrada.
                 </div>
-              ) : (
-                <div className="overflow-x-auto">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Nome</TableHead>
-                        <TableHead>Código</TableHead>
-                        <TableHead>Empresa</TableHead>
-                        <TableHead>Canal</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead className="text-center">Leads Ativos</TableHead>
-                        <TableHead className="text-center">Deals Ativos</TableHead>
-                        <TableHead className="text-center">Deals Concluídos</TableHead>
-                        <TableHead className="text-right">Ações</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {cadences.map((cadence) => {
-                        const crm = crmMap.get(cadence.id);
-                        return (
-                          <TableRow
-                            key={cadence.id}
-                            className="cursor-pointer hover:bg-muted/50"
-                            onClick={() => navigate(`/cadences/${cadence.id}`)}
-                          >
-                            <TableCell className="font-medium">{cadence.nome}</TableCell>
-                            <TableCell>
-                              <code className="text-xs bg-muted px-2 py-1 rounded">{cadence.codigo}</code>
-                            </TableCell>
-                            <TableCell>
-                              <Badge variant={cadence.empresa === 'TOKENIZA' ? 'default' : 'secondary'}>
-                                {EMPRESA_LABELS[cadence.empresa]}
-                              </Badge>
-                            </TableCell>
-                            <TableCell>{CANAL_LABELS[cadence.canal_principal]}</TableCell>
-                            <TableCell>
-                              <Badge className={cadence.ativo ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground'}>
-                                {cadence.ativo ? 'Ativo' : 'Inativo'}
-                              </Badge>
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {cadence.runs_ativas > 0 ? (
-                                <Badge variant="outline">{cadence.runs_ativas}</Badge>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {(crm?.deals_ativos ?? 0) > 0 ? (
-                                <Badge variant="outline" className="border-primary text-primary">{crm!.deals_ativos}</Badge>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-center">
-                              {(crm?.deals_completados ?? 0) > 0 ? (
-                                <Badge variant="outline" className="border-success text-success">{crm!.deals_completados}</Badge>
-                              ) : (
-                                <span className="text-muted-foreground">0</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  navigate(`/cadences/${cadence.id}`);
-                                }}
-                              >
-                                <Eye className="h-4 w-4" />
-                              </Button>
-                            </TableCell>
+              ) : (() => {
+                const totalCount = cadences.length;
+                const totalPagesCalc = Math.ceil(totalCount / CADENCE_PAGE_SIZE);
+                const paginatedCadences = cadences.slice(page * CADENCE_PAGE_SIZE, (page + 1) * CADENCE_PAGE_SIZE);
+                return (
+                  <>
+                    <div className="overflow-x-auto">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Empresa</TableHead>
+                            <TableHead>Canal</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead className="text-center">Leads Ativos</TableHead>
+                            <TableHead className="text-center">Deals Ativos</TableHead>
+                            <TableHead className="text-center">Deals Concluídos</TableHead>
+                            <TableHead className="text-right">Ações</TableHead>
                           </TableRow>
-                        );
-                      })}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
+                        </TableHeader>
+                        <TableBody>
+                          {paginatedCadences.map((cadence) => {
+                            const crm = crmMap.get(cadence.id);
+                            return (
+                              <TableRow
+                                key={cadence.id}
+                                className="cursor-pointer hover:bg-muted/50"
+                                onClick={() => navigate(`/cadences/${cadence.id}`)}
+                              >
+                                <TableCell className="font-medium">{cadence.nome}</TableCell>
+                                <TableCell>
+                                  <code className="text-xs bg-muted px-2 py-1 rounded">{cadence.codigo}</code>
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={cadence.empresa === 'TOKENIZA' ? 'default' : 'secondary'}>
+                                    {EMPRESA_LABELS[cadence.empresa]}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell>{CANAL_LABELS[cadence.canal_principal]}</TableCell>
+                                <TableCell>
+                                  <Badge className={cadence.ativo ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground'}>
+                                    {cadence.ativo ? 'Ativo' : 'Inativo'}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {cadence.runs_ativas > 0 ? (
+                                    <Badge variant="outline">{cadence.runs_ativas}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">0</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {(crm?.deals_ativos ?? 0) > 0 ? (
+                                    <Badge variant="outline" className="border-primary text-primary">{crm!.deals_ativos}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">0</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {(crm?.deals_completados ?? 0) > 0 ? (
+                                    <Badge variant="outline" className="border-success text-success">{crm!.deals_completados}</Badge>
+                                  ) : (
+                                    <span className="text-muted-foreground">0</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-right">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      navigate(`/cadences/${cadence.id}`);
+                                    }}
+                                  >
+                                    <Eye className="h-4 w-4" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </div>
+                    <DataTablePagination
+                      page={page}
+                      totalPages={totalPagesCalc}
+                      totalCount={totalCount}
+                      pageSize={CADENCE_PAGE_SIZE}
+                      onPageChange={setPage}
+                    />
+                  </>
+                );
+              })()}
             </CardContent>
           </Card>
         </TabsContent>
