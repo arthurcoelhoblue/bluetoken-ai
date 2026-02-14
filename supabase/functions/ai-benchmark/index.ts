@@ -19,15 +19,14 @@ serve(async (req) => {
   }
 
   try {
-    const { limit = 20, modelo = 'google/gemini-3-pro-preview' } = await req.json();
+    const { limit = 20, modelo = 'claude-sonnet-4-20250514' } = await req.json();
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
-    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'Nenhuma API key configurada (GOOGLE_API_KEY ou ANTHROPIC_API_KEY)' }), {
+    if (!ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY não configurada' }), {
         status: 400,
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -35,7 +34,7 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Buscar mensagens INBOUND recentes que já têm interpretação (para comparar)
+    // Buscar mensagens INBOUND recentes que já têm interpretação
     const { data: intents, error: intentsError } = await supabase
       .from('lead_message_intents')
       .select('id, message_id, intent, intent_confidence, acao_recomendada, resposta_automatica_texto, modelo_ia, tokens_usados, tempo_processamento_ms, empresa, lead_id')
@@ -49,7 +48,6 @@ serve(async (req) => {
       });
     }
 
-    // Buscar mensagens correspondentes
     const messageIds = intents.map(i => i.message_id);
     const { data: messages } = await supabase
       .from('lead_messages')
@@ -58,7 +56,7 @@ serve(async (req) => {
 
     const messageMap = new Map((messages || []).map(m => [m.id, m]));
 
-    // Verificar quais já foram benchmarkadas com este modelo
+    // Verificar quais já foram benchmarkadas
     const intentIds = intents.map(i => i.id);
     const { data: existingBenchmarks } = await supabase
       .from('ai_model_benchmarks')
@@ -67,8 +65,6 @@ serve(async (req) => {
       .eq('modelo_ia', modelo);
 
     const alreadyDone = new Set((existingBenchmarks || []).map(b => b.original_intent_id));
-
-    // Filtrar apenas os que ainda não foram processados
     const toProcess = intents.filter(i => !alreadyDone.has(i.id));
 
     if (toProcess.length === 0) {
@@ -83,7 +79,6 @@ serve(async (req) => {
 
     console.log(`[Benchmark] Processando ${toProcess.length} mensagens com ${modelo}`);
 
-    // System prompt simplificado para benchmark (mesmo formato de resposta)
     const benchmarkSystemPrompt = `Você é Amélia, consultora do Grupo Blue (Tokeniza e Blue).
 Analise a mensagem do lead e retorne um JSON com:
 - intent: tipo de intenção (INTERESSE_COMPRA, INTERESSE_IR, DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA, SOLICITACAO_CONTATO, AGENDAMENTO_REUNIAO, RECLAMACAO, OPT_OUT, OBJECAO_PRECO, OBJECAO_RISCO, SEM_INTERESSE, NAO_ENTENDI, CUMPRIMENTO, AGRADECIMENTO, FORA_CONTEXTO, OUTRO)
@@ -102,160 +97,87 @@ Retorne APENAS o JSON, sem markdown.`;
       if (!msg) continue;
 
       const userPrompt = `EMPRESA: ${msg.empresa}\nMENSAGEM DO LEAD: ${msg.conteudo}`;
-
       const startTime = Date.now();
-      let benchResult: any = null;
 
       try {
-        // Tentar Google Direct primeiro
-        if (GOOGLE_API_KEY && modelo.startsWith('google/')) {
-          const modelName = modelo.replace('google/', '');
-          const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${GOOGLE_API_KEY}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                systemInstruction: { parts: [{ text: benchmarkSystemPrompt }] },
-                contents: [{ role: 'user', parts: [{ text: userPrompt }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-              }),
-            }
-          );
+        const response = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: modelo,
+            max_tokens: 1500,
+            temperature: 0.3,
+            system: benchmarkSystemPrompt,
+            messages: [{ role: 'user', content: userPrompt }],
+          }),
+        });
 
-          if (response.ok) {
-            const data = await response.json();
-            const content = data.candidates?.[0]?.content?.parts?.[0]?.text;
-            const tokens = (data.usageMetadata?.promptTokenCount || 0) + (data.usageMetadata?.candidatesTokenCount || 0);
-            const tempoMs = Date.now() - startTime;
-
-            if (content) {
-              const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-              const parsed = JSON.parse(cleaned);
-              benchResult = { ...parsed, tokens, tempoMs };
-            }
-          } else {
-            const errText = await response.text();
-            console.error(`[Benchmark] Google Direct falhou:`, response.status, errText);
-          }
+        if (!response.ok) {
+          const errText = await response.text();
+          console.error(`[Benchmark] Anthropic falhou:`, response.status, errText);
+          results.push({ message_id: intent.message_id, error: `Anthropic ${response.status}` });
+          continue;
         }
 
-        // Fallback para Anthropic API
-        if (!benchResult && ANTHROPIC_API_KEY) {
-          const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'x-api-key': ANTHROPIC_API_KEY,
-              'anthropic-version': '2023-06-01',
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 1500,
-              temperature: 0.3,
-              system: benchmarkSystemPrompt,
-              messages: [{ role: 'user', content: userPrompt }],
-            }),
+        const data = await response.json();
+        const content = data.content?.[0]?.text;
+        const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+        const tempoMs = Date.now() - startTime;
+
+        if (content) {
+          const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+          const parsed = JSON.parse(cleaned);
+
+          await supabase.from('ai_model_benchmarks').insert({
+            original_intent_id: intent.id,
+            message_id: intent.message_id,
+            modelo_ia: modelo,
+            intent: parsed.intent || 'OUTRO',
+            intent_confidence: Math.min(1, Math.max(0, parsed.confidence || 0)),
+            acao_recomendada: parsed.acao || 'NENHUMA',
+            resposta_automatica_texto: parsed.resposta_sugerida || null,
+            tokens_usados: tokens,
+            tempo_processamento_ms: tempoMs,
           });
-
-          if (response.ok) {
-            const data = await response.json();
-            const content = data.content?.[0]?.text;
-            const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
-            const tempoMs = Date.now() - startTime;
-
-            if (content) {
-              const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-              const parsed = JSON.parse(cleaned);
-              benchResult = { ...parsed, tokens, tempoMs };
-            }
-          } else {
-            const errText = await response.text();
-            console.error(`[Benchmark] Anthropic falhou:`, response.status, errText);
-          }
-        }
-
-        if (benchResult) {
-          // Salvar no banco
-          const { error: insertError } = await supabase
-            .from('ai_model_benchmarks')
-            .insert({
-              original_intent_id: intent.id,
-              message_id: intent.message_id,
-              modelo_ia: modelo,
-              intent: benchResult.intent || 'OUTRO',
-              intent_confidence: Math.min(1, Math.max(0, benchResult.confidence || 0)),
-              acao_recomendada: benchResult.acao || 'NENHUMA',
-              resposta_automatica_texto: benchResult.resposta_sugerida || null,
-              tokens_usados: benchResult.tokens || 0,
-              tempo_processamento_ms: benchResult.tempoMs || 0,
-            });
-
-          if (insertError) {
-            console.error('[Benchmark] Erro ao salvar:', insertError);
-          }
 
           results.push({
             message_id: intent.message_id,
             mensagem: msg.conteudo.substring(0, 100),
-            original: {
-              intent: intent.intent,
-              confidence: intent.intent_confidence,
-              acao: intent.acao_recomendada,
-              modelo: intent.modelo_ia,
-              tokens: intent.tokens_usados,
-              tempo_ms: intent.tempo_processamento_ms,
-            },
-            benchmark: {
-              intent: benchResult.intent,
-              confidence: benchResult.confidence,
-              acao: benchResult.acao,
-              modelo,
-              tokens: benchResult.tokens,
-              tempo_ms: benchResult.tempoMs,
-              resposta: benchResult.resposta_sugerida?.substring(0, 100) || null,
-            },
-            concordam_intent: intent.intent === benchResult.intent,
-            concordam_acao: intent.acao_recomendada === benchResult.acao,
+            original: { intent: intent.intent, confidence: intent.intent_confidence, acao: intent.acao_recomendada, modelo: intent.modelo_ia, tokens: intent.tokens_usados, tempo_ms: intent.tempo_processamento_ms },
+            benchmark: { intent: parsed.intent, confidence: parsed.confidence, acao: parsed.acao, modelo, tokens, tempo_ms: tempoMs, resposta: parsed.resposta_sugerida?.substring(0, 100) || null },
+            concordam_intent: intent.intent === parsed.intent,
+            concordam_acao: intent.acao_recomendada === parsed.acao,
           });
         }
       } catch (err) {
         console.error(`[Benchmark] Erro processando mensagem ${intent.message_id}:`, err);
-        results.push({
-          message_id: intent.message_id,
-          error: String(err),
-        });
+        results.push({ message_id: intent.message_id, error: String(err) });
       }
 
-      // Delay entre chamadas para não estourar rate limit
       await new Promise(r => setTimeout(r, 500));
     }
 
-    // Calcular métricas agregadas
+    // Métricas agregadas
     const successResults = results.filter(r => !r.error);
     const intentMatch = successResults.filter(r => r.concordam_intent).length;
     const acaoMatch = successResults.filter(r => r.concordam_acao).length;
-    
-    const avgOriginalConfidence = successResults.reduce((sum, r) => sum + (r.original?.confidence || 0), 0) / (successResults.length || 1);
-    const avgBenchmarkConfidence = successResults.reduce((sum, r) => sum + (r.benchmark?.confidence || 0), 0) / (successResults.length || 1);
-    
-    const avgOriginalTokens = successResults.reduce((sum, r) => sum + (r.original?.tokens || 0), 0) / (successResults.length || 1);
-    const avgBenchmarkTokens = successResults.reduce((sum, r) => sum + (r.benchmark?.tokens || 0), 0) / (successResults.length || 1);
-    
-    const avgOriginalTempo = successResults.reduce((sum, r) => sum + (r.original?.tempo_ms || 0), 0) / (successResults.length || 1);
-    const avgBenchmarkTempo = successResults.reduce((sum, r) => sum + (r.benchmark?.tempo_ms || 0), 0) / (successResults.length || 1);
+    const avg = (arr: any[], key: string) => arr.reduce((s, r) => s + (r?.[key] || 0), 0) / (arr.length || 1);
 
     const summary = {
       total_processadas: successResults.length,
       erros: results.filter(r => r.error).length,
       taxa_concordancia_intent: successResults.length > 0 ? (intentMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A',
       taxa_concordancia_acao: successResults.length > 0 ? (acaoMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A',
-      confianca_media_original: avgOriginalConfidence.toFixed(2),
-      confianca_media_benchmark: avgBenchmarkConfidence.toFixed(2),
-      tokens_medio_original: Math.round(avgOriginalTokens),
-      tokens_medio_benchmark: Math.round(avgBenchmarkTokens),
-      tempo_medio_original_ms: Math.round(avgOriginalTempo),
-      tempo_medio_benchmark_ms: Math.round(avgBenchmarkTempo),
+      confianca_media_original: avg(successResults.map(r => r.original), 'confidence').toFixed(2),
+      confianca_media_benchmark: avg(successResults.map(r => r.benchmark), 'confidence').toFixed(2),
+      tokens_medio_original: Math.round(avg(successResults.map(r => r.original), 'tokens')),
+      tokens_medio_benchmark: Math.round(avg(successResults.map(r => r.benchmark), 'tokens')),
+      tempo_medio_original_ms: Math.round(avg(successResults.map(r => r.original), 'tempo_ms')),
+      tempo_medio_benchmark_ms: Math.round(avg(successResults.map(r => r.benchmark), 'tempo_ms')),
       modelo_benchmark: modelo,
     };
 

@@ -1,18 +1,56 @@
+import { useState } from 'react';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSSurveys } from '@/hooks/useCSSurveys';
+import { useCSCustomers } from '@/hooks/useCSCustomers';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { ClipboardList } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Label } from '@/components/ui/label';
+import { ClipboardList, Send } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CSTrendingTopicsCard } from '@/components/cs/CSTrendingTopicsCard';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 export default function CSPesquisasPage() {
   const { data: surveys } = useCSSurveys();
+  const { data: customersData } = useCSCustomers({ is_active: true }, 0);
+  const customers = customersData?.data ?? [];
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [selectedCustomerId, setSelectedCustomerId] = useState('');
+  const [selectedTipo, setSelectedTipo] = useState<'NPS' | 'CSAT'>('NPS');
+  const [sending, setSending] = useState(false);
+
   const pendentes = surveys?.filter(s => s.respondido_em == null) ?? [];
   const respondidas = surveys?.filter(s => s.respondido_em != null) ?? [];
+
+  const handleSendSurvey = async () => {
+    if (!selectedCustomerId) {
+      toast.error('Selecione um cliente');
+      return;
+    }
+    setSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('cs-nps-auto', {
+        body: { customer_id: selectedCustomerId, tipo: selectedTipo },
+      });
+      if (error) throw error;
+      toast.success(`Pesquisa ${selectedTipo} enviada com sucesso!`);
+      setDialogOpen(false);
+      setSelectedCustomerId('');
+    } catch (err) {
+      console.error(err);
+      toast.error('Erro ao enviar pesquisa');
+    } finally {
+      setSending(false);
+    }
+  };
 
   const renderTable = (items: typeof surveys) => (
     <Card>
@@ -47,7 +85,12 @@ export default function CSPesquisasPage() {
 
   return (
     <div className="flex-1 overflow-auto">
-      <PageShell icon={ClipboardList} title="Pesquisas CS" description="NPS, CSAT e CES dos clientes" />
+      <PageShell icon={ClipboardList} title="Pesquisas CS" description="NPS, CSAT e CES dos clientes">
+        <Button onClick={() => setDialogOpen(true)} size="sm">
+          <Send className="h-4 w-4 mr-2" />
+          Enviar Pesquisa
+        </Button>
+      </PageShell>
       <div className="px-6 pb-6">
         <Tabs defaultValue="pendentes">
           <TabsList>
@@ -62,6 +105,49 @@ export default function CSPesquisasPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Enviar Pesquisa</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Cliente</Label>
+              <Select value={selectedCustomerId} onValueChange={setSelectedCustomerId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um cliente" />
+                </SelectTrigger>
+                <SelectContent>
+                  {customers.map(c => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.contact?.nome || c.id}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Tipo</Label>
+              <Select value={selectedTipo} onValueChange={(v) => setSelectedTipo(v as 'NPS' | 'CSAT')}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="NPS">NPS</SelectItem>
+                  <SelectItem value="CSAT">CSAT</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleSendSurvey} disabled={sending}>
+              {sending ? 'Enviando...' : 'Enviar'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

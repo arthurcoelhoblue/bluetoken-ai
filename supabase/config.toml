@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.cs-trending-topics]
 verify_jwt = false
+
+[functions.cs-playbook-runner]
+verify_jwt = false
