@@ -95,3 +95,6 @@ verify_jwt = false
 
 [functions.call-coach]
 verify_jwt = false
+
+[functions.capture-form-submit]
+verify_jwt = false

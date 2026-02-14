@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
+import { WebhookExternoCard } from '@/components/capture-forms/WebhookExternoCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -229,6 +230,10 @@ function BuilderContent() {
               </div>
             </CardContent>
           </Card>
+
+          {form.slug && (
+            <WebhookExternoCard slug={form.slug} />
+          )}
         </div>
       </div>
     </div>
