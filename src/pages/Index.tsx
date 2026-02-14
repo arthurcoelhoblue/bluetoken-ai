@@ -32,7 +32,7 @@ export default function Index() {
 
           {/* Title */}
           <h1 className="text-5xl font-bold mb-3">
-            <span className="text-gradient">Amelia CRM</span>
+            <span className="text-gradient">Amélia CRM</span>
           </h1>
 
           <p className="text-primary-foreground/80 text-lg mb-2">

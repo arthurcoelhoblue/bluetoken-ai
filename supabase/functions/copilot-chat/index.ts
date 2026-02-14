@@ -11,7 +11,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const SYSTEM_PROMPT = `Você é a Amélia, consultora de vendas e sucesso do cliente IA do Amelia CRM (Grupo Blue).
+const SYSTEM_PROMPT = `Você é a Amélia, consultora de vendas e sucesso do cliente IA do Amélia CRM (Grupo Blue).
 Você ajuda vendedores a fechar mais negócios e CSMs a reter clientes com insights do CRM.
 
 Diretrizes:
