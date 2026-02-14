@@ -77,3 +77,9 @@ verify_jwt = false
 
 [functions.cs-playbook-runner]
 verify_jwt = false
+
+[functions.deal-scoring]
+verify_jwt = false
+
+[functions.deal-context-summary]
+verify_jwt = false
