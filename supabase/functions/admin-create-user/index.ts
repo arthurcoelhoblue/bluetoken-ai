@@ -47,7 +47,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, nome, password, access_profile_id, empresa, gestor_id } = await req.json()
+    const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor } = await req.json()
 
     if (!email || !nome || !password) {
       return new Response(JSON.stringify({ error: 'Email, nome e senha são obrigatórios' }), {
@@ -80,14 +80,17 @@ Deno.serve(async (req) => {
       })
     }
 
-    // Set gestor_id if provided
-    if (gestor_id && newUser.user) {
-      const { error: gestorError } = await adminClient
+    // Update profile flags (gestor_id, is_vendedor)
+    if (newUser.user && (gestor_id || is_vendedor)) {
+      const profileUpdates: Record<string, unknown> = {}
+      if (gestor_id) profileUpdates.gestor_id = gestor_id
+      if (is_vendedor) profileUpdates.is_vendedor = true
+      const { error: profileError } = await adminClient
         .from('profiles')
-        .update({ gestor_id })
+        .update(profileUpdates)
         .eq('id', newUser.user.id)
-      if (gestorError) {
-        console.error('Error setting gestor:', gestorError)
+      if (profileError) {
+        console.error('Error updating profile:', profileError)
       }
     }
 

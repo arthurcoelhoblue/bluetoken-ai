@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,8 +62,24 @@ export function MetaAnualDialog({ open, onOpenChange, ano, vendedores }: Props) 
     return Array.from(map.values());
   }, [vendedores]);
 
+  // Query vendedores with is_vendedor flag for the selector
+  const { data: vendedoresAtivos = [] } = useQuery({
+    queryKey: ['vendedores-ativos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('is_active', true)
+        .eq('is_vendedor', true)
+        .order('nome');
+      if (error) throw error;
+      return (data ?? []).map(p => ({ user_id: p.id, nome: p.nome || p.id }));
+    },
+  });
+
   const handleApply = () => {
-    const targets = selectedUser === 'ALL' ? uniqueVendedores : uniqueVendedores.filter(v => v.user_id === selectedUser);
+    const allTargets = vendedoresAtivos.length > 0 ? vendedoresAtivos : uniqueVendedores;
+    const targets = selectedUser === 'ALL' ? allTargets : allTargets.filter(v => v.user_id === selectedUser);
     const metas = targets.flatMap(v =>
       distribuicao.map(d => ({
         user_id: v.user_id,
@@ -94,7 +112,7 @@ export function MetaAnualDialog({ open, onOpenChange, ano, vendedores }: Props) 
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos os vendedores</SelectItem>
-                  {uniqueVendedores.map(v => (
+                  {(vendedoresAtivos.length > 0 ? vendedoresAtivos : uniqueVendedores).map(v => (
                     <SelectItem key={v.user_id} value={v.user_id}>{v.nome}</SelectItem>
                   ))}
                 </SelectContent>

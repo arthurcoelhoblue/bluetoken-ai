@@ -19,6 +19,7 @@ function useOwnerOptions() {
         .from('profiles')
         .select('id, nome')
         .eq('is_active', true)
+        .eq('is_vendedor', true)
         .order('nome');
       if (error) throw error;
       return (data ?? []).map(p => ({ id: p.id, nome: p.nome || p.id }));

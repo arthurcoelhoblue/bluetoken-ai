@@ -90,7 +90,7 @@ export function useUsersWithProfiles() {
     queryFn: async () => {
       const { data: profiles, error: pErr } = await supabase
         .from('profiles')
-        .select('id, email, nome, avatar_url, is_active')
+        .select('id, email, nome, avatar_url, is_active, is_vendedor')
         .order('nome');
       if (pErr) throw pErr;
 

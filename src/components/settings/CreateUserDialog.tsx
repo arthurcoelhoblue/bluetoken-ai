@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useAccessProfiles } from '@/hooks/useAccessControl';
 import { supabase } from '@/integrations/supabase/client';
@@ -34,6 +35,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
   const [profileId, setProfileId] = useState('');
   const [empresa, setEmpresa] = useState('all');
   const [gestorId, setGestorId] = useState('none');
+  const [isVendedor, setIsVendedor] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const availableProfiles = profiles.filter(p => p.nome !== SUPER_ADMIN_NAME);
@@ -45,6 +47,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
     setProfileId('');
     setEmpresa('all');
     setGestorId('none');
+    setIsVendedor(false);
   };
 
   const handleSubmit = async () => {
@@ -67,6 +70,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
           access_profile_id: profileId || undefined,
           empresa: empresa === 'all' ? undefined : empresa,
           gestor_id: gestorId === 'none' ? undefined : gestorId,
+          is_vendedor: isVendedor,
         },
       });
 
@@ -134,6 +138,14 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="flex items-center justify-between rounded-lg border p-3">
+            <div className="space-y-0.5">
+              <Label>Vendedor</Label>
+              <p className="text-xs text-muted-foreground">Este usuário participa de metas, comissões e rankings</p>
+            </div>
+            <Switch checked={isVendedor} onCheckedChange={setIsVendedor} />
           </div>
 
           <div className="space-y-2">
