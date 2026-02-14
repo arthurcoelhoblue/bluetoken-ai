@@ -11,6 +11,7 @@ import { healthStatusConfig } from '@/types/customerSuccess';
 import { CSRevenueCard } from '@/components/cs/CSRevenueCard';
 import { CSTrendingTopicsCard } from '@/components/cs/CSTrendingTopicsCard';
 import { CSBenchmarkCard } from '@/components/cs/CSBenchmarkCard';
+import { CSDailyBriefingCard } from '@/components/cs/CSDailyBriefingCard';
 
 export default function CSDashboardPage() {
   const navigate = useNavigate();
@@ -39,6 +40,9 @@ export default function CSDashboardPage() {
       <PageShell icon={HeartPulse} title="Customer Success" description="Visão geral da saúde da carteira de clientes" />
 
       <div className="px-6 pb-6 space-y-6">
+        {/* Briefing IA */}
+        <CSDailyBriefingCard />
+
         {/* KPIs */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {kpis.map((kpi) => (

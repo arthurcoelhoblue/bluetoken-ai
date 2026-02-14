@@ -24,7 +24,8 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const { activeCompany } = useCompany();
   const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
 
-  const { data: contacts } = useContacts();
+  const { data: contactsData } = useContacts();
+  const contacts = contactsData?.data;
   const createDeal = useCreateDeal();
   const createContact = useCreateContact();
 
