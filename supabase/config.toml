@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.next-best-action]
 verify_jwt = false
+
+[functions.amelia-learn]
+verify_jwt = false

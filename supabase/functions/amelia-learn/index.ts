@@ -1,0 +1,510 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+serve(async (req) => {
+  if (req.method === 'OPTIONS') {
+    return new Response(null, { headers: corsHeaders });
+  }
+
+  try {
+    const { empresa, periodo_horas = 72 } = await req.json();
+    if (!empresa) {
+      return new Response(JSON.stringify({ error: 'empresa is required' }), {
+        status: 400,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, serviceKey);
+
+    const since = new Date(Date.now() - periodo_horas * 3600_000).toISOString();
+    const learnings: any[] = [];
+
+    // ========================================
+    // ANÁLISE 1: Padrões de Takeover
+    // ========================================
+    const { data: takeovers } = await supabase
+      .from('conversation_takeover_log')
+      .select('*')
+      .eq('empresa', empresa)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(200);
+
+    if (takeovers && takeovers.length >= 3) {
+      // Group by motivo
+      const byMotivo: Record<string, number> = {};
+      for (const t of takeovers) {
+        const motivo = t.motivo || 'SEM_MOTIVO';
+        byMotivo[motivo] = (byMotivo[motivo] || 0) + 1;
+      }
+      for (const [motivo, count] of Object.entries(byMotivo)) {
+        if (count >= 3) {
+          const hash = `takeover_${motivo}_${empresa}`;
+          const existing = await checkDuplicate(supabase, hash);
+          if (!existing) {
+            learnings.push({
+              empresa,
+              tipo: 'PADRAO_TAKEOVER',
+              categoria: 'conversacao',
+              titulo: `Takeover recorrente: ${motivo}`,
+              descricao: `Vendedores assumiram conversas ${count}x pelo motivo "${motivo}" nas últimas ${periodo_horas}h. Considerar automatizar este cenário.`,
+              dados: { motivo, count, periodo_horas },
+              confianca: Math.min(0.95, 0.5 + count * 0.1),
+              hash_titulo: hash,
+            });
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 2: Padrões de Perda de Deals
+    // ========================================
+    const { data: perdas } = await supabase
+      .from('deal_activities')
+      .select('deal_id, tipo, descricao, metadata, created_at')
+      .eq('tipo', 'PERDA')
+      .gte('created_at', since)
+      .limit(200);
+
+    if (perdas && perdas.length >= 3) {
+      const byCategoria: Record<string, number> = {};
+      for (const p of perdas) {
+        const cat = (p.metadata as any)?.categoria || 'SEM_CATEGORIA';
+        byCategoria[cat] = (byCategoria[cat] || 0) + 1;
+      }
+      const total = perdas.length;
+      for (const [cat, count] of Object.entries(byCategoria)) {
+        const pct = count / total;
+        if (pct >= 0.4 && count >= 3) {
+          const hash = `perda_${cat}_${empresa}`;
+          const existing = await checkDuplicate(supabase, hash);
+          if (!existing) {
+            learnings.push({
+              empresa,
+              tipo: 'PADRAO_PERDA',
+              categoria: 'pipeline',
+              titulo: `${Math.round(pct * 100)}% das perdas por "${cat}"`,
+              descricao: `${count} de ${total} deals perdidos recentemente tiveram a categoria "${cat}". Revisar abordagem comercial.`,
+              dados: { categoria: cat, count, total, pct: Math.round(pct * 100) },
+              confianca: Math.min(0.95, pct + 0.1),
+              hash_titulo: hash,
+            });
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 3: Correções de Classificação
+    // ========================================
+    const { data: corrections } = await supabase
+      .from('lead_classifications' as any)
+      .select('*')
+      .eq('empresa', empresa)
+      .gte('created_at', since)
+      .limit(200);
+
+    if (corrections && corrections.length >= 5) {
+      // Count temperature corrections
+      let tempCorrections = 0;
+      for (const c of corrections) {
+        if ((c as any).temperatura_anterior && (c as any).temperatura !== (c as any).temperatura_anterior) {
+          tempCorrections++;
+        }
+      }
+      if (tempCorrections >= 3) {
+        const hash = `correcao_temp_${empresa}`;
+        const existing = await checkDuplicate(supabase, hash);
+        if (!existing) {
+          learnings.push({
+            empresa,
+            tipo: 'CORRECAO_CLASSIFICACAO',
+            categoria: 'classificacao',
+            titulo: `${tempCorrections} correções de temperatura recentes`,
+            descricao: `Humanos corrigiram a temperatura da IA ${tempCorrections}x. Revisar critérios de classificação automática.`,
+            dados: { tempCorrections, total: corrections.length },
+            confianca: Math.min(0.9, 0.5 + tempCorrections * 0.05),
+            hash_titulo: hash,
+          });
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 4: Deals sem atividade (Alerta Crítico)
+    // ========================================
+    const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
+    const { data: inactiveDeals } = await supabase
+      .from('deals')
+      .select('id, titulo, owner_id, updated_at, contacts!inner(nome)')
+      .eq('status', 'ABERTO')
+      .lt('updated_at', twoDaysAgo)
+      .limit(20);
+
+    if (inactiveDeals) {
+      for (const deal of inactiveDeals) {
+        const hash = `inativo_${deal.id}`;
+        const existing = await checkDuplicate(supabase, hash);
+        if (!existing) {
+          learnings.push({
+            empresa,
+            tipo: 'ALERTA_CRITICO',
+            categoria: 'pipeline',
+            titulo: `Deal "${deal.titulo}" sem atividade há 48h+`,
+            descricao: `O deal de ${(deal.contacts as any)?.nome} está sem atividade. Risco de perda por inação.`,
+            dados: { deal_id: deal.id, owner_id: deal.owner_id },
+            confianca: 0.85,
+            hash_titulo: hash,
+          });
+
+          // Create notification for owner
+          if (deal.owner_id) {
+            await supabase.from('notifications').insert({
+              user_id: deal.owner_id,
+              empresa,
+              tipo: 'AMELIA_ALERTA',
+              titulo: `Deal "${deal.titulo}" sem atividade`,
+              mensagem: `Há mais de 48h sem atividade. Ação recomendada para evitar perda.`,
+              link: `/pipeline`,
+              entity_id: deal.id,
+              entity_type: 'deal',
+            });
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 5: Leads quentes sem followup (Alerta Crítico)
+    // ========================================
+    const fourHoursAgo = new Date(Date.now() - 4 * 3600_000).toISOString();
+    const { data: hotIntents } = await supabase
+      .from('lead_message_intents')
+      .select('lead_id, empresa, created_at')
+      .eq('empresa', empresa)
+      .eq('intent', 'INTERESSE_COMPRA')
+      .lt('created_at', fourHoursAgo)
+      .gte('created_at', since)
+      .limit(20);
+
+    if (hotIntents) {
+      for (const intent of hotIntents) {
+        // Check if there's a followup
+        const { data: followup } = await supabase
+          .from('lead_messages')
+          .select('id')
+          .eq('lead_id', intent.lead_id)
+          .eq('direcao', 'OUTBOUND')
+          .gt('created_at', intent.created_at)
+          .limit(1);
+
+        if (!followup || followup.length === 0) {
+          const hash = `hot_nofollowup_${intent.lead_id}`;
+          const existing = await checkDuplicate(supabase, hash);
+          if (!existing) {
+            learnings.push({
+              empresa,
+              tipo: 'ALERTA_CRITICO',
+              categoria: 'conversacao',
+              titulo: `Lead quente sem followup há 4h+`,
+              descricao: `Lead demonstrou INTERESSE_COMPRA mas não recebeu followup. Ação imediata recomendada.`,
+              dados: { lead_id: intent.lead_id },
+              confianca: 0.9,
+              hash_titulo: hash,
+            });
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 6: Mineração de Sequências (Perda)
+    // ========================================
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString();
+    const { data: lostDeals } = await supabase
+      .from('deals')
+      .select('id, contact_id, titulo')
+      .eq('status', 'PERDIDO')
+      .gte('updated_at', ninetyDaysAgo)
+      .limit(30);
+
+    if (lostDeals && lostDeals.length >= 5) {
+      const timelines: { dealId: string; titulo: string; events: string[] }[] = [];
+
+      for (const deal of lostDeals.slice(0, 20)) {
+        const { data: activities } = await supabase
+          .from('deal_activities')
+          .select('tipo, created_at')
+          .eq('deal_id', deal.id)
+          .order('created_at', { ascending: true })
+          .limit(20);
+
+        if (activities && activities.length >= 2) {
+          timelines.push({
+            dealId: deal.id,
+            titulo: deal.titulo,
+            events: activities.map(a => a.tipo),
+          });
+        }
+      }
+
+      if (timelines.length >= 5) {
+        // Find common subsequences using AI
+        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+        if (LOVABLE_API_KEY) {
+          try {
+            const prompt = `Analise estas timelines de deals que foram PERDIDOS e identifique subsequências de 2-4 eventos que aparecem em 50%+ dos casos. Cada timeline é uma lista de tipos de atividade em ordem cronológica.
+
+Timelines:
+${timelines.map((t, i) => `${i + 1}. ${t.events.join(' → ')}`).join('\n')}
+
+Retorne APENAS um JSON com tool_calls. Para cada padrão encontrado, use a tool "report_sequence" com: events (array de strings), match_pct (number 0-100), window_days (number estimado), description (string em PT-BR).`;
+
+            const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'google/gemini-3-flash-preview',
+                messages: [
+                  { role: 'system', content: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM.' },
+                  { role: 'user', content: prompt },
+                ],
+                tools: [{
+                  type: 'function',
+                  function: {
+                    name: 'report_sequence',
+                    description: 'Report a detected event sequence pattern',
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        sequences: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              events: { type: 'array', items: { type: 'string' } },
+                              match_pct: { type: 'number' },
+                              window_days: { type: 'number' },
+                              description: { type: 'string' },
+                            },
+                            required: ['events', 'match_pct', 'window_days', 'description'],
+                          },
+                        },
+                      },
+                      required: ['sequences'],
+                    },
+                  },
+                }],
+                tool_choice: { type: 'function', function: { name: 'report_sequence' } },
+              }),
+            });
+
+            if (aiResponse.ok) {
+              const aiData = await aiResponse.json();
+              const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+              if (toolCall) {
+                const args = JSON.parse(toolCall.function.arguments);
+                for (const seq of (args.sequences || [])) {
+                  if (seq.match_pct >= 50 && seq.events.length >= 2) {
+                    const hash = `seq_perda_${seq.events.join('_')}_${empresa}`;
+                    const existing = await checkDuplicate(supabase, hash);
+                    if (!existing) {
+                      learnings.push({
+                        empresa,
+                        tipo: 'SEQUENCIA_PERDA',
+                        categoria: 'sequencia',
+                        titulo: `Sequência de perda: ${seq.events.join(' → ')}`,
+                        descricao: seq.description,
+                        dados: { timelines_analyzed: timelines.length },
+                        confianca: Math.min(0.95, seq.match_pct / 100),
+                        sequencia_eventos: seq.events,
+                        sequencia_match_pct: seq.match_pct,
+                        sequencia_janela_dias: seq.window_days,
+                        hash_titulo: hash,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (aiErr) {
+            console.error('[amelia-learn] AI sequence analysis error:', aiErr);
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // ANÁLISE 6B: Mineração de Sequências (Churn)
+    // ========================================
+    const { data: churnLeads } = await supabase
+      .from('contacts')
+      .select('legacy_lead_id')
+      .eq('empresa', empresa)
+      .eq('opt_out', true)
+      .gte('opt_out_em', ninetyDaysAgo)
+      .limit(20);
+
+    if (churnLeads && churnLeads.length >= 3) {
+      const churnTimelines: { leadId: string; intents: string[] }[] = [];
+
+      for (const lead of churnLeads) {
+        if (!lead.legacy_lead_id) continue;
+        const { data: intents } = await supabase
+          .from('lead_message_intents')
+          .select('intent, created_at')
+          .eq('lead_id', lead.legacy_lead_id)
+          .order('created_at', { ascending: true })
+          .limit(15);
+
+        if (intents && intents.length >= 2) {
+          churnTimelines.push({
+            leadId: lead.legacy_lead_id,
+            intents: intents.map(i => i.intent),
+          });
+        }
+      }
+
+      if (churnTimelines.length >= 3) {
+        const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+        if (LOVABLE_API_KEY) {
+          try {
+            const prompt = `Analise estas timelines de leads que fizeram OPT-OUT (cancelamento). Identifique subsequências de 2-4 intents que precedem o cancelamento em 50%+ dos casos.
+
+Timelines de intents:
+${churnTimelines.map((t, i) => `${i + 1}. ${t.intents.join(' → ')}`).join('\n')}
+
+Retorne APENAS via tool_calls.`;
+
+            const aiResponse = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'google/gemini-3-flash-preview',
+                messages: [
+                  { role: 'system', content: 'Analista de padrões de churn em CRM.' },
+                  { role: 'user', content: prompt },
+                ],
+                tools: [{
+                  type: 'function',
+                  function: {
+                    name: 'report_sequence',
+                    description: 'Report churn sequence pattern',
+                    parameters: {
+                      type: 'object',
+                      properties: {
+                        sequences: {
+                          type: 'array',
+                          items: {
+                            type: 'object',
+                            properties: {
+                              events: { type: 'array', items: { type: 'string' } },
+                              match_pct: { type: 'number' },
+                              window_days: { type: 'number' },
+                              description: { type: 'string' },
+                            },
+                            required: ['events', 'match_pct', 'window_days', 'description'],
+                          },
+                        },
+                      },
+                      required: ['sequences'],
+                    },
+                  },
+                }],
+                tool_choice: { type: 'function', function: { name: 'report_sequence' } },
+              }),
+            });
+
+            if (aiResponse.ok) {
+              const aiData = await aiResponse.json();
+              const toolCall = aiData.choices?.[0]?.message?.tool_calls?.[0];
+              if (toolCall) {
+                const args = JSON.parse(toolCall.function.arguments);
+                for (const seq of (args.sequences || [])) {
+                  if (seq.match_pct >= 50 && seq.events.length >= 2) {
+                    const hash = `seq_churn_${seq.events.join('_')}_${empresa}`;
+                    const existing = await checkDuplicate(supabase, hash);
+                    if (!existing) {
+                      learnings.push({
+                        empresa,
+                        tipo: 'SEQUENCIA_CHURN',
+                        categoria: 'sequencia',
+                        titulo: `Sequência de churn: ${seq.events.join(' → ')}`,
+                        descricao: seq.description,
+                        dados: { timelines_analyzed: churnTimelines.length },
+                        confianca: Math.min(0.95, seq.match_pct / 100),
+                        sequencia_eventos: seq.events,
+                        sequencia_match_pct: seq.match_pct,
+                        sequencia_janela_dias: seq.window_days,
+                        hash_titulo: hash,
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (aiErr) {
+            console.error('[amelia-learn] AI churn sequence error:', aiErr);
+          }
+        }
+      }
+    }
+
+    // ========================================
+    // SAVE ALL LEARNINGS
+    // ========================================
+    if (learnings.length > 0) {
+      const { error: insertError } = await supabase
+        .from('amelia_learnings')
+        .insert(learnings.slice(0, 10)); // Max 10 per run
+
+      if (insertError) {
+        console.error('[amelia-learn] Insert error:', insertError);
+      }
+    }
+
+    console.log(`[amelia-learn] ${empresa}: ${learnings.length} learnings generated`);
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        empresa,
+        learnings_count: learnings.length,
+        types: learnings.map(l => l.tipo),
+      }),
+      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+
+  } catch (error) {
+    console.error('[amelia-learn] Error:', error);
+    return new Response(
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+    );
+  }
+});
+
+async function checkDuplicate(supabase: any, hash: string): Promise<boolean> {
+  const { data } = await supabase
+    .from('amelia_learnings')
+    .select('id')
+    .eq('hash_titulo', hash)
+    .limit(1)
+    .maybeSingle();
+  return !!data;
+}

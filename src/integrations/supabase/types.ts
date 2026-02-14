@@ -133,6 +133,98 @@ export type Database = {
           },
         ]
       }
+      amelia_learnings: {
+        Row: {
+          aplicado: boolean | null
+          categoria: string
+          confianca: number | null
+          created_at: string
+          dados: Json | null
+          descricao: string
+          empresa: string
+          hash_titulo: string | null
+          id: string
+          sequencia_eventos: Json | null
+          sequencia_janela_dias: number | null
+          sequencia_match_pct: number | null
+          status: string
+          tipo: string
+          titulo: string
+          updated_at: string
+          validado_em: string | null
+          validado_por: string | null
+        }
+        Insert: {
+          aplicado?: boolean | null
+          categoria: string
+          confianca?: number | null
+          created_at?: string
+          dados?: Json | null
+          descricao: string
+          empresa: string
+          hash_titulo?: string | null
+          id?: string
+          sequencia_eventos?: Json | null
+          sequencia_janela_dias?: number | null
+          sequencia_match_pct?: number | null
+          status?: string
+          tipo: string
+          titulo: string
+          updated_at?: string
+          validado_em?: string | null
+          validado_por?: string | null
+        }
+        Update: {
+          aplicado?: boolean | null
+          categoria?: string
+          confianca?: number | null
+          created_at?: string
+          dados?: Json | null
+          descricao?: string
+          empresa?: string
+          hash_titulo?: string | null
+          id?: string
+          sequencia_eventos?: Json | null
+          sequencia_janela_dias?: number | null
+          sequencia_match_pct?: number | null
+          status?: string
+          tipo?: string
+          titulo?: string
+          updated_at?: string
+          validado_em?: string | null
+          validado_por?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "amelia_learnings_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "amelia_learnings_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "amelia_learnings_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "amelia_learnings_validado_por_fkey"
+            columns: ["validado_por"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       cadence_runner_logs: {
         Row: {
           details: Json | null

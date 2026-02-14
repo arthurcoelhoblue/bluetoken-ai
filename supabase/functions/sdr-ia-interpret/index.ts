@@ -2479,6 +2479,35 @@ O AGENTE SEMPRE DEVE:
     });
   }
 
+  // ========================================
+  // AMELIA LEARNING: Inject validated learnings into context
+  // ========================================
+  try {
+    const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
+    const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    
+    const { data: validatedLearnings } = await supabaseAdmin
+      .from('amelia_learnings')
+      .select('titulo, descricao, tipo, confianca')
+      .eq('empresa', empresa)
+      .eq('status', 'VALIDADO')
+      .eq('aplicado', true)
+      .order('confianca', { ascending: false })
+      .limit(10);
+
+    if (validatedLearnings && validatedLearnings.length > 0) {
+      userPrompt += `\n## 🧠 APRENDIZADOS VALIDADOS DA AMÉLIA\n`;
+      userPrompt += `Use estes padrões para ajustar seu comportamento:\n\n`;
+      for (const l of validatedLearnings) {
+        userPrompt += `- [${l.tipo}] ${l.titulo}: ${l.descricao}\n`;
+      }
+      console.log('[AMELIA-LEARN] Injected', validatedLearnings.length, 'validated learnings');
+    }
+  } catch (learnErr) {
+    console.error('[AMELIA-LEARN] Error fetching learnings:', learnErr);
+  }
+
   userPrompt += `\n## MENSAGEM A INTERPRETAR:\n"${mensagem}"`;
 
   console.log('[IA] Enviando para interpretação:', { 
@@ -3938,6 +3967,82 @@ serve(async (req) => {
     );
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
+
+    // ========================================
+    // AMELIA LEARNING: Check sequence match
+    // ========================================
+    if (message.lead_id && aiResponse.intent) {
+      try {
+        // Fetch validated sequences for this empresa
+        const { data: sequences } = await supabase
+          .from('amelia_learnings')
+          .select('id, titulo, descricao, sequencia_eventos, sequencia_match_pct, tipo')
+          .eq('empresa', message.empresa)
+          .in('tipo', ['SEQUENCIA_PERDA', 'SEQUENCIA_CHURN'])
+          .eq('status', 'VALIDADO')
+          .not('sequencia_eventos', 'is', null)
+          .limit(20);
+
+        if (sequences && sequences.length > 0) {
+          // Get recent intents for this lead
+          const { data: recentIntents } = await supabase
+            .from('lead_message_intents')
+            .select('intent')
+            .eq('lead_id', message.lead_id)
+            .order('created_at', { ascending: false })
+            .limit(10);
+
+          const recentIntentList = (recentIntents || []).map((i: any) => i.intent).reverse();
+          // Add current intent
+          recentIntentList.push(aiResponse.intent);
+
+          for (const seq of sequences) {
+            const seqEvents = seq.sequencia_eventos as string[];
+            if (!seqEvents || seqEvents.length < 2) continue;
+
+            // Check how many events from the sequence are present in recent intents
+            let matched = 0;
+            for (const ev of seqEvents) {
+              if (recentIntentList.includes(ev)) matched++;
+            }
+
+            const matchRatio = matched / seqEvents.length;
+            if (matchRatio >= 0.5) {
+              console.log('[AMELIA-SEQ] Sequence match detected:', {
+                sequence: seqEvents,
+                matched,
+                total: seqEvents.length,
+                matchPct: seq.sequencia_match_pct,
+              });
+
+              // Get lead owner for notification
+              const { data: leadContact } = await supabase
+                .from('contacts')
+                .select('owner_id, nome')
+                .eq('legacy_lead_id', message.lead_id)
+                .limit(1)
+                .maybeSingle();
+
+              if (leadContact?.owner_id) {
+                await supabase.from('notifications').insert({
+                  user_id: leadContact.owner_id,
+                  empresa: message.empresa,
+                  tipo: 'AMELIA_SEQUENCIA',
+                  titulo: `⛓️ Padrão de risco: ${leadContact.nome || 'Lead'}`,
+                  mensagem: `${matched}/${seqEvents.length} eventos de "${seq.titulo}" detectados (${seq.sequencia_match_pct}% histórico). Ação recomendada.`,
+                  link: `/leads/${message.lead_id}`,
+                  entity_id: message.lead_id,
+                  entity_type: 'lead',
+                });
+              }
+              break; // Only one notification per interpretation
+            }
+          }
+        }
+      } catch (seqErr) {
+        console.error('[AMELIA-SEQ] Sequence check error:', seqErr);
+      }
+    }
 
     // 7. Salvar estado de conversa atualizado
     if (message.lead_id && (aiResponse.novo_estado_funil || aiResponse.frameworks_atualizados || aiResponse.disc_estimado)) {

@@ -26,6 +26,7 @@ import {
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { WorkbenchGamificationCard } from '@/components/gamification/WorkbenchGamificationCard';
 import { NextBestActionCard } from '@/components/workbench/NextBestActionCard';
+import { AmeliaInsightsCard } from '@/components/workbench/AmeliaInsightsCard';
 import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
 import { toast } from 'sonner';
 
@@ -108,6 +109,9 @@ function WorkbenchContent() {
             </div>
           )}
         </div>
+
+        {/* Amelia Insights */}
+        <AmeliaInsightsCard />
 
         {/* Next Best Action */}
         <NextBestActionCard />
