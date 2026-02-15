@@ -2179,8 +2179,23 @@ async function interpretWithAI(
   const startTime = Date.now();
   const isPassiveChat = mode === 'PASSIVE_CHAT';
 
+  // Try loading dynamic prompt from prompt_versions
+  let dynamicPrompt = '';
+  try {
+    const pvSupa = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const { data: pv } = await pvSupa
+      .from('prompt_versions')
+      .select('content')
+      .eq('function_name', 'sdr-ia-interpret')
+      .eq('prompt_key', 'system')
+      .eq('is_active', true)
+      .limit(1)
+      .maybeSingle();
+    if (pv?.content) dynamicPrompt = pv.content;
+  } catch (pvErr) { console.warn('[SDR-IA] prompt_versions lookup failed:', pvErr); }
+
   // Selecionar system prompt baseado no modo
-  const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : SYSTEM_PROMPT;
+  const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
 
   // FASE 6: Detectar cliente de renovação pelo nome
   if (leadNome) {
@@ -4036,6 +4051,21 @@ serve(async (req) => {
     );
 
     console.log('[SDR-IA] Interpretação salva:', intentId);
+
+    // Log AI usage
+    try {
+      await supabase.from('ai_usage_log').insert({
+        function_name: 'sdr-ia-interpret',
+        provider: modeloUsado.includes('claude') ? 'CLAUDE' : modeloUsado.includes('gemini') ? 'GEMINI' : modeloUsado.includes('gpt') ? 'OPENAI' : 'UNKNOWN',
+        model: modeloUsado,
+        tokens_input: null,
+        tokens_output: null,
+        success: true,
+        latency_ms: tempoMs,
+        custo_estimado: 0,
+        empresa: message.empresa || null,
+      });
+    } catch (logErr) { console.warn('[SDR-IA] ai_usage_log error:', logErr); }
 
     // ========================================
     // AMELIA LEARNING: Check sequence match

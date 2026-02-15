@@ -9,7 +9,22 @@ async function callAI(googleApiKey: string | undefined, anthropicKey: string | u
   const { system, temperature = 0.3, maxTokens = 2000 } = options;
   const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
 
-  // Try Gemini first
+  // Try Claude first (Primary)
+  if (anthropicKey) {
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, temperature, ...(system ? { system } : {}), messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!resp.ok) throw new Error(`Claude ${resp.status}`);
+      const data = await resp.json();
+      const text = data.content?.[0]?.text ?? '';
+      if (text) return text;
+    } catch (e) { console.warn('[deal-loss-analysis] Claude failed:', e); }
+  }
+
+  // Fallback to Gemini
   if (googleApiKey) {
     try {
       const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
@@ -26,33 +41,6 @@ async function callAI(googleApiKey: string | undefined, anthropicKey: string | u
       if (text) return text;
     } catch (e) {
       console.warn('[deal-loss-analysis] Gemini failed:', e);
-    }
-  }
-
-  // Fallback to Claude
-  if (anthropicKey) {
-    try {
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: maxTokens,
-          temperature,
-          ...(system ? { system } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-      if (!resp.ok) throw new Error(`Claude ${resp.status}: ${await resp.text()}`);
-      const data = await resp.json();
-      const text = data.content?.[0]?.text ?? '';
-      if (text) return text;
-    } catch (e) {
-      console.warn('[deal-loss-analysis] Claude failed:', e);
     }
   }
 
@@ -106,6 +94,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json()
     const supabase = createClient(supabaseUrl, serviceRoleKey)
+    const dlStartMs = Date.now();
 
     // ─── MODE: PORTFOLIO ───────────────────────────────
     if (body.mode === 'portfolio') {
@@ -292,6 +281,15 @@ Responda APENAS com o JSON, sem markdown.`
     }
 
     await supabase.from('deals').update(updates).eq('id', deal_id)
+
+    // Log AI usage
+    try {
+      await supabase.from('ai_usage_log').insert({
+        function_name: 'deal-loss-analysis', provider: ANTHROPIC_API_KEY ? 'CLAUDE' : 'GEMINI', model: ANTHROPIC_API_KEY ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview',
+        tokens_input: null, tokens_output: null, success: true,
+        latency_ms: Date.now() - dlStartMs, custo_estimado: 0, empresa: null,
+      });
+    } catch (logErr) { console.warn('[deal-loss-analysis] ai_usage_log error:', logErr); }
 
     return new Response(JSON.stringify({ success: true, categoria_ia, match, auto_resolved: match }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
   } catch (err) {

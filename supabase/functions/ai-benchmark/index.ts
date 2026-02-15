@@ -95,29 +95,10 @@ Retorne APENAS o JSON, sem markdown.`;
       try {
         let content = '';
         let tokens = 0;
+        let bmProvider = '';
 
-        // Try Gemini first
-        if (GOOGLE_API_KEY) {
-          try {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `${benchmarkSystemPrompt}\n\n${userPrompt}` }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-              }),
-            });
-            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-            const data = await resp.json();
-            content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            tokens = data.usageMetadata?.totalTokenCount || 0;
-          } catch (e) {
-            console.warn('[Benchmark] Gemini failed:', e);
-          }
-        }
-
-        // Fallback to Claude
-        if (!content && ANTHROPIC_API_KEY) {
+        // Try Claude first (Primary)
+        if (ANTHROPIC_API_KEY) {
           try {
             const response = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
@@ -138,11 +119,33 @@ Retorne APENAS o JSON, sem markdown.`;
               const data = await response.json();
               content = data.content?.[0]?.text || '';
               tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+              bmProvider = 'CLAUDE';
             } else {
               console.error('[Benchmark] Claude error:', response.status);
             }
           } catch (claudeErr) {
             console.error('[Benchmark] Claude exception:', claudeErr);
+          }
+        }
+
+        // Fallback to Gemini
+        if (!content && GOOGLE_API_KEY) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${benchmarkSystemPrompt}\n\n${userPrompt}` }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+              }),
+            });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            tokens = data.usageMetadata?.totalTokenCount || 0;
+            bmProvider = 'GEMINI';
+          } catch (e) {
+            console.warn('[Benchmark] Gemini fallback failed:', e);
           }
         }
 

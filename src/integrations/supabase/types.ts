@@ -133,6 +133,33 @@ export type Database = {
           },
         ]
       }
+      ai_rate_limits: {
+        Row: {
+          call_count: number
+          created_at: string
+          function_name: string
+          id: string
+          user_id: string | null
+          window_start: string
+        }
+        Insert: {
+          call_count?: number
+          created_at?: string
+          function_name: string
+          id?: string
+          user_id?: string | null
+          window_start?: string
+        }
+        Update: {
+          call_count?: number
+          created_at?: string
+          function_name?: string
+          id?: string
+          user_id?: string | null
+          window_start?: string
+        }
+        Relationships: []
+      }
       ai_usage_log: {
         Row: {
           created_at: string | null
@@ -6809,6 +6836,7 @@ export type Database = {
       }
     }
     Functions: {
+      cleanup_old_rate_limits: { Args: never; Returns: undefined }
       fn_calc_deal_score: { Args: { p_deal_id: string }; Returns: number }
       get_user_empresa: { Args: { _user_id: string }; Returns: string }
       get_user_roles: {

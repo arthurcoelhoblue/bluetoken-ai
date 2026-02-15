@@ -129,6 +129,23 @@ serve(async (req) => {
 
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+
+    // Try loading dynamic prompt from prompt_versions
+    let dynamicPrompt = '';
+    try {
+      const { data: pv } = await supabase
+        .from('prompt_versions')
+        .select('content')
+        .eq('function_name', 'copilot-chat')
+        .eq('prompt_key', 'system')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      if (pv?.content) dynamicPrompt = pv.content;
+    } catch (pvErr) { console.warn('[Copilot] prompt_versions lookup failed:', pvErr); }
+
+    const ACTIVE_SYSTEM_PROMPT = dynamicPrompt || SYSTEM_PROMPT;
+
     if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
       console.error('[Copilot] Nenhuma API key de IA configurada');
       return new Response(
@@ -212,8 +229,8 @@ serve(async (req) => {
     }
 
     const systemContent = contextBlock
-      ? `${SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
-      : SYSTEM_PROMPT;
+      ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
+      : ACTIVE_SYSTEM_PROMPT;
 
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 

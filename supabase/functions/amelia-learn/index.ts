@@ -10,6 +10,22 @@ async function callAI(googleApiKey: string | undefined, anthropicKey: string | u
   const { system, temperature = 0.3, maxTokens = 1500 } = options;
   const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
 
+  // Try Claude first (Primary)
+  if (anthropicKey) {
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, temperature, ...(system ? { system } : {}), messages: [{ role: 'user', content: prompt }] }),
+      });
+      if (!resp.ok) throw new Error(`Claude ${resp.status}`);
+      const data = await resp.json();
+      const text = data.content?.[0]?.text ?? '';
+      if (text) return text;
+    } catch (e) { console.warn('[amelia-learn] Claude failed:', e); }
+  }
+
+  // Fallback to Gemini
   if (googleApiKey) {
     try {
       const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
@@ -26,32 +42,6 @@ async function callAI(googleApiKey: string | undefined, anthropicKey: string | u
       if (text) return text;
     } catch (e) {
       console.warn('[amelia-learn] Gemini failed:', e);
-    }
-  }
-
-  if (anthropicKey) {
-    try {
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': anthropicKey,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: maxTokens,
-          temperature,
-          ...(system ? { system } : {}),
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      });
-      if (!resp.ok) throw new Error(`Claude ${resp.status}`);
-      const data = await resp.json();
-      const text = data.content?.[0]?.text ?? '';
-      if (text) return text;
-    } catch (e) {
-      console.warn('[amelia-learn] Claude failed:', e);
     }
   }
 
