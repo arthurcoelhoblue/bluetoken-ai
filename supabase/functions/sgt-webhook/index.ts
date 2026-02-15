@@ -2129,14 +2129,25 @@ serve(async (req) => {
               } as Record<string, unknown>);
 
               if (isPriority || temperatura === 'QUENTE') {
-                await supabase.from('notifications').insert({
-                  tipo: 'DEAL_NOVO_PRIORITARIO',
-                  titulo: isPriority ? '🔥 Lead pediu atendimento urgente!' : '🔥 Lead QUENTE entrou no pipeline!',
-                  mensagem: `${leadNormalizado.nome} — ${payload.empresa}`,
-                  empresa: payload.empresa,
-                  link: `/pipeline?deal=${newDeal.id}`,
-                  metadata: { deal_id: newDeal.id, temperatura, lead_id: payload.lead_id },
-                } as Record<string, unknown>);
+                // Find admins/closers to notify (BUG 5 fix: notifications need user_id)
+                const { data: adminRoles } = await supabase
+                  .from('user_roles')
+                  .select('user_id')
+                  .in('role', ['ADMIN', 'CLOSER'])
+                  .limit(10);
+                for (const admin of adminRoles ?? []) {
+                  await supabase.from('notifications').insert({
+                    user_id: admin.user_id,
+                    tipo: 'DEAL_NOVO_PRIORITARIO',
+                    titulo: isPriority ? '🔥 Lead pediu atendimento urgente!' : '🔥 Lead QUENTE entrou no pipeline!',
+                    mensagem: `${leadNormalizado.nome} — ${payload.empresa}`,
+                    empresa: payload.empresa,
+                    link: `/pipeline?deal=${newDeal.id}`,
+                    entity_id: newDeal.id,
+                    entity_type: 'deal',
+                    metadata: { deal_id: newDeal.id, temperatura, lead_id: payload.lead_id },
+                  } as Record<string, unknown>);
+                }
               }
 
               if (temperatura === 'FRIO' && convState?.modo !== 'MANUAL') {

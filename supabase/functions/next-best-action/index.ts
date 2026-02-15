@@ -53,9 +53,9 @@ serve(async (req) => {
       supabase.from('cs_customers').select('id, health_score, health_status, proxima_renovacao, contacts!inner(nome)')
         .or('health_score.lt.60,proxima_renovacao.lte.' + new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0])
         .eq('is_active', true).limit(10),
-      // NEW: Active cadence runs
-      supabase.from('cadence_runs').select('id, status, deal_id, deals(titulo)')
-        .eq('status', 'ATIVA').limit(10),
+      // Active cadence runs (via deal_cadence_runs bridge)
+      supabase.from('deal_cadence_runs').select('id, status, deal_id, deals(titulo)')
+        .eq('status', 'ACTIVE').limit(10),
       // NEW: Recent sentiment from lead messages
       supabase.from('lead_message_intents').select('lead_id, intent, sentimento, created_at')
         .not('sentimento', 'is', null)

@@ -93,11 +93,11 @@ async function autoDetectTriggers(supabase: any) {
     created += await createRunIfNew(supabase, 'RENEWAL_NEAR', r.id, r.empresa);
   }
 
-  // 4. Incident critical: cs_incidents with severidade ALTA or CRITICA in last 24h
+  // 4. Incident critical: cs_incidents with gravidade ALTA or CRITICA in last 24h
   const { data: incidents } = await supabase
     .from('cs_incidents')
     .select('customer_id, empresa')
-    .in('severidade', ['ALTA', 'CRITICA'])
+    .in('gravidade', ['ALTA', 'CRITICA'])
     .gte('created_at', new Date(Date.now() - 24 * 3600000).toISOString());
 
   for (const inc of incidents ?? []) {
@@ -356,13 +356,13 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
         // If health is bad, notify manager
         if ((customer.health_score ?? 100) < 50) {
           const { data: admins } = await supabase
-            .from('profiles')
-            .select('id')
+            .from('user_roles')
+            .select('user_id')
             .eq('role', 'ADMIN')
             .limit(3);
           for (const admin of admins ?? []) {
             await supabase.from('notifications').insert({
-              user_id: admin.id,
+              user_id: admin.user_id,
               empresa,
               tipo: 'CS_RISCO_RENOVACAO',
               titulo: `⚠️ Renovação em risco: ${contact?.nome}`,
