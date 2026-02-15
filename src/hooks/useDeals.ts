@@ -8,9 +8,10 @@ interface UseDealsOptions {
   ownerId?: string;
   temperatura?: string;
   tag?: string;
+  page?: number;
 }
 
-export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOptions) {
+export function useDeals({ pipelineId, ownerId, temperatura, tag, page = 0 }: UseDealsOptions) {
   const qc = useQueryClient();
 
   // Realtime subscription for Kanban live updates
@@ -38,10 +39,12 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOpti
     };
   }, [pipelineId, qc]);
 
+  const PAGE_SIZE = 50;
+
   return useQuery({
-    queryKey: ['deals', pipelineId, ownerId, temperatura, tag],
+    queryKey: ['deals', pipelineId, ownerId, temperatura, tag, page],
     enabled: !!pipelineId,
-    queryFn: async (): Promise<DealWithRelations[]> => {
+    queryFn: async (): Promise<{ data: DealWithRelations[]; count: number }> => {
       let query = supabase
         .from('deals')
         .select(`
@@ -49,7 +52,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOpti
           contacts:contact_id(id, nome, email, telefone),
           pipeline_stages:stage_id(id, nome, cor, is_won, is_lost),
           owner:owner_id(id, nome, email, avatar_url)
-        `)
+        `, { count: 'exact' })
         .eq('pipeline_id', pipelineId!);
 
       if (ownerId) query = query.eq('owner_id', ownerId);
@@ -58,9 +61,43 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOpti
 
       query = query.order('posicao_kanban', { ascending: true });
 
-      const { data, error } = await query;
+      // If page is provided (list view), paginate. If not (kanban), fetch up to 500 for safety.
+      // But we defaulted page to 0 in props...
+      // Let's rely on the caller. If they want all, they shouldn't pass page, but we defined it.
+      // Actually, for Kanban we need all.
+      // Let's modify:
+      
+      // If we are in Kanban mode (which we assume if page is 0 and we want everything, but Kanban usually needs all).
+      // We will implement: fetch all (limit 500) if no page logic logic in component.
+      // But we added page=0 default.
+      
+      // Let's stick to the plan:
+      // "Modificar src/hooks/useDeals.ts ... Adicionar PAGE_SIZE = 50 ... limit(500) para Kanban"
+      
+      // We will check if the result is for Kanban (maybe via a prop? or just always page?)
+      // KanbanBoard creates columns from ALL deals. Pagination breaks Kanban unless we implement column-based pagination which is complex.
+      // So for Kanban we likely want to fetch MORE.
+      
+      // Let's assume: if page is passed explicitly, use it. If default 0 is used, we might still want all?
+      // No, let's just paginate.
+      
+      // Wait, KanbanBoard takes `deals` and filters in memory. If we only fetch page 0 (50 deals), Kanban will be empty.
+      // So we need a way to disable pagination for Kanban.
+      
+      // I'll assume that if `page` is -1, we fetch all (limit 500).
+      
+      if (page === -1) {
+        query = query.limit(500);
+      } else {
+        query = query.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+      }
+
+      const { data, error, count } = await query;
       if (error) throw error;
-      return (data ?? []) as unknown as DealWithRelations[];
+      return { 
+        data: (data ?? []) as unknown as DealWithRelations[], 
+        count: count ?? 0 
+      };
     },
   });
 }

@@ -10,6 +10,7 @@ import { Loader2, Send, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { sendEmailSchema, type SendEmailFormData } from '@/schemas/email';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 interface Props {
   open: boolean;
@@ -23,6 +24,7 @@ interface Props {
 
 export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, contactNome, dealTitulo, onSent }: Props) {
   const [isGenerating, setIsGenerating] = useState(false);
+  const { trackFeatureUse } = useAnalyticsEvents();
   const form = useForm<SendEmailFormData>({
     resolver: zodResolver(sendEmailSchema),
     defaultValues: { to: contactEmail || '', subject: '', body: '' },
@@ -94,6 +96,7 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
       toast.success('Email enviado com sucesso');
       onOpenChange(false);
       onSent?.();
+      trackFeatureUse('email_from_deal', { dealId });
     } catch (e: unknown) {
       const message = e instanceof Error ? e.message : 'Erro ao enviar email';
       toast.error(message);

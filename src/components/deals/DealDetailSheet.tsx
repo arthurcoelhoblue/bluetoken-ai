@@ -38,6 +38,7 @@ import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { InsightsTab } from '@/components/deals/DealInsightsTab';
+import { FollowUpHintCard } from '@/components/deals/FollowUpHintCard';
 import { ACTIVITY_LABELS, ACTIVITY_ICONS } from '@/types/dealDetail';
 import type { DealActivityType } from '@/types/dealDetail';
 import type { DealActivityMetadata } from '@/types/metadata';
@@ -288,6 +289,9 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
                   {/* Calls Panel */}
                   <DealCallsPanel dealId={deal.id} />
+
+                  {/* Follow-up Hint */}
+                  <FollowUpHintCard empresa={deal.pipeline_empresa} />
 
                   {/* Add activity inline */}
                   <Card>

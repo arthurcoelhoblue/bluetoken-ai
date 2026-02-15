@@ -6,6 +6,28 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function callClaudeWithSystem(anthropicKey: string, systemPrompt: string, userContent: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.3, maxTokens = 2000 } = options;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      temperature,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userContent }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Claude error ${resp.status}`);
+  const data = await resp.json();
+  return data.content?.[0]?.text ?? '';
+}
+
 async function callGeminiWithSystem(googleApiKey: string, systemPrompt: string, userContent: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const { temperature = 0.3, maxTokens = 2000 } = options;
   const fullPrompt = `${systemPrompt}\n\n${userContent}`;
@@ -45,7 +67,7 @@ serve(async (req) => {
     // Fetch deal with contact
     const { data: deal } = await supabase
       .from('deals')
-      .select('id, titulo, valor, temperatura, status, contacts(id, nome, legacy_lead_id, email, telefone), pipeline_stages(nome)')
+      .select('id, titulo, valor, temperatura, status, contacts(id, nome, legacy_lead_id, email, telefone, empresa), pipeline_stages(nome)')
       .eq('id', deal_id)
       .single();
 
@@ -66,7 +88,7 @@ serve(async (req) => {
 
     // Fetch lead data in parallel
     const [messagesRes, convStateRes, classificationsRes, intentsRes] = await Promise.all([
-      supabase.from('lead_messages').select('direcao, conteudo, canal, created_at')
+      supabase.from('lead_messages').select('direcao, conteudo, canal, sender_type, created_at')
         .eq('lead_id', legacyLeadId).order('created_at', { ascending: true }).limit(50),
       supabase.from('lead_conversation_state').select('estado_funil, framework_ativo, framework_data, perfil_disc, idioma_preferido')
         .eq('lead_id', legacyLeadId).limit(1).single(),
@@ -120,42 +142,29 @@ CONVERSA (${messages.length} mensagens):
 ${transcript.substring(0, 8000)}`;
 
     let content = '';
+    const startMs = Date.now();
+    let provider = '';
+    let model = '';
 
-    // Try Gemini first
-    if (GOOGLE_API_KEY) {
+    // Try Claude first (Primary)
+    if (ANTHROPIC_API_KEY) {
       try {
-        content = await callGeminiWithSystem(GOOGLE_API_KEY, systemPrompt, userContent, { temperature: 0.3, maxTokens: 2000 });
-        console.log('[deal-context-summary] Gemini OK');
+        content = await callClaudeWithSystem(ANTHROPIC_API_KEY, systemPrompt, userContent, { temperature: 0.3, maxTokens: 2000 });
+        provider = 'CLAUDE';
+        model = 'claude-sonnet-4-20250514';
       } catch (e) {
-        console.warn('[deal-context-summary] Gemini failed:', e);
+        console.warn('[deal-context-summary] Claude failed:', e);
       }
     }
 
-    // Fallback to Claude
-    if (!content && ANTHROPIC_API_KEY) {
+    // Fallback to Gemini
+    if (!content && GOOGLE_API_KEY) {
       try {
-        const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 2000,
-            temperature: 0.3,
-            system: systemPrompt,
-            messages: [{ role: 'user', content: userContent }],
-          }),
-        });
-
-        if (!aiResponse.ok) throw new Error(`Claude error ${aiResponse.status}`);
-        const aiData = await aiResponse.json();
-        content = aiData.content?.[0]?.text ?? '';
-        console.log('[deal-context-summary] Claude fallback OK');
+        content = await callGeminiWithSystem(GOOGLE_API_KEY, systemPrompt, userContent, { temperature: 0.3, maxTokens: 2000 });
+        provider = 'GEMINI';
+        model = 'gemini-3-pro-preview';
       } catch (e) {
-        console.error('[deal-context-summary] Claude fallback failed:', e);
+        console.warn('[deal-context-summary] Gemini fallback failed:', e);
       }
     }
 
@@ -163,7 +172,6 @@ ${transcript.substring(0, 8000)}`;
     if (!content) {
       const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
       if (OPENAI_API_KEY) {
-        console.log('[deal-context-summary] Trying OpenAI GPT-4o fallback...');
         try {
           const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -173,9 +181,8 @@ ${transcript.substring(0, 8000)}`;
           if (gptResp.ok) {
             const gptData = await gptResp.json();
             content = gptData.choices?.[0]?.message?.content ?? '';
-            console.log('[deal-context-summary] OpenAI GPT-4o fallback OK');
-          } else {
-            console.error('[deal-context-summary] OpenAI error:', gptResp.status);
+            provider = 'OPENAI';
+            model = 'gpt-4o';
           }
         } catch (gptErr) {
           console.error('[deal-context-summary] OpenAI exception:', gptErr);
@@ -188,6 +195,20 @@ ${transcript.substring(0, 8000)}`;
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+
+    const latencyMs = Date.now() - startMs;
+    // Log AI usage
+    await supabase.from('ai_usage_log').insert({
+      function_name: 'deal-context-summary',
+      provider: provider,
+      model: model,
+      tokens_input: null,
+      tokens_output: null,
+      success: true,
+      latency_ms: latencyMs,
+      custo_estimado: 0,
+      empresa: contact?.empresa || null,
+    });
 
     let contextSdr: any = null;
     try {

@@ -24,9 +24,10 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
+    const anthropicKey = Deno.env.get("ANTHROPIC_API_KEY");
 
-    if (!googleApiKey) {
-      console.error("GOOGLE_API_KEY not configured");
+    if (!googleApiKey && !anthropicKey) {
+      console.error("No AI API key configured");
       return new Response(
         JSON.stringify({ auto_approve: false, confianca: 0, justificativa: "API key não configurada" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -82,55 +83,89 @@ Resposta: ${resposta}
 Retorne APENAS um JSON válido (sem markdown):
 {"auto_approve": boolean, "confianca": number (0-100), "justificativa": "string curta"}`;
 
-    const geminiResp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 500 },
-        }),
+    let result: any = { auto_approve: false, confianca: 0, justificativa: "Erro na análise" };
+    const startMs = Date.now();
+    let provider = '';
+    let model = '';
+    let content = '';
+
+    // Try Claude first (Primary)
+    if (anthropicKey) {
+      try {
+        const resp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 500,
+            temperature: 0.2,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!resp.ok) throw new Error(`Claude error ${resp.status}`);
+        const data = await resp.json();
+        content = data.content?.[0]?.text ?? '';
+        provider = 'CLAUDE';
+        model = 'claude-sonnet-4-20250514';
+      } catch (e) {
+        console.warn('[faq-auto-review] Claude failed:', e);
       }
-    );
-
-    if (!geminiResp.ok) {
-      const errText = await geminiResp.text();
-      console.error("Gemini API error:", geminiResp.status, errText);
-      return new Response(
-        JSON.stringify({ auto_approve: false, confianca: 0, justificativa: "Erro na análise IA" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
     }
 
-    const geminiData = await geminiResp.json();
-    const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-
-    // Extract JSON from response
-    const jsonMatch = rawText.match(/\{[\s\S]*?\}/);
-    if (!jsonMatch) {
-      console.error("Could not parse Gemini response:", rawText);
-      return new Response(
-        JSON.stringify({ auto_approve: false, confianca: 0, justificativa: "Resposta IA inválida" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+    // Fallback to Gemini
+    if (!content && googleApiKey) {
+      try {
+        const geminiResp = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.2, maxOutputTokens: 500 },
+            }),
+          }
+        );
+        if (!geminiResp.ok) throw new Error(`Gemini error ${geminiResp.status}`);
+        const geminiData = await geminiResp.json();
+        content = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+        provider = 'GEMINI';
+        model = 'gemini-3-pro-preview';
+      } catch (e) {
+        console.warn('[faq-auto-review] Gemini fallback failed:', e);
+      }
     }
 
-    const result = JSON.parse(jsonMatch[0]);
+    if (content) {
+      try {
+        const jsonMatch = content.match(/\{[\s\S]*?\}/);
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0]);
+        }
+      } catch {
+        console.error("Could not parse AI response:", content);
+      }
+
+      // Log usage
+      const latencyMs = Date.now() - startMs;
+      await supabase.from("ai_usage_log").insert({
+        function_name: "faq-auto-review",
+        model: model,
+        provider: provider,
+        empresa,
+        success: true,
+        tokens_input: null,
+        tokens_output: null,
+        latency_ms: latencyMs,
+      });
+    }
 
     // Enforce threshold
     const autoApprove = result.auto_approve === true && (result.confianca ?? 0) >= 85;
-
-    // Log usage
-    await supabase.from("ai_usage_log").insert({
-      function_name: "faq-auto-review",
-      model: "gemini-3-pro-preview",
-      provider: "google",
-      empresa,
-      success: true,
-      tokens_input: null,
-      tokens_output: null,
-    });
 
     return new Response(
       JSON.stringify({

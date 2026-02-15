@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { IcpInsightsCard } from '@/components/analytics/IcpInsightsCard';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -183,6 +184,11 @@ export default function AnalyticsExecutivoPage() {
             )}
           </CardContent>
         </Card>
+
+        {/* ICP Insights */}
+        <div className="h-full">
+          <IcpInsightsCard />
+        </div>
       </div>
     </AppLayout>
   );

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 type StatusFilter = 'TODOS' | 'AGUARDANDO' | 'RESPONDIDO' | 'VENDEDOR';
 
@@ -33,6 +34,11 @@ function ConversasContent() {
   const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
   const [search, setSearch] = useState('');
+  const { trackPageView } = useAnalyticsEvents();
+
+  useEffect(() => {
+    trackPageView('conversas');
+  }, [trackPageView]);
 
   const { data: atendimentos = [], isLoading, error } = useAtendimentos({ empresaFilter });
 
