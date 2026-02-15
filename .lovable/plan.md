@@ -1,48 +1,60 @@
-# Plano de Ação - Auditoria BlueToken AI
 
-## Status Geral
 
-| Fase | Status |
-|------|--------|
-| Fase 1 - Segurança | ✅ Concluída |
-| Fase 2 - Qualidade | ✅ Concluída |
-| Fase 3 - Testes + Performance | 🔄 Em andamento |
-| Fase 4 - Documentação | ✅ Concluída |
+# Fase 3.1 - Testes Auth + Cadence Runner
+
+Adicionar testes unitarios para cobrir fluxos criticos de autenticacao/RBAC e logica de cadencias, sem alterar codigo de producao existente.
 
 ---
 
-## Fase 1 - Concluída
+## 3.1b - Expandir testes Auth
 
-- ✅ 1.1 Validação Zod nos webhooks públicos
-- ✅ 1.3 CORS restritivo com whitelist
-- 🔲 1.2 Rate limiting (baixa prioridade)
+**Arquivo:** `src/contexts/AuthContext.test.tsx` (expandir o existente com ~14 testes)
 
-## Fase 2 - Concluída
+| Grupo | Testes | O que valida |
+|-------|--------|-------------|
+| buildPermissionsFromRoles | 6 | ADMIN recebe view+edit em tudo; AUDITOR (`*:read`) recebe view em tudo e edit em nada; READONLY so ve dashboard; CLOSER/SDR_IA/MARKETING mapeiam corretamente para seus recursos |
+| Override logic | 4 | Override `{view:true}` prevalece sobre perfil `{view:false}`; override `{view:false}` bloqueia mesmo com perfil permitindo; sem override usa perfil; override afeta apenas a tela especificada |
+| Edge cases | 3 | Role inexistente retorna sem permissoes; permissao sem `:` retorna false; roles duplicadas nao causam erro |
+| Completude | 1 | Todas as 6 roles definidas em UserRole possuem entrada no ROLE_PERMISSIONS |
 
-- ✅ 2.1 Eliminado `any` em 11 hooks críticos
-- ✅ 2.2 Quebrado `useDeals.ts` em `deals/useDealQueries.ts` + `deals/useDealMutations.ts`
-- ✅ 2.4 Quebrado `DealDetailSheet.tsx` em 4 subcomponentes (Header, TimelineTab, DadosTab, LossDialog)
-- 🔲 2.3 Quebrar Edge Functions grandes (sgt-webhook, bluechat-inbound, cadence-runner)
-
-## Fase 3 - Em andamento
-
-- ✅ 3.1a Testes SDR logic completos (27 testes: temperatura, classificação, urgência, SPIN/GPCT, perfil investidor, cross-company, AI cost)
-- 🔲 3.1b Testes Auth (login, roles, permissões)
-- 🔲 3.1c Testes Cadence runner
-- 🔲 3.2 Paginação nas listas
-- 🔲 3.3 Otimizar queries N+1
-
-## Fase 4 - Concluída
-
-- ✅ 4.1 README.md reescrito com arquitetura real
-- ✅ 4.2 Versionamento (1.0.0)
-- ✅ 4.3 Logger estruturado em `_shared/logger.ts`
+Estrategia: replicar a logica pura de `buildPermissionsFromRoles` no teste, seguindo o padrao ja existente no arquivo (funcoes `hasPermission`/`hasRole` replicadas localmente).
 
 ---
 
-## Próximos passos
+## 3.1c - Testes Cadence Runner
 
-1. Quebrar Edge Functions grandes (2.3)
-2. Mais testes: Auth, Cadence (3.1b, 3.1c)
-3. Implementar rate limiting (1.2)
-4. Paginação nas listas (3.2)
+### Novo arquivo: `src/lib/cadence-logic.ts`
+
+Funcoes puras extraidas da logica de negocios do cadence-runner:
+
+- **computeNextStep**(currentStep, totalSteps, leadRespondeu, pararSeResponder) -- decide se executa, completa ou para
+- **computeNextRunAt**(baseDate, offsetMinutos) -- calcula proximo horario de execucao
+- **shouldSkipStep**(canal, leadTemCanal) -- pula step se canal indisponivel
+- **resolveRunStatus**(currentStatus, action) -- resolve status final da run
+
+### Novo arquivo: `src/lib/__tests__/cadence-logic.test.ts`
+
+| Grupo | Testes | O que valida |
+|-------|--------|-------------|
+| computeNextStep | 6 | Primeiro step; step intermediario avanca; ultimo step completa; lead respondeu + parar=true para; lead respondeu + parar=false continua; step alem do total completa |
+| computeNextRunAt | 3 | Offset 60min soma 1h; offset 0 retorna mesma data; offset 1440 soma 1 dia |
+| shouldSkipStep | 3 | WhatsApp sem telefone = skip; Email sem email = skip; canal disponivel = nao skip |
+| resolveRunStatus | 4 | EXECUTE mantém ATIVA; COMPLETE vira CONCLUIDA; STOP_RESPONDED vira CONCLUIDA; PAUSADA nao muda |
+
+---
+
+## Sequencia de execucao
+
+1. Criar `src/lib/cadence-logic.ts` com funcoes puras
+2. Criar `src/lib/__tests__/cadence-logic.test.ts` com 16 testes
+3. Expandir `src/contexts/AuthContext.test.tsx` com 14 testes
+4. Rodar testes para validar que todos passam
+5. Atualizar `.lovable/plan.md` marcando 3.1b e 3.1c como concluidos
+
+## Impacto
+
+- Zero mudancas em codigo de producao existente
+- Nenhum import existente afetado
+- Adicao de 1 arquivo de logica pura + 1 arquivo de teste novo + expansao de 1 arquivo de teste existente
+- Total: ~30 testes adicionais
+
