@@ -1,107 +1,47 @@
+# Plano de Ação - Auditoria BlueToken AI
 
+## Status Geral
 
-# Fase 2 da Auditoria - Qualidade de Codigo
-
-Proximos itens do plano: 2.1 (eliminar `any`), 2.2 (quebrar hooks), 2.4 (quebrar componentes), 4.1 (README), 4.2 (versionamento).
-
-Vou agrupar o que cabe nesta sessao sem quebrar nenhuma importacao existente.
-
----
-
-## Item 2.1 - Eliminar `any` nos hooks criticos
-
-Substituir `as any` e `: any` por tipos corretos nos hooks que tocam o banco. Todos os casts de `as any` em `.from()`, `.insert()`, `.update()` e callbacks de `.map()` serao tipados corretamente.
-
-**Arquivos afetados (11 hooks):**
-
-| Arquivo | Qtd `any` | Correcao |
-|---------|-----------|----------|
-| `useContactsPage.ts` | 6 | Remover `as any` dos `.from()`, `.insert()`, `.update()` -- usar cast generico no retorno |
-| `useCSCustomers.ts` | 3 | Tipar insert/update payload com interface dedicada |
-| `useAutoRules.ts` | 5 | Tipar `pipeline_auto_rules` e callbacks |
-| `useCaptureForms.ts` | 4 | Tipar `onError` como `Error` e callback de `.map()` |
-| `useImportacao.ts` | 5 | Tipar `errorLog`, `insertData`, e `catch (e)` |
-| `useNotifications.ts` | 2 | Remover `as any` do `.update()` |
-| `usePipelines.ts` | 1 | Tipar callback `.map()` |
-| `usePipelineConfig.ts` | 5 | Tipar acessos a `pipeline_stages` |
-| `useAccessControl.ts` | 3 | Tipar callbacks de `.map()` |
-| `useCopilotMessages.ts` | 4 | Tipar `.filter()` e `.map()` callbacks, empresa cast |
-| `useOrphanDeals.ts` | 1 | Tipar callback `.map()` |
-
-**Estrategia:** Para tabelas/views que nao existem nos tipos gerados (ex: `contacts_with_stats`, `pipeline_auto_rules`), manter o cast `as any` APENAS no `.from()` (inevitavel pois o tipo gerado nao conhece a view) mas tipar o retorno com `as unknown as TipoCorreto`. Para callbacks `.map((x: any) => ...)`, substituir `any` pelo tipo inferido do Supabase ou por uma interface local.
+| Fase | Status |
+|------|--------|
+| Fase 1 - Segurança | ✅ Concluída |
+| Fase 2 - Qualidade | ✅ Concluída |
+| Fase 3 - Testes + Performance | 🔲 Pendente |
+| Fase 4 - Documentação | ✅ Concluída |
 
 ---
 
-## Item 2.2 - Quebrar `useDeals.ts`
+## Fase 1 - Concluída
 
-O hook `useDeals.ts` (289 linhas) exporta 10 funcoes/hooks misturando queries, mutations e loss categories. Vou dividir em 2 arquivos mantendo re-exports no arquivo original para nao quebrar nenhum import existente.
+- ✅ 1.1 Validação Zod nos webhooks públicos (bluechat-inbound, whatsapp-inbound, capture-form-submit, sgt-webhook, zadarma-webhook)
+- ✅ 1.3 CORS restritivo com whitelist em `_shared/cors.ts`, aplicado em todas as 46 Edge Functions
+- 🔲 1.2 Rate limiting (baixa prioridade, a implementar na Fase 3)
 
-**Nova estrutura:**
+## Fase 2 - Concluída
 
-| Arquivo | Conteudo |
-|---------|----------|
-| `src/hooks/deals/useDealQueries.ts` | `useDeals`, `useKanbanData` |
-| `src/hooks/deals/useDealMutations.ts` | `useCreateDeal`, `useUpdateDeal`, `useMoveDeal`, `useDeleteDeal`, `useCloseDeal`, `useLossCategories`, CRUD de loss categories |
-| `src/hooks/useDeals.ts` | Re-exporta tudo de `deals/useDealQueries` e `deals/useDealMutations` (zero quebra) |
+- ✅ 2.1 Eliminado `any` em 11 hooks críticos (useContactsPage, useCSCustomers, useAutoRules, useCaptureForms, useImportacao, useNotifications, usePipelines, usePipelineConfig, useAccessControl, useCopilotMessages, useOrphanDeals)
+- ✅ 2.2 Quebrado `useDeals.ts` em `deals/useDealQueries.ts` + `deals/useDealMutations.ts` com barrel re-export
+- 🔲 2.3 Quebrar Edge Functions grandes (sgt-webhook, bluechat-inbound, cadence-runner)
+- 🔲 2.4 Quebrar componentes grandes (DealDetailSheet, sidebar, ConversationView)
 
-**Impacto:** ZERO. Todos os 8 arquivos que importam de `@/hooks/useDeals` continuam funcionando porque o barrel file re-exporta tudo.
+## Fase 3 - Pendente
 
----
+- 🔲 3.1 Testes para fluxos críticos (Auth, SDR IA, Cadence, Deal scoring)
+- 🔲 3.2 Paginação nas listas (Leads, Contacts, Organizations, CS Customers)
+- 🔲 3.3 Otimizar queries N+1
 
-## Item 2.4 - Quebrar `DealDetailSheet.tsx`
+## Fase 4 - Concluída
 
-O componente (484 linhas) sera dividido extraindo as tabs em subcomponentes:
-
-| Arquivo | Conteudo |
-|---------|----------|
-| `src/components/deals/DealDetailHeader.tsx` | Header com titulo, status, badges, botoes de acao (fechar, reabrir, editar) |
-| `src/components/deals/DealDetailOverviewTab.tsx` | Tab "Visao Geral" com campos editaveis, contato, owner, valor |
-| `src/components/deals/DealDetailActivitiesTab.tsx` | Tab "Atividades" com timeline e formulario de nova atividade |
-| `src/components/deals/DealDetailSheet.tsx` | Orquestra as tabs, passa props para os subcomponentes |
+- ✅ 4.1 README.md reescrito com arquitetura real
+- ✅ 4.2 Versionamento atualizado para 1.0.0
+- 🔲 4.3 Logger estruturado nas Edge Functions
 
 ---
 
-## Item 4.1 + 4.2 - README + Versionamento
+## Próximos passos
 
-**README.md:** Reescrever com descricao real do projeto, arquitetura (frontend React + backend functions + banco), variaveis de ambiente, como rodar localmente.
-
-**package.json:** Atualizar versao de `0.0.0` para `1.0.0`.
-
----
-
-## Sequencia de execucao
-
-1. Criar pasta `src/hooks/deals/` e mover logica do `useDeals.ts` (2.2)
-2. Extrair subcomponentes do `DealDetailSheet.tsx` (2.4)
-3. Eliminar `any` nos 11 hooks (2.1)
-4. Reescrever README.md e atualizar versao (4.1 + 4.2)
-5. Atualizar `.lovable/plan.md` marcando itens concluidos
-
----
-
-## Detalhes tecnicos
-
-### Re-export pattern para useDeals.ts
-```typescript
-// src/hooks/useDeals.ts (barrel file)
-export { useDeals, useKanbanData } from './deals/useDealQueries';
-export { useCreateDeal, useUpdateDeal, useMoveDeal, useDeleteDeal, useCloseDeal, useLossCategories, useCreateLossCategory, useUpdateLossCategory, useDeleteLossCategory, useReorderLossCategories } from './deals/useDealMutations';
-export type { CloseDealData } from './deals/useDealMutations';
-```
-
-### Tipagem para `any` em callbacks
-Onde o Supabase retorna `data` sem tipo inferido (views, tabelas nao tipadas), o pattern sera:
-```typescript
-// ANTES
-.map((r: any) => ({ ...r, from_stage_nome: r.from_stage?.nome }))
-
-// DEPOIS  
-.map((r) => {
-  const row = r as { id: string; from_stage?: { nome: string }; ... };
-  return { ...row, from_stage_nome: row.from_stage?.nome ?? null };
-})
-```
-
-### DealDetailSheet - props interface
-Cada subcomponente recebera props tipadas com os dados que precisa, evitando prop drilling excessivo. O `DealDetailSheet` continuara sendo o unico a fazer os `useQuery` calls e passara dados via props.
-
+1. Quebrar Edge Functions grandes (2.3)
+2. Quebrar componentes grandes (2.4)
+3. Adicionar testes unitários (3.1)
+4. Implementar rate limiting (1.2)
+5. Logger estruturado (4.3)

@@ -6,7 +6,7 @@ export function useCreatePipeline() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: PipelineFormData) => {
-      const { data: result, error } = await supabase.from('pipelines').insert(data as any).select().single();
+      const { data: result, error } = await supabase.from('pipelines').insert(data as never).select().single();
       if (error) throw error;
       return result;
     },
@@ -18,7 +18,7 @@ export function useUpdatePipeline() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<PipelineFormData> & { id: string }) => {
-      const { error } = await supabase.from('pipelines').update(data as any).eq('id', id);
+      const { error } = await supabase.from('pipelines').update(data as never).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pipelines'] }),
@@ -42,7 +42,7 @@ export function useCreateStage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: StageFormData) => {
-      const { error } = await supabase.from('pipeline_stages').insert(data as any);
+      const { error } = await supabase.from('pipeline_stages').insert(data as never);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pipelines'] }),
@@ -53,7 +53,7 @@ export function useUpdateStage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<StageFormData> & { id: string }) => {
-      const { error } = await supabase.from('pipeline_stages').update(data as any).eq('id', id);
+      const { error } = await supabase.from('pipeline_stages').update(data as never).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['pipelines'] }),
@@ -78,7 +78,7 @@ export function useReorderStages() {
       for (const s of stages) {
         const { error } = await supabase
           .from('pipeline_stages')
-          .update({ posicao: s.posicao } as any)
+          .update({ posicao: s.posicao })
           .eq('id', s.id);
         if (error) throw error;
       }
@@ -100,24 +100,27 @@ export function useDuplicatePipeline() {
       if (sourceErr || !source) throw sourceErr || new Error('Pipeline not found');
 
       // Create new pipeline
+      type SourcePipeline = { id: string; descricao: string | null; pipeline_stages: Array<{ nome: string; posicao: number; cor: string; is_won: boolean; is_lost: boolean; sla_minutos: number | null }> };
+      const src = source as unknown as SourcePipeline;
+
       const { data: newPipeline, error: newErr } = await supabase
         .from('pipelines')
         .insert({
           empresa: newEmpresa,
           nome: newName,
-          descricao: (source as any).descricao,
+          descricao: src.descricao,
           is_default: false,
           ativo: true,
-        } as any)
+        } as never)
         .select()
         .single();
       if (newErr || !newPipeline) throw newErr || new Error('Failed to create');
 
-      // Copy stages
-      const stages = ((source as any).pipeline_stages || [])
-        .sort((a: any, b: any) => a.posicao - b.posicao)
-        .map((s: any) => ({
-          pipeline_id: (newPipeline as any).id,
+      const newPipelineRow = newPipeline as unknown as { id: string };
+      const stages = (src.pipeline_stages || [])
+        .sort((a, b) => a.posicao - b.posicao)
+        .map((s) => ({
+          pipeline_id: newPipelineRow.id,
           nome: s.nome,
           posicao: s.posicao,
           cor: s.cor,
@@ -127,7 +130,7 @@ export function useDuplicatePipeline() {
         }));
 
       if (stages.length > 0) {
-        const { error: stagesErr } = await supabase.from('pipeline_stages').insert(stages as any);
+        const { error: stagesErr } = await supabase.from('pipeline_stages').insert(stages as never);
         if (stagesErr) throw stagesErr;
       }
 

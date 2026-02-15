@@ -33,18 +33,20 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
         .select('id, role, content, created_at')
         .eq('user_id', user.id)
         .eq('context_type', contextType)
-        .eq('empresa', empresa as any)
+        .eq('empresa', empresa as never)
         .order('created_at', { ascending: true })
         .limit(50);
 
       if (error) throw error;
 
+      type CopilotRow = { id: string; role: string; content: string; created_at: string; context_id?: string | null };
       const filtered = (data || [])
-        .filter((m: any) => {
-          if (!contextId) return !m.context_id || m.context_id === '';
-          return m.context_id === contextId;
+        .filter((m) => {
+          const row = m as CopilotRow;
+          if (!contextId) return !row.context_id || row.context_id === '';
+          return row.context_id === contextId;
         })
-        .map((m: any) => ({
+        .map((m) => ({
           id: m.id,
           role: m.role as 'user' | 'assistant',
           content: m.content,
@@ -72,7 +74,7 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
           user_id: user.id,
           context_type: contextType,
           context_id: contextId || null,
-          empresa: empresa as any,
+          empresa: empresa as never,
           role,
           content,
           model_used: meta?.model_used || null,
@@ -108,7 +110,7 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
         .delete()
         .eq('user_id', user.id)
         .eq('context_type', contextType)
-        .eq('empresa', empresa as any);
+        .eq('empresa', empresa as never);
 
       if (contextId) {
         query = query.eq('context_id', contextId);
