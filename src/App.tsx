@@ -32,6 +32,7 @@ const ProductKnowledgeEditor = lazy(() => import("./pages/admin/ProductKnowledge
 const Settings = lazy(() => import("./pages/admin/Settings"));
 const LeadsQuentes = lazy(() => import("./pages/admin/LeadsQuentes"));
 const AIBenchmark = lazy(() => import("./pages/admin/AIBenchmark"));
+const AICostDashboardPage = lazy(() => import("./pages/admin/AICostDashboardPage"));
 const PendenciasPerda = lazy(() => import("./pages/admin/PendenciasPerda"));
 const Atendimentos = lazy(() => import("./pages/Atendimentos"));
 const WorkbenchPage = lazy(() => import("./pages/WorkbenchPage"));
@@ -147,6 +148,7 @@ const App = () => (
                 <Route path="/admin/settings" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><Settings /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/leads-quentes" element={<ProtectedRoute requiredRoles={['ADMIN', 'CLOSER']}><ErrorBoundary><LeadsQuentes /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/ai-benchmark" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AIBenchmark /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/ai-costs" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AICostDashboardPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/pendencias" element={<ProtectedRoute><ErrorBoundary><PendenciasPerda /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/settings/pipelines" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><PipelineConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CustomFieldsConfigPage /></ErrorBoundary></ProtectedRoute>} />

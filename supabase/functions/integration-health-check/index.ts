@@ -290,39 +290,57 @@ serve(async (req) => {
   }
 
   try {
-    const { integration } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { integration } = body;
 
-    let result: HealthCheckResult;
+    // CRON mode: check all integrations and send alerts
+    const isCron = req.headers.get("x-cron-secret") === Deno.env.get("CRON_SECRET") || !integration;
 
-    switch (integration) {
-      case "whatsapp":
-      case "mensageria":
-        result = await checkWhatsApp();
-        break;
-      case "pipedrive":
-        result = await checkPipedrive();
-        break;
-      case "anthropic":
-        result = await checkAnthropic();
-        break;
-      case "lovable_ai":
-      case "gemini":
-      case "gpt":
-        result = await checkAnthropic();
-        break;
-      case "email":
-        result = await checkSMTP();
-        break;
-      case "sgt":
-        result = checkSGT();
-        break;
-      case "bluechat":
-        result = await checkBlueChat();
-        break;
-      default:
-        result = { status: "error", message: `Integração desconhecida: ${integration}` };
+    if (isCron) {
+      const integrations = ["whatsapp", "pipedrive", "anthropic", "email", "sgt", "bluechat"];
+      const results: Record<string, HealthCheckResult> = {};
+      const alerts: string[] = [];
+
+      for (const intg of integrations) {
+        const result = await checkIntegration(intg);
+        results[intg] = result;
+        if (result.status === "offline" || result.status === "error") {
+          alerts.push(`⚠️ ${intg}: ${result.status} - ${result.message || "indisponível"}`);
+        }
+      }
+
+      // Send alerts if any integration is down
+      if (alerts.length > 0) {
+        const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+
+        // Get admin users
+        const { data: admins } = await supabase
+          .from("user_roles")
+          .select("user_id")
+          .eq("role", "ADMIN");
+
+        if (admins && admins.length > 0) {
+          const notifications = admins.map((a) => ({
+            user_id: a.user_id,
+            empresa: "BLUE" as const,
+            titulo: `🔴 ${alerts.length} integração(ões) com problema`,
+            mensagem: alerts.join("\n"),
+            tipo: "ALERTA" as const,
+            referencia_tipo: "SISTEMA",
+            link: "/admin/settings",
+          }));
+
+          await supabase.from("notifications").insert(notifications);
+        }
+      }
+
+      return new Response(JSON.stringify({ mode: "cron", results, alerts }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
 
+    // Single integration check
+    const result = await checkIntegration(integration);
     return new Response(JSON.stringify(result), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -340,3 +358,27 @@ serve(async (req) => {
     );
   }
 });
+
+async function checkIntegration(integration: string): Promise<HealthCheckResult> {
+  switch (integration) {
+    case "whatsapp":
+    case "mensageria":
+      return await checkWhatsApp();
+    case "pipedrive":
+      return await checkPipedrive();
+    case "anthropic":
+      return await checkAnthropic();
+    case "lovable_ai":
+    case "gemini":
+    case "gpt":
+      return await checkAnthropic();
+    case "email":
+      return await checkSMTP();
+    case "sgt":
+      return checkSGT();
+    case "bluechat":
+      return await checkBlueChat();
+    default:
+      return { status: "error", message: `Integração desconhecida: ${integration}` };
+  }
+}
