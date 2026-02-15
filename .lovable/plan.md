@@ -23,15 +23,15 @@
 | 11 | Weekly report CRON + envio automático email admins | ✅ |
 | 12 | Deals sem limite fixo (paginação implícita) | ✅ |
 
-## Fase 3 — Inteligência Competitiva (Score 9.2 → 9.8)
+## Fase 3 — Inteligência Competitiva (Score 9.2 → 9.8) ✅ CONCLUÍDA
 
 | # | Tarefa | Status |
 |---|--------|--------|
-| 13 | Dashboard de custos IA com breakdown por function | 🔲 |
-| 14 | Métricas de adoção (analytics_events) | 🔲 |
-| 15 | Integration health check CRON + alertas auto | 🔲 |
-| 16 | Rate limiting por user/function | 🔲 |
-| 17 | Follow-up scheduling inteligente (horário ideal) | 🔲 |
-| 18 | Prompt versionamento em system_settings | 🔲 |
+| 13 | Dashboard de custos IA com breakdown por function | ✅ |
+| 14 | Métricas de adoção (analytics_events) | ✅ |
+| 15 | Integration health check CRON + alertas auto | ✅ |
+| 16 | Rate limiting por user/function (rate_limit_log) | ✅ |
+| 17 | Follow-up scheduling inteligente (horário ideal) | ✅ |
+| 18 | Prompt versionamento em prompt_versions | ✅ |
 | 19 | Testes E2E para fluxos críticos | 🔲 |
-| 20 | ICP learning baseado em deals ganhos vs perdidos | 🔲 |
+| 20 | ICP learning baseado em deals ganhos vs perdidos | ✅ |
