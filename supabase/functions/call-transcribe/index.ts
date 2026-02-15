@@ -15,11 +15,12 @@ Deno.serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
     if (!openaiKey) throw new Error('OPENAI_API_KEY not configured');
-    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not configured');
+    if (!googleApiKey && !anthropicKey) throw new Error('No AI API key configured for analysis');
 
     // 1. Fetch call record
     const { data: call, error: callErr } = await supabase
@@ -59,21 +60,9 @@ Deno.serve(async (req) => {
     const transcription = await whisperResp.text();
     console.log(`Transcription received: ${transcription.length} chars`);
 
-    // 4. Use Claude to generate summary, sentiment, action_items
-    console.log('Analyzing with Claude...');
-    const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: `Analise esta transcrição de chamada comercial e retorne um JSON com exatamente estes campos:
+    // 4. Analyze with AI (Gemini primary, Claude fallback)
+    console.log('Analyzing transcription...');
+    const analysisPrompt = `Analise esta transcrição de chamada comercial e retorne um JSON com exatamente estes campos:
 {
   "summary": "resumo de 2-3 frases da chamada",
   "sentiment": "POSITIVO" ou "NEGATIVO" ou "NEUTRO",
@@ -83,26 +72,64 @@ Deno.serve(async (req) => {
 Transcrição:
 ${transcription}
 
-Retorne APENAS o JSON, sem markdown.`,
-        }],
-      }),
-    });
+Retorne APENAS o JSON, sem markdown.`;
 
-    if (!claudeResp.ok) {
-      const errText = await claudeResp.text();
-      throw new Error(`Claude error ${claudeResp.status}: ${errText}`);
+    let analysisText = '';
+
+    // Try Gemini first
+    if (googleApiKey) {
+      try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: analysisPrompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+          }),
+        });
+        if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+        const data = await resp.json();
+        analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('[call-transcribe] Gemini analysis OK');
+      } catch (e) {
+        console.warn('[call-transcribe] Gemini failed:', e);
+      }
     }
 
-    const claudeData = await claudeResp.json();
-    const analysisText = claudeData.content?.[0]?.text || '{}';
+    // Fallback to Claude
+    if (!analysisText && anthropicKey) {
+      try {
+        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: analysisPrompt }],
+          }),
+        });
+        if (!claudeResp.ok) throw new Error(`Claude ${claudeResp.status}`);
+        const claudeData = await claudeResp.json();
+        analysisText = claudeData.content?.[0]?.text || '{}';
+        console.log('[call-transcribe] Claude fallback OK');
+      } catch (e) {
+        console.error('[call-transcribe] Claude fallback failed:', e);
+      }
+    }
+
     let analysis: { summary?: string; sentiment?: string; action_items?: string[] };
     try {
-      analysis = JSON.parse(analysisText);
+      const cleaned = (analysisText || '{}').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      analysis = JSON.parse(cleaned);
     } catch {
       analysis = { summary: analysisText, sentiment: 'NEUTRO', action_items: [] };
     }
 
-    // 5. Update call record with transcription + analysis
+    // 5. Update call record
     const { error: updateErr } = await supabase.from('calls').update({
       transcription,
       summary_ia: analysis.summary || null,
@@ -112,7 +139,7 @@ Retorne APENAS o JSON, sem markdown.`,
 
     if (updateErr) console.error('Error updating call:', updateErr);
 
-    // 6. If deal linked, create deal_activity with summary
+    // 6. If deal linked, create deal_activity
     if (call.deal_id && analysis.summary) {
       await supabase.from('deal_activities').insert({
         deal_id: call.deal_id,

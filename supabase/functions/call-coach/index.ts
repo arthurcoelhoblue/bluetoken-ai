@@ -13,10 +13,11 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not configured');
+    if (!googleApiKey && !anthropicKey) throw new Error('No AI API key configured');
 
     // Gather deal context
     let dealContext = '';
@@ -81,20 +82,7 @@ Deno.serve(async (req) => {
       ).join('\n');
     }
 
-    // Claude coaching prompt
-    const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1024,
-        messages: [{
-          role: 'user',
-          content: `Você é um coach de vendas em tempo real. Analise o trecho da chamada em andamento e forneça coaching ao vendedor.
+    const prompt = `Você é um coach de vendas em tempo real. Analise o trecho da chamada em andamento e forneça coaching ao vendedor.
 
 CONTEXTO DO DEAL:${dealContext}
 ${productContext}
@@ -114,21 +102,59 @@ Retorne um JSON com:
   "talk_ratio_hint": "fala muito" ou "equilíbrio bom" ou "ouve bem"
 }
 
-Retorne APENAS o JSON, sem markdown.`,
-        }],
-      }),
-    });
+Retorne APENAS o JSON, sem markdown.`;
 
-    if (!claudeResp.ok) {
-      const errText = await claudeResp.text();
-      throw new Error(`Claude error ${claudeResp.status}: ${errText}`);
+    let coachingText = '';
+
+    // Try Gemini first
+    if (googleApiKey) {
+      try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 1024 },
+          }),
+        });
+        if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+        const data = await resp.json();
+        coachingText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        console.log('[call-coach] Gemini OK');
+      } catch (e) {
+        console.warn('[call-coach] Gemini failed:', e);
+      }
     }
 
-    const claudeData = await claudeResp.json();
-    const coachingText = claudeData.content?.[0]?.text || '{}';
+    // Fallback to Claude
+    if (!coachingText && anthropicKey) {
+      try {
+        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!claudeResp.ok) throw new Error(`Claude ${claudeResp.status}`);
+        const claudeData = await claudeResp.json();
+        coachingText = claudeData.content?.[0]?.text || '{}';
+        console.log('[call-coach] Claude fallback OK');
+      } catch (e) {
+        console.error('[call-coach] Claude fallback failed:', e);
+      }
+    }
+
     let coaching: Record<string, unknown>;
     try {
-      coaching = JSON.parse(coachingText);
+      const cleaned = (coachingText || '{}').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      coaching = JSON.parse(cleaned);
     } catch {
       coaching = {
         sentimento_atual: 'NEUTRO',

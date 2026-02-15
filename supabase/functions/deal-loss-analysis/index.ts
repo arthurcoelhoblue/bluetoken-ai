@@ -5,15 +5,65 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 }
 
+async function callAI(googleApiKey: string | undefined, anthropicKey: string | undefined, prompt: string, options: { system?: string; temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { system, temperature = 0.3, maxTokens = 2000 } = options;
+  const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
+
+  // Try Gemini first
+  if (googleApiKey) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: fullPrompt }] }],
+          generationConfig: { temperature, maxOutputTokens: maxTokens },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) return text;
+    } catch (e) {
+      console.warn('[deal-loss-analysis] Gemini failed:', e);
+    }
+  }
+
+  // Fallback to Claude
+  if (anthropicKey) {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: maxTokens,
+        temperature,
+        ...(system ? { system } : {}),
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Claude ${resp.status}: ${await resp.text()}`);
+    const data = await resp.json();
+    return data.content?.[0]?.text ?? '';
+  }
+
+  throw new Error('No AI API key available');
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
 
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY')
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'No AI API key configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
     const body = await req.json()
@@ -37,9 +87,7 @@ Deno.serve(async (req) => {
 
       const wons = wonsRes.data ?? []
       const losts = lostsRes.data ?? []
-      const stageHistory = stagesRes.data ?? []
 
-      // Build summary for Claude
       const summary = {
         periodo_dias: dias,
         total_ganhos: wons.length,
@@ -51,8 +99,7 @@ Deno.serve(async (req) => {
           wons.reduce((acc: Record<string, { nome: string; count: number; valor: number }>, d: any) => {
             const key = d.owner_id || 'sem_owner'
             if (!acc[key]) acc[key] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }
-            acc[key].count++
-            acc[key].valor += d.valor || 0
+            acc[key].count++; acc[key].valor += d.valor || 0
             return acc
           }, {})
         ).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
@@ -60,8 +107,7 @@ Deno.serve(async (req) => {
           losts.reduce((acc: Record<string, { nome: string; count: number; valor: number }>, d: any) => {
             const key = d.owner_id || 'sem_owner'
             if (!acc[key]) acc[key] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }
-            acc[key].count++
-            acc[key].valor += d.valor || 0
+            acc[key].count++; acc[key].valor += d.valor || 0
             return acc
           }, {})
         ).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
@@ -101,40 +147,16 @@ Analise e retorne APENAS um JSON com:
 
 Sem markdown, apenas JSON.`
 
-      const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: {
-          'x-api-key': ANTHROPIC_API_KEY,
-          'anthropic-version': '2023-06-01',
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: 'claude-sonnet-4-20250514',
-          max_tokens: 2000,
-          temperature: 0.3,
-          messages: [{ role: 'user', content: prompt }],
-        }),
-      })
-
-      if (!aiResponse.ok) {
-        const errText = await aiResponse.text()
-        console.error('[WinLoss] Anthropic error:', errText)
-        return new Response(JSON.stringify({ error: 'AI analysis failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-      }
-
-      const aiData = await aiResponse.json()
-      const content = aiData.content?.[0]?.text ?? ''
+      const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, { temperature: 0.3, maxTokens: 2000 });
 
       let analysis: any = {}
       try {
         const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
         analysis = JSON.parse(cleaned)
       } catch {
-        console.error('[WinLoss] Failed to parse AI response')
         analysis = { resumo_executivo: content }
       }
 
-      // Save to system_settings
       await supabase.from('system_settings').upsert({
         category: 'analytics',
         key: 'win_loss_analysis',
@@ -147,7 +169,7 @@ Sem markdown, apenas JSON.`
       })
     }
 
-    // ─── MODE: INDIVIDUAL (existing logic) ─────────────
+    // ─── MODE: INDIVIDUAL ─────────────
     const { deal_id } = body
     if (!deal_id) {
       return new Response(JSON.stringify({ error: 'deal_id or mode=portfolio required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
@@ -207,29 +229,7 @@ Com base APENAS no conteúdo da conversa, identifique o motivo real da perda. Re
 
 Responda APENAS com o JSON, sem markdown.`
 
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 500,
-        temperature: 0.3,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    })
-
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text()
-      console.error('Anthropic error:', errText)
-      return new Response(JSON.stringify({ error: 'AI analysis failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    const aiData = await aiResponse.json()
-    const content = aiData.content?.[0]?.text ?? ''
+    const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, { temperature: 0.3, maxTokens: 500 });
 
     let categoria_ia = 'OUTRO'
     let explicacao_ia = content
