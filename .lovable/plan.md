@@ -1,263 +1,213 @@
 
 
-# Plano de Acao: Item 8 do Parecer V4 — V4 para Producao em 3 Dias
+# Item 9 do Parecer V4 — Pos-Producao: De 9.2 Para 11/10
 
-Este plano implementa todas as 12 acoes descritas no Item 8 do relatorio V4, organizadas em 3 dias.
+Implementacao das 6 melhorias pos-producao que transformam o Blue CRM de "muito bom" para "referencia de mercado".
 
 ---
 
-## DIA 1 — Ligar o Motor (BLOQUEANTES + ALTO)
+## Sugestao 1: Atividade auto-criada apos transcricao de chamada
 
-### Acao 1: CRON jobs para 13 edge functions
+**Status atual:** JA IMPLEMENTADO em `call-transcribe/index.ts` (linhas 205-220). Quando `call.deal_id` existe e `analysis.summary` esta disponivel, o sistema ja cria `deal_activities` com tipo `LIGACAO`, descricao formatada e metadata completa.
 
-Criar uma migration SQL usando `cron.schedule()` para agendar todas as 13 funcoes periodicas.
+**Acao necessaria:** Nenhuma mudanca no backend. Apenas melhorar a visibilidade no frontend — garantir que o card de atividade de chamada apareca com destaque visual no `DealDetailSheet`.
 
-| Edge Function | Frequencia | Horario |
-|---|---|---|
-| cadence-runner | Cada 15 min | */15 * * * * |
-| cs-playbook-runner | Cada 30 min | */30 * * * * |
-| cs-incident-detector | Cada 2h | 0 */2 * * * |
-| copilot-proactive | Cada 4h | 0 */4 * * * |
-| deal-scoring | Cada 6h | 0 */6 * * * |
-| follow-up-scheduler | Diario 4h | 0 4 * * * |
-| revenue-forecast | Diario 5h | 0 5 * * * |
-| cs-health-calculator | Diario 6h | 0 6 * * * |
-| cs-churn-predictor | Diario 6h30 | 30 6 * * * |
-| cs-nps-auto | Diario 7h | 0 7 * * * |
-| cs-renewal-alerts | Diario 8h | 0 8 * * * |
-| icp-learner | Domingo 3h | 0 3 * * 0 |
-| weekly-report | Domingo 20h | 0 20 * * 0 |
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/deals/DealDetailSheet.tsx` | Adicionar icone de telefone e badge "Auto IA" para atividades com `metadata.source === 'call-transcribe-auto'` |
 
-Cada job chamara `net.http_post` para invocar a edge function via URL completa com `Authorization: Bearer` usando a anon key.
+---
 
-### Acao 2: Deals com paginacao real
+## Sugestao 2: Notas CS sugeridas pela Amelia
 
-Modificar `src/hooks/useDeals.ts`:
-- Adicionar `PAGE_SIZE = 50`
-- Aceitar parametro `page` no hook `useDeals`
-- Usar `.range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1)` (mesmo padrao de `useContactsPage`)
-- Adicionar `{ count: 'exact' }` ao select
-- Retornar `{ data, count }` ao inves de apenas array
+Quando o CSM abre a aba "Notas" de um cliente, o sistema analisa as ultimas interacoes (surveys, incidencias, health log) e sugere uma nota pre-preenchida.
 
-Modificar `src/components/pipeline/KanbanBoard.tsx` se necessario para lidar com paginacao (ou manter carregamento completo apenas para Kanban, com paginacao em views de lista).
+### Nova Edge Function: `cs-suggest-note`
 
-Nota: como o Kanban precisa de todos os deals para montar as colunas, a paginacao sera aplicada em contextos de listagem. Para o Kanban, adicionar `.limit(500)` como trava de seguranca.
+- Recebe `customer_id`
+- Busca: ultimas 5 surveys, ultimas 5 incidencias, ultimos 3 health logs, `notas_csm` atual
+- Envia contexto para Claude (primary) com Gemini fallback
+- Prompt: "Baseado nos dados do cliente, sugira uma nota de acompanhamento em 2-3 frases que o CSM pode registrar"
+- Retorna `{ sugestao: string }`
+- Loga em `ai_usage_log`
 
-### Acao 3: ai_usage_log em 15 edge functions restantes
+### Frontend
 
-Adicionar insert na tabela `ai_usage_log` apos cada chamada de IA nas 15 funcoes que nao logam:
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/pages/cs/CSClienteDetailPage.tsx` | Na aba "Notas", adicionar botao "Sugerir Nota (Amelia)" que chama a edge function e pre-preenche o textarea. CSM aceita/edita antes de salvar |
+| `supabase/config.toml` | Registrar `cs-suggest-note` com `verify_jwt = false` |
 
-| Funcao | Provider Atual |
-|---|---|
-| sdr-ia-interpret | Claude |
-| deal-scoring | Gemini/Claude/OpenAI |
-| next-best-action | Claude |
-| call-coach | Claude/Gemini |
-| call-transcribe | OpenAI/Gemini/Claude |
-| copilot-proactive | Claude |
-| cs-daily-briefing | Gemini/Claude/OpenAI |
-| cs-trending-topics | Gemini/Claude/OpenAI |
-| deal-context-summary | Gemini/Claude/OpenAI |
-| deal-loss-analysis | Gemini/Claude |
-| weekly-report | Claude/Gemini |
-| amelia-learn | Gemini/Claude |
-| amelia-mass-action | Gemini/Claude |
-| ai-benchmark | Gemini/Claude |
-| integration-health-check | N/A (sem IA) |
+---
 
-Template de insert (adaptar por funcao):
+## Sugestao 3: A/B Testing de prompts via prompt_versions
 
-```typescript
-const startMs = Date.now();
-// ... chamada IA ...
-const latencyMs = Date.now() - startMs;
-await supabase.from('ai_usage_log').insert({
-  function_name: 'NOME_FUNCAO',
-  provider: 'CLAUDE', // ou GEMINI, OPENAI
-  model: 'claude-sonnet-4-20250514',
-  tokens_input: null, // se disponivel
-  tokens_output: null,
-  success: true,
-  latency_ms: latencyMs,
-  custo_estimado: 0,
-  empresa: empresa || null,
-});
+A infraestrutura (`prompt_versions` tabela + hook `usePromptVersions`) ja existe. O que falta e a logica de split de trafego.
+
+### Mudancas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/copilot-chat/index.ts` | Em vez de buscar apenas `is_active = true`, buscar todas as versoes com `is_active = true` e `ab_weight > 0`. Selecionar aleatoriamente com base nos pesos. Logar `prompt_version_id` no `ai_usage_log` |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Mesmo padrao de A/B testing |
+| Migration SQL | Adicionar colunas `ab_weight` (int default 100) e `ab_group` (text nullable) na tabela `prompt_versions`. Adicionar coluna `prompt_version_id` (uuid nullable) na tabela `ai_usage_log` |
+| `src/hooks/usePromptVersions.ts` | Expor `ab_weight` no tipo. Permitir editar peso no formulario |
+
+### Logica de selecao
+
+```text
+Buscar todas prompt_versions ativas para a funcao
+Calcular peso total (soma dos ab_weight)
+Gerar random 0..pesoTotal
+Iterar, acumular peso, selecionar a versao quando acumular >= random
 ```
 
-`integration-health-check` nao usa IA, portanto nao precisa de logging IA.
+---
 
-### Acao 4: useAnalyticsEvents em 10 componentes criticos
+## Sugestao 4: Dashboard de Saude Operacional
 
-Instrumentar tracking nos seguintes componentes/paginas:
+Nova pagina `/admin/operational-health` que mostra status em tempo real de todas as integracoes, CRON jobs e APIs de IA.
 
-| Componente | Evento |
-|---|---|
-| CopilotPanel.tsx | `copilot_opened`, `copilot_message_sent` |
-| WorkbenchPage.tsx | `page_view:workbench` |
-| DealInsightsTab.tsx | `feature:deal_insights_viewed` |
-| CSClienteDetailPage.tsx | `page_view:cs_cliente_detail` |
-| PipelinePage.tsx | `page_view:pipeline` |
-| ConversasPage.tsx | `page_view:conversas` |
-| AnalyticsPage.tsx | `page_view:analytics` |
-| EmailFromDealDialog.tsx | `feature:email_from_deal` |
-| NextBestActionCard.tsx | `feature:nba_action_clicked` |
-| LeadDetail.tsx | `page_view:lead_detail` |
+### Arquivos a criar
 
-Padrao: importar `useAnalyticsEvents`, chamar `trackPageView` no useEffect de mount, ou `trackFeatureUse` no handler de clique.
+| Arquivo | Descricao |
+|---------|-----------|
+| `src/pages/admin/OperationalHealthPage.tsx` | Pagina com cards de status para cada integracao (WhatsApp, Pipedrive, Claude, Gemini, SMTP, SGT, Blue Chat), ultimo CRON run, latencia media |
+| `src/hooks/useOperationalHealth.ts` | Hook que chama `integration-health-check` para todas as integracoes em paralelo + busca `system_settings` para CRON status |
+
+### Mudancas em arquivos existentes
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/App.tsx` | Adicionar rota `/admin/operational-health` com `requiredRoles={['ADMIN']}` |
+| `src/config/screenRegistry.ts` | Registrar `saude_operacional` com url `/admin/operational-health` |
+| `src/components/layout/AppSidebar.tsx` | Adicionar item "Saude Operacional" no menu Admin |
+
+### Dados exibidos
+
+- Status de cada integracao (online/offline/error) com indicador colorido
+- Latencia da ultima verificacao
+- Ultimo CRON run de cada funcao (buscado de `system_settings` key `cron_last_run`)
+- Historico de falhas consecutivas (de `system_settings` key `consecutive_failures`)
+- Botao "Verificar Agora" que dispara health check manual
 
 ---
 
-## DIA 2 — Consistencia IA + UI Conectada
+## Sugestao 5: SDR-IA Modular
 
-### Acao 5: 4 funcoes Gemini para Claude primary
+O `sdr-ia-interpret` tem 4.285 linhas. Dividir em 4 edge functions menores:
 
-Migrar para Claude como provider primario (Gemini vira fallback) nas funcoes:
+| Nova Funcao | Responsabilidade | Linhas aproximadas |
+|-------------|------------------|--------------------|
+| `sdr-message-parser` | Recebe mensagem, normaliza, detecta urgencia, carrega contexto (lead, deals, historico, conversation state) | ~500 |
+| `sdr-intent-classifier` | Recebe contexto parsed, chama IA para classificar intent + framework data + temperatura | ~800 |
+| `sdr-response-generator` | Recebe intent + contexto, gera resposta personalizada via IA (prompt de 2000+ linhas com regras por empresa/canal/persona) | ~1500 |
+| `sdr-action-executor` | Recebe intent + acao recomendada, executa: pausar cadencia, criar tarefa closer, escalar humano, etc | ~500 |
 
-| Funcao | Linhas a alterar |
-|---|---|
-| deal-scoring | Inverter ordem: Claude primeiro, Gemini fallback |
-| cs-daily-briefing | Inverter ordem: Claude primeiro, Gemini fallback |
-| deal-context-summary | Inverter ordem: Claude primeiro, Gemini fallback |
-| cs-trending-topics | Inverter ordem: Claude primeiro, Gemini fallback |
+### Orquestrador
 
-Padrao: mover bloco Claude antes do bloco Gemini em cada funcao.
+O `sdr-ia-interpret` original vira um orquestrador fino (~200 linhas) que chama as 4 funcoes em sequencia:
 
-### Acao 6: faq-auto-review e icp-learner — adicionar Claude primary
-
-- `faq-auto-review`: atualmente so usa Gemini sem fallback. Adicionar Claude como primary com system prompt separado, Gemini vira fallback.
-- `icp-learner`: atualmente usa `gemini-2.5-flash` sem fallback. Adicionar Claude primary, mover Gemini para fallback.
-
-### Acao 7: FollowUpHintCard no DealDetailSheet
-
-Criar componente `src/components/deals/FollowUpHintCard.tsx`:
-- Usa `useFollowUpHours` com empresa do deal
-- Mostra card com icone de relogio
-- Texto: "Melhor horario para contato: Terca 9h, 73% taxa resposta"
-- Se sem dados: "Sem dados de follow-up calculados"
-- Integrar na aba principal do DealDetailSheet (abaixo das infos do deal)
-
-### Acao 8: IcpInsightsCard no AnalyticsExecutivoPage
-
-Criar componente `src/components/analytics/IcpInsightsCard.tsx`:
-- Busca `system_settings` com key `icp_profile`
-- Mostra: resumo ICP narrativo, setores ideais, cargos ideais, canais top, red flags
-- Se sem dados: botao "Calcular ICP" que invoca `icp-learner`
-- Integrar no `AnalyticsExecutivoPage.tsx`
-
-### Acao 9: prompt_versions em copilot-chat e sdr-ia-interpret
-
-Modificar as 2 edge functions para:
-1. No inicio, buscar prompt ativo: `SELECT content FROM prompt_versions WHERE function_name = 'X' AND prompt_key = 'system' AND is_active = true LIMIT 1`
-2. Se encontrar, usar como SYSTEM_PROMPT
-3. Se nao encontrar (fallback), usar o prompt inline hardcoded atual
-4. Isto permite A/B testing e versionamento sem deploy
-
----
-
-## DIA 3 — Protecao e Resiliencia
-
-### Acao 10: Camada unificada _shared/ai-provider.ts
-
-Nao e possivel criar arquivos compartilhados entre edge functions no Supabase (cada funcao e isolada). A alternativa e:
-- Criar um helper `callAI()` inline em cada funcao que precisa (ja existe em `deal-loss-analysis` e `amelia-learn`)
-- Padronizar o helper com: Claude primary, Gemini fallback, GPT-4o fallback 2, logging automatico em `ai_usage_log`
-- Refatorar `copilot-chat` e `deal-scoring` como piloto usando este padrao unificado
-
-O helper padrao tera ~60 linhas e sera copiado nas funcoes que ainda usam fetch direto sem padrao.
-
-### Acao 11: Rate limiting para chamadas IA
-
-Criar migration com tabela `ai_rate_limits`:
-```sql
-CREATE TABLE ai_rate_limits (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid REFERENCES auth.users(id),
-  function_name text NOT NULL,
-  window_start timestamptz NOT NULL DEFAULT now(),
-  call_count int NOT NULL DEFAULT 1,
-  UNIQUE(user_id, function_name, window_start)
-);
+```text
+sdr-ia-interpret (orquestrador)
+  -> sdr-message-parser (parse + contexto)
+  -> sdr-intent-classifier (IA classifica)
+  -> sdr-response-generator (IA gera resposta)
+  -> sdr-action-executor (aplica acoes)
 ```
 
-Adicionar check antes de chamadas IA nas funcoes interativas (copilot-chat, deal-scoring on-demand):
-- Limite: 50 calls/user/hour para copilot
-- Limite: 200 calls/function/hour para batch
-- Se excedido: retornar 429 com mensagem amigavel
+### Arquivos
 
-### Acao 12: Health check no CRON cada 5min
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/sdr-message-parser/index.ts` | Criar |
+| `supabase/functions/sdr-intent-classifier/index.ts` | Criar |
+| `supabase/functions/sdr-response-generator/index.ts` | Criar |
+| `supabase/functions/sdr-action-executor/index.ts` | Criar |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Refatorar para orquestrador |
+| `supabase/config.toml` | Registrar 4 novas funcoes |
 
-Adicionar ao CRON da Acao 1: `integration-health-check` a cada 5 minutos.
-Modificar `integration-health-check` para:
-- Apos rodar checks, se alguma integracao falhar 3x consecutivas, criar notificacao para ADMINs
-- Buscar admins via `user_roles` onde `role = 'ADMIN'`
-- Inserir `notifications` com tipo `SYSTEM_ALERT`
+---
+
+## Sugestao 6: Previsao de receita com machine learning
+
+O `revenue-forecast` atual usa heuristicas simples (ponderacao por probabilidade + churn). Evoluir para modelo de scoring baseado em features reais dos deals.
+
+### Mudancas
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/revenue-forecast/index.ts` | Adicionar feature engineering: tempo no stage atual, numero de atividades, engajamento (mensagens respondidas), score ICP, historico de deals ganhos similares. Chamar Claude para gerar predicao narrativa com justificativa. Salvar features e predicao no `revenue_forecast_log` |
+| Migration SQL | Adicionar coluna `features` (jsonb nullable) na tabela `revenue_forecast_log` para armazenar as features usadas na predicao |
+
+### Features a extrair por deal
+
+```text
+- dias_no_stage_atual
+- total_atividades
+- ultima_atividade_dias_atras
+- mensagens_respondidas / mensagens_enviadas (taxa resposta)
+- score_probabilidade_atual
+- valor_deal
+- icp_score (do lead associado)
+- temperatura (do lead)
+- canal_principal (whatsapp/email)
+```
+
+### Modelo
+
+Em vez de ML tradicional (que requer treinamento), usar Claude para analisar os deals abertos com suas features contra o padrao dos deals ganhos/perdidos dos ultimos 180 dias, e gerar:
+- Probabilidade ajustada (0-100) baseada em similaridade com deals ganhos
+- Justificativa narrativa ("Este deal tem 73% de chance porque engajamento alto + ICP ideal, mas tempo no stage esta acima da media")
+- Top 3 riscos e top 3 sinais positivos
+
+---
+
+## Migration SQL
+
+Uma migration com:
+- `ALTER TABLE prompt_versions ADD COLUMN ab_weight int NOT NULL DEFAULT 100`
+- `ALTER TABLE prompt_versions ADD COLUMN ab_group text`
+- `ALTER TABLE ai_usage_log ADD COLUMN prompt_version_id uuid`
+- `ALTER TABLE revenue_forecast_log ADD COLUMN features jsonb`
 
 ---
 
 ## Resumo de Arquivos
 
-### Arquivos a criar (novos)
+### Novos (8 arquivos)
 
 | Arquivo | Descricao |
-|---|---|
-| `src/components/deals/FollowUpHintCard.tsx` | Card com melhor horario de contato |
-| `src/components/analytics/IcpInsightsCard.tsx` | Card com perfil ICP aprendido |
+|---------|-----------|
+| `supabase/functions/cs-suggest-note/index.ts` | Sugestao de nota CS via IA |
+| `src/pages/admin/OperationalHealthPage.tsx` | Dashboard saude operacional |
+| `src/hooks/useOperationalHealth.ts` | Hook para health check completo |
+| `supabase/functions/sdr-message-parser/index.ts` | Parser de mensagem SDR |
+| `supabase/functions/sdr-intent-classifier/index.ts` | Classificador de intent |
+| `supabase/functions/sdr-response-generator/index.ts` | Gerador de resposta SDR |
+| `supabase/functions/sdr-action-executor/index.ts` | Executor de acoes SDR |
 
-### Migration SQL
-
-Uma migration com:
-- CRON jobs para 14 funcoes (13 originais + health-check cada 5min)
-- Tabela `ai_rate_limits`
-
-### Edge functions a modificar (14 funcoes)
-
-| Funcao | Mudancas |
-|---|---|
-| deal-scoring | Claude primary + ai_usage_log |
-| cs-daily-briefing | Claude primary + ai_usage_log |
-| deal-context-summary | Claude primary + ai_usage_log |
-| cs-trending-topics | Claude primary + ai_usage_log |
-| faq-auto-review | Claude primary + Gemini fallback + ai_usage_log (ja loga parcialmente) |
-| icp-learner | Claude primary + Gemini fallback |
-| sdr-ia-interpret | ai_usage_log + prompt_versions |
-| next-best-action | ai_usage_log |
-| call-coach | ai_usage_log |
-| call-transcribe | ai_usage_log |
-| copilot-proactive | ai_usage_log |
-| copilot-chat | ai_usage_log (ja loga) + prompt_versions |
-| deal-loss-analysis | ai_usage_log |
-| weekly-report | ai_usage_log |
-| amelia-learn | ai_usage_log |
-| amelia-mass-action | ai_usage_log |
-| ai-benchmark | ai_usage_log |
-| integration-health-check | Alerta admin 3x falha consecutiva |
-
-### Componentes frontend a modificar (12 arquivos)
+### Modificados (10+ arquivos)
 
 | Arquivo | Mudanca |
-|---|---|
-| `src/hooks/useDeals.ts` | Paginacao PAGE_SIZE=50 + limit(500) para Kanban |
-| `src/components/copilot/CopilotPanel.tsx` | useAnalyticsEvents tracking |
-| `src/pages/WorkbenchPage.tsx` | useAnalyticsEvents tracking |
-| `src/components/deals/DealInsightsTab.tsx` | useAnalyticsEvents tracking |
-| `src/pages/cs/CSClienteDetailPage.tsx` | useAnalyticsEvents tracking |
-| `src/pages/PipelinePage.tsx` | useAnalyticsEvents tracking |
-| `src/pages/ConversasPage.tsx` | useAnalyticsEvents tracking |
-| `src/pages/AnalyticsPage.tsx` | useAnalyticsEvents tracking |
-| `src/components/deals/EmailFromDealDialog.tsx` | useAnalyticsEvents tracking |
-| `src/components/workbench/NextBestActionCard.tsx` | useAnalyticsEvents tracking |
-| `src/pages/LeadDetail.tsx` | useAnalyticsEvents tracking |
-| `src/components/deals/DealDetailSheet.tsx` | Integrar FollowUpHintCard |
-| `src/pages/AnalyticsExecutivoPage.tsx` | Integrar IcpInsightsCard |
+|---------|---------|
+| `src/components/deals/DealDetailSheet.tsx` | Badge "Auto IA" em atividades de chamada |
+| `src/pages/cs/CSClienteDetailPage.tsx` | Botao "Sugerir Nota (Amelia)" |
+| `supabase/functions/copilot-chat/index.ts` | A/B testing de prompts |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Refatorar para orquestrador + A/B testing |
+| `supabase/functions/revenue-forecast/index.ts` | Feature engineering + IA narrativa |
+| `src/hooks/usePromptVersions.ts` | Suporte a `ab_weight` |
+| `src/App.tsx` | Rota `/admin/operational-health` |
+| `src/config/screenRegistry.ts` | Registrar tela |
+| `src/components/layout/AppSidebar.tsx` | Item de menu |
+| `supabase/config.toml` | 5 novas funcoes |
 
----
+### Ordem de execucao recomendada
 
-## Ordem de Execucao Recomendada
-
-Como sao muitas mudancas, recomendo implementar em lotes:
-
-**Lote 1** (Bloqueante): Migration CRON + rate limits + paginacao deals
-**Lote 2** (Alto): ai_usage_log em 14 edge functions + migracao Claude primary em 6 funcoes
-**Lote 3** (Medio): Analytics events em 10 componentes + FollowUpHintCard + IcpInsightsCard
-**Lote 4** (Medio): prompt_versions em copilot-chat e sdr-ia-interpret + health-check alertas + helper callAI padronizado
+**Lote 1**: Migration SQL (colunas novas) + `cs-suggest-note` + aba notas com sugestao IA
+**Lote 2**: Dashboard saude operacional (pagina + hook + rota + sidebar)
+**Lote 3**: A/B testing prompts (copilot-chat + sdr-ia-interpret + hook)
+**Lote 4**: SDR-IA modular (4 funcoes + orquestrador)
+**Lote 5**: Revenue forecast com IA (feature engineering + Claude)
+**Lote 6**: Badge "Auto IA" no DealDetailSheet
 
