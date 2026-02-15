@@ -1,3 +1,4 @@
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSMetrics } from '@/hooks/useCSMetrics';
 import { useCSIncidents } from '@/hooks/useCSIncidents';
@@ -36,6 +37,7 @@ export default function CSDashboardPage() {
   ];
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={HeartPulse} title="Customer Success" description="Visão geral da saúde da carteira de clientes" />
 
@@ -155,5 +157,6 @@ export default function CSDashboardPage() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

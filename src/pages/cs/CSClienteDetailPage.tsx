@@ -1,4 +1,5 @@
 import { useParams, useNavigate } from 'react-router-dom';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSCustomerById } from '@/hooks/useCSCustomers';
 import { useCSSurveys, useCreateSurvey } from '@/hooks/useCSSurveys';
@@ -159,6 +160,7 @@ export default function CSClienteDetailPage() {
   timelineItems.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={User} title={customer.contact?.nome || 'Cliente CS'} description="Detalhe do cliente" />
 
@@ -359,5 +361,6 @@ export default function CSClienteDetailPage() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -66,6 +67,7 @@ export default function CSPlaybooksPage() {
   };
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={BookOpen} title="Playbooks CS" description="Cadências automatizadas de Customer Success" />
 
@@ -142,5 +144,6 @@ export default function CSPlaybooksPage() {
         )}
       </div>
     </div>
+    </AppLayout>
   );
 }

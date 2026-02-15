@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSSurveys } from '@/hooks/useCSSurveys';
 import { useCSCustomers } from '@/hooks/useCSCustomers';
@@ -10,7 +11,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { ClipboardList, Send } from 'lucide-react';
+import { ClipboardList, Send, Users } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { CSTrendingTopicsCard } from '@/components/cs/CSTrendingTopicsCard';
@@ -18,6 +20,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
 export default function CSPesquisasPage() {
+  const navigate = useNavigate();
   const { data: surveys } = useCSSurveys();
   const { data: customersData } = useCSCustomers({ is_active: true }, 0);
   const customers = customersData?.data ?? [];
@@ -84,12 +87,19 @@ export default function CSPesquisasPage() {
   );
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={ClipboardList} title="Pesquisas CS" description="NPS, CSAT e CES dos clientes">
-        <Button onClick={() => setDialogOpen(true)} size="sm">
+        <div className="flex items-center gap-2">
+          <Button onClick={() => navigate('/cs/pesquisas/massa')} variant="outline" size="sm">
+            <Users className="h-4 w-4 mr-2" />
+            Envio em Massa
+          </Button>
+          <Button onClick={() => setDialogOpen(true)} size="sm">
           <Send className="h-4 w-4 mr-2" />
           Enviar Pesquisa
         </Button>
+        </div>
       </PageShell>
       <div className="px-6 pb-6">
         <Tabs defaultValue="pendentes">
@@ -149,5 +159,6 @@ export default function CSPesquisasPage() {
         </DialogContent>
       </Dialog>
     </div>
+    </AppLayout>
   );
 }

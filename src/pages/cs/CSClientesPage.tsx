@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppLayout } from '@/components/layout/AppLayout';
 import { useNavigate } from 'react-router-dom';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSCustomers } from '@/hooks/useCSCustomers';
@@ -32,6 +33,7 @@ export default function CSClientesPage() {
     : customers;
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={Users} title="Clientes CS" description="Lista de clientes no módulo de Sucesso do Cliente" />
 
@@ -134,5 +136,6 @@ export default function CSClientesPage() {
         )}
       </div>
     </div>
+    </AppLayout>
   );
 }
