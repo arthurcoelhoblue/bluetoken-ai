@@ -1,6 +1,6 @@
-# 📚 Documentação do SDR IA
+# 📚 Documentação do Amélia CRM (SDR IA)
 
-Este diretório contém toda a documentação técnica do sistema SDR IA.
+Este diretório contém toda a documentação técnica do sistema.
 
 ## 📁 Estrutura
 
@@ -8,11 +8,10 @@ Este diretório contém toda a documentação técnica do sistema SDR IA.
 docs/
 ├── README.md                 # Este arquivo
 ├── CHANGELOG.md              # Log de mudanças do projeto
-├── TEST-RESULTS.md           # Resumo de todos os testes
+├── TEST-RESULTS.md           # Resumo de todos os testes (51+)
 └── patches/
     ├── _TEMPLATE.md          # Template para novos patches
-    ├── PATCH-1_*.md          # Documentação do Patch 1
-    └── PATCH-2_*.md          # Documentação do Patch 2
+    └── PATCH-*_*.md          # Documentação de cada patch
 ```
 
 ## 🔗 Links Rápidos
@@ -26,13 +25,19 @@ docs/
 |-------|-----------|--------|
 | [PATCH 1](./patches/PATCH-1_autenticacao-google-rbac.md) | Autenticação Google + RBAC | ✅ Implementado |
 | [PATCH 2](./patches/PATCH-2_webhook-sgt.md) | Webhook SGT + Normalizador | ✅ Implementado |
+| [PATCH 3](./patches/PATCH-3_classificacao-comercial.md) | Classificação Comercial IA | ✅ Implementado |
+| [PATCH 4](./patches/PATCH-4_motor-cadencias.md) | Motor de Cadências | ✅ Implementado |
+| [PATCH 5](./patches/PATCH-5_mensageria-sdr-ia.md) | Mensageria + SDR IA | ✅ Implementado |
+| [PATCH 6](./patches/PATCH-6_sdr-conversacional-inteligente.md) | SDR Conversacional | ✅ Implementado |
+| PATCH 13 | [Telefonia Zadarma](./patches/PATCH-13_zadarma-telefonia.md) | ✅ Implementado |
 
-## 🚀 Próximos Patches
+## 🏗️ Fases de Consolidação
 
-| Patch | Descrição | Status |
-|-------|-----------|--------|
-| PATCH 3 | Pipeline de Classificação IA | ⏳ Pendente |
-| PATCH 4 | Integração WhatsApp | ⏳ Pendente |
+| Fase | Descrição | Status |
+|------|-----------|--------|
+| Fase 1 | Governança IA + Custos + Adoção | ✅ Concluída |
+| Fase 2 | Módulo Customer Success | ✅ Concluída |
+| Fase 3 | Auditoria + Testes E2E | ✅ Concluída |
 
 ## 📝 Como Contribuir
 

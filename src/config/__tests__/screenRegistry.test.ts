@@ -15,6 +15,12 @@ describe('SCREEN_REGISTRY', () => {
       expect(s.url).toBeTruthy();
     }
   });
+
+  it('all URLs start with /', () => {
+    for (const s of SCREEN_REGISTRY) {
+      expect(s.url).toMatch(/^\//);
+    }
+  });
 });
 
 describe('SCREEN_GROUPS', () => {
@@ -26,6 +32,7 @@ describe('SCREEN_GROUPS', () => {
     expect(SCREEN_GROUPS).toContain('Principal');
     expect(SCREEN_GROUPS).toContain('Automação');
     expect(SCREEN_GROUPS).toContain('Configuração');
+    expect(SCREEN_GROUPS).toContain('Sucesso do Cliente');
   });
 });
 
@@ -74,5 +81,38 @@ describe('Phase 3 routes', () => {
 
   it('CS dashboard route exists', () => {
     expect(getScreenByUrl('/cs')?.key).toBe('cs_dashboard');
+  });
+
+  it('CS playbooks route exists', () => {
+    expect(getScreenByUrl('/cs/playbooks')?.key).toBe('cs_playbooks');
+  });
+});
+
+describe('Route consistency (registry vs App.tsx)', () => {
+  it('funis_config points to /settings/pipelines (not /admin/)', () => {
+    const entry = SCREEN_REGISTRY.find(s => s.key === 'funis_config');
+    expect(entry?.url).toBe('/settings/pipelines');
+  });
+
+  it('campos_config points to /settings/custom-fields (not /admin/)', () => {
+    const entry = SCREEN_REGISTRY.find(s => s.key === 'campos_config');
+    expect(entry?.url).toBe('/settings/custom-fields');
+  });
+
+  it('all sidebar screenKeys exist in registry', () => {
+    const sidebarKeys = [
+      'dashboard', 'pipeline', 'contatos', 'organizacoes', 'conversas',
+      'pendencias_gestor', 'metas', 'renovacao', 'cockpit', 'relatorios',
+      'leads_quentes', 'amelia', 'amelia_mass_action', 'cadencias',
+      'leads_cadencia', 'proximas_acoes', 'templates', 'capture_forms',
+      'monitor_sgt', 'cs_dashboard', 'cs_clientes', 'cs_pesquisas',
+      'cs_incidencias', 'cs_playbooks', 'knowledge_base', 'integracoes',
+      'benchmark_ia', 'custos_ia', 'funis_config', 'campos_config',
+      'importacao', 'telefonia_zadarma', 'configuracoes',
+    ];
+    const registryKeys = new Set(SCREEN_REGISTRY.map(s => s.key));
+    for (const key of sidebarKeys) {
+      expect(registryKeys.has(key), `Missing key: ${key}`).toBe(true);
+    }
   });
 });

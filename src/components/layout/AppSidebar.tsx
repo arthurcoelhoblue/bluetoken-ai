@@ -22,6 +22,7 @@ import {
   BookOpen,
   Plug,
   FlaskConical,
+  DollarSign,
   Activity,
   Flame,
   Settings,
@@ -122,7 +123,7 @@ const navGroups: NavGroup[] = [
       { title: 'Knowledge Base', url: '/admin/produtos', icon: BookOpen, screenKey: 'knowledge_base' },
       { title: 'Integrações', url: '/integracoes', icon: Plug, screenKey: 'integracoes' },
       { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, screenKey: 'benchmark_ia' },
-      
+      { title: 'Custos IA', url: '/admin/ai-costs', icon: DollarSign, screenKey: 'custos_ia' },
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
