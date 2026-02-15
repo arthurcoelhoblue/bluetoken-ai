@@ -63,13 +63,14 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'telefonia_zadarma', label: 'Telefonia', group: 'Configuração', icon: PhoneCall, url: '/admin/zadarma' },
   { key: 'pendencias_gestor', label: 'Pendências', group: 'Principal', icon: AlertTriangle, url: '/pendencias' },
   { key: 'organizacoes', label: 'Organizações', group: 'Principal', icon: Users, url: '/organizacoes' },
-  { key: 'funis_config', label: 'Config. Funis', group: 'Configuração', icon: Columns3, url: '/admin/pipeline-config' },
-  { key: 'campos_config', label: 'Campos Custom', group: 'Configuração', icon: ClipboardList, url: '/admin/custom-fields' },
+  { key: 'funis_config', label: 'Config. Funis', group: 'Configuração', icon: Columns3, url: '/settings/pipelines' },
+  { key: 'campos_config', label: 'Campos Custom', group: 'Configuração', icon: ClipboardList, url: '/settings/custom-fields' },
   { key: 'configuracoes', label: 'Configurações', group: 'Configuração', icon: Settings, url: '/admin/settings' },
   { key: 'cs_dashboard', label: 'Dashboard CS', group: 'Sucesso do Cliente', icon: HeartPulse, url: '/cs' },
   { key: 'cs_clientes', label: 'Clientes CS', group: 'Sucesso do Cliente', icon: Users, url: '/cs/clientes' },
   { key: 'cs_pesquisas', label: 'Pesquisas', group: 'Sucesso do Cliente', icon: ClipboardList, url: '/cs/pesquisas' },
   { key: 'cs_incidencias', label: 'Incidências', group: 'Sucesso do Cliente', icon: AlertCircle, url: '/cs/incidencias' },
+  { key: 'cs_playbooks', label: 'Playbooks CS', group: 'Sucesso do Cliente', icon: BookOpen, url: '/cs/playbooks' },
 ];
 
 export const SCREEN_GROUPS = [...new Set(SCREEN_REGISTRY.map(s => s.group))];
@@ -84,5 +85,8 @@ export function getScreensByGroup(): Record<string, ScreenRegistryItem[]> {
 
 export function getScreenByUrl(url: string): ScreenRegistryItem | undefined {
   if (url === '/') return SCREEN_REGISTRY.find(s => s.key === 'dashboard');
-  return SCREEN_REGISTRY.find(s => s.url !== '/' && url.startsWith(s.url));
+  // Prefer longest matching URL to avoid /cs matching before /cs/playbooks
+  const matches = SCREEN_REGISTRY.filter(s => s.url !== '/' && url.startsWith(s.url));
+  if (matches.length === 0) return undefined;
+  return matches.reduce((best, cur) => cur.url.length > best.url.length ? cur : best);
 }

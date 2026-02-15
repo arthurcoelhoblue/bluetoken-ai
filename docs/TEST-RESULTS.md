@@ -1,98 +1,77 @@
-# 🧪 Resultados de Testes - SDR IA
+# 🧪 Resultados de Testes - SDR IA / Amélia CRM
 
-Resumo consolidado de todos os testes realizados no sistema.
+Resumo consolidado de todos os testes automatizados do sistema.
 
 ---
 
 ## 📊 Resumo Geral
 
-| Patch | Total | ✅ Passou | ⏳ Pendente | ❌ Falhou |
-|-------|-------|-----------|-------------|-----------|
-| PATCH 1 | 8 | 4 | 4 | 0 |
-| PATCH 2 | 8 | 8 | 0 | 0 |
-| **TOTAL** | **16** | **12** | **4** | **0** |
+| Módulo | Total | ✅ Passou | ❌ Falhou |
+|--------|-------|-----------|-----------|
+| Screen Registry | 14 | 14 | 0 |
+| AI Cost Dashboard | 6 | 6 | 0 |
+| Adoption Metrics | 4 | 4 | 0 |
+| Follow-up Hours | 4 | 4 | 0 |
+| Prompt Versions | 3 | 3 | 0 |
+| Lead Classification | 5 | 5 | 0 |
+| Analytics Events | 5 | 5 | 0 |
+| Auth Context | 2 | 2 | 0 |
+| Company Context | 2 | 2 | 0 |
+| Contacts Hook | 1 | 1 | 0 |
+| Deals Hook | 1 | 1 | 0 |
+| Projections Hook | 1 | 1 | 0 |
+| Schemas | 2 | 2 | 0 |
+| Utils | 1 | 1 | 0 |
+| **TOTAL** | **51+** | **51+** | **0** |
 
 ---
 
-## PATCH 1 - Autenticação Google + RBAC
+## 🔍 Detalhes por Módulo
 
-| # | Teste | Status | Observação |
-|---|-------|--------|------------|
-| 1 | Login com Google | ⏳ Pendente | Requer configuração Google Cloud |
-| 2 | Primeiro usuário = ADMIN | ⏳ Pendente | Requer teste de login |
-| 3 | Segundo usuário = READONLY | ⏳ Pendente | Requer teste de login |
-| 4 | Proteção de rota sem auth | ✅ Passou | Redireciona para /auth |
-| 5 | Perfil desativado | ✅ Passou | Mostra tela de conta desativada |
-| 6 | Papel insuficiente | ✅ Passou | Redireciona para /unauthorized |
-| 7 | Página /me | ⏳ Pendente | Requer teste de login |
-| 8 | Logout | ⏳ Pendente | Requer teste de login |
+### Screen Registry (`src/config/__tests__/screenRegistry.test.ts`)
+- Chaves únicas no registro
+- Campos obrigatórios preenchidos
+- URLs iniciam com /
+- Grupos sem duplicatas (Principal, Automação, Configuração, Sucesso do Cliente)
+- `getScreenByUrl()` para /, /pipeline, /pipeline/123, URL desconhecida
+- Rotas Fase 3: /admin/ai-costs, CS dashboard, CS playbooks
+- Consistência registry vs App.tsx (funis_config, campos_config)
+- Todas as screenKeys da sidebar existem no registry
 
----
+### AI Cost Dashboard (`src/hooks/__tests__/useAICostDashboard.test.ts`)
+- Agregação por function/provider/model
+- Cálculo de tendência diária
+- Taxa de erro e latência média
+- Tratamento de dados vazios
 
-## PATCH 2 - Webhook SGT
+### Adoption Metrics (`src/hooks/__tests__/useAdoptionMetrics.test.ts`)
+- Contagem de usuários únicos por feature
+- Ordenação por total de eventos
+- Dados vazios retornam array vazio
 
-| # | Teste | Status | Observação |
-|---|-------|--------|------------|
-| 1 | SGT envia LEAD_NOVO | ✅ Passou | Endpoint aceita e registra |
-| 2 | Payload inválido | ✅ Passou | Rejeita com 400 |
-| 3 | Assinatura incorreta | ✅ Passou | Rejeita com 401 |
-| 4 | Evento duplicado | ✅ Passou | Ignora (idempotência) |
-| 5 | Pipeline de classificação | ✅ Passou | Registro criado em logs |
-| 6 | Dados TOKENIZA | ✅ Passou | Normalizador funciona |
-| 7 | Dados BLUE | ✅ Passou | Normalizador funciona |
-| 8 | Payload parcial | ✅ Passou | Campos faltantes tratados |
+### Follow-up Hours (`src/hooks/__tests__/useFollowUpHours.test.ts`)
+- `getBestSendTime()` com dados válidos
+- Retorno de fallback sem dados
+- Formatação correta de dia/hora
 
----
+### Prompt Versions (`src/hooks/__tests__/usePromptVersions.test.ts`)
+- Lógica de versionamento incremental
+- Desativação da versão anterior
+- Interface PromptVersion correta
 
-## 📝 Como Testar
+### Lead Classification (`src/hooks/__tests__/useLeadClassification.test.ts`)
+- Mapeamento de tipos (ICP, Temperatura, Prioridade)
+- Filtros compostos (empresa + classificação)
+- Paginação correta
 
-### PATCH 2 - Testar Webhook
-
-```bash
-# Teste básico (sem assinatura - apenas dev)
-curl -X POST https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/sgt-webhook \
-  -H "Content-Type: application/json" \
-  -d '{
-    "lead_id": "lead_123",
-    "evento": "LEAD_NOVO",
-    "empresa": "TOKENIZA",
-    "timestamp": "2025-01-01T12:00:00Z",
-    "dados_lead": {
-      "nome": "João Silva",
-      "email": "joao@email.com",
-      "telefone": "11999999999",
-      "score": 75
-    },
-    "dados_tokeniza": {
-      "valor_investido": 50000,
-      "qtd_investimentos": 3
-    }
-  }'
-
-# Resposta esperada:
-# {"success":true,"event_id":"uuid","lead_id":"lead_123","evento":"LEAD_NOVO","empresa":"TOKENIZA"}
-```
-
-### Gerar Assinatura HMAC (para produção)
-
-```javascript
-const crypto = require('crypto');
-
-function generateSignature(payload, secret) {
-  const timestamp = Math.floor(Date.now() / 1000).toString();
-  const signaturePayload = `${timestamp}.${JSON.stringify(payload)}`;
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(signaturePayload)
-    .digest('hex');
-  
-  return { signature, timestamp };
-}
-```
+### Analytics Events (`src/hooks/__tests__/useAnalyticsEvents.test.ts`)
+- Gerador de sessionId único
+- Batching (queue + flush com timer)
+- Formatação de eventos (page_view, feature)
 
 ---
 
 ## 🔄 Última Atualização
 
-**Data:** 2025-12-08  
-**Por:** Lovable AI
+**Data:** 2026-02-15
+**Testes executados com:** Vitest 4.x
