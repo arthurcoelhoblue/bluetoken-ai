@@ -176,9 +176,70 @@ serve(async (req) => {
 
         // Only log if score changed
         if (oldScore !== newScore) {
-          const motivo = oldStatus !== newStatus
+          let motivo: string | null = oldStatus !== newStatus
             ? `Status mudou de ${oldStatus || 'N/A'} para ${newStatus}`
             : null;
+
+          // Gerar explicação narrativa via IA quando status muda
+          if (oldStatus && oldStatus !== newStatus) {
+            try {
+              const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+              const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+              const narrativePrompt = `Você é a Amélia, consultora de CS. Explique em 1-2 frases curtas por que o health score deste cliente mudou de ${oldScore ?? '?'} (${oldStatus}) para ${newScore} (${newStatus}). Use os dados das dimensões: NPS=${dimensoes.nps}/100, CSAT=${dimensoes.csat}/100, Engajamento=${dimensoes.engajamento}/100, Financeiro=${dimensoes.financeiro}/100, Tempo=${dimensoes.tempo}/100, Sentimento=${dimensoes.sentimento}/100. Seja específica sobre quais dimensões puxaram o score para baixo/cima. Responda apenas o texto, sem formatação.`;
+
+              let narrativa = '';
+
+              // Claude primário
+              if (ANTHROPIC_API_KEY) {
+                try {
+                  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+                    method: 'POST',
+                    headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+                    body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 200, messages: [{ role: 'user', content: narrativePrompt }] }),
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    narrativa = data.content?.[0]?.text || '';
+                  }
+                } catch (e) { console.warn('[CS-Health] Claude narrative failed:', e); }
+              }
+
+              // Gemini fallback
+              if (!narrativa && GOOGLE_API_KEY) {
+                try {
+                  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ contents: [{ parts: [{ text: narrativePrompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 200 } }),
+                  });
+                  if (resp.ok) {
+                    const data = await resp.json();
+                    narrativa = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+                  }
+                } catch (e) { console.warn('[CS-Health] Gemini narrative failed:', e); }
+              }
+
+              if (narrativa) {
+                motivo = narrativa;
+              }
+
+              // Log de uso IA
+              if (narrativa) {
+                await supabase.from('ai_usage_log').insert({
+                  function_name: 'cs-health-calculator',
+                  provider: ANTHROPIC_API_KEY ? 'claude' : 'gemini',
+                  model: ANTHROPIC_API_KEY ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview',
+                  tokens_input: 0,
+                  tokens_output: 0,
+                  latency_ms: 0,
+                  success: true,
+                  empresa: customer.empresa,
+                });
+              }
+            } catch (narrativeErr) {
+              console.warn('[CS-Health] Narrative generation failed:', narrativeErr);
+            }
+          }
 
           await supabase.from('cs_health_log').insert({
             customer_id: customerId,
