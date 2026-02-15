@@ -1,91 +1,72 @@
 
 
-# Correção: Limpeza de CRON Jobs Duplicados
+# Correção de Problemas Detectados Pós-Migração
 
-## Diagnóstico
+Investigação completa revelou **2 bugs introduzidos pela migração** e **3 funções que ficaram de fora** da migração para `callAI()`.
 
-Os CRON jobs **existem e estão funcionando** — a auditoria V5 foi escrita antes da implementação. Porém, a investigação revelou um problema real: **10 jobs duplicados** no banco de dados.
+---
 
-Existem 26 jobs no total quando deveriam ser 16. A causa: os jobs foram criados em dois momentos distintos (duas rodadas de SQL), resultando em pares como:
+## Problemas Encontrados
 
-```text
-cadence-runner          (*/15 * * * *)  -- rodada 1
-cadence-runner-15min    (*/15 * * * *)  -- rodada 2 (DUPLICADO)
+| Problema | Severidade | Causa | Impacto |
+|----------|-----------|-------|---------|
+| `deal-scoring` retorna 500 | ALTA | Query usa `pipeline_stages!inner` mas existem 3 FKs ambíguas | Scoring de deals não funciona |
+| Operational Health mostra "Erro" para Claude, Gemini, SMTP, Zadarma | MEDIA | Hook envia nomes (`claude`, `smtp`) que a função não reconhece | Dashboard de saúde incompleto |
+| 3 funções não migradas para `callAI()` | MEDIA | `copilot-proactive`, `faq-auto-review`, `next-best-action` | Sem rate limiting nem telemetria unificada |
+| `email-send` erro SMTP | BAIXA | Configuração TLS do servidor SMTP (pré-existente) | Emails não enviados |
+| `cadence-runner` 401 | BAIXA | Auth issue no CRON (pré-existente) | Cadências não executam via CRON |
 
-deal-scoring-daily      (0 5 * * *)    -- rodada 1
-deal-scoring-6h         (0 */6 * * *)  -- rodada 2 (horário diferente!)
-```
+---
 
-### Impacto dos duplicados:
-- Funções de IA sendo chamadas 2x, dobrando custos de tokens
-- Possíveis conflitos de concorrência (ex: dois cadence-runner simultâneos)
-- Dados de telemetria inflados
+## Correções a Implementar
 
-## Plano de Correção
+### 1. Fix `deal-scoring` — Query ambígua (CRÍTICO)
 
-### Passo 1: Remover os 10 jobs duplicados
+**Arquivo:** `supabase/functions/deal-scoring/index.ts`
 
-Identificação dos duplicados a remover (manter os da rodada original que têm nomes mais limpos):
-
-| Job a REMOVER (duplicado) | Job a MANTER (original) |
-|---------------------------|------------------------|
-| `cadence-runner-15min` (jobid 35) | `cadence-runner` (jobid 30) |
-| `cs-health-calculator-daily-6h` (jobid 43) | `cs-health-calculator` (jobid 24) |
-| `cs-churn-predictor-daily-630` (jobid 44) | `cs-churn-predictor` (jobid 26) |
-| `cs-daily-briefing-daily-830` (jobid 47) | `cs-daily-briefing` (jobid 29) |
-| `cs-incident-detector-2h` (jobid 37) | `cs-incident-detector` (jobid 27) |
-| `cs-nps-auto-daily-7h` (jobid 45) | `cs-nps-auto` (jobid 25) |
-| `cs-renewal-alerts-daily-8h` (jobid 46) | `cs-renewal-alerts` (jobid 28) |
-| `deal-scoring-6h` (jobid 39) | `deal-scoring-daily` (jobid 31) |
-| `revenue-forecast-daily-5h` (jobid 42) | `revenue-forecast-daily` (jobid 32) |
-| `weekly-report-sunday-20h` (jobid 49) | `weekly-report-sunday` (jobid 33) |
-
-### Passo 2: Verificar schedules dos jobs mantidos
-
-Garantir que os 16 jobs restantes tenham os horários corretos conforme a auditoria recomenda:
-
-| Funcao | Schedule correto |
-|--------|-----------------|
-| cadence-runner | `*/15 * * * *` (a cada 15 min) |
-| cs-health-calculator | `0 6 * * *` (diario 6h) |
-| cs-churn-predictor | `0 7 * * *` (diario 7h) -- NOTA: duplicado tinha `30 6`, original tem `0 7` |
-| cs-daily-briefing | `30 8 * * *` (diario 8:30) |
-| cs-incident-detector | `0 */2 * * *` (a cada 2h) |
-| cs-nps-auto | `0 9 * * *` (diario 9h) |
-| cs-renewal-alerts | `0 8 * * *` (diario 8h) |
-| cs-playbook-runner | `*/30 * * * *` (a cada 30 min) |
-| copilot-proactive | `0 */4 * * *` (a cada 4h) |
-| deal-scoring | `0 5 * * *` (diario 5h) |
-| follow-up-scheduler | `0 4 * * *` (diario 4h) |
-| icp-learner | `0 3 * * 0` (domingo 3h) |
-| integration-health-check | `*/5 * * * *` (a cada 5 min) |
-| revenue-forecast | `0 6 * * *` (diario 6h) |
-| weekly-report | `0 20 * * 0` (domingo 20h) |
-| cleanup-rate-limits | `0 2 * * *` (diario 2h) |
-
-## Detalhe Tecnico
-
-A remoção dos duplicados sera feita via SQL direto (não migration, pois os jobs foram criados via SQL direto):
+Trocar `pipeline_stages!inner` por `pipeline_stages!deals_stage_id_fkey` na query de deals:
 
 ```text
-SELECT cron.unschedule('cadence-runner-15min');
-SELECT cron.unschedule('cs-health-calculator-daily-6h');
-SELECT cron.unschedule('cs-churn-predictor-daily-630');
-SELECT cron.unschedule('cs-daily-briefing-daily-830');
-SELECT cron.unschedule('cs-incident-detector-2h');
-SELECT cron.unschedule('cs-nps-auto-daily-7h');
-SELECT cron.unschedule('cs-renewal-alerts-daily-8h');
-SELECT cron.unschedule('deal-scoring-6h');
-SELECT cron.unschedule('revenue-forecast-daily-5h');
-SELECT cron.unschedule('weekly-report-sunday-20h');
+ANTES: pipeline_stages!inner(id, nome, posicao, pipeline_id)
+DEPOIS: pipeline_stages!deals_stage_id_fkey(id, nome, posicao, pipeline_id)
 ```
 
-Após a limpeza, verificar com `SELECT * FROM cron.job` que restam exatamente 16 jobs.
+### 2. Fix `integration-health-check` — Adicionar aliases de nomes
 
-### Resposta para o PO
+**Arquivo:** `supabase/functions/integration-health-check/index.ts`
 
-O item CRON da auditoria V5 **já está resolvido** — os 16 jobs estão ativos e executando com sucesso (última execução: agora mesmo). O documento da auditoria foi escrito antes da implementação. O que encontramos e vamos corrigir agora são **10 jobs duplicados** que foram criados acidentalmente em uma segunda rodada de SQL, o que pode estar dobrando custos de IA desnecessariamente.
+Adicionar cases no switch para os nomes usados pelo frontend:
+- `claude` -> `checkAnthropic()`
+- `smtp` -> `checkSMTP()`
+- `zadarma` -> verificar se `ZADARMA_API_KEY` existe (mesmo padrão do SGT)
 
-## Arquivos modificados
+Atualmente o switch já trata `gemini` e `gpt` como aliases de `anthropic`, mas falta `claude`, `smtp` e `zadarma`.
 
-Nenhum arquivo de código sera alterado. Apenas execução de SQL para remover duplicados do `cron.job`.
+### 3. Migrar 3 funções restantes para `callAI()`
+
+**Arquivos:**
+- `supabase/functions/copilot-proactive/index.ts` — substituir bloco de fetch direto por `callAI()`
+- `supabase/functions/faq-auto-review/index.ts` — substituir bloco de fetch direto por `callAI()`
+- `supabase/functions/next-best-action/index.ts` — substituir bloco de fetch direto por `callAI()`
+
+Mesma abordagem da migração anterior: importar `callAI`, remover fetch manual e log de telemetria manual.
+
+---
+
+## Itens pré-existentes (NÃO causados pela migração)
+
+- **`email-send` SMTP**: Erro de TLS (`InvalidContentType`). Requer revisão das credenciais SMTP (host, porta, tipo de conexão). Não foi alterado na migração.
+- **`cadence-runner` 401**: O CRON job pode estar usando um token expirado ou header de auth incorreto. Não foi alterado na migração.
+
+---
+
+## Resumo de arquivos a modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/deal-scoring/index.ts` | Fix query ambígua (1 linha) |
+| `supabase/functions/integration-health-check/index.ts` | Adicionar aliases `claude`, `smtp`, `zadarma` |
+| `supabase/functions/copilot-proactive/index.ts` | Migrar para `callAI()` |
+| `supabase/functions/faq-auto-review/index.ts` | Migrar para `callAI()` |
+| `supabase/functions/next-best-action/index.ts` | Migrar para `callAI()` |
+
