@@ -11,6 +11,7 @@ import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors
 import type { EmpresaTipo, Temperatura, TipoLead } from "../_shared/types.ts";
 import { isPlaceholderEmailForDedup, generatePhoneVariationsForSearch } from "../_shared/phone-utils.ts";
 import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
+import { checkWebhookRateLimit, rateLimitResponse, simpleHash } from "../_shared/webhook-rate-limit.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
@@ -800,9 +801,16 @@ serve(async (req) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    const phoneInfo = normalizePhone(payload.contact.phone);
-    // Determinar empresa: priorizar payload, fallback pela API key usada
+    // Rate limiting (150 req/min per empresa)
     const empresa: EmpresaTipo = payload.context?.empresa || authResult.empresaFromKey || 'BLUE';
+    const rateCheck = await checkWebhookRateLimit(supabase, 'bluechat-inbound', empresa, 150);
+    if (!rateCheck.allowed) {
+      console.warn('[BlueChat] Rate limit exceeded:', rateCheck.currentCount);
+      return rateLimitResponse(corsHeaders);
+    }
+
+    const phoneInfo = normalizePhone(payload.contact.phone);
+    // Determinar empresa: priorizar payload, fallback pela API key usada (already resolved above)
     console.log('[BlueChat] Empresa determinada:', empresa, '(payload:', payload.context?.empresa, '| key:', authResult.empresaFromKey, ')');
 
     // Verificar se bluechat está habilitado para esta empresa
