@@ -1951,6 +1951,14 @@ Se o lead diz "1 ano", isso complementa a situação. Se menciona "reunião com 
 NUNCA retorne frameworks_atualizados vazio ({}) se houver QUALQUER informação inferível na mensagem.
 Preencha os campos com base em inferências conversacionais, não apenas respostas diretas.
 
+## REGRA DE INFERÊNCIA LÓGICA (SPIN/GPCT/BANT)
+Quando S (Situação) e P (Problema) já estiverem preenchidos, INFIRA automaticamente:
+- I (Implicação): consequências negativas de NÃO resolver o problema (multas, perdas, riscos, custos ocultos)
+- N (Necessidade): benefício/ação necessária para resolver (contratar serviço, agendar reunião, regularizar)
+Aplique a mesma lógica para GPCT (se G e P preenchidos, infira C e T) e BANT (se N preenchido, infira B e T).
+Marque inferências com prefixo "[Inferido]" para diferenciar de dados explícitos do lead.
+Exemplo: S="quer declarar IR cripto" + P="não declarou" → I="[Inferido] Risco de multas da Receita Federal" + N="[Inferido] Contratação do serviço de declaração"
+
 ## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado extraído da mensagem"}},"disc_estimado":null,"departamento_destino":null}
 `;
 
@@ -1995,6 +2003,14 @@ Exemplo: Se o lead diz "quero um orçamento para declaração", isso é SPIN S (
 Se o lead diz "1 ano", isso complementa a situação. Se menciona "reunião com Michel", é contexto de situação.
 NUNCA retorne frameworks_atualizados vazio ({}) se houver QUALQUER informação inferível na mensagem.
 Preencha os campos com base em inferências conversacionais, não apenas respostas diretas.
+
+## REGRA DE INFERÊNCIA LÓGICA (SPIN/GPCT/BANT)
+Quando S (Situação) e P (Problema) já estiverem preenchidos, INFIRA automaticamente:
+- I (Implicação): consequências negativas de NÃO resolver o problema (multas, perdas, riscos, custos ocultos)
+- N (Necessidade): benefício/ação necessária para resolver (contratar serviço, agendar reunião, regularizar)
+Aplique a mesma lógica para GPCT (se G e P preenchidos, infira C e T) e BANT (se N preenchido, infira B e T).
+Marque inferências com prefixo "[Inferido]" para diferenciar de dados explícitos do lead.
+Exemplo: S="quer declarar IR cripto" + P="não declarou" → I="[Inferido] Risco de multas da Receita Federal" + N="[Inferido] Contratação do serviço de declaração"
 
 ## FORMATO JSON
 {"intent":"...","confidence":0.85,"summary":"...","acao":"...","acao_detalhes":{},"sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado extraído da mensagem"}},"disc_estimado":null,"ultima_pergunta_id":"...","departamento_destino":null}
