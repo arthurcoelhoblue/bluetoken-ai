@@ -12,10 +12,12 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Bot, Send, ThumbsUp, ThumbsDown, Search, Zap, FileText, History } from 'lucide-react';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Bot, Send, ThumbsUp, ThumbsDown, Search, Zap, FileText, History, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
-import { useDeals } from '@/hooks/useDeals';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useCadences } from '@/hooks/useCadences';
 import {
@@ -28,6 +30,7 @@ import {
 } from '@/hooks/useProjections';
 import type { MassActionJobStatus } from '@/types/projection';
 import { toast } from '@/hooks/use-toast';
+import { subDays, isAfter } from 'date-fns';
 
 const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -48,20 +51,70 @@ const statusVariant = (s: MassActionJobStatus) => {
   return 'outline' as const;
 };
 
+/** Fetch all open deals for a given empresa (across all pipelines) */
+function useAllOpenDeals(empresa: string | undefined) {
+  return useQuery({
+    queryKey: ['mass-action-deals', empresa],
+    enabled: !!empresa,
+    queryFn: async () => {
+      let query = supabase
+        .from('deals')
+        .select(`
+          *,
+          contacts:contact_id(id, nome, email, telefone),
+          pipeline_stages:stage_id(id, nome, cor, is_won, is_lost),
+          owner:owner_id(id, nome, email, avatar_url)
+        `)
+        .eq('status', 'ABERTO');
+
+      if (empresa) {
+        // Filter by pipeline's empresa via a sub-query on pipelines
+        const { data: pipIds } = await supabase
+          .from('pipelines')
+          .select('id')
+          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+          .eq('ativo', true);
+        if (pipIds && pipIds.length > 0) {
+          query = query.in('pipeline_id', pipIds.map(p => p.id));
+        } else {
+          return [];
+        }
+      }
+
+      query = query.order('created_at', { ascending: false });
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as any[];
+    },
+  });
+}
+
 export default function AmeliaMassActionPage() {
   const { user } = useAuth();
   const { activeCompany } = useCompany();
   const empresa = activeCompany === 'ALL' ? undefined : activeCompany;
   const { data: allPipelines = [] } = usePipelines();
-  const firstPipeline = allPipelines[0];
-  const { data: deals = [], isLoading: loadingDeals } = useDeals({ pipelineId: firstPipeline?.id || null });
+  const { data: deals = [], isLoading: loadingDeals } = useAllOpenDeals(empresa);
   const pipelines = allPipelines;
   const { data: cadences = [] } = useCadences();
   const { data: jobs = [], isLoading: loadingJobs } = useMassActionJobs(empresa);
 
+  // ─── Filter state ───
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState('');
   const [filterPipeline, setFilterPipeline] = useState('ALL');
+  const [filterStage, setFilterStage] = useState('ALL');
+  const [filterTemperatura, setFilterTemperatura] = useState('ALL');
+  const [filterOwner, setFilterOwner] = useState('ALL');
+  const [filterTag, setFilterTag] = useState('ALL');
+  const [filterOrigem, setFilterOrigem] = useState('ALL');
+  const [filterValorMin, setFilterValorMin] = useState('');
+  const [filterValorMax, setFilterValorMax] = useState('');
+  const [filterPeriodo, setFilterPeriodo] = useState('ALL');
+  const [filterScore, setFilterScore] = useState('ALL');
+  const [showMoreFilters, setShowMoreFilters] = useState(false);
+
+  // ─── Config dialog state ───
   const [showConfig, setShowConfig] = useState(false);
   const [configTab, setConfigTab] = useState<'cadencia' | 'adhoc'>('adhoc');
   const [selectedCadence, setSelectedCadence] = useState('');
@@ -75,16 +128,114 @@ export default function AmeliaMassActionPage() {
   const executeAction = useExecuteMassAction();
   const { data: activeJob } = useMassActionJob(activeJobId);
 
-  // Filter deals (only ABERTO)
+  // ─── Extract dynamic filter options from deals ───
+  const filterOptions = useMemo(() => {
+    const stages = new Map<string, string>();
+    const owners = new Map<string, string>();
+    const tags = new Set<string>();
+    const origens = new Set<string>();
+
+    for (const d of deals) {
+      if (d.pipeline_stages?.id) stages.set(d.pipeline_stages.id, d.pipeline_stages.nome);
+      if (d.owner?.id) owners.set(d.owner.id, d.owner.nome || d.owner.email);
+      if (d.tags && Array.isArray(d.tags)) d.tags.forEach((t: string) => tags.add(t));
+      if (d.origem) origens.add(d.origem);
+    }
+
+    // When a pipeline is selected, only show stages from that pipeline
+    const filteredStages = filterPipeline === 'ALL'
+      ? Array.from(stages.entries())
+      : deals
+          .filter((d: any) => d.pipeline_id === filterPipeline)
+          .reduce((acc: Map<string, string>, d: any) => {
+            if (d.pipeline_stages?.id) acc.set(d.pipeline_stages.id, d.pipeline_stages.nome);
+            return acc;
+          }, new Map<string, string>())
+          .entries();
+
+    return {
+      stages: Array.from(filteredStages),
+      owners: Array.from(owners.entries()),
+      tags: Array.from(tags).sort(),
+      origens: Array.from(origens).sort(),
+    };
+  }, [deals, filterPipeline]);
+
+  // ─── Count active filters ───
+  const activeFilterCount = useMemo(() => {
+    let count = 0;
+    if (filterStage !== 'ALL') count++;
+    if (filterTemperatura !== 'ALL') count++;
+    if (filterOwner !== 'ALL') count++;
+    if (filterTag !== 'ALL') count++;
+    if (filterOrigem !== 'ALL') count++;
+    if (filterValorMin) count++;
+    if (filterValorMax) count++;
+    if (filterPeriodo !== 'ALL') count++;
+    if (filterScore !== 'ALL') count++;
+    return count;
+  }, [filterStage, filterTemperatura, filterOwner, filterTag, filterOrigem, filterValorMin, filterValorMax, filterPeriodo, filterScore]);
+
+  const clearAllFilters = () => {
+    setSearch('');
+    setFilterPipeline('ALL');
+    setFilterStage('ALL');
+    setFilterTemperatura('ALL');
+    setFilterOwner('ALL');
+    setFilterTag('ALL');
+    setFilterOrigem('ALL');
+    setFilterValorMin('');
+    setFilterValorMax('');
+    setFilterPeriodo('ALL');
+    setFilterScore('ALL');
+  };
+
+  // ─── Filtering logic ───
   const filteredDeals = useMemo(() => {
-    let d = deals.filter((deal: any) => deal.status === 'ABERTO');
+    let d = deals;
+
     if (filterPipeline !== 'ALL') d = d.filter((deal: any) => deal.pipeline_id === filterPipeline);
+    if (filterStage !== 'ALL') d = d.filter((deal: any) => deal.stage_id === filterStage);
+    if (filterTemperatura !== 'ALL') d = d.filter((deal: any) => deal.temperatura === filterTemperatura);
+    if (filterOwner !== 'ALL') d = d.filter((deal: any) => deal.owner_id === filterOwner);
+    if (filterTag !== 'ALL') d = d.filter((deal: any) => deal.tags && Array.isArray(deal.tags) && deal.tags.includes(filterTag));
+    if (filterOrigem !== 'ALL') d = d.filter((deal: any) => deal.origem === filterOrigem);
+
+    if (filterValorMin) {
+      const min = parseFloat(filterValorMin);
+      if (!isNaN(min)) d = d.filter((deal: any) => (deal.valor ?? 0) >= min);
+    }
+    if (filterValorMax) {
+      const max = parseFloat(filterValorMax);
+      if (!isNaN(max)) d = d.filter((deal: any) => (deal.valor ?? 0) <= max);
+    }
+
+    if (filterPeriodo !== 'ALL') {
+      const daysMap: Record<string, number> = { '1D': 1, '7D': 7, '30D': 30, '90D': 90 };
+      const days = daysMap[filterPeriodo];
+      if (days) {
+        const cutoff = subDays(new Date(), days);
+        d = d.filter((deal: any) => isAfter(new Date(deal.created_at), cutoff));
+      }
+    }
+
+    if (filterScore !== 'ALL') {
+      if (filterScore === 'HIGH') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) >= 70);
+      else if (filterScore === 'MED') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) >= 40 && (deal.score_probabilidade ?? 0) < 70);
+      else if (filterScore === 'LOW') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) < 40);
+    }
+
     if (search) {
       const s = search.toLowerCase();
-      d = d.filter((deal: any) => deal.titulo?.toLowerCase().includes(s));
+      d = d.filter((deal: any) =>
+        deal.titulo?.toLowerCase().includes(s) ||
+        deal.contacts?.nome?.toLowerCase().includes(s) ||
+        deal.contacts?.email?.toLowerCase().includes(s)
+      );
     }
+
     return d;
-  }, [deals, filterPipeline, search]);
+  }, [deals, filterPipeline, filterStage, filterTemperatura, filterOwner, filterTag, filterOrigem, filterValorMin, filterValorMax, filterPeriodo, filterScore, search]);
 
   const toggleSelect = (id: string) => {
     setSelected(prev => {
@@ -115,7 +266,6 @@ export default function AmeliaMassActionPage() {
       });
       setShowConfig(false);
       setActiveJobId(job.id);
-      // Trigger AI generation
       generateMsgs.mutate(job.id);
       toast({ title: 'Amélia está gerando mensagens...' });
     } catch (e: unknown) {
@@ -129,7 +279,7 @@ export default function AmeliaMassActionPage() {
     toast({ title: 'Execução iniciada!' });
   };
 
-  // Active job view
+  // ─── Active job view ───
   if (activeJob) {
     const isGenerating = activeJob.status === 'GENERATING';
     const isPreview = activeJob.status === 'PREVIEW';
@@ -257,22 +407,142 @@ export default function AmeliaMassActionPage() {
           </Button>
         </div>
 
-        {/* Filters */}
-        <div className="flex items-center gap-3 flex-wrap">
-          <div className="relative flex-1 min-w-[200px] max-w-sm">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar deal..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
-          </div>
-          <Select value={filterPipeline} onValueChange={setFilterPipeline}>
-            <SelectTrigger className="w-[200px]">
-              <SelectValue placeholder="Pipeline" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Todos</SelectItem>
-              {pipelines.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* ─── Filters ─── */}
+        <Card>
+          <CardContent className="p-4 space-y-3">
+            {/* Row 1: always visible */}
+            <div className="flex items-center gap-3 flex-wrap">
+              <div className="relative flex-1 min-w-[180px] max-w-xs">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input placeholder="Buscar deal ou contato..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
+              </div>
+              <Select value={filterPipeline} onValueChange={v => { setFilterPipeline(v); setFilterStage('ALL'); }}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Pipeline" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos Pipelines</SelectItem>
+                  {pipelines.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filterStage} onValueChange={setFilterStage}>
+                <SelectTrigger className="w-[180px]">
+                  <SelectValue placeholder="Estágio" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todos Estágios</SelectItem>
+                  {filterOptions.stages.map(([id, nome]) => <SelectItem key={id} value={id}>{nome}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filterTemperatura} onValueChange={setFilterTemperatura}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Temperatura" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todas</SelectItem>
+                  <SelectItem value="QUENTE">🔥 Quente</SelectItem>
+                  <SelectItem value="MORNO">🌤 Morno</SelectItem>
+                  <SelectItem value="FRIO">❄️ Frio</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Row 2: collapsible advanced filters */}
+            <Collapsible open={showMoreFilters} onOpenChange={setShowMoreFilters}>
+              <div className="flex items-center gap-2">
+                <CollapsibleTrigger asChild>
+                  <Button variant="ghost" size="sm" className="text-xs gap-1">
+                    <SlidersHorizontal className="h-3.5 w-3.5" />
+                    {showMoreFilters ? 'Menos filtros' : 'Mais filtros'}
+                    {activeFilterCount > 0 && (
+                      <Badge variant="secondary" className="ml-1 h-5 min-w-[20px] px-1 text-[10px]">
+                        {activeFilterCount}
+                      </Badge>
+                    )}
+                    <ChevronDown className={`h-3 w-3 transition-transform ${showMoreFilters ? 'rotate-180' : ''}`} />
+                  </Button>
+                </CollapsibleTrigger>
+                {(activeFilterCount > 0 || search || filterPipeline !== 'ALL') && (
+                  <Button variant="ghost" size="sm" className="text-xs text-destructive gap-1" onClick={clearAllFilters}>
+                    <X className="h-3 w-3" /> Limpar filtros
+                  </Button>
+                )}
+              </div>
+
+              <CollapsibleContent className="pt-3">
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Select value={filterOwner} onValueChange={setFilterOwner}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Vendedor" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todos Vendedores</SelectItem>
+                      {filterOptions.owners.map(([id, nome]) => <SelectItem key={id} value={id}>{nome}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterTag} onValueChange={setFilterTag}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Tag" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todas Tags</SelectItem>
+                      {filterOptions.tags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterOrigem} onValueChange={setFilterOrigem}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Origem" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todas Origens</SelectItem>
+                      {filterOptions.origens.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
+                    <SelectTrigger className="w-[150px]">
+                      <SelectValue placeholder="Período" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todo período</SelectItem>
+                      <SelectItem value="1D">Hoje</SelectItem>
+                      <SelectItem value="7D">Últimos 7 dias</SelectItem>
+                      <SelectItem value="30D">Últimos 30 dias</SelectItem>
+                      <SelectItem value="90D">Últimos 90 dias</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={filterScore} onValueChange={setFilterScore}>
+                    <SelectTrigger className="w-[160px]">
+                      <SelectValue placeholder="Score" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ALL">Todos Scores</SelectItem>
+                      <SelectItem value="HIGH">Alto (≥70)</SelectItem>
+                      <SelectItem value="MED">Médio (40-69)</SelectItem>
+                      <SelectItem value="LOW">Baixo (&lt;40)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      type="number"
+                      placeholder="Valor mín"
+                      className="w-[110px]"
+                      value={filterValorMin}
+                      onChange={e => setFilterValorMin(e.target.value)}
+                    />
+                    <span className="text-xs text-muted-foreground">—</span>
+                    <Input
+                      type="number"
+                      placeholder="Valor máx"
+                      className="w-[110px]"
+                      value={filterValorMax}
+                      onChange={e => setFilterValorMax(e.target.value)}
+                    />
+                  </div>
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          </CardContent>
+        </Card>
 
         {/* Selection summary */}
         {selected.size > 0 && (
@@ -284,6 +554,12 @@ export default function AmeliaMassActionPage() {
 
         {/* Deals table */}
         <Card>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base">
+              {filteredDeals.length} deals encontrados
+              {filteredDeals.length > 100 && <span className="text-xs text-muted-foreground font-normal ml-2">(mostrando 100 primeiros)</span>}
+            </CardTitle>
+          </CardHeader>
           <CardContent className="p-0">
             {loadingDeals ? (
               <div className="p-8 text-center text-muted-foreground">Carregando...</div>
@@ -301,24 +577,45 @@ export default function AmeliaMassActionPage() {
                     <TableHead>Contato</TableHead>
                     <TableHead>Stage</TableHead>
                     <TableHead>Temperatura</TableHead>
+                    <TableHead>Vendedor</TableHead>
+                    <TableHead>Origem</TableHead>
+                    <TableHead>Tags</TableHead>
                     <TableHead className="text-right">Valor</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredDeals.slice(0, 100).map((d: any) => (
-                    <TableRow key={d.id} className={selected.has(d.id) ? 'bg-primary/5' : ''}>
-                      <TableCell>
-                        <Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleSelect(d.id)} />
+                  {filteredDeals.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                        Nenhum deal encontrado com os filtros selecionados
                       </TableCell>
-                      <TableCell className="font-medium truncate max-w-[200px]">{d.titulo}</TableCell>
-                      <TableCell className="text-sm">{d.contacts?.nome || '—'}</TableCell>
-                      <TableCell><Badge variant="outline" className="text-xs">{d.pipeline_stages?.nome || '—'}</Badge></TableCell>
-                      <TableCell>
-                        {d.temperatura && <Badge variant="secondary" className="text-xs">{d.temperatura}</Badge>}
-                      </TableCell>
-                      <TableCell className="text-right">{d.valor ? fmt(d.valor) : '—'}</TableCell>
                     </TableRow>
-                  ))}
+                  ) : (
+                    filteredDeals.slice(0, 100).map((d: any) => (
+                      <TableRow key={d.id} className={selected.has(d.id) ? 'bg-primary/5' : ''}>
+                        <TableCell>
+                          <Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleSelect(d.id)} />
+                        </TableCell>
+                        <TableCell className="font-medium truncate max-w-[200px]">{d.titulo}</TableCell>
+                        <TableCell className="text-sm">{d.contacts?.nome || '—'}</TableCell>
+                        <TableCell><Badge variant="outline" className="text-xs">{d.pipeline_stages?.nome || '—'}</Badge></TableCell>
+                        <TableCell>
+                          {d.temperatura && <Badge variant="secondary" className="text-xs">{d.temperatura}</Badge>}
+                        </TableCell>
+                        <TableCell className="text-sm truncate max-w-[120px]">{d.owner?.nome || d.owner?.email || '—'}</TableCell>
+                        <TableCell className="text-sm">{d.origem || '—'}</TableCell>
+                        <TableCell>
+                          <div className="flex gap-1 flex-wrap max-w-[150px]">
+                            {d.tags && Array.isArray(d.tags) ? d.tags.slice(0, 2).map((t: string) => (
+                              <Badge key={t} variant="outline" className="text-[10px] px-1">{t}</Badge>
+                            )) : '—'}
+                            {d.tags && d.tags.length > 2 && <span className="text-[10px] text-muted-foreground">+{d.tags.length - 2}</span>}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-right">{d.valor ? fmt(d.valor) : '—'}</TableCell>
+                      </TableRow>
+                    ))
+                  )}
                 </TableBody>
               </Table>
             )}
