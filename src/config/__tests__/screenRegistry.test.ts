@@ -62,3 +62,17 @@ describe('getScreensByGroup', () => {
     expect(total).toBe(SCREEN_REGISTRY.length);
   });
 });
+
+describe('Phase 3 routes', () => {
+  it('/admin/ai-costs is registered', () => {
+    expect(getScreenByUrl('/admin/ai-costs')?.key).toBe('custos_ia');
+  });
+
+  it('Sucesso do Cliente group exists', () => {
+    expect(SCREEN_GROUPS).toContain('Sucesso do Cliente');
+  });
+
+  it('CS dashboard route exists', () => {
+    expect(getScreenByUrl('/cs')?.key).toBe('cs_dashboard');
+  });
+});
