@@ -1,73 +1,64 @@
 
 
-# Correção: Dados SPIN Não Sendo Extraídos das Conversas
+# Inferência Lógica de Implicação e Necessidade no SPIN
 
-## Problema
+## Objetivo
 
-O lead Marcos Bertoldi tem `framework_data: {spin: {}, bant: {}, gpct: {}}` completamente vazio, apesar de haver dados claros na conversa para preencher pelo menos S (Situation) do SPIN:
+Quando a IA já coletou S (Situação) e P (Problema) do SPIN, ela deve automaticamente inferir I (Implicação) e N (Necessidade) com base em dedução lógica do contexto do negócio.
 
-- **S (Situação)**: Reunião prévia com Michel, quer orçamento para declaração de IR cripto, 1 ano de declaração
-- **P (Problema)**: Precisa declarar impostos sobre criptomoedas (implícito)
+## Exemplo Concreto (Marcos Bertoldi)
 
-A IA processou os intents corretamente (INTERESSE_IR, INTERESSE_COMPRA) mas retornou `frameworks_atualizados: {}` vazio em todas as interpretações.
+| Campo | Dado Coletado | Inferência |
+|-------|--------------|------------|
+| S | Reunião prévia com Michel, quer orçamento para IR cripto, 1 ano | Coletado da conversa |
+| P | Precisa declarar impostos sobre operações cripto | Coletado da conversa |
+| I | **Risco de multas da Receita Federal, problemas administrativos e fiscais por omissão de declaração** | Inferido logicamente de S+P |
+| N | **Contratação imediata do serviço de declaração de IR cripto para regularização fiscal** | Inferido logicamente de S+P |
 
-## Causa Raiz
+## Mudanças
 
-Duas falhas contribuem:
+### 1. Atualizar prompt no `sdr-ia-interpret/index.ts`
 
-1. **Prompt com exemplo vazio**: O formato JSON de resposta mostra `"frameworks_atualizados":{}` como placeholder, induzindo a IA a retornar vazio quando não há pergunta explícita de framework
-2. **Sem extração retroativa**: Quando o lead responde com dados que mapeiam para campos do framework (ex: "1 ano" = timeline/situação), a IA não os extrai porque o prompt não instrui a fazer extração passiva de dados conversacionais
-
-## Solução
-
-### 1. Melhorar o prompt para exigir extração contínua de framework
-
-No `sdr-ia-interpret/index.ts`, atualizar o system prompt para instruir explicitamente:
-- SEMPRE extrair dados de framework de QUALQUER mensagem do lead, mesmo quando não é uma pergunta direta do framework
-- Preencher campos com base em inferências conversacionais
-- Incluir exemplo concreto no formato JSON mostrando preenchimento parcial
-
-### 2. Correção pontual do Marcos Bertoldi
-
-Atualizar `lead_conversation_state` com os dados SPIN que já existem na conversa:
-- `s`: "Reunião prévia com Michel, quer orçamento para declaração de IR cripto, 1 ano de declaração"
-- `p`: "Precisa declarar impostos sobre operações cripto"
-
-### 3. Adicionar instrução de extração passiva no prompt
-
-Adicionar ao bloco de regras do prompt (perto de onde lista o formato JSON):
+Adicionar regra de inferência lógica nos dois blocos de prompt (QUICK_PROMPT e SYSTEM_PROMPT), logo após a regra crítica de framework existente:
 
 ```text
-## REGRA CRÍTICA DE FRAMEWORK
-EXTRAIA dados do framework de TODA mensagem do lead, mesmo que ele não esteja respondendo a uma pergunta de qualificação.
-Exemplo: Se o lead diz "quero um orçamento para declaração", isso é SPIN_S (situação = precisa de declaração).
-Se o lead diz "1 ano", isso complementa a situação.
-NUNCA retorne frameworks_atualizados vazio se houver qualquer informação inferível na mensagem.
+## REGRA DE INFERÊNCIA LÓGICA (SPIN/GPCT/BANT)
+Quando S (Situação) e P (Problema) já estiverem preenchidos, INFIRA automaticamente:
+- I (Implicação): consequências negativas de NÃO resolver o problema (multas, perdas, riscos)
+- N (Necessidade): benefício/ação necessária para resolver (contratar serviço, agendar reunião)
+Aplique a mesma lógica para GPCT (se G e P preenchidos, infira C e T) e BANT (se N preenchido, infira B e T).
+Marque inferências com prefixo "[Inferido]" para diferenciar de dados explícitos do lead.
 ```
 
-### 4. Corrigir o exemplo de formato JSON
+### 2. Migração para corrigir o lead Marcos Bertoldi
 
-Mudar de:
-```json
-"frameworks_atualizados":{}
+Atualizar os campos I e N do SPIN com os dados inferidos:
+- `i`: "[Inferido] Risco de multas e penalidades da Receita Federal por omissão de declaração de operações cripto"
+- `n`: "[Inferido] Contratação imediata do serviço de declaração de IR cripto para regularização fiscal"
+
+## Detalhes Técnicos
+
+### Arquivo: `supabase/functions/sdr-ia-interpret/index.ts`
+
+Inserir a regra de inferência logo após a "REGRA CRÍTICA DE FRAMEWORK" existente (linhas ~1952 e ~1997), nos dois blocos de prompt (QUICK_PROMPT e SYSTEM_PROMPT).
+
+### Migração SQL
+
+```sql
+UPDATE lead_conversation_state
+SET framework_data = jsonb_set(
+  framework_data::jsonb,
+  '{spin}',
+  '{"s":"Reunião prévia com Michel, quer orçamento para declaração de IR cripto, 1 ano de declaração","p":"Precisa declarar impostos sobre operações cripto","i":"[Inferido] Risco de multas e penalidades da Receita Federal por omissão de declaração de operações cripto","n":"[Inferido] Contratação imediata do serviço de declaração de IR cripto para regularização fiscal"}'
+),
+updated_at = now()
+WHERE lead_id = '202f5ba6-2ced-4dc0-b6de-693b00f4ee8a' AND empresa = 'BLUE';
 ```
-Para:
-```json
-"frameworks_atualizados":{"spin":{"s":"dado extraído da mensagem se houver"}}
-```
-
-## Arquivos a Editar
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Atualizar system prompt com regra de extração passiva e exemplo de formato JSON preenchido |
-
-## Migração de Dados
-
-Uma migração SQL para corrigir o `framework_data` do lead Marcos Bertoldi com os dados SPIN já disponíveis na conversa.
 
 ## Impacto
 
-- Todos os leads futuros terão dados de framework extraídos de forma contínua, não apenas quando respondem a perguntas diretas
-- A UI do "Estado da Conversa" mostrará progresso real do SPIN/GPCT/BANT
-- Zero risco de regressão pois a lógica de merge já existe (linhas 4121-4129)
+- O SPIN mostrará 4/4 campos preenchidos (100%) em vez de 2/4 (50%)
+- Leads futuros terão frameworks mais completos automaticamente
+- O prefixo "[Inferido]" permite distinguir dados explícitos de inferências
+- Zero risco de regressão -- a lógica de merge existente preserva dados já coletados
+
