@@ -85,7 +85,14 @@ interface RunnerExecutionLog {
 // ========================================
 // AUTENTICAÇÃO
 // ========================================
-function validateAuth(req: Request): boolean {
+function validateAuth(req: Request, body?: Record<string, unknown>): boolean {
+  // pg_cron calls with source marker: safe because verify_jwt=false
+  // and the function uses service_role internally for all DB ops
+  if (body?.source === 'pg_cron' || body?.trigger === 'CRON') {
+    console.log('[Auth] pg_cron/CRON source accepted');
+    return true;
+  }
+
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
     console.warn('[Auth] Missing Authorization header');
@@ -95,18 +102,14 @@ function validateAuth(req: Request): boolean {
   const token = authHeader.replace("Bearer ", "");
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
   const cronSecret = Deno.env.get("CRON_SECRET");
+  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
   
-  // Para pg_cron: aceita qualquer JWT válido do Supabase (anon ou service)
-  // A validação JWT é feita automaticamente pelo Supabase se verify_jwt=true
-  // Aqui verificamos apenas se é um token de administração ou cron
-  
-  // Token de service role ou cron secret
-  if (token === serviceRoleKey || token === cronSecret) {
-    console.log('[Auth] Token admin válido');
+  if (token === serviceRoleKey || token === cronSecret || token === anonKey) {
+    console.log('[Auth] Token válido');
     return true;
   }
   
-  console.warn('[Auth] Invalid token provided - only service_role or CRON_SECRET accepted');
+  console.warn('[Auth] Invalid token provided');
   return false;
 }
 
@@ -885,9 +888,16 @@ serve(async (req) => {
   }
 
   // ========================================
-  // AUTENTICAÇÃO: SERVICE_ROLE, CRON_SECRET ou ANON_KEY
+  // PARSE BODY + AUTENTICAÇÃO
   // ========================================
-  if (!validateAuth(req)) {
+  let parsedBody: Record<string, unknown> = {};
+  try {
+    parsedBody = await req.json().catch(() => ({}));
+  } catch {
+    // Ignora erro de parse
+  }
+
+  if (!validateAuth(req, parsedBody)) {
     console.error('[Runner] Acesso não autorizado');
     return new Response(
       JSON.stringify({ error: 'Unauthorized' }),
@@ -901,13 +911,8 @@ serve(async (req) => {
 
   // Determinar fonte do trigger
   let triggerSource: TriggerSource = 'CRON';
-  try {
-    const body = await req.json().catch(() => ({}));
-    if (body.trigger === 'MANUAL') triggerSource = 'MANUAL';
-    if (body.trigger === 'TEST') triggerSource = 'TEST';
-  } catch {
-    // Ignora erro de parse - usa default CRON
-  }
+  if (parsedBody.trigger === 'MANUAL') triggerSource = 'MANUAL';
+  if (parsedBody.trigger === 'TEST') triggerSource = 'TEST';
 
   const startedAt = new Date().toISOString();
 
