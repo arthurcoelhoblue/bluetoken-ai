@@ -403,13 +403,20 @@ async function checkIntegration(integration: string): Promise<HealthCheckResult>
     case "pipedrive":
       return await checkPipedrive();
     case "anthropic":
+    case "claude":
       return await checkAnthropic();
     case "lovable_ai":
     case "gemini":
     case "gpt":
       return await checkAnthropic();
     case "email":
+    case "smtp":
       return await checkSMTP();
+    case "zadarma": {
+      const zadarmaKey = Deno.env.get("ZADARMA_API_KEY");
+      if (!zadarmaKey) return { status: "error", message: "ZADARMA_API_KEY não configurada" };
+      return { status: "online", message: "API Key configurada" };
+    }
     case "sgt":
       return checkSGT();
     case "bluechat":

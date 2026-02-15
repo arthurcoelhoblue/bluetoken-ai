@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -75,50 +76,30 @@ serve(async (req) => {
     const contextParts: string[] = [];
 
     const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes] = await Promise.all([
-      // Deals abertos do vendedor
       supabase.from('deals')
         .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id')
-        .eq('owner_id', userId)
-        .eq('status', 'ABERTO')
-        .limit(50),
-      // Últimas 20 atividades
+        .eq('owner_id', userId).eq('status', 'ABERTO').limit(50),
       supabase.from('deal_activities')
         .select('tipo, descricao, created_at, deal_id')
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false })
-        .limit(20),
-      // SLA alerts
+        .eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
       supabase.from('workbench_sla_alerts')
         .select('deal_id, deal_titulo, sla_percentual, sla_estourado, stage_nome')
-        .eq('owner_id', userId)
-        .limit(20),
-      // Tarefas pendentes
+        .eq('owner_id', userId).limit(20),
       supabase.from('workbench_tarefas')
         .select('deal_id, descricao, tarefa_prazo, deal_titulo')
-        .eq('owner_id', userId)
-        .eq('tarefa_concluida', false)
-        .limit(20),
-      // Metas do mês
+        .eq('owner_id', userId).eq('tarefa_concluida', false).limit(20),
       supabase.from('metas_vendedor')
         .select('valor_meta, valor_realizado')
-        .eq('user_id', userId)
-        .eq('empresa', empresa)
-        .eq('ano', new Date().getFullYear())
-        .eq('mes', new Date().getMonth() + 1)
+        .eq('user_id', userId).eq('empresa', empresa)
+        .eq('ano', new Date().getFullYear()).eq('mes', new Date().getMonth() + 1)
         .maybeSingle(),
-      // Mensagens recentes dos leads
       supabase.from('lead_messages')
         .select('lead_id, direcao, conteudo, created_at')
-        .eq('empresa', empresa)
-        .eq('direcao', 'INBOUND')
-        .order('created_at', { ascending: false })
-        .limit(15),
-      // Cadências ativas
+        .eq('empresa', empresa).eq('direcao', 'INBOUND')
+        .order('created_at', { ascending: false }).limit(15),
       supabase.from('lead_cadence_runs')
         .select('id, lead_id, status, next_run_at')
-        .eq('empresa', empresa)
-        .eq('status', 'ATIVA')
-        .limit(20),
+        .eq('empresa', empresa).eq('status', 'ATIVA').limit(20),
     ]);
 
     // Build context
@@ -177,59 +158,18 @@ serve(async (req) => {
       });
     }
 
-    // === CALL AI ===
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    // === CALL AI via unified provider ===
+    const aiResult = await callAI({
+      system: COACHING_PROMPT,
+      prompt: `Dados do vendedor:\n\n${fullContext}\n\nData/hora atual: ${new Date().toLocaleString('pt-BR')}`,
+      functionName: 'copilot-proactive',
+      empresa,
+      userId,
+      maxTokens: 1500,
+      supabase,
+    });
 
-    let aiResponse = '';
-
-    if (ANTHROPIC_API_KEY) {
-      try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1500,
-            temperature: 0.3,
-            system: COACHING_PROMPT,
-            messages: [{ role: 'user', content: `Dados do vendedor:\n\n${fullContext}\n\nData/hora atual: ${new Date().toLocaleString('pt-BR')}` }],
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          aiResponse = data.content?.[0]?.text || '';
-        }
-      } catch (e) {
-        console.warn('[Proactive] Claude falhou:', e);
-      }
-    }
-
-    if (!aiResponse && GOOGLE_API_KEY) {
-      try {
-        const prompt = `${COACHING_PROMPT}\n\nDados do vendedor:\n\n${fullContext}\n\nData/hora atual: ${new Date().toLocaleString('pt-BR')}`;
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-          }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          aiResponse = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        }
-      } catch (e) {
-        console.warn('[Proactive] Gemini falhou:', e);
-      }
-    }
-
-    if (!aiResponse) {
+    if (!aiResult.content) {
       return new Response(JSON.stringify({ insights: [], error: 'AI unavailable' }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
@@ -238,8 +178,7 @@ serve(async (req) => {
     // Parse JSON from AI response
     let parsedInsights: any[] = [];
     try {
-      // Try to extract JSON array from response
-      const jsonMatch = aiResponse.match(/\[[\s\S]*\]/);
+      const jsonMatch = aiResult.content.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
         parsedInsights = JSON.parse(jsonMatch[0]);
       }
@@ -249,17 +188,6 @@ serve(async (req) => {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    // Log AI usage
-    const proactiveProvider = ANTHROPIC_API_KEY && aiResponse ? 'CLAUDE' : 'GEMINI';
-    const proactiveModel = proactiveProvider === 'CLAUDE' ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview';
-    try {
-      await supabase.from('ai_usage_log').insert({
-        function_name: 'copilot-proactive', provider: proactiveProvider, model: proactiveModel,
-        tokens_input: null, tokens_output: null, success: !!aiResponse,
-        latency_ms: null, custo_estimado: 0, empresa: empresa || null,
-      });
-    } catch (logErr) { console.warn('[Proactive] ai_usage_log error:', logErr); }
 
     // Delete old non-dismissed insights before inserting new ones
     await supabase

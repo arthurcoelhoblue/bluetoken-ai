@@ -21,7 +21,7 @@ serve(async (req) => {
     let query = supabase.from('deals').select(`
       id, titulo, valor, temperatura, status, stage_id, pipeline_id, owner_id,
       contact_id, score_probabilidade, updated_at, created_at,
-      pipeline_stages!inner(id, nome, posicao, pipeline_id),
+      pipeline_stages!deals_stage_id_fkey(id, nome, posicao, pipeline_id),
       contacts(id, nome, legacy_lead_id)
     `).eq('status', 'ABERTO');
 
