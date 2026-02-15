@@ -80,25 +80,35 @@ interface PipedriveResponse {
 /**
  * Formata conteúdo HTML para nota do Pipedrive
  */
+/** Escape user-controlled strings before embedding in HTML */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatNoteContent(
   tipo: string,
   content: string,
   classification?: PipedriveSyncRequest['data']['classification']
 ): string {
-  let html = `<p><strong>🤖 SDR IA - ${tipo}</strong></p>`;
+  let html = `<p><strong>🤖 SDR IA - ${escapeHtml(tipo)}</strong></p>`;
   
   if (classification) {
     html += `<p><strong>Classificação:</strong></p>`;
     html += `<ul>`;
-    if (classification.icp) html += `<li>ICP: ${classification.icp}</li>`;
-    if (classification.persona) html += `<li>Persona: ${classification.persona}</li>`;
-    if (classification.temperatura) html += `<li>Temperatura: ${classification.temperatura}</li>`;
+    if (classification.icp) html += `<li>ICP: ${escapeHtml(classification.icp)}</li>`;
+    if (classification.persona) html += `<li>Persona: ${escapeHtml(classification.persona)}</li>`;
+    if (classification.temperatura) html += `<li>Temperatura: ${escapeHtml(classification.temperatura)}</li>`;
     if (classification.prioridade) html += `<li>Prioridade: ${classification.prioridade}</li>`;
     if (classification.score_interno) html += `<li>Score Interno: ${classification.score_interno}</li>`;
     html += `</ul>`;
   }
   
-  html += `<p>${content.replace(/\n/g, '<br>')}</p>`;
+  html += `<p>${escapeHtml(content).replace(/\n/g, '<br>')}</p>`;
   html += `<p><em>Gerado em: ${new Date().toLocaleString('pt-BR')}</em></p>`;
   
   return html;
@@ -115,10 +125,10 @@ function formatConversationNote(
   let html = `<p><strong>📱 WhatsApp - Conversa SDR IA</strong></p>`;
   
   if (intent) {
-    html += `<p><strong>Intenção detectada:</strong> ${intent}</p>`;
+    html += `<p><strong>Intenção detectada:</strong> ${escapeHtml(intent)}</p>`;
   }
   if (acao) {
-    html += `<p><strong>Ação aplicada:</strong> ${acao}</p>`;
+    html += `<p><strong>Ação aplicada:</strong> ${escapeHtml(acao)}</p>`;
   }
   
   if (messages && messages.length > 0) {
@@ -126,7 +136,7 @@ function formatConversationNote(
     messages.forEach(msg => {
       const label = msg.direcao === 'INBOUND' ? '👤 Lead' : '🤖 SDR';
       const time = new Date(msg.created_at).toLocaleTimeString('pt-BR');
-      html += `<p><strong>${label} (${time}):</strong><br>${msg.conteudo}</p>`;
+      html += `<p><strong>${label} (${time}):</strong><br>${escapeHtml(msg.conteudo)}</p>`;
     });
   }
   
