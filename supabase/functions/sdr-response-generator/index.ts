@@ -1,27 +1,124 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
 
-// SDR Response Generator — generates personalized AI response based on intent + context
+// SDR Response Generator — generates + sanitizes personalized AI response
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+// ========================================
+// ANTI-ROBOTIC SANITIZATION (from monolith PATCH 5K)
+// ========================================
+
+function detectRoboticPattern(resposta: string, leadNome?: string): boolean {
+  if (!resposta) return false;
+  const patternProibidos = [
+    /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza|Fantástico|Incrível|Show|Sensacional|Bacana),?\s+\w+[!.]/i,
+    /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]/i,
+    /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]/i,
+    /^(Essa é uma|Esta é uma|É uma)\s+(ótima|excelente|boa|super importante|muito boa|interessante)\s+(pergunta|dúvida|questão)/i,
+    /^(Boa pergunta|Ótima pergunta|Excelente pergunta|Legal|Interessante),?\s+\w+[!.]/i,
+    /(bem comum|muito comum|frequente|bastante comum),?\s+\w+[!.]/i,
+    /^(Olha|Então|Bom|Ah),?\s+\w+,\s/i,
+  ];
+  for (const p of patternProibidos) { if (p.test(resposta)) return true; }
+  const frasesElogio = [
+    /que (mostra|demonstra) que você (está|é) (atento|interessado|engajado)/i,
+    /fico (feliz|contente) que você/i,
+    /essa é uma dúvida (bem |muito )?(comum|frequente)/i,
+    /essa pergunta é (importante|super importante|muito boa)/i,
+  ];
+  for (const p of frasesElogio) { if (p.test(resposta)) return true; }
+  if (leadNome) {
+    const nomePattern = new RegExp(`^${leadNome},?\\s`, 'i');
+    if (nomePattern.test(resposta)) return true;
+  }
+  return false;
+}
+
+function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
+  if (!resposta) return '';
+  let cleaned = resposta;
+  const patterns = [
+    /^(Perfeito|Entendi|Entendido|Excelente|Ótimo|Ótima|Legal|Maravilha|Show|Certo|Claro|Com certeza|Que bom|Beleza|Fantástico|Incrível|Sensacional|Bacana|Perfeita|Entendida)[!.]?\s*/i,
+    /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza),?\s+\w+[!.]?\s*/i,
+    /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]?\s*/i,
+    /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]?\s*/i,
+    /^(Essa é uma|Esta é uma|É uma)\s+(ótima|excelente|boa|super importante|muito boa|interessante)\s+(pergunta|dúvida|questão)[,.]?\s+\w*[,.]?\s*(e )?(mostra|demonstra)?[^.!?]*[.!?]?\s*/i,
+    /^(Boa pergunta|Ótima pergunta|Excelente pergunta|Legal|Interessante),?\s+\w+[!.]?\s*/i,
+    /^(Olha|Então|Bom|Ah),?\s+\w+,\s*/i,
+    /^Essa é uma dúvida (bem |muito )?(comum|frequente)[,.]?\s*/i,
+    /^Essa pergunta é (importante|super importante|muito boa)[,.]?\s*/i,
+  ];
+  for (const p of patterns) { cleaned = cleaned.replace(p, ''); }
+  cleaned = cleaned.replace(/,?\s*que (mostra|demonstra) que você (está|é) (atento|interessado|engajado)[^.!?]*/gi, '');
+  cleaned = cleaned.replace(/,?\s*e?\s*fico (feliz|contente) que você[^.!?]*/gi, '');
+  cleaned = cleaned.replace(/me conta:?\s*/gi, '');
+  cleaned = cleaned.replace(/me conta uma coisa:?\s*/gi, '');
+  cleaned = cleaned.replace(/agora me conta:?\s*/gi, '');
+  cleaned = cleaned.replace(/me fala:?\s*/gi, '');
+  if (leadNome) {
+    cleaned = cleaned.replace(new RegExp(`^${leadNome},?\\s*`, 'i'), '');
+    // Limit name to 1x per message
+    const parts = cleaned.split(new RegExp(`(${leadNome})`, 'gi'));
+    if (parts.length > 3) {
+      let count = 0;
+      cleaned = parts.map(part => {
+        if (part.toLowerCase() === leadNome.toLowerCase()) { count++; return count === 1 ? part : ''; }
+        return part;
+      }).join('');
+    }
+  }
+  cleaned = cleaned.replace(/\s+/g, ' ').trim();
+  if (cleaned.length > 0 && cleaned[0] === cleaned[0].toLowerCase()) {
+    cleaned = cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+  }
+  return cleaned;
+}
+
+// ========================================
+// CHANNEL RULES & INVESTOR PROFILE EXAMPLES
+// ========================================
+
+const CHANNEL_RULES: Record<string, string> = {
+  WHATSAPP: 'Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem.',
+  EMAIL: 'Mensagens ESTRUTURADAS. Tom consultivo. 3-4 parágrafos. Retomar contexto no início.',
+};
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-  const startTime = Date.now();
 
   try {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
     const body = await req.json();
-    const { intent, confidence, temperatura, sentimento, acao_recomendada, framework_updates, mensagem_normalizada, empresa, canal, contato, classificacao, conversation_state, historico } = body;
+    const { intent, confidence, temperatura, sentimento, acao_recomendada, framework_updates,
+      mensagem_normalizada, empresa, canal, contato, classificacao, conversation_state,
+      historico, resposta_sugerida_ia, promptVersionId } = body;
 
-    // Load product knowledge for response personalization
+    // If the intent classifier already generated a response, just sanitize it
+    if (resposta_sugerida_ia) {
+      const leadNome = contato?.nome || contato?.primeiro_nome;
+      let resposta = resposta_sugerida_ia;
+      if (detectRoboticPattern(resposta, leadNome)) {
+        resposta = sanitizeRoboticResponse(resposta, leadNome);
+      }
+      if (!resposta || resposta.length < 10) {
+        resposta = `Olá${leadNome ? ` ${leadNome}` : ''}! Vou encaminhar para um especialista que pode te ajudar melhor. 😊`;
+      }
+      return new Response(JSON.stringify({ resposta, model: 'sanitized', provider: 'pass-through' }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Generate response via AI if no pre-generated response
+    // Load product knowledge
     const { data: products } = await supabase.from('product_knowledge').select('nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
 
     // Load active prompt version with A/B testing
     let systemPrompt = '';
-    let promptVersionId: string | null = null;
+    let selectedPromptId: string | null = promptVersionId || null;
     try {
       const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-response-generator').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
       if (pvList && pvList.length > 0) {
@@ -30,25 +127,24 @@ serve(async (req) => {
         let selected = pvList[0];
         for (const pv of pvList) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
         systemPrompt = selected.content;
-        promptVersionId = selected.id;
+        selectedPromptId = selected.id;
       }
     } catch { /* use default */ }
 
     if (!systemPrompt) {
       systemPrompt = `Você é a Amélia, SDR IA do ${empresa === 'TOKENIZA' ? 'Tokeniza (investimentos tokenizados)' : 'Blue (IR/tributação cripto)'}.
 Tom: profissional, acolhedor, direto. Nunca robótica.
-${canal === 'WHATSAPP' ? 'WhatsApp: mensagens CURTAS (2-4 linhas), UMA pergunta por vez.' : 'Email: estruturado, 3-4 parágrafos, retomar contexto.'}
+${canal === 'WHATSAPP' ? CHANNEL_RULES.WHATSAPP : CHANNEL_RULES.EMAIL}
 Adapte ao perfil DISC: ${conversation_state?.perfil_disc || 'não identificado'}.
-${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_state.perfil_investidor}` : ''}`;
+${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_state.perfil_investidor}` : ''}
+PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".`;
     }
 
     const contactName = contato?.nome || contato?.primeiro_nome || 'Lead';
     const historicoText = (historico || []).slice(0, 8).map((m: any) => `[${m.direcao}] ${m.conteudo}`).join('\n');
     const productsText = products?.map((p: any) => `${p.nome}: ${p.descricao_curta} (${p.preco_texto || 'consultar'})`).join('\n') || '';
 
-    const prompt = `${systemPrompt}
-
-CONTEXTO:
+    const prompt = `CONTEXTO:
 Contato: ${contactName}
 Intent: ${intent} (confiança: ${confidence})
 Temperatura: ${temperatura}
@@ -69,66 +165,27 @@ ${mensagem_normalizada}
 Gere uma resposta personalizada e natural. Se intent for OPT_OUT, respeite. Se for ESCALAR_HUMANO, avise que vai transferir.
 Responda APENAS com o texto da mensagem, sem prefixos.`;
 
-    let resposta = '';
-    let model = '';
-    let provider = '';
-    let tokensInput = 0;
-    let tokensOutput = 0;
+    const aiResult = await callAI({
+      system: systemPrompt,
+      prompt,
+      functionName: 'sdr-response-generator',
+      empresa,
+      temperature: 0.5,
+      maxTokens: 500,
+      promptVersionId: selectedPromptId || undefined,
+      supabase,
+    });
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (ANTHROPIC_API_KEY) {
-      try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 500, temperature: 0.5, system: systemPrompt, messages: [{ role: 'user', content: prompt }] }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          resposta = data.content?.[0]?.text || '';
-          model = 'claude-sonnet-4-20250514';
-          provider = 'claude';
-          tokensInput = data.usage?.input_tokens || 0;
-          tokensOutput = data.usage?.output_tokens || 0;
-        }
-      } catch (e) { console.warn('[sdr-response-generator] Claude failed:', e); }
+    let resposta = aiResult.content;
+    if (resposta && detectRoboticPattern(resposta, contactName)) {
+      resposta = sanitizeRoboticResponse(resposta, contactName);
     }
 
-    if (!resposta) {
-      const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-      if (GOOGLE_API_KEY) {
-        try {
-          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.5, maxOutputTokens: 500 } }),
-          });
-          if (resp.ok) {
-            const data = await resp.json();
-            resposta = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-            model = 'gemini-3-pro-preview';
-            provider = 'gemini';
-          }
-        } catch (e) { console.warn('[sdr-response-generator] Gemini failed:', e); }
-      }
-    }
-
-    if (!resposta) {
+    if (!resposta || resposta.length < 10) {
       resposta = `Olá ${contactName}! Recebi sua mensagem. Vou encaminhar para um especialista que pode te ajudar melhor. Obrigada! 😊`;
-      model = 'fallback';
-      provider = 'rules';
     }
 
-    try {
-      await supabase.from('ai_usage_log').insert({
-        function_name: 'sdr-response-generator', provider, model,
-        tokens_input: tokensInput, tokens_output: tokensOutput,
-        latency_ms: Date.now() - startTime, success: true, empresa,
-        prompt_version_id: promptVersionId,
-      });
-    } catch { /* ignore */ }
-
-    return new Response(JSON.stringify({ resposta, model, provider, prompt_version_id: promptVersionId }), {
+    return new Response(JSON.stringify({ resposta, model: aiResult.model, provider: aiResult.provider, prompt_version_id: selectedPromptId }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
