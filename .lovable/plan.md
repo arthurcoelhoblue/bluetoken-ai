@@ -1,80 +1,100 @@
 
+# Correções Pre-Auditoria PO -- Inconsistências Detectadas
 
-# Fase 3, Tarefa 19 -- Testes E2E para Fluxos Criticos
+## Problemas Encontrados
 
-## Objetivo
-Implementar testes unitarios e de integracao cobrindo os fluxos criticos identificados no roadmap do PO, garantindo auditabilidade e confianca nas entregas das Fases 1-3.
+### 1. CRITICO: Rotas quebradas no screenRegistry.ts
+O arquivo `screenRegistry.ts` registra URLs que **nao existem** no roteador (`App.tsx`), causando falha na resolucao de permissoes e na funcao `getScreenByUrl()`.
 
-## Escopo dos Testes
+| screenRegistry (ERRADO) | App.tsx (CORRETO) | Sidebar (CORRETO) |
+|--------------------------|-------------------|-------------------|
+| `/admin/pipeline-config` | `/settings/pipelines` | `/settings/pipelines` |
+| `/admin/custom-fields` | `/settings/custom-fields` | `/settings/custom-fields` |
 
-Os testes seguem o padrao ja existente no projeto (Vitest + Testing Library), focando em **logica pura** e **transformacoes de dados** -- os fluxos que o PO precisa auditar.
+**Impacto**: `getScreenByUrl()` retorna `undefined` nestas paginas. O sistema de permissoes granulares nao consegue identificar a tela ativa.
 
-### 1. AI Cost Dashboard (`useAICostDashboard.test.ts`)
-- Agregacao por function/provider/model
-- Calculo de tendencia diaria
-- Taxa de erro e latencia media
-- Tratamento de dados vazios
+**Correcao**: Atualizar as URLs no `screenRegistry.ts` para corresponder exatamente as rotas do `App.tsx`.
 
-### 2. Adoption Metrics (`useAdoptionMetrics.test.ts`)
-- Contagem de usuarios unicos por feature
-- Ordenacao por total de eventos
-- Dados vazios retornam array vazio
+### 2. CRITICO: `cs_playbooks` ausente do screenRegistry
+A sidebar tem o item "Playbooks" com `screenKey: 'cs_playbooks'`, mas esse registro **nao existe** no `SCREEN_REGISTRY`. Isso significa que:
+- O sistema de permissoes nao consegue controlar o acesso a esta tela
+- Perfis customizados nao listam esta tela para configuracao
 
-### 3. Follow-up Hours (`useFollowUpHours.test.ts`)
-- `getBestSendTime()` com dados validos
-- Retorno de fallback sem dados
-- Formatacao correta de dia/hora
+**Correcao**: Adicionar entrada `cs_playbooks` ao `SCREEN_REGISTRY`.
 
-### 4. Prompt Versioning (`usePromptVersions.test.ts`)
-- Logica de versionamento incremental
-- Desativacao da versao anterior
-- Interface `PromptVersion` correta
+### 3. MEDIO: Dashboard de Custos IA sem acesso na sidebar
+A rota `/admin/ai-costs` esta registrada no `screenRegistry.ts` e no `App.tsx`, mas **nao aparece** no menu da sidebar (`AppSidebar.tsx`). Usuarios nao conseguem navegar ate la.
 
-### 5. Lead Classification (`useLeadClassification.test.ts`)
-- Mapeamento de tipos (ICP, Temperatura, Prioridade)
-- Filtros compostos (empresa + classificacao)
-- Paginacao correta
+**Correcao**: Adicionar item "Custos IA" ao grupo "Configuracao" da sidebar.
 
-### 6. Analytics Events (`useAnalyticsEvents.test.ts`)
-- Gerador de sessionId unico
-- Batching (queue + flush com timer)
-- Formatacao de eventos (page_view, feature)
+### 4. MEDIO: Documentacao desatualizada (docs/)
+- `docs/TEST-RESULTS.md`: Refere apenas Patches 1-2 (16 testes). Deveria refletir os 43+ testes atuais.
+- `docs/README.md`: Lista PATCH 3 e 4 como "Pendente" quando ja estao implementados ha meses.
 
-### 7. Screen Registry Expandido (`screenRegistry.test.ts`)
-- Nova rota `/admin/ai-costs` esta registrada
-- Todas as rotas da Fase 3 existem no registry
+**Correcao**: Atualizar ambos os arquivos com o estado atual do sistema.
+
+### 5. BAIXO: follow-up-scheduler com matching cross-lead
+A funcao `follow-up-scheduler` compara mensagens OUTBOUND com INBOUND da mesma *empresa*, mas nao filtra por lead/conversa. Isso pode inflar as taxas de resposta.
+
+**Correcao aceita como melhoria futura** -- nao e blocker para auditoria, mas sera documentado.
+
+---
+
+## Plano de Correcao
+
+### Arquivo 1: `src/config/screenRegistry.ts`
+- Linha 66: Alterar `url: '/admin/pipeline-config'` para `url: '/settings/pipelines'`
+- Linha 67: Alterar `url: '/admin/custom-fields'` para `url: '/settings/custom-fields'`
+- Adicionar entrada para `cs_playbooks`:
+  ```typescript
+  { key: 'cs_playbooks', label: 'Playbooks CS', group: 'Sucesso do Cliente', icon: BookOpen, url: '/cs/playbooks' },
+  ```
+
+### Arquivo 2: `src/components/layout/AppSidebar.tsx`
+- Adicionar item "Custos IA" no grupo Configuracao, entre "Benchmark IA" e "Funis":
+  ```typescript
+  { title: 'Custos IA', url: '/admin/ai-costs', icon: DollarSign, screenKey: 'custos_ia' },
+  ```
+- Importar `DollarSign` do lucide-react
+
+### Arquivo 3: `src/config/__tests__/screenRegistry.test.ts`
+- Adicionar teste validando que **todas as URLs do registry existem como rotas validas** (prevencao futura)
+- Adicionar teste para `cs_playbooks`
+- Atualizar teste de rotas Fase 3
+
+### Arquivo 4: `docs/TEST-RESULTS.md`
+- Atualizar tabela resumo para refletir os 43+ testes atuais
+- Adicionar secoes para Fase 1, 2 e 3
+- Incluir resultados dos testes unitarios (useAICostDashboard, useAdoptionMetrics, etc.)
+
+### Arquivo 5: `docs/README.md`
+- Atualizar tabela de patches implementados (PATCH 1 ate Fase 3)
+- Remover PATCH 3-4 de "Proximos Patches"
+
+### Arquivo 6: `.lovable/plan.md`
+- Substituir pelo status consolidado das 3 Fases + lista de correcoes da auditoria
+
+---
 
 ## Detalhes Tecnicos
 
-### Padrao dos testes
-Todos seguem o padrao ja existente no projeto:
-- Testes de **logica pura** extraida dos hooks (sem mock de Supabase)
-- Validacao de **tipos e interfaces** via TypeScript
-- Verificacao de **transformacoes de dados** (agregacao, map/reduce, formatacao)
-- Localizados em `src/hooks/__tests__/` ou ao lado do arquivo original
+### Verificacao de consistencia sidebar vs registry vs router
+A raiz do problema e que tres fontes de verdade coexistem sem validacao cruzada:
+1. `screenRegistry.ts` -- define URLs para o sistema de permissoes
+2. `AppSidebar.tsx` -- define URLs para navegacao
+3. `App.tsx` -- define as rotas reais
 
-### Arquivos a criar
-| Arquivo | Cobertura |
-|---------|-----------|
-| `src/hooks/__tests__/useAICostDashboard.test.ts` | Agregacao, KPIs, trend |
-| `src/hooks/__tests__/useAdoptionMetrics.test.ts` | Unique users, sorting |
-| `src/hooks/__tests__/useFollowUpHours.test.ts` | getBestSendTime logic |
-| `src/hooks/__tests__/usePromptVersions.test.ts` | Version interface |
-| `src/hooks/__tests__/useLeadClassification.test.ts` | Type mapping, filters |
-| `src/hooks/__tests__/useAnalyticsEvents.test.ts` | Session, batching |
-| `src/config/__tests__/screenRegistry.test.ts` | Atualizar com rotas Fase 3 |
+O teste adicionado (`screenRegistry.test.ts`) ira validar que todas as URLs do registry sao alcancaveis, prevenindo regressoes futuras.
 
 ### Arquivos a editar
 | Arquivo | Mudanca |
 |---------|---------|
-| `.lovable/plan.md` | Marcar Task 19 como concluida |
+| `src/config/screenRegistry.ts` | Corrigir 2 URLs + adicionar cs_playbooks |
+| `src/components/layout/AppSidebar.tsx` | Adicionar item Custos IA + import DollarSign |
+| `src/config/__tests__/screenRegistry.test.ts` | Testes de consistencia de rotas |
+| `docs/TEST-RESULTS.md` | Atualizar com 43+ testes |
+| `docs/README.md` | Atualizar patches implementados |
+| `.lovable/plan.md` | Status consolidado |
 
-### Nenhuma dependencia nova necessaria
-O projeto ja possui `vitest`, `@testing-library/react`, `@testing-library/jest-dom` e `jsdom`.
-
-## Criterio de Aceite do PO
-- Todos os testes passam (`vitest run`)
-- Cobertura dos 7 modulos criticos das Fases 1-3
-- Zero dependencias novas adicionadas
-- Padroes consistentes com testes existentes
-
+### Nenhuma dependencia nova
+### Nenhuma migracao de banco necessaria
