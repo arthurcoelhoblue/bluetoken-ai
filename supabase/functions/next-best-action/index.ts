@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -20,16 +21,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
-    const startTime = Date.now();
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY não configurada' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Gather context in parallel — enriched with deal_scores, cs_alerts, cadences, sentiment
+    // Gather context in parallel
     const [
       tarefasRes, slaRes, dealsParadosRes, leadsQuentesRes,
       dealScoresRes, csAlertsRes, cadenceActiveRes, sentimentRecentRes,
@@ -38,7 +31,7 @@ serve(async (req) => {
         .eq('owner_id', user_id).order('tarefa_prazo', { ascending: true, nullsFirst: false }).limit(10),
       supabase.from('workbench_sla_alerts').select('*')
         .eq('owner_id', user_id).order('sla_percentual', { ascending: false }).limit(10),
-      supabase.from('deals').select('id, titulo, valor, temperatura, updated_at, contacts!inner(nome), pipeline_stages!inner(nome)')
+      supabase.from('deals').select('id, titulo, valor, temperatura, updated_at, contacts!inner(nome), pipeline_stages!deals_stage_id_fkey(nome)')
         .eq('owner_id', user_id).eq('status', 'ABERTO')
         .lt('updated_at', new Date(Date.now() - 5 * 86400000).toISOString())
         .order('updated_at', { ascending: true }).limit(5),
@@ -46,18 +39,14 @@ serve(async (req) => {
         .in('intent', ['INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'])
         .gte('created_at', new Date(Date.now() - 3 * 86400000).toISOString())
         .order('created_at', { ascending: false }).limit(5),
-      // NEW: Top 10 deal scores for this user
-      supabase.from('deals').select('id, titulo, valor, score_probabilidade, scoring_dimensoes, proxima_acao_sugerida, pipeline_stages!inner(nome)')
+      supabase.from('deals').select('id, titulo, valor, score_probabilidade, scoring_dimensoes, proxima_acao_sugerida, pipeline_stages!deals_stage_id_fkey(nome)')
         .eq('owner_id', user_id).eq('status', 'ABERTO').gt('score_probabilidade', 0)
         .order('score_probabilidade', { ascending: false }).limit(10),
-      // NEW: CS alerts — customers with health < 60 or renewal within 30 days
       supabase.from('cs_customers').select('id, health_score, health_status, proxima_renovacao, contacts!inner(nome)')
         .or('health_score.lt.60,proxima_renovacao.lte.' + new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0])
         .eq('is_active', true).limit(10),
-      // Active cadence runs (via deal_cadence_runs bridge)
       supabase.from('deal_cadence_runs').select('id, status, deal_id, deals(titulo)')
         .eq('status', 'ACTIVE').limit(10),
-      // NEW: Recent sentiment from lead messages
       supabase.from('lead_message_intents').select('lead_id, intent, sentimento, created_at')
         .not('sentimento', 'is', null)
         .gte('created_at', new Date(Date.now() - 2 * 86400000).toISOString())
@@ -112,116 +101,24 @@ Retorne APENAS um JSON válido com a estrutura:
 
 Sem markdown, sem explicação, apenas o JSON.`;
 
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 1500,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.` }],
-      }),
+    // === CALL AI via unified provider ===
+    const aiResult = await callAI({
+      system: systemPrompt,
+      prompt: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.`,
+      functionName: 'next-best-action',
+      empresa,
+      userId: user_id,
+      maxTokens: 1500,
+      supabase,
     });
 
     let acoes: any[] = [];
     let narrativa_dia = '';
-    let aiContent = '';
 
-    if (aiResponse.ok) {
-      const aiData = await aiResponse.json();
-      aiContent = aiData.content?.[0]?.text ?? '';
-    } else {
-      const errText = await aiResponse.text();
-      console.error('[NBA] Anthropic error:', aiResponse.status, errText);
-
-      // Fallback 1: Try Gemini Direct API
-      const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-      if (GOOGLE_API_KEY) {
-        console.log('[NBA] Trying Gemini 3 Pro direct fallback...');
-        try {
-          const prompt = `${systemPrompt}\n\nContexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.`;
-          const geminiRes = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`,
-            {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: prompt }] }],
-                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-              }),
-            }
-          );
-          if (geminiRes.ok) {
-            const geminiData = await geminiRes.json();
-            aiContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-            console.log('[NBA] Gemini direct fallback succeeded');
-          } else {
-            console.error('[NBA] Gemini direct fallback error:', geminiRes.status);
-          }
-        } catch (geminiErr) {
-          console.error('[NBA] Gemini direct fallback exception:', geminiErr);
-        }
-      }
-    }
-
-    // Fallback 2: OpenAI GPT-4o via API direta
-    if (!aiContent) {
-      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-      if (OPENAI_API_KEY) {
-        console.log('[NBA] Trying OpenAI GPT-4o fallback...');
-        try {
-          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.` },
-              ],
-              temperature: 0.3,
-              max_tokens: 1500,
-            }),
-          });
-          if (gptResp.ok) {
-            const gptData = await gptResp.json();
-            aiContent = gptData.choices?.[0]?.message?.content ?? '';
-            console.log('[NBA] OpenAI GPT-4o fallback succeeded');
-          } else {
-            console.error('[NBA] OpenAI error:', gptResp.status);
-          }
-        } catch (gptErr) {
-          console.error('[NBA] OpenAI exception:', gptErr);
-        }
-      }
-    }
-
-    // Log AI usage
-    const latencyMs = Date.now() - startTime;
-    const aiProvider = aiContent && ANTHROPIC_API_KEY ? 'CLAUDE' : aiContent && Deno.env.get('GOOGLE_API_KEY') ? 'GEMINI' : 'OPENAI';
-    const aiModel = aiProvider === 'CLAUDE' ? 'claude-sonnet-4-20250514' : aiProvider === 'GEMINI' ? 'gemini-3-pro-preview' : 'gpt-4o';
-    if (aiContent) {
+    // Parse AI content
+    if (aiResult.content) {
       try {
-        await supabase.from('ai_usage_log').insert({
-          function_name: 'next-best-action', provider: aiProvider, model: aiModel,
-          tokens_input: null, tokens_output: null, success: true,
-          latency_ms: latencyMs, custo_estimado: 0, empresa: empresa || null,
-        });
-      } catch (logErr) { console.warn('[NBA] ai_usage_log error:', logErr); }
-    }
-
-    // Parse AI content (from Anthropic, Gemini, or OpenAI)
-    if (aiContent) {
-      try {
-        const cleaned = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const cleaned = aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         const parsed = JSON.parse(cleaned);
         acoes = parsed.acoes || [];
         narrativa_dia = parsed.narrativa_dia || '';
@@ -230,7 +127,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
       }
     }
 
-    // Fallback 2: Rule-based if no AI content parsed
+    // Fallback: Rule-based if no AI content parsed
     if (acoes.length === 0) {
       const fallbackAcoes: any[] = [];
 
