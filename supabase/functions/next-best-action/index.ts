@@ -127,31 +127,53 @@ Sem markdown, sem explicação, apenas o JSON.`;
       }),
     });
 
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error('[NBA] Anthropic error:', aiResponse.status, errText);
-      if (aiResponse.status === 429) {
-        return new Response(JSON.stringify({ error: 'Rate limit excedido, tente novamente em breve.' }), {
-          status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-        });
-      }
-      return new Response(JSON.stringify({ error: 'Erro ao processar sugestões' }), {
-        status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
-    }
-
-    const aiData = await aiResponse.json();
-    const content = aiData.content?.[0]?.text ?? '';
     let acoes: any[] = [];
     let narrativa_dia = '';
 
-    try {
-      const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const parsed = JSON.parse(cleaned);
-      acoes = parsed.acoes || [];
-      narrativa_dia = parsed.narrativa_dia || '';
-    } catch {
-      console.error('[NBA] Failed to parse AI response');
+    if (!aiResponse.ok) {
+      const errText = await aiResponse.text();
+      console.error('[NBA] Anthropic error:', aiResponse.status, errText);
+
+      // Fallback rule-based: build actions from raw context without AI
+      const fallbackAcoes: any[] = [];
+
+      for (const sla of contextSummary.sla_alerts.slice(0, 2)) {
+        fallbackAcoes.push({
+          titulo: `SLA ${sla.estourado ? 'estourado' : 'próximo'}: ${sla.deal}`,
+          motivo: `${sla.stage} — ${sla.contato}`,
+          deal_id: null, lead_id: null, prioridade: 'ALTA', tipo_acao: 'SLA',
+        });
+      }
+      for (const t of contextSummary.tarefas_pendentes.slice(0, 2)) {
+        fallbackAcoes.push({
+          titulo: `Tarefa: ${t.descricao}`,
+          motivo: t.deal ? `Deal: ${t.deal}` : 'Sem deal vinculado',
+          deal_id: null, lead_id: null, prioridade: 'MEDIA', tipo_acao: 'TAREFA',
+        });
+      }
+      for (const d of contextSummary.deals_parados.slice(0, 1)) {
+        fallbackAcoes.push({
+          titulo: `Deal parado há ${d.dias_parado}d: ${d.titulo}`,
+          motivo: `${d.contato} — ${d.stage}`,
+          deal_id: d.id, lead_id: null, prioridade: 'MEDIA', tipo_acao: 'DEAL_PARADO',
+        });
+      }
+
+      acoes = fallbackAcoes;
+      narrativa_dia = fallbackAcoes.length > 0
+        ? 'Resumo gerado automaticamente com base nos seus dados. A análise inteligente está temporariamente indisponível.'
+        : '';
+    } else {
+      const aiData = await aiResponse.json();
+      const content = aiData.content?.[0]?.text ?? '';
+      try {
+        const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        acoes = parsed.acoes || [];
+        narrativa_dia = parsed.narrativa_dia || '';
+      } catch {
+        console.error('[NBA] Failed to parse AI response');
+      }
     }
 
     return new Response(JSON.stringify({ success: true, acoes, narrativa_dia }), {
