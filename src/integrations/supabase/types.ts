@@ -5096,6 +5096,7 @@ export type Database = {
           created_at: string
           empresa: Database["public"]["Enums"]["empresa_tipo"] | null
           id: string
+          permissions_override: Json | null
           updated_at: string
           user_id: string
         }
@@ -5105,6 +5106,7 @@ export type Database = {
           created_at?: string
           empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
           id?: string
+          permissions_override?: Json | null
           updated_at?: string
           user_id: string
         }
@@ -5114,6 +5116,7 @@ export type Database = {
           created_at?: string
           empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
           id?: string
+          permissions_override?: Json | null
           updated_at?: string
           user_id?: string
         }

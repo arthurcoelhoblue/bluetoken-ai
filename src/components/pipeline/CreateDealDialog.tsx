@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
+import { useQuery } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,11 +11,29 @@ import { Badge } from '@/components/ui/badge';
 import { useCreateDeal } from '@/hooks/useDeals';
 import { useContacts, useCreateContact } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useDealAutoFill } from '@/hooks/useDealAutoFill';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
 import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
 import { Brain } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+
+function useVendedores() {
+  return useQuery({
+    queryKey: ['vendedores-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('is_active', true)
+        .eq('is_vendedor', true)
+        .order('nome');
+      if (error) throw error;
+      return (data ?? []).map(p => ({ id: p.id, nome: p.nome || p.id }));
+    },
+  });
+}
 
 interface CreateDealDialogProps {
   open: boolean;
@@ -25,12 +44,14 @@ interface CreateDealDialogProps {
 
 export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: CreateDealDialogProps) {
   const { activeCompany } = useCompany();
+  const { user } = useAuth();
   const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
 
   const { data: contactsData } = useContacts();
   const contacts = contactsData?.data;
   const createDeal = useCreateDeal();
   const createContact = useCreateContact();
+  const { data: vendedores = [] } = useVendedores();
 
   const activeStages = stages.filter(s => !s.is_won && !s.is_lost);
   const defaultStageId = activeStages[0]?.id ?? '';
@@ -44,6 +65,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
       contact_id: '',
       contact_nome: '',
       stage_id: defaultStageId,
+      owner_id: user?.id ?? '',
     },
   });
 
@@ -73,6 +95,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
         stage_id: data.stage_id || defaultStageId,
         valor: data.valor,
         temperatura: data.temperatura,
+        owner_id: data.owner_id,
       });
       toast.success('Deal criado com sucesso');
       onOpenChange(false);
@@ -172,6 +195,21 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
                 </FormItem>
               )} />
             </div>
+
+            <FormField control={form.control} name="owner_id" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Vendedor Responsável *</FormLabel>
+                <Select value={field.value} onValueChange={field.onChange}>
+                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione o vendedor" /></SelectTrigger></FormControl>
+                  <SelectContent>
+                    {vendedores.map(v => (
+                      <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <FormMessage />
+              </FormItem>
+            )} />
 
             <FormField control={form.control} name="stage_id" render={({ field }) => (
               <FormItem>

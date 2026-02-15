@@ -4,22 +4,25 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserPlus, Plus, X } from 'lucide-react';
-import { useUsersWithProfiles, useRemoveAssignment } from '@/hooks/useAccessControl';
+import { UserPlus, Plus, X, ShieldCheck } from 'lucide-react';
+import { useUsersWithProfiles, useRemoveAssignment, useAccessProfiles } from '@/hooks/useAccessControl';
 import { AssignProfileDialog } from './AssignProfileDialog';
 import { CreateUserDialog } from './CreateUserDialog';
+import { UserPermissionOverrideDialog } from './UserPermissionOverrideDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import type { UserWithAccess } from '@/types/accessControl';
+import type { UserWithAccess, PermissionsMap } from '@/types/accessControl';
 
 export function UserAccessList() {
   const { data: users = [], isLoading } = useUsersWithProfiles();
+  const { data: profiles = [] } = useAccessProfiles();
   const removeMutation = useRemoveAssignment();
   const queryClient = useQueryClient();
 
   const [assignTarget, setAssignTarget] = useState<UserWithAccess | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
+  const [overrideTarget, setOverrideTarget] = useState<UserWithAccess | null>(null);
 
   const handleToggleVendedor = async (userId: string, value: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_vendedor: value }).eq('id', userId);
@@ -120,6 +123,14 @@ export function UserAccessList() {
                     >
                       <UserPlus className="h-4 w-4" />
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setOverrideTarget(u)}
+                      title="Permissões individuais"
+                    >
+                      <ShieldCheck className="h-4 w-4" />
+                    </Button>
                     {u.assignment && (
                       <Button
                         variant="ghost"
@@ -151,6 +162,25 @@ export function UserAccessList() {
       )}
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+
+      {overrideTarget && (
+        <UserPermissionOverrideDialog
+          open={!!overrideTarget}
+          onOpenChange={(open) => !open && setOverrideTarget(null)}
+          userId={overrideTarget.id}
+          userName={overrideTarget.nome || overrideTarget.email}
+          currentOverride={
+            (overrideTarget as any).assignment?.permissions_override
+              ? ((overrideTarget as any).assignment.permissions_override as PermissionsMap)
+              : null
+          }
+          profilePermissions={
+            overrideTarget.assignment?.access_profile_id
+              ? ((profiles.find(p => p.id === overrideTarget.assignment?.access_profile_id)?.permissions ?? null) as PermissionsMap | null)
+              : null
+          }
+        />
+      )}
     </div>
   );
 }
