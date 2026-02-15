@@ -8,6 +8,16 @@ const corsHeaders = {
 
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 
+/** Escape user-controlled strings before embedding in HTML */
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 interface NotifyCloserRequest {
   lead_id: string;
   empresa: EmpresaTipo;
@@ -99,7 +109,7 @@ serve(async (req) => {
 
     if (messages) {
       leadInfo.ultimas_mensagens = messages.map(m => 
-        `${m.direcao === 'INBOUND' ? '👤' : '🤖'} ${m.conteudo?.substring(0, 100)}...`
+        `${m.direcao === 'INBOUND' ? '👤' : '🤖'} ${escapeHtml((m.conteudo || '').substring(0, 100))}...`
       );
     }
 
@@ -170,18 +180,18 @@ serve(async (req) => {
               <h1 style="color: #dc2626; margin-bottom: 20px;">🔥 Lead Quente Detectado!</h1>
               
               <div style="background: #fef2f2; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                <h2 style="margin: 0 0 10px 0; color: #333;">${leadInfo.lead_nome}</h2>
+               <h2 style="margin: 0 0 10px 0; color: #333;">${escapeHtml(leadInfo.lead_nome || '')}</h2>
                 <p style="margin: 5px 0; color: #666;">
-                  <strong>Empresa:</strong> ${body.empresa}<br/>
-                  <strong>Motivo:</strong> ${body.motivo}<br/>
-                  <strong>Temperatura:</strong> ${leadInfo.temperatura || 'N/A'}
+                  <strong>Empresa:</strong> ${escapeHtml(body.empresa)}<br/>
+                  <strong>Motivo:</strong> ${escapeHtml(body.motivo)}<br/>
+                  <strong>Temperatura:</strong> ${escapeHtml(leadInfo.temperatura || 'N/A')}
                 </p>
               </div>
               
               <h3 style="color: #333; margin-bottom: 10px;">Contato</h3>
               <p style="color: #666; margin-bottom: 20px;">
-                📱 ${leadInfo.telefone || 'Sem telefone'}<br/>
-                📧 ${leadInfo.email || 'Sem email'}
+                📱 ${escapeHtml(leadInfo.telefone || 'Sem telefone')}<br/>
+                📧 ${escapeHtml(leadInfo.email || 'Sem email')}
               </p>
               
               ${leadInfo.ultimas_mensagens?.length ? `
@@ -194,7 +204,7 @@ serve(async (req) => {
               ${leadInfo.framework_data && Object.keys(leadInfo.framework_data).length > 0 ? `
                 <h3 style="color: #333; margin-bottom: 10px;">Dados de Qualificação</h3>
                 <div style="background: #f3f4f6; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
-                  <pre style="font-size: 12px; white-space: pre-wrap;">${JSON.stringify(leadInfo.framework_data, null, 2)}</pre>
+                  <pre style="font-size: 12px; white-space: pre-wrap;">${escapeHtml(JSON.stringify(leadInfo.framework_data, null, 2))}</pre>
                 </div>
               ` : ''}
               
