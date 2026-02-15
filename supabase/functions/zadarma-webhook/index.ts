@@ -1,9 +1,8 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // Zadarma IP whitelist: 185.45.152.40/29 (185.45.152.40 - 185.45.152.47)
 function isZadarmaIP(ip: string): boolean {

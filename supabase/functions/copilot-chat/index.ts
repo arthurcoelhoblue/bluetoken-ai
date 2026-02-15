@@ -7,10 +7,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 // Usa callAI() da camada compartilhada com fallback automático
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
 
 const SYSTEM_PROMPT = `Você é a Amélia, consultora estratégica de vendas e sucesso do cliente do Amélia CRM (Grupo Blue).
 Você é a mesma Amélia que atende leads no WhatsApp — sua voz, personalidade e inteligência são consistentes em todos os canais.
@@ -56,6 +53,7 @@ interface CopilotRequest {
 }
 
 serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }

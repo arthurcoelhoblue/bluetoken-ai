@@ -2,10 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const COACHING_PROMPT = `Você é a Amélia no modo COACHING ATIVO.
 Analise os dados completos do vendedor abaixo e gere 3-5 insights acionáveis.
@@ -30,7 +27,7 @@ FORMATO DE RESPOSTA: JSON array puro (sem markdown), cada item com:
 Responda APENAS o JSON array, sem texto extra.`;
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
+  const corsHeaders = getCorsHeaders(req);
     return new Response(null, { headers: corsHeaders });
   }
 

@@ -7,10 +7,9 @@ import { callAI } from "../_shared/ai-provider.ts";
 // Pricing, product knowledge, SPIN/GPCT/BANT, DISC, A/B testing
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
 // TYPES

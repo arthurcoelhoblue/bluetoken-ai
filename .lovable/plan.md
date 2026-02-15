@@ -125,18 +125,18 @@ Alguns itens da auditoria merecem contexto:
 
 ## SEQUENCIA DE IMPLEMENTACAO
 
-| Ordem | Item | Estimativa |
-|-------|------|-----------|
-| 1 | CORS restritivo (1.3) | 1 sessao |
-| 2 | Validacao Zod nos webhooks (1.1) | 2 sessoes |
-| 3 | Eliminar `any` criticos (2.1) | 2-3 sessoes |
-| 4 | Quebrar hooks grandes (2.2) | 2-3 sessoes |
-| 5 | Testes fluxos criticos (3.1) | 3-4 sessoes |
-| 6 | Quebrar Edge Functions (2.3) | 2-3 sessoes |
-| 7 | Paginacao (3.2) | 2 sessoes |
-| 8 | README + versao (4.1, 4.2) | 1 sessao |
-| 9 | Logger estruturado (4.3) | 1 sessao |
-| 10 | Rate limiting (1.2) | 1-2 sessoes |
+| Ordem | Item | Estimativa | Status |
+|-------|------|-----------|--------|
+| 1 | CORS restritivo (1.3) | 1 sessao | ✅ Concluído |
+| 2 | Validacao Zod nos webhooks (1.1) | 2 sessoes | ✅ Concluído |
+| 3 | Eliminar `any` criticos (2.1) | 2-3 sessoes | ⏳ Pendente |
+| 4 | Quebrar hooks grandes (2.2) | 2-3 sessoes | ⏳ Pendente |
+| 5 | Testes fluxos criticos (3.1) | 3-4 sessoes | ⏳ Pendente |
+| 6 | Quebrar Edge Functions (2.3) | 2-3 sessoes | ⏳ Pendente |
+| 7 | Paginacao (3.2) | 2 sessoes | ⏳ Pendente |
+| 8 | README + versao (4.1, 4.2) | 1 sessao | ⏳ Pendente |
+| 9 | Logger estruturado (4.3) | 1 sessao | ⏳ Pendente |
+| 10 | Rate limiting (1.2) | 1-2 sessoes | ⏳ Pendente |
 
 Recomendo comecar pela **Fase 1** (seguranca) e depois ir para **Fase 2** (qualidade), que sao os itens que mais impactam a nota de maturidade.
 

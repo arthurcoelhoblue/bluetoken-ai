@@ -2,10 +2,9 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // SDR Message Parser — Full context loader + urgency detection + investor profile inference
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
 // URGENCY DETECTION (from monolith PATCH 9)
