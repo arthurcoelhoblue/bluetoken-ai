@@ -46,6 +46,11 @@ const QUICK_SUGGESTIONS: Record<CopilotContextType, string[]> = {
     'Dicas para melhorar minha taxa de conversão',
     'Resumo do meu pipeline atual',
   ],
+  CUSTOMER: [
+    'Qual a saúde deste cliente?',
+    'Quais incidências estão abertas?',
+    'Sugira ações para reduzir risco de churn',
+  ],
 };
 
 export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps) {
