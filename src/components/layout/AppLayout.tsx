@@ -3,7 +3,6 @@ import { AppSidebar } from './AppSidebar';
 import { TopBar } from './TopBar';
 import { useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
-import { CompanyProvider } from '@/contexts/CompanyContext';
 import { Navigate } from 'react-router-dom';
 import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
 
@@ -33,20 +32,18 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
 
   return (
     <ThemeProvider>
-      <CompanyProvider>
-        <SidebarProvider defaultOpen={true}>
-          <div className="h-screen flex w-full overflow-hidden">
-            <AppSidebar />
-            <SidebarInset className="flex flex-col min-w-0 min-h-0 overflow-hidden">
-              <TopBar />
-              <div className="flex-1 min-h-0 overflow-auto flex flex-col">
-                {children}
-              </div>
-            </SidebarInset>
-          </div>
-          <ZadarmaPhoneWidget />
-        </SidebarProvider>
-      </CompanyProvider>
+      <SidebarProvider defaultOpen={true}>
+        <div className="h-screen flex w-full overflow-hidden">
+          <AppSidebar />
+          <SidebarInset className="flex flex-col min-w-0 min-h-0 overflow-hidden">
+            <TopBar />
+            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+              {children}
+            </div>
+          </SidebarInset>
+        </div>
+        <ZadarmaPhoneWidget />
+      </SidebarProvider>
     </ThemeProvider>
   );
 }
