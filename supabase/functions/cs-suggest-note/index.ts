@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -8,8 +9,6 @@ const corsHeaders = {
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-
-  const startTime = Date.now();
 
   try {
     const supabase = createClient(
@@ -46,17 +45,13 @@ serve(async (req) => {
     // Build context
     const contextParts: string[] = [];
     contextParts.push(`Cliente: ${(customer.contact as any)?.nome || 'N/A'}, Health: ${customer.health_score} (${customer.health_status}), MRR: R$${customer.valor_mrr}, Churn: ${customer.risco_churn_pct}%`);
-
     if (customer.notas_csm) contextParts.push(`Notas atuais do CSM: ${customer.notas_csm}`);
-
     if (surveys.length > 0) {
       contextParts.push('Pesquisas recentes: ' + surveys.map((s: any) => `${s.tipo} nota=${s.nota ?? 'pendente'} ${s.feedback_texto ? `"${s.feedback_texto.slice(0, 100)}"` : ''}`).join(' | '));
     }
-
     if (incidents.length > 0) {
       contextParts.push('Incidências recentes: ' + incidents.map((i: any) => `[${i.gravidade}/${i.status}] ${i.titulo}`).join(' | '));
     }
-
     if (healthLog.length > 0) {
       contextParts.push('Health log: ' + healthLog.map((h: any) => `Score ${h.score} (${h.status}) - ${h.motivo_mudanca || 'recalculado'}`).join(' | '));
     }
@@ -67,69 +62,18 @@ ${contextParts.join('\n')}
 
 Responda APENAS com a sugestão de nota, sem prefixos ou explicações.`;
 
-    // Try Claude first, then Gemini fallback
-    let sugestao = '';
-    let model = '';
-    let provider = '';
-    let tokensInput = 0;
-    let tokensOutput = 0;
+    // Use shared AI provider (auto-logs telemetry)
+    const aiResult = await callAI({
+      system: 'Você é um assistente de Customer Success que gera notas de acompanhamento práticas e acionáveis.',
+      prompt,
+      functionName: 'cs-suggest-note',
+      empresa: customer.empresa || null,
+      temperature: 0.3,
+      maxTokens: 300,
+      supabase,
+    });
 
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-
-    if (ANTHROPIC_API_KEY) {
-      try {
-        const resp = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-          body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 300, temperature: 0.3, messages: [{ role: 'user', content: prompt }] }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          sugestao = data.content?.[0]?.text || '';
-          model = 'claude-sonnet-4-20250514';
-          provider = 'claude';
-          tokensInput = data.usage?.input_tokens || 0;
-          tokensOutput = data.usage?.output_tokens || 0;
-        }
-      } catch (e) { console.warn('[cs-suggest-note] Claude failed:', e); }
-    }
-
-    if (!sugestao && GOOGLE_API_KEY) {
-      try {
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { temperature: 0.3, maxOutputTokens: 300 } }),
-        });
-        if (resp.ok) {
-          const data = await resp.json();
-          sugestao = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          model = 'gemini-3-pro-preview';
-          provider = 'gemini';
-        }
-      } catch (e) { console.warn('[cs-suggest-note] Gemini failed:', e); }
-    }
-
-    if (!sugestao) {
-      sugestao = 'Não foi possível gerar sugestão no momento. Tente novamente.';
-    }
-
-    const latencyMs = Date.now() - startTime;
-
-    // Log usage
-    try {
-      await supabase.from('ai_usage_log').insert({
-        function_name: 'cs-suggest-note',
-        provider: provider || 'none',
-        model: model || 'none',
-        tokens_input: tokensInput,
-        tokens_output: tokensOutput,
-        latency_ms: latencyMs,
-        success: !!sugestao,
-        empresa: customer.empresa || null,
-      });
-    } catch (logErr) { console.warn('[cs-suggest-note] log error:', logErr); }
+    const sugestao = aiResult.content || 'Não foi possível gerar sugestão no momento. Tente novamente.';
 
     return new Response(JSON.stringify({ sugestao }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
