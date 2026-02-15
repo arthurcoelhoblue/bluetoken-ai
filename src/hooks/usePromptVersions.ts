@@ -12,6 +12,8 @@ export interface PromptVersion {
   created_by: string | null;
   notes: string | null;
   created_at: string;
+  ab_weight: number;
+  ab_group: string | null;
 }
 
 export function usePromptVersions(functionName?: string) {

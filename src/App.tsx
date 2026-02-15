@@ -65,6 +65,7 @@ const CSPesquisasPage = lazy(() => import("./pages/cs/CSPesquisasPage"));
 const CSPesquisaMassaPage = lazy(() => import("./pages/cs/CSPesquisaMassaPage"));
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
+const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealthPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -155,6 +156,7 @@ const App = () => (
                 <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CustomFieldsConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ImportacaoPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ZadarmaConfigPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/operational-health" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><OperationalHealthPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* CS Module — isolated ErrorBoundary */}
                 <Route path="/cs" element={<ProtectedRoute><ErrorBoundary><CSDashboardPage /></ErrorBoundary></ProtectedRoute>} />

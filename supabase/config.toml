@@ -104,3 +104,18 @@ verify_jwt = false
 
 [functions.faq-auto-review]
 verify_jwt = false
+
+[functions.cs-suggest-note]
+verify_jwt = false
+
+[functions.sdr-message-parser]
+verify_jwt = false
+
+[functions.sdr-intent-classifier]
+verify_jwt = false
+
+[functions.sdr-response-generator]
+verify_jwt = false
+
+[functions.sdr-action-executor]
+verify_jwt = false

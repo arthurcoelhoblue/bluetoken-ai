@@ -128,6 +128,7 @@ const navGroups: NavGroup[] = [
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
       { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
+      { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },

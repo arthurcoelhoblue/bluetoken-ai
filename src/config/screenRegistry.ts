@@ -71,6 +71,7 @@ export const SCREEN_REGISTRY: ScreenRegistryItem[] = [
   { key: 'cs_pesquisas', label: 'Pesquisas', group: 'Sucesso do Cliente', icon: ClipboardList, url: '/cs/pesquisas' },
   { key: 'cs_incidencias', label: 'Incidências', group: 'Sucesso do Cliente', icon: AlertCircle, url: '/cs/incidencias' },
   { key: 'cs_playbooks', label: 'Playbooks CS', group: 'Sucesso do Cliente', icon: BookOpen, url: '/cs/playbooks' },
+  { key: 'saude_operacional', label: 'Saúde Operacional', group: 'Configuração', icon: Activity, url: '/admin/operational-health' },
 ];
 
 export const SCREEN_GROUPS = [...new Set(SCREEN_REGISTRY.map(s => s.group))];

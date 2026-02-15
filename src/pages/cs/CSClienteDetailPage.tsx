@@ -15,7 +15,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock, Clock, Phone, Mail, AlertTriangle, FileText, StickyNote } from 'lucide-react';
+import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock, Clock, Phone, Mail, AlertTriangle, FileText, StickyNote, Bot } from 'lucide-react';
 import { healthStatusConfig, gravidadeConfig, incidentStatusConfig, npsConfig } from '@/types/customerSuccess';
 import type { CSIncidentTipo, CSGravidade } from '@/types/customerSuccess';
 import { format } from 'date-fns';
@@ -62,6 +62,7 @@ export default function CSClienteDetailPage() {
   const [dealsLoading, setDealsLoading] = useState(false);
   const [csmNote, setCsmNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const [suggestingNote, setSuggestingNote] = useState(false);
   const { trackPageView } = useAnalyticsEvents();
 
   useEffect(() => {
@@ -356,9 +357,35 @@ export default function CSClienteDetailPage() {
                       placeholder="Adicione observações, contexto e notas sobre este cliente..."
                       className="min-h-[200px]"
                     />
-                    <Button onClick={handleSaveNote} disabled={savingNote} size="sm">
-                      <FileText className="h-4 w-4 mr-1" /> Salvar Notas
-                    </Button>
+                    <div className="flex gap-2">
+                      <Button onClick={handleSaveNote} disabled={savingNote} size="sm">
+                        <FileText className="h-4 w-4 mr-1" /> Salvar Notas
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={suggestingNote}
+                        onClick={async () => {
+                          setSuggestingNote(true);
+                          try {
+                            const { data, error } = await supabase.functions.invoke('cs-suggest-note', {
+                              body: { customer_id: customer.id },
+                            });
+                            if (error) throw error;
+                            if (data?.sugestao) {
+                              setCsmNote(prev => prev ? `${prev}\n\n--- Sugestão Amélia ---\n${data.sugestao}` : data.sugestao);
+                              toast.success('Sugestão gerada pela Amélia');
+                            }
+                          } catch {
+                            toast.error('Erro ao gerar sugestão');
+                          } finally {
+                            setSuggestingNote(false);
+                          }
+                        }}
+                      >
+                        <Bot className="h-4 w-4 mr-1" /> {suggestingNote ? 'Gerando...' : 'Sugerir Nota (Amélia)'}
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               </TabsContent>
