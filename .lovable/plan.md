@@ -1,112 +1,131 @@
 
 
-# Fase 2.3 - Refatorar Edge Functions Grandes
+# Fase 1.2 - Rate Limiting nos Webhooks Publicos
 
-Extrair logica duplicada das 3 maiores edge functions para modulos compartilhados, reduzindo duplicacao e melhorando manutenibilidade.
+Adicionar protecao contra abuso (flood/replay) nos 3 webhooks publicos que aceitam chamadas externas sem limite de requisicoes.
 
 ---
 
 ## Problema Atual
 
-| Funcao | Linhas | Problema |
-|--------|--------|----------|
-| sgt-webhook | 2.254 | Monolito com classificacao, dedup, sanitizacao, cadencia, CRM, pessoa |
-| bluechat-inbound | 1.576 | Duplica dedup, pipeline routing, phone normalization do sgt-webhook |
-| cadence-runner | 986 | Duplica horario comercial, template resolution |
+Os webhooks `sgt-webhook`, `whatsapp-inbound` e `bluechat-inbound` possuem autenticacao (token/API key) mas nenhum controle de volume de requisicoes. Um atacante com um token valido (ou em caso de vazamento) pode:
 
-### Codigo Duplicado Identificado
+- Criar milhares de leads falsos via SGT
+- Inundar o pipeline de mensagens via WhatsApp inbound
+- Sobrecarregar o SDR IA via Blue Chat
 
-Estas funcoes aparecem identicas (ou quase) em 2+ arquivos:
-
-- `isPlaceholderEmailForDedup` -- sgt-webhook + bluechat-inbound
-- `generatePhoneVariationsForSearch` -- sgt-webhook + bluechat-inbound
-- `resolveTargetPipeline` -- sgt-webhook + bluechat-inbound (mesmos UUIDs hardcoded)
-- `findExistingDealForPerson` -- sgt-webhook + bluechat-inbound
-- `getHorarioBrasilia` / `isHorarioComercial` / `proximoHorarioComercial` -- sgt-webhook + cadence-runner
-- `normalizePhone` / phone E.164 logic -- sgt-webhook + bluechat-inbound
+O sistema ja possui rate limiting para chamadas de IA (`ai_rate_limits`), mas nao para os endpoints webhook em si.
 
 ---
 
 ## Estrategia
 
-Mover logica compartilhada para `supabase/functions/_shared/`, que ja existe com `cors.ts`, `logger.ts` e `ai-provider.ts`. Edge functions em Deno importam de `../_shared/`.
-
-Nao vamos alterar comportamento nenhum -- apenas mover funcoes para arquivos compartilhados e substituir por imports.
+Criar um modulo compartilhado `_shared/webhook-rate-limit.ts` que implementa rate limiting por IP + token usando a tabela existente do banco (nova tabela `webhook_rate_limits`) com janela deslizante por minuto.
 
 ---
 
-## Novos Arquivos Shared
+## Implementacao
 
-### 1. `supabase/functions/_shared/types.ts`
+### 1. Nova tabela: `webhook_rate_limits`
 
-Tipos compartilhados (evitar redeclaracao):
-- `EmpresaTipo`, `Temperatura`, `TipoLead`, `CanalTipo`
-- `LeadContact`, `LeadCadenceRun`
-- Interfaces de payload comuns
+```text
+webhook_rate_limits
+  id            uuid PK default gen_random_uuid()
+  function_name text NOT NULL
+  identifier    text NOT NULL (IP ou token hash)
+  window_start  timestamptz NOT NULL
+  call_count    int default 1
+  created_at    timestamptz default now()
 
-### 2. `supabase/functions/_shared/phone-utils.ts`
+  UNIQUE(function_name, identifier, window_start)
+```
 
-Funcoes extraidas:
-- `normalizePhoneE164(raw)` -- normalizacao completa para E.164
-- `generatePhoneVariationsForSearch(phone)` -- variacoes para busca
-- `isPlaceholderEmailForDedup(email)` -- deteccao de emails placeholder
-- Constantes: `PLACEHOLDER_EMAILS_DEDUP`, `DDI_CONHECIDOS`
+- RLS desabilitado (somente service_role acessa)
+- Index em `(function_name, identifier, window_start)`
+- Limpeza automatica: registros com `window_start < now() - interval '1 hour'` podem ser purgados via cron futuro
 
-### 3. `supabase/functions/_shared/business-hours.ts`
+### 2. Novo arquivo: `supabase/functions/_shared/webhook-rate-limit.ts`
 
-Funcoes extraidas:
-- `getHorarioBrasilia()` -- data atual em BRT
-- `isHorarioComercial()` -- verifica seg-sex 09h-18h
-- `proximoHorarioComercial()` -- calcula proximo horario util
+Funcao exportada:
 
-### 4. `supabase/functions/_shared/pipeline-routing.ts`
+```text
+checkWebhookRateLimit(supabase, functionName, identifier, maxPerMinute)
+  -> { allowed: boolean, currentCount: number, limit: number }
+```
 
-Funcoes extraidas:
-- `resolveTargetPipeline(empresa, tipoLead, temperatura, isPriority)` -- mapa de pipelines/stages
-- `findExistingDealForPerson(supabase, empresa, dados)` -- dedup de contatos/deals
-- Constantes: todos os UUIDs de pipelines e stages
+Logica:
+- Calcula `window_start` arredondando para o minuto atual
+- Faz upsert na tabela (insert on conflict increment)
+- Se `call_count > maxPerMinute`, retorna `allowed: false`
+- Em caso de erro no banco, permite a requisicao (fail-open para nao bloquear webhooks legitimos)
+
+### 3. Limites por webhook
+
+| Webhook | Limite | Identificador |
+|---------|--------|---------------|
+| sgt-webhook | 120/min | hash do token x-webhook-secret |
+| whatsapp-inbound | 200/min | hash do token WHATSAPP_INBOUND_SECRET + telefone do payload |
+| bluechat-inbound | 150/min | empresa (TOKENIZA ou BLUE) |
+
+Esses limites sao generosos o suficiente para operacao normal mas bloqueiam floods.
+
+### 4. Integracao nos webhooks
+
+Cada webhook recebe 3 linhas adicionais apos a validacao de autenticacao:
+
+```text
+const rateCheck = await checkWebhookRateLimit(supabase, 'sgt-webhook', tokenHash, 120);
+if (!rateCheck.allowed) {
+  return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), { status: 429, headers: corsHeaders });
+}
+```
+
+### 5. Response padrao para rate limit
+
+HTTP 429 com corpo:
+```text
+{ "error": "Rate limit exceeded", "retryAfter": 60 }
+```
+
+Header `Retry-After: 60` incluido.
 
 ---
 
-## Impacto por Edge Function
+## Fase 3.3 - N+1 Query Optimization (Nota)
 
-### sgt-webhook (2.254 -> ~1.600 linhas)
+Apos analise detalhada dos hooks, os principais (useLeadDetail, useDealDetail, useContactsPage, useOrganizationsPage) ja utilizam:
+- Queries paralelas via useQuery independentes (nao sequenciais)
+- Views materializadas (deals_full_detail)
+- Joins inline (profiles:user_id)
+- Paginacao com .range()
 
-Remover: `isPlaceholderEmailForDedup`, `generatePhoneVariationsForSearch`, `resolveTargetPipeline`, `findExistingDealForPerson`, `getHorarioBrasilia`/`isHorarioComercial`/`proximoHorarioComercial`, `normalizePhoneE164`, constantes DDI, tipos duplicados. Substituir por imports.
-
-### bluechat-inbound (1.576 -> ~1.100 linhas)
-
-Remover: `isPlaceholderEmailForDedup`, `generatePhoneVariationsForSearch`, `generatePhoneVariations`, `resolveTargetPipeline`, `findExistingDealForPerson`, `normalizePhone`, tipos duplicados. Substituir por imports.
-
-### cadence-runner (986 -> ~750 linhas)
-
-Remover: `getHorarioBrasilia`/`isHorarioComercial`/`proximoHorarioComercial`, tipos duplicados. Substituir por imports.
+Nao ha padroes N+1 significativos para corrigir. Esta fase sera marcada como **nao aplicavel** no plano.
 
 ---
 
 ## Sequencia de Execucao
 
-1. Criar `_shared/types.ts` com tipos compartilhados
-2. Criar `_shared/phone-utils.ts` com funcoes de telefone/email
-3. Criar `_shared/business-hours.ts` com funcoes de horario
-4. Criar `_shared/pipeline-routing.ts` com roteamento e dedup
-5. Refatorar `cadence-runner/index.ts` (menor risco)
-6. Refatorar `bluechat-inbound/index.ts`
-7. Refatorar `sgt-webhook/index.ts` (maior, mais critico)
-8. Deploy e validacao via logs
+1. Criar migracao com tabela `webhook_rate_limits`
+2. Criar `_shared/webhook-rate-limit.ts`
+3. Integrar em `sgt-webhook/index.ts`
+4. Integrar em `whatsapp-inbound/index.ts`
+5. Integrar em `bluechat-inbound/index.ts`
+6. Deploy das 3 funcoes
+7. Validar via logs que requests normais passam
+8. Atualizar `.lovable/plan.md` marcando 1.2 como concluido e 3.3 como nao aplicavel
 
 ## Riscos e Mitigacoes
 
 | Risco | Mitigacao |
 |-------|----------|
-| Quebrar imports Deno | Usar caminhos relativos `../_shared/` ja validados (cors.ts funciona) |
-| Divergencia sutil entre versoes duplicadas | Comparar linha a linha antes de consolidar; usar a versao mais completa |
-| Regressao em producao | Deploy incremental; monitorar logs apos cada funcao |
+| Bloquear webhook legitimo | Fail-open: se o banco falhar no check, permite a requisicao |
+| Limites muito agressivos | Valores conservadores (120-200/min) — muito acima do uso normal |
+| Latencia adicional | Uma unica query upsert por request (~2ms) |
 
 ## Resultado Esperado
 
-- ~650 linhas de codigo duplicado eliminadas
-- 4 modulos compartilhados reutilizaveis
-- Zero mudanca de comportamento
-- Facilita manutencao futura (corrigir bug em 1 lugar, nao em 3)
+- 3 webhooks publicos protegidos contra flood
+- Tabela de auditoria de volume por endpoint
+- Zero impacto em operacao normal
+- Fase 3.3 (N+1) encerrada como nao aplicavel
 
