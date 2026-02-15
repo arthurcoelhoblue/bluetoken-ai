@@ -86,7 +86,7 @@ export function PessoaCard({ pessoa, relacionamentos, isLoading }: PessoaCardPro
           {pessoa.email_principal && (
             <div>
               <p className="text-sm text-muted-foreground">Email</p>
-              <p className="font-medium">{pessoa.email_principal}</p>
+              <p className="font-medium truncate">{pessoa.email_principal}</p>
             </div>
           )}
         </div>
