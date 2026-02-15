@@ -13,6 +13,7 @@ import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 function useOwnerOptions() {
   return useQuery({
@@ -47,6 +48,12 @@ function useCurrentUserIsVendedor() {
 }
 
 function PipelineContent() {
+  const { trackPageView } = useAnalyticsEvents();
+  
+  useEffect(() => {
+    trackPageView('pipeline');
+  }, [trackPageView]);
+
   const { activeCompany } = useCompany();
   const { user, roles } = useAuth();
   const isAdmin = roles.includes('ADMIN');
@@ -87,12 +94,15 @@ function PipelineContent() {
 
   const selectedPipeline = pipelines?.find(p => p.id === selectedPipelineId);
 
-  const { data: deals, isLoading: dealsLoading } = useDeals({
+  const { data: dealsData, isLoading: dealsLoading } = useDeals({
     pipelineId: selectedPipelineId,
     ownerId: effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
     temperatura: temperatura !== 'all' ? temperatura : undefined,
     tag: tag !== 'all' ? tag : undefined,
+    page: -1, // Fetch all (up to 500) for Kanban
   });
+  
+  const deals = dealsData?.data;
 
   const { columns, wonLost } = useKanbanData(deals, selectedPipeline?.pipeline_stages);
 

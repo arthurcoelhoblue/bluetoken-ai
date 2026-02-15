@@ -11,6 +11,7 @@ import { useCopilotMessages } from '@/hooks/useCopilotMessages';
 import { useCopilotInsights } from '@/hooks/useCopilotInsights';
 import { CopilotInsightCard } from './CopilotInsightCard';
 import type { CopilotContextType } from '@/types/conversas';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 interface CopilotContext {
   type: CopilotContextType;
@@ -64,6 +65,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
   });
 
   const { insights, generateInsights, dismissInsight, pendingCount } = useCopilotInsights(context.empresa);
+  const { trackFeatureUse } = useAnalyticsEvents();
 
   // Generate proactive insights when opening
   useEffect(() => {
@@ -71,6 +73,10 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
       generateInsights();
     }
   }, [open, context.type, generateInsights]);
+
+  useEffect(() => {
+    if (open) trackFeatureUse('copilot_opened', { context: context.type });
+  }, [open, trackFeatureUse, context.type]);
 
   // Auto-scroll
   useEffect(() => {
@@ -119,6 +125,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
         tokens_output: data?.tokens_output,
         latency_ms: data?.latency_ms,
       });
+      trackFeatureUse('copilot_message_sent', { context: context.type, model: data?.model });
     } catch (err) {
       console.error('[Copilot] Erro:', err);
       addLocalMessage('assistant', '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');

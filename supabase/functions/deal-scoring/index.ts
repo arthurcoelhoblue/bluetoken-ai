@@ -6,21 +6,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-async function callGeminiSimple(googleApiKey: string, prompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const { temperature = 0.3, maxTokens = 100 } = options;
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: { temperature, maxOutputTokens: maxTokens },
-    }),
-  });
-  if (!resp.ok) throw new Error(`Gemini error ${resp.status}`);
-  const data = await resp.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
 async function callClaudeSimple(anthropicKey: string, systemPrompt: string, userPrompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
   const { temperature = 0.3, maxTokens = 100 } = options;
   const resp = await fetch('https://api.anthropic.com/v1/messages', {
@@ -41,6 +26,21 @@ async function callClaudeSimple(anthropicKey: string, systemPrompt: string, user
   if (!resp.ok) throw new Error(`Claude error ${resp.status}`);
   const data = await resp.json();
   return data.content?.[0]?.text?.trim() || '';
+}
+
+async function callGeminiSimple(googleApiKey: string, prompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.3, maxTokens = 100 } = options;
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature, maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!resp.ok) throw new Error(`Gemini error ${resp.status}`);
+  const data = await resp.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
 }
 
 serve(async (req) => {
@@ -85,9 +85,8 @@ serve(async (req) => {
 
     const pipelineIds = [...new Set(deals.map((d: any) => d.pipeline_id))];
 
-    const [stagesRes, avgTicketRes] = await Promise.all([
+    const [stagesRes] = await Promise.all([
       supabase.from('pipeline_stages').select('id, posicao, pipeline_id').in('pipeline_id', pipelineIds).order('posicao'),
-      supabase.rpc('', {}).then(() => null).catch(() => null),
     ]);
 
     const stagesByPipeline: Record<string, any[]> = {};
@@ -230,27 +229,35 @@ serve(async (req) => {
           media_stage_dias: Math.round(avgDays),
         };
 
-        // Generate proxima_acao_sugerida via AI (Gemini primary, Claude fallback)
+        // Generate proxima_acao_sugerida via AI (Claude primary, Gemini fallback)
         let proximaAcao: string | null = null;
+        let aiProvider = '';
+        let aiModel = '';
+        
         if ((GOOGLE_API_KEY || ANTHROPIC_API_KEY) && (targetDealId || finalScore < 50)) {
+          const startMs = Date.now();
           const systemPrompt = 'Você sugere a próxima ação para um vendedor. Responda com UMA frase curta e acionável em português. Sem markdown.';
           const userPrompt = `Deal "${deal.titulo}" (R$ ${deal.valor || 0}). Stage: ${(deal.pipeline_stages as any)?.nome}. ${Math.round(daysInStage)} dias na stage (média ${Math.round(avgDays)}d). Temperatura: ${temp || 'N/A'}. Engajamento 14d: ${activities?.length || 0} atividades. Score: ${finalScore}/100. Dimensões: ${JSON.stringify(dimensoes)}. Qual a próxima ação mais importante?`;
 
-          // Try Gemini first
-          if (GOOGLE_API_KEY) {
+          // Try Claude first (Primary)
+          if (ANTHROPIC_API_KEY) {
             try {
-              proximaAcao = await callGeminiSimple(GOOGLE_API_KEY, `${systemPrompt}\n\n${userPrompt}`, { temperature: 0.3, maxTokens: 100 });
+              proximaAcao = await callClaudeSimple(ANTHROPIC_API_KEY, systemPrompt, userPrompt, { temperature: 0.3, maxTokens: 100 });
+              aiProvider = 'CLAUDE';
+              aiModel = 'claude-sonnet-4-20250514';
             } catch (e) {
-              console.warn('[deal-scoring] Gemini failed:', e);
+              console.warn('[deal-scoring] Claude failed:', e);
             }
           }
 
-          // Fallback to Claude
-          if (!proximaAcao && ANTHROPIC_API_KEY) {
+          // Fallback to Gemini
+          if (!proximaAcao && GOOGLE_API_KEY) {
             try {
-              proximaAcao = await callClaudeSimple(ANTHROPIC_API_KEY, systemPrompt, userPrompt, { temperature: 0.3, maxTokens: 100 });
+              proximaAcao = await callGeminiSimple(GOOGLE_API_KEY, `${systemPrompt}\n\n${userPrompt}`, { temperature: 0.3, maxTokens: 100 });
+              aiProvider = 'GEMINI';
+              aiModel = 'gemini-3-pro-preview';
             } catch (e) {
-              console.warn('[deal-scoring] Claude fallback failed:', e);
+              console.warn('[deal-scoring] Gemini fallback failed:', e);
             }
           }
 
@@ -258,7 +265,6 @@ serve(async (req) => {
           if (!proximaAcao) {
             const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
             if (OPENAI_API_KEY) {
-              console.log('[deal-scoring] Trying OpenAI GPT-4o fallback...');
               try {
                 const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
                   method: 'POST',
@@ -268,35 +274,30 @@ serve(async (req) => {
                 if (gptResp.ok) {
                   const gptData = await gptResp.json();
                   proximaAcao = gptData.choices?.[0]?.message?.content?.trim() ?? null;
-                  console.log('[deal-scoring] OpenAI GPT-4o fallback succeeded');
+                  aiProvider = 'OPENAI';
+                  aiModel = 'gpt-4o';
                 }
               } catch (gptErr) {
                 console.error('[deal-scoring] OpenAI exception:', gptErr);
               }
             }
           }
-        }
 
-        // Check for significant drop
-        const oldScore = deal.score_probabilidade;
-        if (oldScore && oldScore - finalScore > 20 && deal.owner_id) {
-          // Get empresa from pipeline (deals don't have empresa column)
-          let dealEmpresa = 'BLUE';
-          try {
-            const { data: pip } = await supabase.from('pipelines').select('empresa').eq('id', deal.pipeline_id).single();
-            if (pip?.empresa) dealEmpresa = pip.empresa;
-          } catch { /* fallback to BLUE */ }
-
-          await supabase.from('notifications').insert({
-            user_id: deal.owner_id,
-            empresa: dealEmpresa,
-            tipo: 'DEAL_SCORE_DROP',
-            titulo: `⚠️ Score caiu: ${deal.titulo}`,
-            mensagem: `Probabilidade caiu de ${oldScore}% para ${finalScore}%. ${proximaAcao || 'Revise o deal.'}`,
-            entity_id: deal.id,
-            entity_type: 'deal',
-            metadata: { old_score: oldScore, new_score: finalScore },
-          }).then(() => {}).catch(() => {});
+          // Log AI usage if called
+          if (proximaAcao) {
+            const latencyMs = Date.now() - startMs;
+            await supabase.from('ai_usage_log').insert({
+              function_name: 'deal-scoring',
+              provider: aiProvider,
+              model: aiModel,
+              tokens_input: null,
+              tokens_output: null,
+              success: true,
+              latency_ms: latencyMs,
+              custo_estimado: 0,
+              empresa: null, // Deals don't have empresa column directly
+            });
+          }
         }
 
         await supabase.from('deals').update({

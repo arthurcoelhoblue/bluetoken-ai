@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useNextBestAction, type NextBestAction } from '@/hooks/useNextBestAction';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
   TAREFA: <CheckSquare className="h-4 w-4" />,
@@ -29,11 +30,13 @@ export function NextBestActionCard() {
   const { data, isLoading, isError, refresh, isFetching } = useNextBestAction();
   const navigate = useNavigate();
   const { activeCompany } = useCompany();
+  const { trackFeatureUse } = useAnalyticsEvents();
 
   const acoes = data?.acoes ?? [];
   const narrativaDia = data?.narrativa_dia ?? '';
 
   const handleClick = (acao: NextBestAction) => {
+    trackFeatureUse('nba_action_clicked', { action: acao.tipo_acao, priority: acao.prioridade });
     if (acao.deal_id) navigate(`/pipeline?deal=${acao.deal_id}`);
     else if (acao.lead_id) {
       const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;

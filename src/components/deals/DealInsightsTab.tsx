@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { Sparkles, RefreshCw, Target, Brain, MessageSquare, Shield } from 'lucid
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import type { DealFullDetail } from '@/types/deal';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 interface InsightsTabProps {
   deal: DealFullDetail;
@@ -38,6 +39,11 @@ function progressColor(value: number): string {
 export function InsightsTab({ deal, dealId }: InsightsTabProps) {
   const [refreshing, setRefreshing] = useState(false);
   const [loadingContext, setLoadingContext] = useState(false);
+  const { trackFeatureUse } = useAnalyticsEvents();
+  
+  useEffect(() => {
+    trackFeatureUse('deal_insights_viewed', { dealId });
+  }, [trackFeatureUse, dealId]);
 
   const prob = deal.score_probabilidade ?? 0;
   const dimensoes = (deal as any).scoring_dimensoes as Record<string, number> | null;

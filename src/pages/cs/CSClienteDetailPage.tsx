@@ -25,6 +25,7 @@ import { toast } from 'sonner';
 import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { supabase } from '@/integrations/supabase/client';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 // Icons for timeline items
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -61,6 +62,11 @@ export default function CSClienteDetailPage() {
   const [dealsLoading, setDealsLoading] = useState(false);
   const [csmNote, setCsmNote] = useState('');
   const [savingNote, setSavingNote] = useState(false);
+  const { trackPageView } = useAnalyticsEvents();
+
+  useEffect(() => {
+    trackPageView('cs_cliente_detail');
+  }, [trackPageView]);
 
   // Load CSM notes from customer
   useEffect(() => {

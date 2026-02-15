@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { AppLayout } from '@/components/layout/AppLayout';
@@ -8,6 +8,7 @@ import { useLeadIntents } from '@/hooks/useLeadIntents';
 import { useLeadContactIssues } from '@/hooks/useLeadContactIssues';
 import { usePessoaContext } from '@/hooks/usePessoaContext';
 import { useConversationState } from '@/hooks/useConversationState';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 import {
   ICP_LABELS,
   PERSONA_LABELS,
@@ -72,6 +73,11 @@ function LeadDetailContent() {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const { trackPageView } = useAnalyticsEvents();
+
+  useEffect(() => {
+    trackPageView('lead_detail');
+  }, [trackPageView]);
 
   const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
     useLeadDetail(leadId || '', empresa as EmpresaTipo);

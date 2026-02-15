@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -23,6 +23,7 @@ import { EvolutionChart } from '@/components/analytics/EvolutionChart';
 import { LTVCohortTable } from '@/components/analytics/LTVCohortTable';
 import { EsforcoVendedorTable } from '@/components/analytics/EsforcoVendedorTable';
 import { EsforcoCanalTable } from '@/components/analytics/EsforcoCanalTable';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -44,6 +45,11 @@ export default function AnalyticsPage() {
   const { data: funilVisual, isLoading: loadingFunilVisual } = useAnalyticsFunilVisual(pipelineId);
   const { data: evolucao, isLoading: loadingEvolucao } = useAnalyticsEvolucao(pipelineId);
   const { data: ltv, isLoading: loadingLTV } = useAnalyticsLTV();
+  const { trackPageView } = useAnalyticsEvents();
+
+  useEffect(() => {
+    trackPageView('analytics');
+  }, [trackPageView]);
 
   // Aggregate KPIs from conversion data
   const totalDeals = conversion?.reduce((s, c) => s + c.total_deals, 0) ?? 0;

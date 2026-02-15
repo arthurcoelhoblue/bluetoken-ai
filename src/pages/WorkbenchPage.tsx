@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import {
@@ -30,6 +30,7 @@ import { NextBestActionCard } from '@/components/workbench/NextBestActionCard';
 import { AmeliaInsightsCard } from '@/components/workbench/AmeliaInsightsCard';
 import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
 import { toast } from 'sonner';
+import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 
 function formatBRL(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -54,6 +55,11 @@ function getTaskUrgency(prazo: string | null): 'overdue' | 'today' | 'upcoming' 
 
 function WorkbenchContent() {
   useGamificationNotifications();
+  const { trackPageView } = useAnalyticsEvents();
+  
+  useEffect(() => {
+    trackPageView('workbench');
+  }, [trackPageView]);
   const { profile } = useAuth();
   const navigate = useNavigate();
   const { data: tarefas, isLoading: loadingTarefas } = useWorkbenchTarefas();

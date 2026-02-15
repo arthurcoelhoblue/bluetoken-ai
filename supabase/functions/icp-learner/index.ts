@@ -50,66 +50,134 @@ serve(async (req) => {
     const lost = lostDeals || [];
 
     // Analyze patterns
-    const patterns = {
-      won: analyzePatterns(won),
-      lost: analyzePatterns(lost),
+    const patterns = analyzePatterns(won);
+    const patternsLost = analyzePatterns(lost);
+    
+    const analysisData = {
+      won: patterns,
+      lost: patternsLost,
       total_won: won.length,
       total_lost: lost.length,
       win_rate: won.length + lost.length > 0 ? (won.length / (won.length + lost.length)) * 100 : 0,
     };
 
-    // Generate ICP insights using Gemini
+    // Generate ICP insights using AI (Claude primary, Gemini fallback)
     const GOOGLE_API_KEY = Deno.env.get("GOOGLE_API_KEY");
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY");
     let icpNarrative = "";
+    
+    if ((GOOGLE_API_KEY || ANTHROPIC_API_KEY) && (won.length + lost.length) >= 10) {
+      const startMs = Date.now();
+      let provider = '';
+      let model = '';
 
-    if (GOOGLE_API_KEY && (won.length + lost.length) >= 10) {
       try {
         const prompt = `Analise estes padrões de deals ganhos vs perdidos e gere um ICP (Ideal Customer Profile) em português:
 
 DEALS GANHOS (${won.length}):
-- Setores top: ${JSON.stringify(patterns.won.topSectors)}
-- Cargos top: ${JSON.stringify(patterns.won.topRoles)}
-- Canais top: ${JSON.stringify(patterns.won.topChannels)}
-- Ticket médio: R$ ${patterns.won.avgValue.toFixed(0)}
-- Portes: ${JSON.stringify(patterns.won.topSizes)}
+- Setores top: ${JSON.stringify(analysisData.won.topSectors)}
+- Cargos top: ${JSON.stringify(analysisData.won.topRoles)}
+- Canais top: ${JSON.stringify(analysisData.won.topChannels)}
+- Ticket médio: R$ ${analysisData.won.avgValue.toFixed(0)}
+- Portes: ${JSON.stringify(analysisData.won.topSizes)}
 
 DEALS PERDIDOS (${lost.length}):
-- Setores top: ${JSON.stringify(patterns.lost.topSectors)}
-- Motivos perda: ${JSON.stringify(patterns.lost.topLossReasons)}
-- Ticket médio: R$ ${patterns.lost.avgValue.toFixed(0)}
+- Setores top: ${JSON.stringify(analysisData.lost.topSectors)}
+- Motivos perda: ${JSON.stringify(analysisData.lost.topLossReasons)}
+- Ticket médio: R$ ${analysisData.lost.avgValue.toFixed(0)}
 
 Responda com JSON: { "icp_summary": "texto 3 frases", "ideal_sectors": [...], "ideal_roles": [...], "ideal_channels": [...], "red_flags": [...], "recommendations": [...] }`;
 
-        const res = await fetch(
-          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GOOGLE_API_KEY}`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.3, maxOutputTokens: 1000 },
-            }),
+        // Try Claude first (Primary)
+        if (ANTHROPIC_API_KEY) {
+          try {
+            const resp = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1000,
+                temperature: 0.3,
+                messages: [{ role: 'user', content: prompt }],
+              }),
+            });
+            if (!resp.ok) throw new Error(`Claude error ${resp.status}`);
+            const data = await resp.json();
+            icpNarrative = data.content?.[0]?.text ?? '';
+            provider = 'CLAUDE';
+            model = 'claude-sonnet-4-20250514';
+          } catch (e) {
+            console.warn('[icp-learner] Claude failed:', e);
           }
-        );
+        }
 
-        if (res.ok) {
-          const data = await res.json();
-          icpNarrative = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        // Fallback to Gemini
+        if (!icpNarrative && GOOGLE_API_KEY) {
+          try {
+            const res = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`,
+              {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: prompt }] }],
+                  generationConfig: { temperature: 0.3, maxOutputTokens: 1000 },
+                }),
+              }
+            );
+            if (res.ok) {
+              const data = await res.json();
+              icpNarrative = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
+              provider = 'GEMINI';
+              model = 'gemini-3-pro-preview';
+            }
+          } catch (e) {
+            console.warn('[icp-learner] Gemini fallback failed:', e);
+          }
+        }
 
+        // Fallback 2: OpenAI GPT-4o
+        if (!icpNarrative) {
+          const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+          if (OPENAI_API_KEY) {
+            try {
+              const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.3, max_tokens: 1000 }),
+              });
+              if (gptResp.ok) {
+                const gptData = await gptResp.json();
+                icpNarrative = gptData.choices?.[0]?.message?.content ?? '';
+                provider = 'OPENAI';
+                model = 'gpt-4o';
+              }
+            } catch (gptErr) {
+              console.error('[icp-learner] OpenAI exception:', gptErr);
+            }
+          }
+        }
+
+        if (icpNarrative) {
+          const latencyMs = Date.now() - startMs;
           // Log AI usage
           await supabase.from("ai_usage_log").insert({
             function_name: "icp-learner",
-            provider: "GEMINI",
-            model: "gemini-2.5-flash",
-            tokens_input: icpNarrative.length,
-            tokens_output: icpNarrative.length,
+            provider: provider,
+            model: model,
+            tokens_input: null,
+            tokens_output: null,
             success: true,
-            latency_ms: 0,
+            latency_ms: latencyMs,
             custo_estimado: 0.001,
           });
         }
       } catch (e) {
-        console.error("Gemini ICP error:", e);
+        console.error("AI ICP error:", e);
       }
     }
 
@@ -120,7 +188,7 @@ Responda com JSON: { "icp_summary": "texto 3 frases", "ideal_sectors": [...], "i
           category: "ia",
           key: "icp_profile",
           value: {
-            patterns,
+            patterns: analysisData,
             narrative: icpNarrative,
             generated_at: new Date().toISOString(),
           },
@@ -130,7 +198,7 @@ Responda com JSON: { "icp_summary": "texto 3 frases", "ideal_sectors": [...], "i
     }
 
     return new Response(
-      JSON.stringify({ success: true, patterns, icpNarrative: icpNarrative.slice(0, 500) }),
+      JSON.stringify({ success: true, patterns: analysisData, icpNarrative: icpNarrative.slice(0, 500) }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (error) {

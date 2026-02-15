@@ -18,7 +18,7 @@ serve(async (req) => {
     const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
     const { data: surveys, error } = await supabase
       .from('cs_surveys')
-      .select('tipo, nota, texto_resposta')
+      .select('tipo, nota, texto_resposta, empresa')
       .not('texto_resposta', 'is', null)
       .gte('respondido_em', ninetyDaysAgo)
       .limit(200);
@@ -37,28 +37,12 @@ serve(async (req) => {
     const userPrompt = `Analise estas ${surveys.length} respostas de clientes:\n\n${responsesText}\n\nRetorne um JSON com:\n{"topics": [{"tema": "string", "frequencia": number, "sentimento": "positivo|neutro|negativo", "resumo": "string"}], "wordCloud": [{"palavra": "string", "contagem": number}]}\n\nTop 5 temas e 20 palavras-chave.`;
 
     let content = '';
+    const startMs = Date.now();
+    let provider = '';
+    let model = '';
 
-    // Try Gemini first
-    if (GOOGLE_API_KEY) {
-      try {
-        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-          }),
-        });
-        if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-        const data = await resp.json();
-        content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      } catch (e) {
-        console.warn('[CS-Trending-Topics] Gemini failed:', e);
-      }
-    }
-
-    // Fallback to Claude
-    if (!content && ANTHROPIC_API_KEY) {
+    // Try Claude first (Primary)
+    if (ANTHROPIC_API_KEY) {
       try {
         const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -78,8 +62,31 @@ serve(async (req) => {
         if (!aiResponse.ok) throw new Error(`Claude ${aiResponse.status}`);
         const aiData = await aiResponse.json();
         content = aiData.content?.[0]?.text ?? '';
+        provider = 'CLAUDE';
+        model = 'claude-sonnet-4-20250514';
       } catch (e) {
-        console.error('[CS-Trending-Topics] Claude fallback failed:', e);
+        console.warn('[CS-Trending-Topics] Claude failed:', e);
+      }
+    }
+
+    // Fallback to Gemini
+    if (!content && GOOGLE_API_KEY) {
+      try {
+        const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+          }),
+        });
+        if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+        const data = await resp.json();
+        content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        provider = 'GEMINI';
+        model = 'gemini-3-pro-preview';
+      } catch (e) {
+        console.warn('[CS-Trending-Topics] Gemini fallback failed:', e);
       }
     }
 
@@ -87,7 +94,6 @@ serve(async (req) => {
     if (!content) {
       const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
       if (OPENAI_API_KEY) {
-        console.log('[CS-Trending-Topics] Trying OpenAI GPT-4o fallback...');
         try {
           const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
             method: 'POST',
@@ -97,7 +103,8 @@ serve(async (req) => {
           if (gptResp.ok) {
             const gptData = await gptResp.json();
             content = gptData.choices?.[0]?.message?.content ?? '';
-            console.log('[CS-Trending-Topics] OpenAI GPT-4o fallback succeeded');
+            provider = 'OPENAI';
+            model = 'gpt-4o';
           }
         } catch (gptErr) {
           console.error('[CS-Trending-Topics] OpenAI exception:', gptErr);
@@ -107,6 +114,20 @@ serve(async (req) => {
 
     let result = { topics: [], wordCloud: [] };
     if (content) {
+      const latencyMs = Date.now() - startMs;
+      // Log AI usage
+      await supabase.from('ai_usage_log').insert({
+        function_name: 'cs-trending-topics',
+        provider: provider,
+        model: model,
+        tokens_input: null,
+        tokens_output: null,
+        success: true,
+        latency_ms: latencyMs,
+        custo_estimado: 0,
+        empresa: surveys[0]?.empresa || null,
+      });
+
       try {
         const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         result = JSON.parse(cleaned);

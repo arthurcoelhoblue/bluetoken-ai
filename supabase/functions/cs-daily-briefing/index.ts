@@ -54,29 +54,13 @@ Renovações próximas (30 dias): ${renewals.length} totalizando R$ ${renewals.r
 Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c: any) => (c as any).contacts?.nome || 'N/A').join(', ') || 'Nenhum'}`;
 
       try {
+        const startMs = Date.now();
         let briefingText = '';
+        let provider = '';
+        let model = '';
 
-        // Try Gemini first
-        if (GOOGLE_API_KEY) {
-          try {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemPrompt}\n\n${contextText}` }] }],
-                generationConfig: { temperature: 0.4, maxOutputTokens: 1000 },
-              }),
-            });
-            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-            const data = await resp.json();
-            briefingText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          } catch (e) {
-            console.warn(`[CS-Briefing] Gemini failed for CSM ${csmId}:`, e);
-          }
-        }
-
-        // Fallback to Claude
-        if (!briefingText && ANTHROPIC_API_KEY) {
+        // Try Claude first (Primary)
+        if (ANTHROPIC_API_KEY) {
           try {
             const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
               method: 'POST',
@@ -96,8 +80,31 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
             if (!aiResponse.ok) throw new Error(`Claude ${aiResponse.status}`);
             const aiData = await aiResponse.json();
             briefingText = aiData.content?.[0]?.text || '';
+            provider = 'CLAUDE';
+            model = 'claude-sonnet-4-20250514';
           } catch (e) {
-            console.warn(`[CS-Briefing] Claude fallback failed for CSM ${csmId}:`, e);
+            console.warn(`[CS-Briefing] Claude failed for CSM ${csmId}:`, e);
+          }
+        }
+
+        // Fallback to Gemini
+        if (!briefingText && GOOGLE_API_KEY) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemPrompt}\n\n${contextText}` }] }],
+                generationConfig: { temperature: 0.4, maxOutputTokens: 1000 },
+              }),
+            });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            briefingText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            provider = 'GEMINI';
+            model = 'gemini-3-pro-preview';
+          } catch (e) {
+            console.warn(`[CS-Briefing] Gemini fallback failed for CSM ${csmId}:`, e);
           }
         }
 
@@ -105,7 +112,6 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
         if (!briefingText) {
           const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
           if (OPENAI_API_KEY) {
-            console.log(`[CS-Briefing] Trying OpenAI GPT-4o fallback for CSM ${csmId}...`);
             try {
               const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
                 method: 'POST',
@@ -115,7 +121,8 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
               if (gptResp.ok) {
                 const gptData = await gptResp.json();
                 briefingText = gptData.choices?.[0]?.message?.content ?? '';
-                console.log('[CS-Briefing] OpenAI GPT-4o fallback succeeded');
+                provider = 'OPENAI';
+                model = 'gpt-4o';
               }
             } catch (gptErr) {
               console.error('[CS-Briefing] OpenAI exception:', gptErr);
@@ -123,21 +130,33 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
           }
         }
 
-        if (!briefingText) {
-          briefingText = 'Briefing indisponível no momento.';
+        if (briefingText) {
+          const latencyMs = Date.now() - startMs;
+          // Log AI usage
+          await supabase.from('ai_usage_log').insert({
+            function_name: 'cs-daily-briefing',
+            provider: provider,
+            model: model,
+            tokens_input: null,
+            tokens_output: null,
+            success: true,
+            latency_ms: latencyMs,
+            custo_estimado: 0,
+            empresa: customers[0]?.empresa || null,
+          });
+
+          await supabase.from('notifications').insert({
+            user_id: csmId,
+            empresa: customers[0]?.empresa || 'BLUE',
+            titulo: `📋 Briefing CS — ${new Date().toLocaleDateString('pt-BR')}`,
+            mensagem: briefingText.substring(0, 1000),
+            tipo: 'CS_BRIEFING',
+            referencia_tipo: 'CS_BRIEFING',
+            referencia_id: new Date().toISOString().split('T')[0],
+          });
+
+          briefings++;
         }
-
-        await supabase.from('notifications').insert({
-          user_id: csmId,
-          empresa: customers[0]?.empresa || 'BLUE',
-          titulo: `📋 Briefing CS — ${new Date().toLocaleDateString('pt-BR')}`,
-          mensagem: briefingText.substring(0, 1000),
-          tipo: 'CS_BRIEFING',
-          referencia_tipo: 'CS_BRIEFING',
-          referencia_id: new Date().toISOString().split('T')[0],
-        });
-
-        briefings++;
       } catch (aiErr) {
         console.error(`[CS-Briefing] AI call failed for CSM ${csmId}:`, aiErr);
       }
