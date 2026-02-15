@@ -129,12 +129,61 @@ Sem markdown, sem explicação, apenas o JSON.`;
 
     let acoes: any[] = [];
     let narrativa_dia = '';
+    let aiContent = '';
 
-    if (!aiResponse.ok) {
+    if (aiResponse.ok) {
+      const aiData = await aiResponse.json();
+      aiContent = aiData.content?.[0]?.text ?? '';
+    } else {
       const errText = await aiResponse.text();
       console.error('[NBA] Anthropic error:', aiResponse.status, errText);
 
-      // Fallback rule-based: build actions from raw context without AI
+      // Fallback 1: Try Gemini via Lovable AI Gateway
+      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
+      if (LOVABLE_API_KEY) {
+        console.log('[NBA] Trying Gemini fallback...');
+        try {
+          const geminiRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'google/gemini-3-pro-preview',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.` },
+              ],
+            }),
+          });
+          if (geminiRes.ok) {
+            const geminiData = await geminiRes.json();
+            aiContent = geminiData.choices?.[0]?.message?.content ?? '';
+            console.log('[NBA] Gemini fallback succeeded');
+          } else {
+            console.error('[NBA] Gemini fallback error:', geminiRes.status);
+          }
+        } catch (geminiErr) {
+          console.error('[NBA] Gemini fallback exception:', geminiErr);
+        }
+      }
+    }
+
+    // Parse AI content (from Anthropic or Gemini)
+    if (aiContent) {
+      try {
+        const cleaned = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        const parsed = JSON.parse(cleaned);
+        acoes = parsed.acoes || [];
+        narrativa_dia = parsed.narrativa_dia || '';
+      } catch {
+        console.error('[NBA] Failed to parse AI response');
+      }
+    }
+
+    // Fallback 2: Rule-based if no AI content parsed
+    if (acoes.length === 0) {
       const fallbackAcoes: any[] = [];
 
       for (const sla of contextSummary.sla_alerts.slice(0, 2)) {
@@ -160,19 +209,8 @@ Sem markdown, sem explicação, apenas o JSON.`;
       }
 
       acoes = fallbackAcoes;
-      narrativa_dia = fallbackAcoes.length > 0
-        ? 'Resumo gerado automaticamente com base nos seus dados. A análise inteligente está temporariamente indisponível.'
-        : '';
-    } else {
-      const aiData = await aiResponse.json();
-      const content = aiData.content?.[0]?.text ?? '';
-      try {
-        const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-        const parsed = JSON.parse(cleaned);
-        acoes = parsed.acoes || [];
-        narrativa_dia = parsed.narrativa_dia || '';
-      } catch {
-        console.error('[NBA] Failed to parse AI response');
+      if (!narrativa_dia && fallbackAcoes.length > 0) {
+        narrativa_dia = 'Resumo gerado automaticamente com base nos seus dados. A análise inteligente está temporariamente indisponível.';
       }
     }
 
