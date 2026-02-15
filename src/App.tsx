@@ -62,6 +62,7 @@ const CSDashboardPage = lazy(() => import("./pages/cs/CSDashboardPage"));
 const CSClientesPage = lazy(() => import("./pages/cs/CSClientesPage"));
 const CSClienteDetailPage = lazy(() => import("./pages/cs/CSClienteDetailPage"));
 const CSPesquisasPage = lazy(() => import("./pages/cs/CSPesquisasPage"));
+const CSPesquisaMassaPage = lazy(() => import("./pages/cs/CSPesquisaMassaPage"));
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
 const queryClient = new QueryClient({
@@ -160,6 +161,7 @@ const App = () => (
                 <Route path="/cs/clientes" element={<ProtectedRoute><ErrorBoundary><CSClientesPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/clientes/:id" element={<ProtectedRoute><ErrorBoundary><CSClienteDetailPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/pesquisas" element={<ProtectedRoute><ErrorBoundary><CSPesquisasPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/pesquisas/massa" element={<ProtectedRoute><ErrorBoundary><CSPesquisaMassaPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/incidencias" element={<ProtectedRoute><ErrorBoundary><CSIncidenciasPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/playbooks" element={<ProtectedRoute><ErrorBoundary><CSPlaybooksPage /></ErrorBoundary></ProtectedRoute>} />
 

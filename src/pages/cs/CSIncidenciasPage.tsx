@@ -1,3 +1,4 @@
+import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSIncidents } from '@/hooks/useCSIncidents';
 import { Card, CardContent } from '@/components/ui/card';
@@ -15,6 +16,7 @@ export default function CSIncidenciasPage() {
   const { data: incidents, isLoading } = useCSIncidents(undefined, statusFilter);
 
   return (
+    <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={AlertCircle} title="Incidências CS" description="Ocorrências na jornada dos clientes" />
       <div className="px-6 pb-6 space-y-4">
@@ -64,5 +66,6 @@ export default function CSIncidenciasPage() {
         </Card>
       </div>
     </div>
+    </AppLayout>
   );
 }

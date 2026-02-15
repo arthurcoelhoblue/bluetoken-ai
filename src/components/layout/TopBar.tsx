@@ -44,6 +44,12 @@ const ROUTE_TITLES: Record<string, string> = {
   '/pendencias': 'Pendências',
   '/me': 'Meu Perfil',
   '/tokeniza/offers': 'Ofertas Tokeniza',
+  '/cs': 'Dashboard CS',
+  '/cs/clientes': 'Clientes CS',
+  '/cs/pesquisas': 'Pesquisas CS',
+  '/cs/pesquisas/massa': 'Pesquisa em Massa',
+  '/cs/incidencias': 'Incidências CS',
+  '/cs/playbooks': 'Playbooks CS',
 };
 
 function getTitle(pathname: string): string {
@@ -54,6 +60,7 @@ function getTitle(pathname: string): string {
   if (pathname === '/cadences/new') return 'Nova Cadência';
   if (pathname.startsWith('/cadences/')) return 'Cadência';
   if (pathname.startsWith('/admin/produtos/')) return 'Produto';
+  if (pathname.startsWith('/cs/clientes/')) return 'Cliente CS';
   return 'Amélia CRM';
 }
 
