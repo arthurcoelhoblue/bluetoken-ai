@@ -170,6 +170,7 @@ export type Database = {
           id: string
           latency_ms: number | null
           model: string
+          prompt_version_id: string | null
           provider: string
           success: boolean | null
           tokens_input: number | null
@@ -184,6 +185,7 @@ export type Database = {
           id?: string
           latency_ms?: number | null
           model: string
+          prompt_version_id?: string | null
           provider: string
           success?: boolean | null
           tokens_input?: number | null
@@ -198,6 +200,7 @@ export type Database = {
           id?: string
           latency_ms?: number | null
           model?: string
+          prompt_version_id?: string | null
           provider?: string
           success?: boolean | null
           tokens_input?: number | null
@@ -4735,6 +4738,8 @@ export type Database = {
       }
       prompt_versions: {
         Row: {
+          ab_group: string | null
+          ab_weight: number
           content: string
           created_at: string
           created_by: string | null
@@ -4746,6 +4751,8 @@ export type Database = {
           version: number
         }
         Insert: {
+          ab_group?: string | null
+          ab_weight?: number
           content: string
           created_at?: string
           created_by?: string | null
@@ -4757,6 +4764,8 @@ export type Database = {
           version?: number
         }
         Update: {
+          ab_group?: string | null
+          ab_weight?: number
           content?: string
           created_at?: string
           created_by?: string | null
@@ -4836,6 +4845,7 @@ export type Database = {
           created_at: string | null
           detalhes: Json | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          features: Json | null
           forecast_date: string
           horizonte_dias: number
           id: string
@@ -4847,6 +4857,7 @@ export type Database = {
           created_at?: string | null
           detalhes?: Json | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          features?: Json | null
           forecast_date?: string
           horizonte_dias: number
           id?: string
@@ -4858,6 +4869,7 @@ export type Database = {
           created_at?: string | null
           detalhes?: Json | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          features?: Json | null
           forecast_date?: string
           horizonte_dias?: number
           id?: string

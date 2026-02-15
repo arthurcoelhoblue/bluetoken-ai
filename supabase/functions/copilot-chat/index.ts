@@ -130,18 +130,34 @@ serve(async (req) => {
     const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
-    // Try loading dynamic prompt from prompt_versions
+    // Try loading dynamic prompt from prompt_versions with A/B testing
     let dynamicPrompt = '';
+    let selectedPromptVersionId: string | null = null;
     try {
-      const { data: pv } = await supabase
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const sbInit = createClient(supabaseUrl, supabaseKey);
+      const { data: pvList } = await sbInit
         .from('prompt_versions')
-        .select('content')
+        .select('id, content, ab_weight')
         .eq('function_name', 'copilot-chat')
         .eq('prompt_key', 'system')
         .eq('is_active', true)
-        .limit(1)
-        .maybeSingle();
-      if (pv?.content) dynamicPrompt = pv.content;
+        .gt('ab_weight', 0);
+
+      if (pvList && pvList.length > 0) {
+        // Weighted random selection for A/B testing
+        const totalWeight = pvList.reduce((sum: number, p: any) => sum + (p.ab_weight || 100), 0);
+        let rand = Math.random() * totalWeight;
+        let selected = pvList[0];
+        for (const pv of pvList) {
+          rand -= (pv.ab_weight || 100);
+          if (rand <= 0) { selected = pv; break; }
+        }
+        dynamicPrompt = selected.content;
+        selectedPromptVersionId = selected.id;
+        console.log(`[Copilot] A/B selected prompt version ${selected.id} (weight: ${selected.ab_weight})`);
+      }
     } catch (pvErr) { console.warn('[Copilot] prompt_versions lookup failed:', pvErr); }
 
     const ACTIVE_SYSTEM_PROMPT = dynamicPrompt || SYSTEM_PROMPT;
@@ -334,6 +350,7 @@ serve(async (req) => {
         latency_ms: latencyMs,
         success: !!content,
         empresa: empresa || null,
+        prompt_version_id: selectedPromptVersionId,
       });
     } catch (logErr) {
       console.warn('[Copilot] Erro ao salvar ai_usage_log:', logErr);

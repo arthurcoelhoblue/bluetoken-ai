@@ -331,9 +331,17 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                         <span className="text-base mt-0.5">{ACTIVITY_ICONS[a.tipo]}</span>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2">
+                            {a.tipo === 'LIGACAO' && <Phone className="h-3 w-3 text-primary" />}
                             <span className="text-xs font-medium">{ACTIVITY_LABELS[a.tipo]}</span>
                             <span className="text-[10px] text-muted-foreground">{formatDate(a.created_at)}</span>
                             {a.user_nome && <span className="text-[10px] text-muted-foreground">· {a.user_nome}</span>}
+                            {(() => {
+                              const meta = a.metadata as any;
+                              if (meta?.source === 'call-transcribe-auto') {
+                                return <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5"><Sparkles className="h-2.5 w-2.5" />Auto IA</Badge>;
+                              }
+                              return null;
+                            })()}
                           </div>
                           {a.tipo === 'TAREFA' ? (
                             <div className="flex items-center gap-2 mt-1">
