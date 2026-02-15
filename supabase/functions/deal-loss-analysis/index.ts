@@ -1,299 +1,106 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callAI } from "../_shared/ai-provider.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
-}
-
-async function callAI(googleApiKey: string | undefined, anthropicKey: string | undefined, prompt: string, options: { system?: string; temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const { system, temperature = 0.3, maxTokens = 2000 } = options;
-  const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
-
-  // Try Claude first (Primary)
-  if (anthropicKey) {
-    try {
-      const resp = await fetch('https://api.anthropic.com/v1/messages', {
-        method: 'POST',
-        headers: { 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, temperature, ...(system ? { system } : {}), messages: [{ role: 'user', content: prompt }] }),
-      });
-      if (!resp.ok) throw new Error(`Claude ${resp.status}`);
-      const data = await resp.json();
-      const text = data.content?.[0]?.text ?? '';
-      if (text) return text;
-    } catch (e) { console.warn('[deal-loss-analysis] Claude failed:', e); }
-  }
-
-  // Fallback to Gemini
-  if (googleApiKey) {
-    try {
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: fullPrompt }] }],
-          generationConfig: { temperature, maxOutputTokens: maxTokens },
-        }),
-      });
-      if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-      const data = await resp.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      if (text) return text;
-    } catch (e) {
-      console.warn('[deal-loss-analysis] Gemini failed:', e);
-    }
-  }
-
-  // Fallback 2: OpenAI GPT-4o via API direta
-  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-  if (OPENAI_API_KEY) {
-    console.log('[deal-loss-analysis] Trying OpenAI GPT-4o fallback...');
-    try {
-      const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          model: 'gpt-4o',
-          messages: [
-            ...(system ? [{ role: 'system', content: system }] : []),
-            { role: 'user', content: prompt },
-          ],
-          temperature,
-          max_tokens: maxTokens,
-        }),
-      });
-      if (gptResp.ok) {
-        const gptData = await gptResp.json();
-        const text = gptData.choices?.[0]?.message?.content ?? '';
-        if (text) {
-          console.log('[deal-loss-analysis] OpenAI GPT-4o fallback succeeded');
-          return text;
-        }
-      } else {
-        console.error('[deal-loss-analysis] OpenAI error:', gptResp.status);
-      }
-    } catch (gptErr) {
-      console.error('[deal-loss-analysis] OpenAI exception:', gptErr);
-    }
-  }
-
-  throw new Error('No AI API key available');
-}
+};
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY')
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY')
-    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'No AI API key configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    const body = await req.json()
-    const supabase = createClient(supabaseUrl, serviceRoleKey)
-    const dlStartMs = Date.now();
+    const body = await req.json();
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     // ─── MODE: PORTFOLIO ───────────────────────────────
     if (body.mode === 'portfolio') {
-      const empresa = body.empresa
-      const dias = body.dias ?? 90
+      const empresa = body.empresa;
+      const dias = body.dias ?? 90;
+      const cutoff = new Date(Date.now() - dias * 86400000).toISOString();
 
-      const cutoff = new Date(Date.now() - dias * 86400000).toISOString()
+      const [wonsRes, lostsRes] = await Promise.all([
+        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, motivo_perda_closer, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)').eq('status', 'GANHO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
+        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, categoria_perda_ia, motivo_perda_closer, motivo_perda_ia, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)').eq('status', 'PERDIDO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
+      ]);
 
-      const [wonsRes, lostsRes, stagesRes] = await Promise.all([
-        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, motivo_perda_closer, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)')
-          .eq('status', 'GANHO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
-        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, categoria_perda_ia, motivo_perda_closer, motivo_perda_ia, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)')
-          .eq('status', 'PERDIDO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
-        supabase.from('deal_stage_history').select('deal_id, from_stage_id, to_stage_id, pipeline_stages!deal_stage_history_from_stage_id_fkey(nome)')
-          .gte('created_at', cutoff),
-      ])
-
-      const wons = wonsRes.data ?? []
-      const losts = lostsRes.data ?? []
+      const wons = wonsRes.data ?? [];
+      const losts = lostsRes.data ?? [];
 
       const summary = {
-        periodo_dias: dias,
-        total_ganhos: wons.length,
-        total_perdidos: losts.length,
+        periodo_dias: dias, total_ganhos: wons.length, total_perdidos: losts.length,
         win_rate: wons.length + losts.length > 0 ? ((wons.length / (wons.length + losts.length)) * 100).toFixed(1) + '%' : 'N/A',
         valor_ganho: wons.reduce((s: number, d: any) => s + (d.valor || 0), 0),
         valor_perdido: losts.reduce((s: number, d: any) => s + (d.valor || 0), 0),
-        vendedores_ganhos: Object.entries(
-          wons.reduce((acc: Record<string, { nome: string; count: number; valor: number }>, d: any) => {
-            const key = d.owner_id || 'sem_owner'
-            if (!acc[key]) acc[key] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }
-            acc[key].count++; acc[key].valor += d.valor || 0
-            return acc
-          }, {})
-        ).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
-        vendedores_perdidos: Object.entries(
-          losts.reduce((acc: Record<string, { nome: string; count: number; valor: number }>, d: any) => {
-            const key = d.owner_id || 'sem_owner'
-            if (!acc[key]) acc[key] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }
-            acc[key].count++; acc[key].valor += d.valor || 0
-            return acc
-          }, {})
-        ).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
-        categorias_perda: Object.entries(
-          losts.reduce((acc: Record<string, number>, d: any) => {
-            const cat = d.categoria_perda_ia || d.categoria_perda_closer || 'NAO_INFORMADA'
-            acc[cat] = (acc[cat] || 0) + 1
-            return acc
-          }, {})
-        ).map(([cat, count]) => ({ categoria: cat, count })).sort((a: any, b: any) => b.count - a.count),
-        stages_drop_off: Object.entries(
-          losts.reduce((acc: Record<string, number>, d: any) => {
-            const stage = (d.pipeline_stages as any)?.nome || 'N/A'
-            acc[stage] = (acc[stage] || 0) + 1
-            return acc
-          }, {})
-        ).map(([stage, count]) => ({ stage, count })).sort((a: any, b: any) => b.count - a.count),
+        vendedores_ganhos: Object.entries(wons.reduce((acc: Record<string, any>, d: any) => { const k = d.owner_id || 'sem_owner'; if (!acc[k]) acc[k] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }; acc[k].count++; acc[k].valor += d.valor || 0; return acc; }, {})).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
+        vendedores_perdidos: Object.entries(losts.reduce((acc: Record<string, any>, d: any) => { const k = d.owner_id || 'sem_owner'; if (!acc[k]) acc[k] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }; acc[k].count++; acc[k].valor += d.valor || 0; return acc; }, {})).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
+        categorias_perda: Object.entries(losts.reduce((acc: Record<string, number>, d: any) => { const cat = d.categoria_perda_ia || d.categoria_perda_closer || 'NAO_INFORMADA'; acc[cat] = (acc[cat] || 0) + 1; return acc; }, {})).map(([cat, count]) => ({ categoria: cat, count })).sort((a: any, b: any) => b.count - a.count),
+        stages_drop_off: Object.entries(losts.reduce((acc: Record<string, number>, d: any) => { const stage = (d.pipeline_stages as any)?.nome || 'N/A'; acc[stage] = (acc[stage] || 0) + 1; return acc; }, {})).map(([stage, count]) => ({ stage, count })).sort((a: any, b: any) => b.count - a.count),
         ticket_medio_ganho: wons.length > 0 ? Math.round(wons.reduce((s: number, d: any) => s + (d.valor || 0), 0) / wons.length) : 0,
         ticket_medio_perdido: losts.length > 0 ? Math.round(losts.reduce((s: number, d: any) => s + (d.valor || 0), 0) / losts.length) : 0,
-      }
+      };
 
-      const prompt = `Você é um diretor comercial analisando o portfólio de vendas dos últimos ${dias} dias.
+      const aiResult = await callAI({
+        system: 'Você é um diretor comercial. Analise dados e retorne APENAS JSON válido sem markdown.',
+        prompt: `Analise o portfólio dos últimos ${dias} dias:\n${JSON.stringify(summary, null, 2)}\n\nRetorne JSON: {"resumo_executivo":"...","padroes_sucesso":[...],"padroes_perda":[...],"drop_off_critico":"...","recomendacoes":[...],"vendedor_destaque":"...","vendedor_atencao":"..."}`,
+        functionName: 'deal-loss-analysis',
+        maxTokens: 2000,
+        supabase,
+      });
 
-Dados:
-${JSON.stringify(summary, null, 2)}
+      let analysis: any = {};
+      try { analysis = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()); } catch { analysis = { resumo_executivo: aiResult.content }; }
 
-Analise e retorne APENAS um JSON com:
-{
-  "resumo_executivo": "3-4 frases sobre o estado geral do pipeline",
-  "padroes_sucesso": ["padrão 1", "padrão 2", ...],
-  "padroes_perda": ["padrão 1", "padrão 2", ...],
-  "drop_off_critico": "stage com maior perda e por quê",
-  "recomendacoes": ["recomendação 1", "recomendação 2", ...],
-  "vendedor_destaque": "nome e motivo",
-  "vendedor_atencao": "nome e motivo"
-}
+      await supabase.from('system_settings').upsert({ category: 'analytics', key: 'win_loss_analysis', value: { ...analysis, summary, generated_at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: 'category,key' });
 
-Sem markdown, apenas JSON.`
-
-      const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, { temperature: 0.3, maxTokens: 2000 });
-
-      let analysis: any = {}
-      try {
-        const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-        analysis = JSON.parse(cleaned)
-      } catch {
-        analysis = { resumo_executivo: content }
-      }
-
-      await supabase.from('system_settings').upsert({
-        category: 'analytics',
-        key: 'win_loss_analysis',
-        value: { ...analysis, summary, generated_at: new Date().toISOString() },
-        updated_at: new Date().toISOString(),
-      }, { onConflict: 'category,key' })
-
-      return new Response(JSON.stringify({ success: true, analysis, summary }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      })
+      return new Response(JSON.stringify({ success: true, analysis, summary }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // ─── MODE: INDIVIDUAL ─────────────
-    const { deal_id } = body
-    if (!deal_id) {
-      return new Response(JSON.stringify({ error: 'deal_id or mode=portfolio required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
+    const { deal_id } = body;
+    if (!deal_id) return new Response(JSON.stringify({ error: 'deal_id or mode=portfolio required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const { data: deal, error: dealErr } = await supabase
-      .from('deals')
-      .select('*, contacts:contact_id(id, nome, legacy_lead_id)')
-      .eq('id', deal_id)
-      .single()
+    const { data: deal, error: dealErr } = await supabase.from('deals').select('*, contacts:contact_id(id, nome, legacy_lead_id)').eq('id', deal_id).single();
+    if (dealErr || !deal) return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    if (dealErr || !deal) {
-      return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
-    }
-
-    const leadId = (deal as any).contacts?.legacy_lead_id
-    let messages: any[] = []
-
+    const leadId = (deal as any).contacts?.legacy_lead_id;
+    let messages: any[] = [];
     if (leadId) {
-      const { data: msgs } = await supabase
-        .from('lead_messages')
-        .select('direcao, conteudo, created_at')
-        .eq('lead_id', leadId)
-        .order('created_at', { ascending: true })
-        .limit(50)
-      messages = msgs ?? []
+      const { data: msgs } = await supabase.from('lead_messages').select('direcao, conteudo, created_at').eq('lead_id', leadId).order('created_at', { ascending: true }).limit(50);
+      messages = msgs ?? [];
     }
 
     if (messages.length === 0) {
-      await supabase.from('deals').update({
-        motivo_perda_ia: 'Sem histórico de conversas para análise',
-        categoria_perda_ia: deal.categoria_perda_closer,
-        motivo_perda_final: deal.motivo_perda_closer,
-        categoria_perda_final: deal.categoria_perda_closer,
-        perda_resolvida: true,
-      }).eq('id', deal_id)
-
-      return new Response(JSON.stringify({ success: true, auto_resolved: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+      await supabase.from('deals').update({ motivo_perda_ia: 'Sem histórico de conversas para análise', categoria_perda_ia: deal.categoria_perda_closer, motivo_perda_final: deal.motivo_perda_closer, categoria_perda_final: deal.categoria_perda_closer, perda_resolvida: true }).eq('id', deal_id);
+      return new Response(JSON.stringify({ success: true, auto_resolved: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const transcript = messages.map((m: any) => {
-      const dir = m.direcao === 'INBOUND' ? 'LEAD' : 'SDR'
-      return `[${dir}]: ${m.conteudo}`
-    }).join('\n')
+    const transcript = messages.map((m: any) => `[${m.direcao === 'INBOUND' ? 'LEAD' : 'SDR'}]: ${m.conteudo}`).join('\n');
 
-    const prompt = `Você é um analista comercial. Analise o histórico de conversa abaixo entre um SDR/Closer e um lead que resultou em perda do negócio.
+    const aiResult = await callAI({
+      system: 'Você é um analista comercial. Retorne APENAS JSON válido sem markdown.',
+      prompt: `Analise o histórico abaixo de um deal perdido.\n\nHistórico:\n${transcript}\n\nMotivo informado: ${deal.motivo_perda_closer || 'Não informado'}\nCategoria informada: ${deal.categoria_perda_closer || 'Não informada'}\n\nIdentifique o motivo real. JSON: {"categoria":"PRECO|CONCORRENCIA|TIMING|SEM_NECESSIDADE|SEM_RESPOSTA|PRODUTO_INADEQUADO|OUTRO","explicacao":"2-3 frases"}`,
+      functionName: 'deal-loss-analysis',
+      maxTokens: 500,
+      supabase,
+    });
 
-Histórico:
-${transcript}
-
-Motivo informado pelo vendedor: ${deal.motivo_perda_closer || 'Não informado'}
-Categoria informada pelo vendedor: ${deal.categoria_perda_closer || 'Não informada'}
-
-Com base APENAS no conteúdo da conversa, identifique o motivo real da perda. Retorne um JSON com:
-- "categoria": uma das seguintes: PRECO, CONCORRENCIA, TIMING, SEM_NECESSIDADE, SEM_RESPOSTA, PRODUTO_INADEQUADO, OUTRO
-- "explicacao": uma explicação em 2-3 frases do motivo real
-
-Responda APENAS com o JSON, sem markdown.`
-
-    const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, { temperature: 0.3, maxTokens: 500 });
-
-    let categoria_ia = 'OUTRO'
-    let explicacao_ia = content
-
+    let categoria_ia = 'OUTRO';
+    let explicacao_ia = aiResult.content;
     try {
-      const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()
-      const parsed = JSON.parse(cleaned)
-      categoria_ia = parsed.categoria || 'OUTRO'
-      explicacao_ia = parsed.explicacao || content
-    } catch {
-      console.error('Failed to parse AI response as JSON, using raw text')
-    }
+      const parsed = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim());
+      categoria_ia = parsed.categoria || 'OUTRO';
+      explicacao_ia = parsed.explicacao || aiResult.content;
+    } catch { /* use raw text */ }
 
-    const match = categoria_ia === deal.categoria_perda_closer
-    const updates: Record<string, unknown> = { motivo_perda_ia: explicacao_ia, categoria_perda_ia: categoria_ia }
+    const match = categoria_ia === deal.categoria_perda_closer;
+    const updates: Record<string, unknown> = { motivo_perda_ia: explicacao_ia, categoria_perda_ia: categoria_ia };
+    if (match) { updates.motivo_perda_final = deal.motivo_perda_closer; updates.categoria_perda_final = deal.categoria_perda_closer; updates.motivo_perda = deal.motivo_perda_closer; updates.perda_resolvida = true; }
+    await supabase.from('deals').update(updates).eq('id', deal_id);
 
-    if (match) {
-      updates.motivo_perda_final = deal.motivo_perda_closer
-      updates.categoria_perda_final = deal.categoria_perda_closer
-      updates.motivo_perda = deal.motivo_perda_closer
-      updates.perda_resolvida = true
-    }
-
-    await supabase.from('deals').update(updates).eq('id', deal_id)
-
-    // Log AI usage
-    try {
-      await supabase.from('ai_usage_log').insert({
-        function_name: 'deal-loss-analysis', provider: ANTHROPIC_API_KEY ? 'CLAUDE' : 'GEMINI', model: ANTHROPIC_API_KEY ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview',
-        tokens_input: null, tokens_output: null, success: true,
-        latency_ms: Date.now() - dlStartMs, custo_estimado: 0, empresa: null,
-      });
-    } catch (logErr) { console.warn('[deal-loss-analysis] ai_usage_log error:', logErr); }
-
-    return new Response(JSON.stringify({ success: true, categoria_ia, match, auto_resolved: match }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    return new Response(JSON.stringify({ success: true, categoria_ia, match, auto_resolved: match }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
-    console.error('Unexpected error:', err)
-    return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
+    console.error('Unexpected error:', err);
+    return new Response(JSON.stringify({ error: 'Internal server error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
-})
+});
