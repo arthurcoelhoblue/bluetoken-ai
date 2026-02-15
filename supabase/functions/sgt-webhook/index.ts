@@ -7,6 +7,10 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // ========================================
 
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+import type { EmpresaTipo as EmpresaTipoShared, Temperatura, TipoLead } from "../_shared/types.ts";
+import { isPlaceholderEmailForDedup, generatePhoneVariationsForSearch, normalizePhoneE164, DDI_CONHECIDOS, type PhoneNormalized } from "../_shared/phone-utils.ts";
+import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
+import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
 
@@ -14,12 +18,10 @@ const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-w
 // TIPOS - Alinhados com documentação SGT
 // ========================================
 type SGTEventoTipo = 'LEAD_NOVO' | 'ATUALIZACAO' | 'CARRINHO_ABANDONADO' | 'MQL' | 'SCORE_ATUALIZADO' | 'CLIQUE_OFERTA' | 'FUNIL_ATUALIZADO';
-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+type EmpresaTipo = EmpresaTipoShared;
 type PrioridadeMarketing = 'URGENTE' | 'QUENTE' | 'MORNO' | 'FRIO';
 type LeadStage = 'Lead' | 'Contato Iniciado' | 'Negociação' | 'Perdido' | 'Cliente';
 type OrigemTipo = 'INBOUND' | 'OUTBOUND' | 'REFERRAL' | 'PARTNER';
-type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
-type TipoLead = 'INVESTIDOR' | 'CAPTADOR';
 type Prioridade = 1 | 2 | 3;
 
 type IcpTokeniza = 'TOKENIZA_SERIAL' | 'TOKENIZA_MEDIO_PRAZO' | 'TOKENIZA_EMERGENTE' | 'TOKENIZA_ALTO_VOLUME_DIGITAL' | 'TOKENIZA_NAO_CLASSIFICADO';
@@ -231,12 +233,7 @@ interface ContactIssue {
   mensagem: string;
 }
 
-interface PhoneNormalized {
-  e164: string;
-  ddi: string;
-  nacional: string;
-  internacional: boolean;
-}
+// PhoneNormalized importado de _shared/phone-utils.ts
 
 interface SanitizationResult {
   descartarLead: boolean;
@@ -245,8 +242,7 @@ interface SanitizationResult {
   emailPlaceholder: boolean;
 }
 
-// DDIs conhecidos para validação
-const DDI_CONHECIDOS = ['55', '1', '34', '351', '33', '49', '44', '39', '81', '86'];
+// DDI_CONHECIDOS importado de _shared/phone-utils.ts
 
 // ========================================
 // CONSTANTES
@@ -264,168 +260,13 @@ const LEAD_STAGES_VALIDOS: string[] = ['Lead', 'Contato Iniciado', 'Negociação
 const EVENTOS_QUENTES: SGTEventoTipo[] = ['MQL', 'CARRINHO_ABANDONADO', 'CLIQUE_OFERTA'];
 
 // ========================================
-// ROTEAMENTO INTELIGENTE DE LEADS
+// ROTEAMENTO + DEDUP — importados de _shared/
 // ========================================
-const PLACEHOLDER_EMAILS_DEDUP = ['sememail@', 'sem-email@', 'noemail@', 'sem@', 'nao-informado@', 'teste@teste', 'email@email', 'x@x', 'a@a', 'placeholder', '@exemplo.', '@example.', 'test@test', 'nao@tem'];
-
-function isPlaceholderEmailForDedup(email: string | null): boolean {
-  if (!email) return true;
-  const lowered = email.trim().toLowerCase();
-  return PLACEHOLDER_EMAILS_DEDUP.some(p => lowered.includes(p));
-}
-
-function generatePhoneVariationsForSearch(phone: string | null): string[] {
-  if (!phone) return [];
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 8) return [];
-  const variations: string[] = [`+${digits}`];
-  const withoutDDI = digits.startsWith('55') ? digits.slice(2) : digits;
-  const ddd = withoutDDI.slice(0, 2);
-  const number = withoutDDI.slice(2);
-  variations.push(`+55${withoutDDI}`);
-  if (number.length === 8) {
-    variations.push(`+55${ddd}9${number}`);
-  }
-  if (number.length === 9 && number.startsWith('9')) {
-    variations.push(`+55${ddd}${number.slice(1)}`);
-  }
-  return [...new Set(variations.filter(v => v.length >= 10))];
-}
-
-function resolveTargetPipeline(
-  empresa: EmpresaTipo,
-  tipoLead: TipoLead,
-  temperatura: Temperatura,
-  isPriority: boolean
-): { pipelineId: string; stageId: string } {
-  if (empresa === 'BLUE') {
-    const pipelineId = '21e577cc-32eb-4f1c-895e-b11bfc056e99';
-    const stageMap: Record<Temperatura, string> = {
-      'FRIO': '7e6ee75a-8efd-4cc4-8264-534bf77993c7',
-      'MORNO': 'bb39da09-d2cb-4111-a662-85c69e057077',
-      'QUENTE': 'e7cca7b0-941a-4522-9543-fc0d975b9dac',
-    };
-    return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
-  }
-  if (tipoLead === 'CAPTADOR') {
-    const pipelineId = 'a74d511a-f8b4-4d14-9f5c-0c13da61cb15';
-    const stageMap: Record<Temperatura, string> = {
-      'FRIO': 'f45b020e-1247-42a1-89e7-bd0caf614a7e',
-      'MORNO': 'ece6bc09-c924-4b30-b064-e792f8e44c72',
-      'QUENTE': '34aa1201-d14d-46d9-8ce6-108ac811e79f',
-    };
-    return { pipelineId, stageId: stageMap[temperatura] || stageMap['FRIO'] };
-  }
-  const pipelineId = '5bbac98b-5ae9-4b31-9b7f-896d7b732a2c';
-  const stageMap: Record<Temperatura, string> = {
-    'FRIO': 'da80e912-b462-401d-b367-1b6a9b2ec4da',
-    'MORNO': '90b33102-0472-459e-8eef-a455b0d37acf',
-    'QUENTE': 'c48dc6c2-c5dc-47c1-9f27-c058b01898c3',
-  };
-  return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
-}
-
-async function findExistingDealForPerson(
-  supabase: SupabaseClient,
-  empresa: EmpresaTipo,
-  dados: { telefone_e164?: string | null; telefone?: string | null; email?: string | null; cpf?: string | null }
-): Promise<{ contactId: string; dealId: string } | null> {
-  const extractDeal = (row: Record<string, unknown>): { contactId: string; dealId: string } | null => {
-    const deals = row.deals as unknown;
-    const dealId = Array.isArray(deals) ? (deals[0] as Record<string, string>)?.id : (deals as Record<string, string>)?.id;
-    return dealId ? { contactId: row.id as string, dealId } : null;
-  };
-
-  // 1. CPF exato
-  if (dados.cpf) {
-    const cleaned = dados.cpf.replace(/\D/g, '');
-    if (cleaned.length >= 11) {
-      const { data } = await supabase.from('contacts').select('id, deals!inner(id)')
-        .eq('empresa', empresa).eq('cpf', cleaned).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-      if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match CPF:', m); return m; } }
-    }
-  }
-
-  // 2. telefone_e164 exato
-  if (dados.telefone_e164) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)')
-      .eq('empresa', empresa).eq('telefone_e164', dados.telefone_e164).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match telefone_e164:', m); return m; } }
-  }
-
-  // 3. Variações de telefone
-  const phoneVars = generatePhoneVariationsForSearch(dados.telefone || dados.telefone_e164);
-  if (phoneVars.length > 0) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)')
-      .eq('empresa', empresa).in('telefone_e164', phoneVars).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match variação tel:', m); return m; } }
-  }
-
-  // 4. Email exato (excluindo placeholders)
-  if (dados.email && !isPlaceholderEmailForDedup(dados.email)) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)')
-      .eq('empresa', empresa).eq('email', dados.email.trim().toLowerCase()).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match email:', m); return m; } }
-  }
-
-  console.log('[Dedup] Nenhuma duplicata encontrada');
-  return null;
-}
 
 
 // ========================================
-// HORÁRIO COMERCIAL - 09h-18h seg-sex (America/Sao_Paulo)
+// HORÁRIO COMERCIAL — importado de _shared/business-hours.ts
 // ========================================
-function getHorarioBrasilia(): Date {
-  const now = new Date();
-  // Converter para horário de Brasília (UTC-3)
-  const brasiliaOffset = -3 * 60; // minutos
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
-  return new Date(utcMs + brasiliaOffset * 60 * 1000);
-}
-
-function isHorarioComercial(): boolean {
-  const brasilia = getHorarioBrasilia();
-  const dia = brasilia.getDay(); // 0=dom, 1=seg, ..., 5=sex, 6=sab
-  const hora = brasilia.getHours();
-  
-  // Seg-Sex (1-5), 09h-18h
-  return dia >= 1 && dia <= 5 && hora >= 9 && hora < 18;
-}
-
-function proximoHorarioComercial(): Date {
-  const brasilia = getHorarioBrasilia();
-  const dia = brasilia.getDay();
-  const hora = brasilia.getHours();
-  
-  let diasParaAdicionar = 0;
-  
-  if (dia >= 1 && dia <= 5 && hora < 9) {
-    // Dia útil antes das 9h → hoje às 09:00
-    diasParaAdicionar = 0;
-  } else if (dia === 5 && hora >= 18) {
-    // Sexta após 18h → segunda
-    diasParaAdicionar = 3;
-  } else if (dia === 6) {
-    // Sábado → segunda
-    diasParaAdicionar = 2;
-  } else if (dia === 0) {
-    // Domingo → segunda
-    diasParaAdicionar = 1;
-  } else if (dia >= 1 && dia <= 4 && hora >= 18) {
-    // Seg-Qui após 18h → amanhã
-    diasParaAdicionar = 1;
-  }
-  
-  // Construir data em UTC que corresponda a 09:00 Brasília (= 12:00 UTC)
-  const resultado = new Date(brasilia);
-  resultado.setDate(resultado.getDate() + diasParaAdicionar);
-  resultado.setHours(9, 0, 0, 0);
-  
-  // Converter de volta para UTC: 09:00 BRT = 12:00 UTC
-  const utcMs = resultado.getTime() - (-3 * 60) * 60 * 1000;
-  return new Date(utcMs);
-}
 
 // ========================================
 // NORMALIZAÇÃO - Aceita payload completo SGT
@@ -457,69 +298,8 @@ function normalizeStage(stage: string | undefined): LeadStage | null {
 
 // ========================================
 // PATCH 5H-PLUS: FUNÇÕES DE SANITIZAÇÃO
+// normalizePhoneE164 importado de _shared/phone-utils.ts
 // ========================================
-
-/**
- * Normaliza telefone para formato E.164
- */
-function normalizePhoneE164(raw: string | null): PhoneNormalized | null {
-  if (!raw) return null;
-  
-  let digits = raw.replace(/\D/g, '');
-  if (!digits || digits.length < 7) return null;
-  
-  // Detectar sequências lixo (000000, 111111, 98989898, etc.)
-  const uniqueDigits = new Set(digits.split(''));
-  if (uniqueDigits.size <= 2) {
-    console.log('[Sanitization] Telefone lixo detectado:', raw);
-    return null;
-  }
-  
-  // Remove 00 do início se presente (formato internacional antigo)
-  if (digits.startsWith('00')) {
-    digits = digits.slice(2);
-  }
-  
-  // Processar DDI brasileiro
-  if (digits.startsWith('55') && digits.length >= 12 && digits.length <= 13) {
-    return {
-      e164: `+${digits}`,
-      ddi: '55',
-      nacional: digits.slice(2),
-      internacional: false
-    };
-  }
-  
-  // Assumir BR se 10-11 dígitos (DDD + número)
-  if (digits.length === 10 || digits.length === 11) {
-    return {
-      e164: `+55${digits}`,
-      ddi: '55',
-      nacional: digits,
-      internacional: false
-    };
-  }
-  
-  // Verificar DDIs conhecidos
-  for (const ddi of DDI_CONHECIDOS) {
-    if (digits.startsWith(ddi) && digits.length > ddi.length + 6) {
-      return {
-        e164: `+${digits}`,
-        ddi,
-        nacional: digits.slice(ddi.length),
-        internacional: ddi !== '55'
-      };
-    }
-  }
-  
-  // Se ainda tem tamanho razoável, marca como internacional desconhecido
-  if (digits.length >= 10) {
-    console.log('[Sanitization] DDI não reconhecido, marcando como suspeito:', raw);
-    return null; // Será marcado como DADO_SUSPEITO
-  }
-  
-  return null;
-}
 
 /**
  * Detecta se o e-mail é um placeholder

@@ -7,28 +7,15 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // ========================================
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from "../_shared/types.ts";
+import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
-// TIPOS
+// TIPOS (locais ao cadence-runner)
 // ========================================
-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
-type CanalTipo = 'WHATSAPP' | 'EMAIL' | 'SMS';
-type CadenceRunStatus = 'ATIVA' | 'CONCLUIDA' | 'CANCELADA' | 'PAUSADA';
 type TriggerSource = 'CRON' | 'MANUAL' | 'TEST';
-
-interface LeadCadenceRun {
-  id: string;
-  lead_id: string;
-  empresa: EmpresaTipo;
-  cadence_id: string;
-  status: CadenceRunStatus;
-  last_step_ordem: number;
-  next_step_ordem: number | null;
-  next_run_at: string | null;
-  started_at: string;
-}
 
 interface CadenceStep {
   id: string;
@@ -414,47 +401,8 @@ async function dispararMensagem(
 }
 
 // ========================================
-// HORÁRIO COMERCIAL - 09h-18h seg-sex (America/Sao_Paulo)
+// HORÁRIO COMERCIAL — importado de _shared/business-hours.ts
 // ========================================
-function getHorarioBrasilia(): Date {
-  const now = new Date();
-  const brasiliaOffset = -3 * 60;
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60 * 1000;
-  return new Date(utcMs + brasiliaOffset * 60 * 1000);
-}
-
-function isHorarioComercial(): boolean {
-  const brasilia = getHorarioBrasilia();
-  const dia = brasilia.getDay();
-  const hora = brasilia.getHours();
-  return dia >= 1 && dia <= 5 && hora >= 9 && hora < 18;
-}
-
-function proximoHorarioComercial(): Date {
-  const brasilia = getHorarioBrasilia();
-  const dia = brasilia.getDay();
-  const hora = brasilia.getHours();
-  
-  let diasParaAdicionar = 0;
-  
-  if (dia >= 1 && dia <= 5 && hora < 9) {
-    diasParaAdicionar = 0;
-  } else if (dia === 5 && hora >= 18) {
-    diasParaAdicionar = 3;
-  } else if (dia === 6) {
-    diasParaAdicionar = 2;
-  } else if (dia === 0) {
-    diasParaAdicionar = 1;
-  } else if (dia >= 1 && dia <= 4 && hora >= 18) {
-    diasParaAdicionar = 1;
-  }
-  
-  const resultado = new Date(brasilia);
-  resultado.setDate(resultado.getDate() + diasParaAdicionar);
-  resultado.setHours(9, 0, 0, 0);
-  const utcMs = resultado.getTime() - (-3 * 60) * 60 * 1000;
-  return new Date(utcMs);
-}
 
 // ========================================
 // PROCESSAMENTO DE CADÊNCIAS VENCIDAS
