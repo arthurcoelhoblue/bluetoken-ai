@@ -1,4 +1,5 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+import { callAI } from "../_shared/ai-provider.ts";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -9,11 +10,7 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
-    const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
 
     const { data: configs } = await supabase.from('system_settings').select('empresa').limit(10);
     const empresas = [...new Set((configs ?? []).map((c: any) => c.empresa).filter(Boolean))];
@@ -25,245 +22,74 @@ Deno.serve(async (req) => {
     const weekAgoISO = weekAgo.toISOString();
 
     for (const empresa of empresas) {
-      // 1. Deals closed this week (join contacts for empresa filter)
-      const { data: dealsGanhos } = await supabase
-        .from('deals')
-        .select('id, titulo, valor, status, contacts!inner(empresa)')
-        .eq('contacts.empresa', empresa)
-        .eq('status', 'GANHO')
-        .gte('updated_at', weekAgoISO)
-        .limit(50);
+      const [dealsGanhosRes, dealsPerdidosRes, dealsAbertosRes, csRiscosRes, atividadesRes, surveysRes] = await Promise.all([
+        supabase.from('deals').select('id, titulo, valor, status, contacts!inner(empresa)').eq('contacts.empresa', empresa).eq('status', 'GANHO').gte('updated_at', weekAgoISO).limit(50),
+        supabase.from('deals').select('id, titulo, valor, status, motivo_perda, contacts!inner(empresa)').eq('contacts.empresa', empresa).eq('status', 'PERDIDO').gte('updated_at', weekAgoISO).limit(50),
+        supabase.from('deals').select('id, valor, contacts!inner(empresa)').eq('contacts.empresa', empresa).eq('status', 'ABERTO'),
+        supabase.from('cs_customers').select('id, health_score, health_status, valor_mrr, contacts(nome)').eq('empresa', empresa).in('health_status', ['EM_RISCO', 'CRITICO']).limit(10),
+        supabase.from('deal_activities').select('id, tipo').gte('created_at', weekAgoISO).limit(500),
+        supabase.from('cs_surveys').select('tipo, nota').eq('empresa', empresa).gte('created_at', weekAgoISO).limit(100),
+      ]);
 
-      const { data: dealsPerdidos } = await supabase
-        .from('deals')
-        .select('id, titulo, valor, status, motivo_perda, contacts!inner(empresa)')
-        .eq('contacts.empresa', empresa)
-        .eq('status', 'PERDIDO')
-        .gte('updated_at', weekAgoISO)
-        .limit(50);
-
-      // 2. Pipeline open
-      const { data: dealsAbertos } = await supabase
-        .from('deals')
-        .select('id, valor, contacts!inner(empresa)')
-        .eq('contacts.empresa', empresa)
-        .eq('status', 'ABERTO');
-
-      // 3. CS risks
-      const { data: csRiscos } = await supabase
-        .from('cs_customers')
-        .select('id, health_score, health_status, valor_mrr, contacts(nome)')
-        .eq('empresa', empresa)
-        .in('health_status', ['EM_RISCO', 'CRITICO'])
-        .limit(10);
-
-      // 4. Activities this week
-      const { data: atividades } = await supabase
-        .from('deal_activities')
-        .select('id, tipo')
-        .gte('created_at', weekAgoISO)
-        .limit(500);
-
-      // 5. NPS/CSAT recent
-      const { data: surveys } = await supabase
-        .from('cs_surveys')
-        .select('tipo, nota')
-        .eq('empresa', empresa)
-        .gte('created_at', weekAgoISO)
-        .limit(100);
-
-      const ganhoValor = (dealsGanhos ?? []).reduce((s: number, d: any) => s + (d.valor || 0), 0);
-      const perdidoValor = (dealsPerdidos ?? []).reduce((s: number, d: any) => s + (d.valor || 0), 0);
-      const pipelineValor = (dealsAbertos ?? []).reduce((s: number, d: any) => s + (d.valor || 0), 0);
-      const atividadeCount = atividades?.length ?? 0;
-      const npsScores = (surveys ?? []).filter((s: any) => s.tipo === 'NPS').map((s: any) => s.nota);
+      const dealsGanhos = dealsGanhosRes.data ?? [];
+      const dealsPerdidos = dealsPerdidosRes.data ?? [];
+      const dealsAbertos = dealsAbertosRes.data ?? [];
+      const ganhoValor = dealsGanhos.reduce((s: number, d: any) => s + (d.valor || 0), 0);
+      const perdidoValor = dealsPerdidos.reduce((s: number, d: any) => s + (d.valor || 0), 0);
+      const pipelineValor = dealsAbertos.reduce((s: number, d: any) => s + (d.valor || 0), 0);
+      const npsScores = (surveysRes.data ?? []).filter((s: any) => s.tipo === 'NPS').map((s: any) => s.nota);
       const npsAvg = npsScores.length > 0 ? npsScores.reduce((a: number, b: number) => a + b, 0) / npsScores.length : null;
 
       const context = {
-        empresa,
-        periodo: `${weekAgo.toLocaleDateString('pt-BR')} a ${now.toLocaleDateString('pt-BR')}`,
-        deals_ganhos: dealsGanhos?.length ?? 0,
-        valor_ganho: ganhoValor,
-        deals_perdidos: dealsPerdidos?.length ?? 0,
-        valor_perdido: perdidoValor,
-        pipeline_aberto: dealsAbertos?.length ?? 0,
-        pipeline_valor: pipelineValor,
-        cs_em_risco: csRiscos?.length ?? 0,
-        atividades_semana: atividadeCount,
-        nps_medio: npsAvg,
-        motivos_perda: (dealsPerdidos ?? []).map((d: any) => d.motivo_perda).filter(Boolean).slice(0, 5),
+        empresa, periodo: `${weekAgo.toLocaleDateString('pt-BR')} a ${now.toLocaleDateString('pt-BR')}`,
+        deals_ganhos: dealsGanhos.length, valor_ganho: ganhoValor,
+        deals_perdidos: dealsPerdidos.length, valor_perdido: perdidoValor,
+        pipeline_aberto: dealsAbertos.length, pipeline_valor: pipelineValor,
+        cs_em_risco: csRiscosRes.data?.length ?? 0, atividades_semana: atividadesRes.data?.length ?? 0,
+        nps_medio: npsAvg, motivos_perda: dealsPerdidos.map((d: any) => d.motivo_perda).filter(Boolean).slice(0, 5),
       };
 
-      let narrative = '';
-      let wrProvider = '';
-      let wrModel = '';
-      const wrStartMs = Date.now();
-      const prompt = `Gere um relatório semanal executivo em português (2-3 parágrafos) para a empresa ${empresa}, baseado nestes dados:\n${JSON.stringify(context)}\n\nSeja direto, mencione números, destaque conquistas, riscos e recomendações para a próxima semana. Formato: texto corrido, sem markdown.`;
+      const aiResult = await callAI({
+        system: 'Gere relatórios semanais executivos concisos em português.',
+        prompt: `Gere um relatório semanal (2-3 parágrafos) para ${empresa}:\n${JSON.stringify(context)}\nSeja direto, mencione números, destaque conquistas, riscos e recomendações. Texto corrido, sem markdown.`,
+        functionName: 'weekly-report',
+        empresa,
+        temperature: 0.4,
+        maxTokens: 600,
+        supabase,
+      });
 
-      // Try Claude first (Primary)
-      if (anthropicKey) {
-        try {
-          const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
-            body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
-          });
-          const aiData = await aiResp.json();
-          narrative = aiData.content?.[0]?.text || '';
-          if (narrative) { wrProvider = 'CLAUDE'; wrModel = 'claude-sonnet-4-20250514'; }
-        } catch (e) { console.warn('[weekly-report] Claude failed:', e); }
-      }
-
-      // Fallback to Gemini
-      if (!narrative && googleApiKey) {
-        try {
-          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contents: [{ parts: [{ text: prompt }] }],
-              generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
-            }),
-          });
-          if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-          const data = await resp.json();
-          narrative = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        } catch (e) {
-          console.warn('[weekly-report] Gemini failed:', e);
-        }
-      }
-
-      if (narrative && !wrProvider) {
-        wrProvider = 'GEMINI'; wrModel = 'gemini-3-pro-preview';
-      }
-
-      // Fallback 2: OpenAI GPT-4o
-      if (!narrative) {
-        const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-        if (OPENAI_API_KEY) {
-          try {
-            const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
-              method: 'POST',
-              headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
-              body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.4, max_tokens: 600 }),
-            });
-            if (gptResp.ok) {
-              const gptData = await gptResp.json();
-              narrative = gptData.choices?.[0]?.message?.content ?? '';
-            }
-          } catch (gptErr) {
-            console.error('[weekly-report] OpenAI exception:', gptErr);
-          }
-        }
-      }
-
-      // Deterministic fallback
-      if (!narrative) {
-        narrative = `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${atividadeCount} atividades registradas.`;
-      }
-
-      // Log AI usage
-      if (narrative && wrProvider) {
-        try {
-          await supabase.from('ai_usage_log').insert({
-            function_name: 'weekly-report', provider: wrProvider, model: wrModel,
-            tokens_input: null, tokens_output: null, success: true,
-            latency_ms: Date.now() - wrStartMs, custo_estimado: 0, empresa,
-          });
-        } catch (logErr) { console.warn('[weekly-report] ai_usage_log error:', logErr); }
-      }
+      let narrative = aiResult.content || `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${context.atividades_semana} atividades registradas.`;
 
       results[empresa] = { ...context, narrative };
+      await supabase.from('system_settings').upsert({ category: 'reports', key: `weekly_report_${empresa}`, value: { ...context, narrative, generated_at: now.toISOString() } }, { onConflict: 'key' });
 
-      // Save to system_settings
-      await supabase.from('system_settings').upsert({
-        category: 'reports',
-        key: `weekly_report_${empresa}`,
-        value: { ...context, narrative, generated_at: now.toISOString() },
-      }, { onConflict: 'key' });
-
-      // Notify ADMINs and send email
-      const { data: adminRoles } = await supabase
-        .from('user_roles')
-        .select('user_id')
-        .eq('role', 'ADMIN')
-        .limit(20);
-
+      // Notify admins
+      const { data: adminRoles } = await supabase.from('user_roles').select('user_id').eq('role', 'ADMIN').limit(20);
       const adminUserIds = (adminRoles ?? []).map((r: any) => r.user_id);
-
       if (adminUserIds.length > 0) {
-        // Get admin profiles for email
-        const { data: adminProfiles } = await supabase
-          .from('profiles')
-          .select('id, email, nome')
-          .in('id', adminUserIds);
-
-        // Filter by empresa via user_access_assignments
-        const { data: assignments } = await supabase
-          .from('user_access_assignments')
-          .select('user_id')
-          .eq('empresa', empresa)
-          .in('user_id', adminUserIds);
-
-        const filteredAdmins = (assignments ?? []).map((a: any) => a.user_id);
-        const notifyList = filteredAdmins.length > 0 ? filteredAdmins : adminUserIds;
+        const { data: adminProfiles } = await supabase.from('profiles').select('id, email, nome').in('id', adminUserIds);
+        const { data: assignments } = await supabase.from('user_access_assignments').select('user_id').eq('empresa', empresa).in('user_id', adminUserIds);
+        const notifyList = (assignments?.length ?? 0) > 0 ? assignments!.map((a: any) => a.user_id) : adminUserIds;
 
         for (const adminId of notifyList) {
-          // In-app notification
-          await supabase.from('notifications').insert({
-            user_id: adminId,
-            empresa,
-            tipo: 'INFO',
-            titulo: `📊 Relatório Semanal — ${empresa}`,
-            mensagem: narrative.slice(0, 200) + '...',
-            link: '/relatorios/executivo',
-          });
+          await supabase.from('notifications').insert({ user_id: adminId, empresa, tipo: 'INFO', titulo: `📊 Relatório Semanal — ${empresa}`, mensagem: narrative.slice(0, 200) + '...', link: '/relatorios/executivo' });
 
-          // Send email to admin
           const adminProfile = (adminProfiles ?? []).find((p: any) => p.id === adminId);
           if (adminProfile?.email) {
             try {
               await supabase.functions.invoke('email-send', {
-                body: {
-                  to: adminProfile.email,
-                  subject: `📊 Relatório Semanal ${empresa} — ${now.toLocaleDateString('pt-BR')}`,
-                  html: `
-                    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
-                      <h2 style="color:#1a1a2e;">📊 Relatório Semanal — ${empresa}</h2>
-                      <p style="color:#666;font-size:14px;">${context.periodo}</p>
-                      <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
-                      <div style="display:flex;gap:20px;margin-bottom:16px;">
-                        <div style="text-align:center;"><strong style="font-size:24px;color:#22c55e;">${context.deals_ganhos}</strong><br/><span style="font-size:12px;color:#666;">Deals Ganhos</span></div>
-                        <div style="text-align:center;"><strong style="font-size:24px;color:#ef4444;">${context.deals_perdidos}</strong><br/><span style="font-size:12px;color:#666;">Deals Perdidos</span></div>
-                        <div style="text-align:center;"><strong style="font-size:24px;color:#3b82f6;">${context.pipeline_aberto}</strong><br/><span style="font-size:12px;color:#666;">Pipeline Aberto</span></div>
-                        <div style="text-align:center;"><strong style="font-size:24px;color:#f59e0b;">${context.cs_em_risco}</strong><br/><span style="font-size:12px;color:#666;">CS em Risco</span></div>
-                      </div>
-                      <div style="background:#f8f9fa;padding:16px;border-radius:8px;margin-top:16px;">
-                        <p style="font-size:14px;line-height:1.6;color:#333;">${narrative}</p>
-                      </div>
-                      <p style="margin-top:20px;font-size:12px;color:#999;">Gerado automaticamente pela Amélia · Amélia CRM</p>
-                    </div>
-                  `,
-                },
+                body: { to: adminProfile.email, subject: `📊 Relatório Semanal ${empresa} — ${now.toLocaleDateString('pt-BR')}`, html: `<div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;"><h2>📊 Relatório Semanal — ${empresa}</h2><p style="color:#666">${context.periodo}</p><hr/><div style="display:flex;gap:20px;margin-bottom:16px;"><div style="text-align:center"><strong style="font-size:24px;color:#22c55e">${context.deals_ganhos}</strong><br/><span style="font-size:12px;color:#666">Ganhos</span></div><div style="text-align:center"><strong style="font-size:24px;color:#ef4444">${context.deals_perdidos}</strong><br/><span style="font-size:12px;color:#666">Perdidos</span></div><div style="text-align:center"><strong style="font-size:24px;color:#3b82f6">${context.pipeline_aberto}</strong><br/><span style="font-size:12px;color:#666">Pipeline</span></div><div style="text-align:center"><strong style="font-size:24px;color:#f59e0b">${context.cs_em_risco}</strong><br/><span style="font-size:12px;color:#666">CS Risco</span></div></div><div style="background:#f8f9fa;padding:16px;border-radius:8px"><p style="font-size:14px;line-height:1.6;color:#333">${narrative}</p></div><p style="margin-top:20px;font-size:12px;color:#999">Gerado automaticamente pela Amélia</p></div>` },
               });
-              console.log(`[weekly-report] Email sent to ${adminProfile.email}`);
-            } catch (emailErr) {
-              console.warn(`[weekly-report] Email failed for ${adminProfile.email}:`, emailErr);
-            }
+            } catch (emailErr) { console.warn(`[weekly-report] Email failed:`, emailErr); }
           }
         }
       }
     }
 
-    return new Response(JSON.stringify({ success: true, results }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(JSON.stringify({ success: true, results }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
     console.error('Weekly report error:', err);
-    return new Response(JSON.stringify({ error: String(err) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-    });
+    return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

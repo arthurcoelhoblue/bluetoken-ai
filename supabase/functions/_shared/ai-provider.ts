@@ -1,4 +1,4 @@
-// _shared/ai-provider.ts — Unified AI provider with Claude → Gemini → GPT-4o fallback + auto telemetry
+// _shared/ai-provider.ts — Unified AI provider with Claude → Gemini → GPT-4o fallback + auto telemetry + rate limiting
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 export interface CallAIOptions {
@@ -12,6 +12,8 @@ export interface CallAIOptions {
   supabase: SupabaseClient;
   /** If true, sends messages array instead of single prompt (for chat-style APIs) */
   messages?: Array<{ role: string; content: string }>;
+  /** Optional user ID for rate limiting. If omitted (CRON/system calls), rate limiting is skipped. */
+  userId?: string;
 }
 
 export interface CallAIResult {
@@ -29,9 +31,87 @@ const COST_TABLE: Record<string, { input: number; output: number }> = {
   'gpt-4o': { input: 2.5 / 1_000_000, output: 10.0 / 1_000_000 },
 };
 
+// ========================================
+// RATE LIMITING
+// ========================================
+
+const RATE_LIMITS: Record<string, number> = {
+  'copilot-chat': 60,
+  'sdr-intent-classifier': 200,
+  'sdr-response-generator': 200,
+  'deal-scoring': 100,
+};
+const DEFAULT_RATE_LIMIT = 100;
+
+async function checkRateLimit(supabase: SupabaseClient, functionName: string, userId?: string): Promise<{ allowed: boolean; currentCount: number; limit: number }> {
+  // Skip rate limiting for system/CRON calls (no userId)
+  if (!userId) return { allowed: true, currentCount: 0, limit: 0 };
+
+  const limit = RATE_LIMITS[functionName] ?? DEFAULT_RATE_LIMIT;
+  const windowStart = new Date();
+  windowStart.setMinutes(0, 0, 0); // Round to current hour
+  const windowStartISO = windowStart.toISOString();
+
+  try {
+    // Try to find existing record for this window
+    const { data: existing } = await supabase
+      .from('ai_rate_limits')
+      .select('id, call_count')
+      .eq('function_name', functionName)
+      .eq('user_id', userId)
+      .eq('window_start', windowStartISO)
+      .maybeSingle();
+
+    if (existing) {
+      if (existing.call_count >= limit) {
+        return { allowed: false, currentCount: existing.call_count, limit };
+      }
+      // Increment
+      await supabase
+        .from('ai_rate_limits')
+        .update({ call_count: existing.call_count + 1 })
+        .eq('id', existing.id);
+      return { allowed: true, currentCount: existing.call_count + 1, limit };
+    }
+
+    // Insert new record
+    await supabase.from('ai_rate_limits').insert({
+      function_name: functionName,
+      user_id: userId,
+      window_start: windowStartISO,
+      call_count: 1,
+    });
+    return { allowed: true, currentCount: 1, limit };
+  } catch (e) {
+    console.warn(`[${functionName}] Rate limit check error (allowing):`, e);
+    return { allowed: true, currentCount: 0, limit };
+  }
+}
+
+// ========================================
+// MAIN callAI FUNCTION
+// ========================================
+
 export async function callAI(opts: CallAIOptions): Promise<CallAIResult> {
-  const { system, prompt, functionName, empresa, temperature = 0.3, maxTokens = 1500, promptVersionId, supabase, messages } = opts;
+  const { system, prompt, functionName, empresa, temperature = 0.3, maxTokens = 1500, promptVersionId, supabase, messages, userId } = opts;
   const startTime = Date.now();
+
+  // Rate limit check
+  const rateCheck = await checkRateLimit(supabase, functionName, userId);
+  if (!rateCheck.allowed) {
+    const latencyMs = Date.now() - startTime;
+    // Log rate-limited attempt
+    try {
+      await supabase.from('ai_usage_log').insert({
+        function_name: functionName, provider: 'none', model: 'none',
+        tokens_input: 0, tokens_output: 0, custo_estimado: 0,
+        latency_ms: latencyMs, success: false, empresa: empresa || null,
+        error_message: `Rate limited: ${rateCheck.currentCount}/${rateCheck.limit} calls/hour`,
+        prompt_version_id: promptVersionId || null,
+      });
+    } catch { /* ignore */ }
+    return { content: '', model: 'rate-limited', provider: 'none', tokensInput: 0, tokensOutput: 0, latencyMs };
+  }
 
   let content = '';
   let model = '';
