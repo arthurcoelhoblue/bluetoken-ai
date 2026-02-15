@@ -1,139 +1,66 @@
 
-
-# Roteamento Inteligente nos Forms de Captura (Paginas de Vendas)
+# Fallback Gemini 3 Pro via API Direta
 
 ## Resumo
 
-Evoluir o sistema de Forms de Captura (`capture-form-submit`) para receber comandos e contexto de paginas de vendas externas, criando deals com roteamento inteligente baseado em temperatura e sinais de prioridade -- identico ao fluxo do SGT, mas acionado via formularios.
-
----
+Substituir a chamada ao Lovable AI Gateway pelo acesso direto a API do Google Generative AI, usando o modelo `gemini-3-pro-preview` e o secret `GOOGLE_API_KEY` ja configurado.
 
 ## O que muda
 
-Hoje o `capture-form-submit` cria o deal no pipeline/estagio fixo configurado no builder do form. Com esta evolucao, a pagina de vendas podera enviar **metadados extras** no payload (temperatura, comando de prioridade, UTMs, valor investido, etc.) e o sistema fara o roteamento automatico:
+Apenas o bloco de fallback (linhas 141-170) em `supabase/functions/next-best-action/index.ts`:
 
-```text
-Pagina de vendas envia webhook
-        |
-        v
-  capture-form-submit recebe payload
-  (answers + metadata com temperatura, comando, UTMs)
-        |
-        v
-  Contato criado/encontrado (ja existe)
-        |
-        v
-  +-------------+-------------+-----------------+
-  |             |             |                 |
-  v             v             v                 v
-COMANDO       QUENTE        MORNO            FRIO
-"atacar"
-  |             |             |                 |
-  v             v             v                 v
-Atacar        Estagio       Estagio          Estagio
-agora!        config.       config.          config.
-(is_priority) + Notifica   + Notifica       + Cadencia
-              vendedor     vendedor         aquecimento
-```
-
----
-
-## Parte 1: Evolucao do payload do `capture-form-submit`
-
-O campo `metadata` que ja existe no payload passara a aceitar campos opcionais de roteamento:
-
-| Campo metadata | Tipo | Descricao |
-|----------------|------|-----------|
-| `temperatura` | `FRIO / MORNO / QUENTE` | Temperatura do lead vinda da pagina |
-| `comando` | `atacar_agora` ou outro | Sinal de prioridade (ex: clicou "falar com atendente") |
-| `utm_source` | string | UTM source |
-| `utm_medium` | string | UTM medium |
-| `utm_campaign` | string | UTM campaign |
-| `utm_content` | string | UTM content |
-| `utm_term` | string | UTM term |
-| `gclid` | string | Google Click ID |
-| `fbclid` | string | Facebook Click ID |
-| `valor_investido` | string | Faixa de valores informada pelo lead |
-| `contexto` | object | Qualquer dado extra da pagina de vendas |
-
-O payload continua compativel com o formato atual -- os novos campos sao todos opcionais dentro de `metadata`.
-
----
-
-## Parte 2: Logica de roteamento no Edge Function
-
-### Arquivo: `supabase/functions/capture-form-submit/index.ts`
-
-Apos criar o contato e ANTES de criar o deal, adicionar logica de roteamento:
-
-1. **Detectar comando de prioridade**: se `metadata.comando === 'atacar_agora'`, buscar o stage com `is_priority = true` no pipeline configurado no form
-2. **Aplicar temperatura**: se `metadata.temperatura` estiver presente, usar como temperatura do deal
-3. **Roteamento do estagio**:
-   - Comando `atacar_agora` → stage `is_priority` do pipeline
-   - Sem comando → stage configurado no form builder (comportamento atual mantido)
-4. **UTMs**: copiar UTMs do metadata para o deal
-5. **Acao pos-criacao**:
-   - Se QUENTE ou `atacar_agora` → criar notificacao para o owner do pipeline
-   - Se FRIO → iniciar cadencia de aquecimento (`WARMING_INBOUND_FRIO_{empresa}`)
-6. **Prevencao de duplicatas**: verificar deal ABERTO existente para mesmo contact_id + pipeline_id
-
----
-
-## Parte 3: Evolucao do Form Builder (Frontend)
-
-### Arquivo: `src/pages/CaptureFormBuilderPage.tsx`
-
-Adicionar uma nova secao no painel lateral de configuracao chamada **"Webhook Externo"** que mostra:
-
-- A URL do endpoint para integrar com paginas de vendas externas
-- Exemplo de payload JSON com os campos de metadata aceitos
-- Botao de copiar URL
-
-Isso facilita para o usuario configurar a integracao nas paginas de vendas sem precisar ir em outra tela.
-
----
-
-## Parte 4: Nenhuma migracao SQL necessaria
-
-A coluna `is_priority` ja foi criada na migracao anterior. As cadencias de aquecimento ja existem. Nenhuma alteracao de banco e necessaria.
-
----
+- Remove referencia ao `LOVABLE_API_KEY` e ao gateway `ai.gateway.lovable.dev`
+- Usa `GOOGLE_API_KEY` com endpoint direto: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent`
+- Adapta o payload para o formato nativo do Google (`contents` + `generationConfig`)
+- Adapta o parsing da resposta de `choices[0].message.content` para `candidates[0].content.parts[0].text`
 
 ## Secao Tecnica
 
-### Arquivos a editar
+### Arquivo editado
 
-| Arquivo | Alteracao |
-|---------|-----------|
-| `supabase/functions/capture-form-submit/index.ts` | Adicionar logica de roteamento inteligente baseado em metadata (~80 linhas) |
-| `src/pages/CaptureFormBuilderPage.tsx` | Adicionar secao "Webhook Externo" com URL e exemplo de payload |
-| `supabase/config.toml` | Adicionar `[functions.capture-form-submit] verify_jwt = false` (se ainda nao estiver) |
+`supabase/functions/next-best-action/index.ts` -- bloco de fallback (~30 linhas)
 
-### Compatibilidade
+### Codigo do fallback atualizado
 
-- O payload atual dos forms publicos (`/f/:slug`) continua funcionando sem alteracao -- metadata simplesmente nao tera campos de roteamento e o comportamento sera o mesmo de hoje
-- Paginas de vendas externas enviam POST direto para o endpoint com os campos extras em metadata
-
-### Exemplo de payload da pagina de vendas
-
-```json
-{
-  "slug": "oferta-tokeniza-2025",
-  "answers": {
-    "field_nome": "Joao Silva",
-    "field_email": "joao@email.com",
-    "field_telefone": "11999998888",
-    "field_valor": "R$ 50.000 - R$ 100.000"
-  },
-  "metadata": {
-    "temperatura": "QUENTE",
-    "comando": "atacar_agora",
-    "utm_source": "google",
-    "utm_medium": "cpc",
-    "utm_campaign": "tokeniza-cdb",
-    "valor_investido": "50000-100000",
-    "referrer": "https://tokeniza.com.br/oferta"
+```typescript
+// Fallback 1: Try Gemini Direct API
+const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+if (GOOGLE_API_KEY) {
+  console.log('[NBA] Trying Gemini 3 Pro direct fallback...');
+  try {
+    const prompt = `${systemPrompt}\n\nContexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.`;
+    const geminiRes = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+        }),
+      }
+    );
+    if (geminiRes.ok) {
+      const geminiData = await geminiRes.json();
+      aiContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      console.log('[NBA] Gemini direct fallback succeeded');
+    } else {
+      console.error('[NBA] Gemini direct fallback error:', geminiRes.status);
+    }
+  } catch (geminiErr) {
+    console.error('[NBA] Gemini direct fallback exception:', geminiErr);
   }
 }
 ```
 
+### Cascata de fallback (sem alteracao na estrutura)
+
+1. Anthropic Claude (primario)
+2. Google Gemini 3 Pro Preview via API direta (fallback AI)
+3. Regras deterministicas (fallback final)
+
+### Sem outras alteracoes
+
+- Sem migracao SQL
+- Sem alteracao de frontend
+- Secret `GOOGLE_API_KEY` ja existe no projeto
