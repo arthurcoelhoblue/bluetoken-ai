@@ -3,7 +3,7 @@ import type { Atendimento } from '@/hooks/useAtendimentos';
 export type AtendimentoModo = 'SDR_IA' | 'MANUAL' | 'HIBRIDO';
 export type SenderType = 'AMELIA' | 'VENDEDOR' | 'SISTEMA';
 export type TakeoverAcao = 'ASSUMIR' | 'DEVOLVER';
-export type CopilotContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL';
+export type CopilotContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL' | 'CUSTOMER';
 
 export interface ConversationModeState {
   modo: AtendimentoModo;

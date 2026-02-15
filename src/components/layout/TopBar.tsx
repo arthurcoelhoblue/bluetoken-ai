@@ -10,6 +10,19 @@ import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { useCompany } from '@/contexts/CompanyContext';
+import type { CopilotContextType } from '@/types/conversas';
+
+function getCopilotContext(pathname: string, empresa: string): { type: CopilotContextType; id?: string; empresa: string } {
+  const leadMatch = pathname.match(/^\/leads\/([^/]+)\/([^/]+)$/);
+  if (leadMatch) return { type: 'LEAD', id: leadMatch[1], empresa: leadMatch[2] };
+
+  const csMatch = pathname.match(/^\/cs\/clientes\/([^/]+)$/);
+  if (csMatch) return { type: 'CUSTOMER', id: csMatch[1], empresa };
+
+  if (pathname === '/pipeline') return { type: 'PIPELINE', empresa };
+
+  return { type: 'GERAL', empresa };
+}
 
 const ROUTE_TITLES: Record<string, string> = {
   '/': 'Meu Dia',
@@ -95,7 +108,7 @@ export function TopBar() {
       <GlobalSearch />
 
       {/* Amélia Copilot */}
-      <CopilotPanel context={{ type: 'GERAL', empresa: activeCompany }} variant="icon" />
+      <CopilotPanel context={getCopilotContext(location.pathname, activeCompany)} variant="icon" />
 
       {/* Notifications */}
       <NotificationBell />
