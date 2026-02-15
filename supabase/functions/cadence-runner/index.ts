@@ -106,18 +106,7 @@ function validateAuth(req: Request): boolean {
     return true;
   }
   
-  // Para pg_cron: aceita JWT que tenha "supabase" no issuer (anon key)
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]));
-    if (payload.iss === 'supabase' && payload.ref === 'xdjvlcelauvibznnbrzb') {
-      console.log('[Auth] Token JWT Supabase válido');
-      return true;
-    }
-  } catch {
-    // Não é um JWT válido, continua
-  }
-  
-  console.warn('[Auth] Invalid token provided');
+  console.warn('[Auth] Invalid token provided - only service_role or CRON_SECRET accepted');
   return false;
 }
 
