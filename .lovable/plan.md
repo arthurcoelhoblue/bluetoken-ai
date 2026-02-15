@@ -1,66 +1,89 @@
 
-# Fallback Gemini 3 Pro via API Direta
+# Migracao: Gemini 3 Pro Primario + Claude Fallback (todas as funcoes)
 
 ## Resumo
 
-Substituir a chamada ao Lovable AI Gateway pelo acesso direto a API do Google Generative AI, usando o modelo `gemini-3-pro-preview` e o secret `GOOGLE_API_KEY` ja configurado.
+Inverter a ordem de chamada em todas as edge functions que usam IA: Gemini 3 Pro Preview via Google API direta sera o motor primario, e Claude Sonnet sera o fallback caso o Gemini falhe. Isso reduz custos significativamente mantendo qualidade.
 
-## O que muda
+## Funcoes que serao alteradas (12 funcoes)
 
-Apenas o bloco de fallback (linhas 141-170) em `supabase/functions/next-best-action/index.ts`:
+| # | Funcao | Chamadas Anthropic | Complexidade |
+|---|--------|-------------------|--------------|
+| 1 | copilot-chat | 1 | Media (system+messages) |
+| 2 | deal-scoring | 1 | Baixa (prompt simples) |
+| 3 | deal-loss-analysis | 2 (individual + portfolio) | Media |
+| 4 | deal-context-summary | 1 | Media (system+user) |
+| 5 | weekly-report | 1 (ja tem fallback Gemini) | Baixa |
+| 6 | cs-daily-briefing | 1 | Baixa |
+| 7 | call-coach | 1 | Media |
+| 8 | call-transcribe | 1 (analise pos-whisper) | Baixa |
+| 9 | ai-benchmark | 1 | Baixa |
+| 10 | amelia-learn | 2 (sequencia perda + churn) | Media |
+| 11 | cs-trending-topics | 1 | Baixa |
+| 12 | amelia-mass-action | 1 | Baixa |
 
-- Remove referencia ao `LOVABLE_API_KEY` e ao gateway `ai.gateway.lovable.dev`
-- Usa `GOOGLE_API_KEY` com endpoint direto: `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent`
-- Adapta o payload para o formato nativo do Google (`contents` + `generationConfig`)
-- Adapta o parsing da resposta de `choices[0].message.content` para `candidates[0].content.parts[0].text`
+## Funcoes ja migradas ou sem IA (sem alteracao)
+
+- **next-best-action** -- ja migrado
+- **sdr-ia-interpret** -- ja usa tryGoogleDirect como primario
+- **notify-closer, cs-churn-predictor, revenue-forecast, cs-incident-detector** -- nao usam IA
+
+## Padrao de implementacao (igual em todas)
+
+Cada chamada Anthropic sera substituida por este padrao:
+
+```text
+1. Tentar Gemini 3 Pro Preview (primario)
+   - POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}
+   - Body: { contents: [{ parts: [{ text: systemPrompt + userPrompt }] }], generationConfig: { temperature, maxOutputTokens } }
+   - Parse: candidates[0].content.parts[0].text
+
+2. Se falhar -> Tentar Anthropic Claude (fallback)
+   - Manter chamada existente como esta hoje
+   - Apenas envolvida em bloco de fallback
+
+3. Se ambos falharem -> Fallback deterministico (quando existir)
+```
 
 ## Secao Tecnica
 
-### Arquivo editado
+### Adaptacao system prompt vs user prompt
 
-`supabase/functions/next-best-action/index.ts` -- bloco de fallback (~30 linhas)
-
-### Codigo do fallback atualizado
+O Google Generative AI nao tem campo `system` separado como Anthropic. Para funcoes que usam system prompt, concatenaremos:
 
 ```typescript
-// Fallback 1: Try Gemini Direct API
-const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-if (GOOGLE_API_KEY) {
-  console.log('[NBA] Trying Gemini 3 Pro direct fallback...');
-  try {
-    const prompt = `${systemPrompt}\n\nContexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.`;
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
-        }),
-      }
-    );
-    if (geminiRes.ok) {
-      const geminiData = await geminiRes.json();
-      aiContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-      console.log('[NBA] Gemini direct fallback succeeded');
-    } else {
-      console.error('[NBA] Gemini direct fallback error:', geminiRes.status);
-    }
-  } catch (geminiErr) {
-    console.error('[NBA] Gemini direct fallback exception:', geminiErr);
-  }
-}
+const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
+// ou para copilot-chat com multiplas mensagens:
+const fullPrompt = `${systemContent}\n\n${messages.map(m => `[${m.role}]: ${m.content}`).join('\n')}`;
 ```
 
-### Cascata de fallback (sem alteracao na estrutura)
+### Copilot-chat (caso especial)
 
-1. Anthropic Claude (primario)
-2. Google Gemini 3 Pro Preview via API direta (fallback AI)
-3. Regras deterministicas (fallback final)
+O copilot-chat envia multiplas mensagens (historico de conversa). Para Gemini, concatenaremos o historico em um unico prompt com marcadores de role, mantendo o system prompt no inicio.
 
-### Sem outras alteracoes
+### Funcoes com 2 chamadas (deal-loss-analysis, amelia-learn)
 
-- Sem migracao SQL
-- Sem alteracao de frontend
-- Secret `GOOGLE_API_KEY` ja existe no projeto
+Cada chamada individual dentro da funcao recebera seu proprio bloco try Gemini / catch fallback Claude.
+
+### Secret necessario
+
+`GOOGLE_API_KEY` -- ja configurado no projeto.
+
+### Config.toml
+
+Sem alteracoes necessarias -- todas as funcoes ja estao registradas.
+
+### Nenhuma alteracao de frontend
+
+O frontend chama as edge functions da mesma forma. Apenas o motor de IA interno muda.
+
+### Ordem de implementacao
+
+Todas as 12 funcoes serao editadas em paralelo na mesma sessao, ja que sao independentes.
+
+### Riscos e mitigacao
+
+- **Risco**: Gemini pode retornar JSON malformado em casos raros
+- **Mitigacao**: O fallback para Claude captura esse cenario automaticamente
+- **Risco**: Rate limit do Google API
+- **Mitigacao**: Claude como fallback garante continuidade
