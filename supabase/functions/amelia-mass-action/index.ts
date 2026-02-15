@@ -178,28 +178,10 @@ Temperatura: ${deal.temperatura || "não definida"}`;
 
       try {
         let message = '';
+        let msgProvider = '';
 
-        // Try Gemini first
-        if (googleApiKey) {
-          try {
-            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-                generationConfig: { temperature: 0.5, maxOutputTokens: 500 },
-              }),
-            });
-            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
-            const data = await resp.json();
-            message = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          } catch (e) {
-            console.warn('[amelia-mass-action] Gemini failed:', e);
-          }
-        }
-
-        // Fallback to Claude
-        if (!message && anthropicApiKey) {
+        // Try Claude first (Primary)
+        if (anthropicApiKey) {
           try {
             const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
               method: "POST",
@@ -219,11 +201,32 @@ Temperatura: ${deal.temperatura || "não definida"}`;
             if (aiResp.ok) {
               const aiData = await aiResp.json();
               message = aiData.content?.[0]?.text || "";
+              msgProvider = 'CLAUDE';
             } else {
               console.error("Claude error:", aiResp.status);
             }
           } catch (e) {
-            console.error('[amelia-mass-action] Claude fallback failed:', e);
+            console.error('[amelia-mass-action] Claude failed:', e);
+          }
+        }
+
+        // Fallback to Gemini
+        if (!message && googleApiKey) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+                generationConfig: { temperature: 0.5, maxOutputTokens: 500 },
+              }),
+            });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            message = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            msgProvider = 'GEMINI';
+          } catch (e) {
+            console.warn('[amelia-mass-action] Gemini fallback failed:', e);
           }
         }
 

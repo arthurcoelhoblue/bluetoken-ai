@@ -95,10 +95,27 @@ Deno.serve(async (req) => {
       };
 
       let narrative = '';
+      let wrProvider = '';
+      let wrModel = '';
+      const wrStartMs = Date.now();
       const prompt = `Gere um relatório semanal executivo em português (2-3 parágrafos) para a empresa ${empresa}, baseado nestes dados:\n${JSON.stringify(context)}\n\nSeja direto, mencione números, destaque conquistas, riscos e recomendações para a próxima semana. Formato: texto corrido, sem markdown.`;
 
-      // Try Gemini first
-      if (googleApiKey) {
+      // Try Claude first (Primary)
+      if (anthropicKey) {
+        try {
+          const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-api-key': anthropicKey, 'anthropic-version': '2023-06-01' },
+            body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: 600, messages: [{ role: 'user', content: prompt }] }),
+          });
+          const aiData = await aiResp.json();
+          narrative = aiData.content?.[0]?.text || '';
+          if (narrative) { wrProvider = 'CLAUDE'; wrModel = 'claude-sonnet-4-20250514'; }
+        } catch (e) { console.warn('[weekly-report] Claude failed:', e); }
+      }
+
+      // Fallback to Gemini
+      if (!narrative && googleApiKey) {
         try {
           const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
             method: 'POST',
@@ -116,27 +133,8 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fallback to Claude
-      if (!narrative && anthropicKey) {
-        try {
-          const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-api-key': anthropicKey,
-              'anthropic-version': '2023-06-01',
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 600,
-              messages: [{ role: 'user', content: prompt }],
-            }),
-          });
-          const aiData = await aiResp.json();
-          narrative = aiData.content?.[0]?.text || '';
-        } catch (e) {
-          console.error('[weekly-report] Claude fallback failed:', e);
-        }
+      if (narrative && !wrProvider) {
+        wrProvider = 'GEMINI'; wrModel = 'gemini-3-pro-preview';
       }
 
       // Fallback 2: OpenAI GPT-4o
@@ -162,6 +160,17 @@ Deno.serve(async (req) => {
       // Deterministic fallback
       if (!narrative) {
         narrative = `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${atividadeCount} atividades registradas.`;
+      }
+
+      // Log AI usage
+      if (narrative && wrProvider) {
+        try {
+          await supabase.from('ai_usage_log').insert({
+            function_name: 'weekly-report', provider: wrProvider, model: wrModel,
+            tokens_input: null, tokens_output: null, success: true,
+            latency_ms: Date.now() - wrStartMs, custo_estimado: 0, empresa,
+          });
+        } catch (logErr) { console.warn('[weekly-report] ai_usage_log error:', logErr); }
       }
 
       results[empresa] = { ...context, narrative };

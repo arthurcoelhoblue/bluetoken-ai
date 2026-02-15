@@ -105,9 +105,39 @@ Retorne um JSON com:
 Retorne APENAS o JSON, sem markdown.`;
 
     let coachingText = '';
+    const startMs = Date.now();
+    let aiProvider = '';
+    let aiModel = '';
 
-    // Try Gemini first
-    if (googleApiKey) {
+    // Try Claude first (Primary)
+    if (anthropicKey) {
+      try {
+        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: prompt }],
+          }),
+        });
+        if (!claudeResp.ok) throw new Error(`Claude ${claudeResp.status}`);
+        const claudeData = await claudeResp.json();
+        coachingText = claudeData.content?.[0]?.text || '';
+        aiProvider = 'CLAUDE';
+        aiModel = 'claude-sonnet-4-20250514';
+        console.log('[call-coach] Claude OK');
+      } catch (e) {
+        console.warn('[call-coach] Claude failed:', e);
+      }
+    }
+
+    // Fallback to Gemini
+    if (!coachingText && googleApiKey) {
       try {
         const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
           method: 'POST',
@@ -120,14 +150,16 @@ Retorne APENAS o JSON, sem markdown.`;
         if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
         const data = await resp.json();
         coachingText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        console.log('[call-coach] Gemini OK');
+        aiProvider = 'GEMINI';
+        aiModel = 'gemini-3-pro-preview';
+        console.log('[call-coach] Gemini fallback OK');
       } catch (e) {
         console.warn('[call-coach] Gemini failed:', e);
       }
     }
 
-    // Fallback to Claude
-    if (!coachingText && anthropicKey) {
+    // Fallback 2: OpenAI
+    if (!coachingText) {
       try {
         const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -171,6 +203,17 @@ Retorne APENAS o JSON, sem markdown.`;
           console.error('[call-coach] OpenAI exception:', gptErr);
         }
       }
+    }
+
+    // Log AI usage
+    if (coachingText) {
+      try {
+        await supabase.from('ai_usage_log').insert({
+          function_name: 'call-coach', provider: aiProvider || 'OPENAI', model: aiModel || 'gpt-4o',
+          tokens_input: null, tokens_output: null, success: true,
+          latency_ms: Date.now() - startMs, custo_estimado: 0, empresa: null,
+        });
+      } catch (logErr) { console.warn('[call-coach] ai_usage_log error:', logErr); }
     }
 
     let coaching: Record<string, unknown>;

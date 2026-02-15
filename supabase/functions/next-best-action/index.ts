@@ -20,6 +20,7 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, serviceKey);
+    const startTime = Date.now();
 
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     if (!ANTHROPIC_API_KEY) {
@@ -201,6 +202,20 @@ Sem markdown, sem explicação, apenas o JSON.`;
           console.error('[NBA] OpenAI exception:', gptErr);
         }
       }
+    }
+
+    // Log AI usage
+    const latencyMs = Date.now() - startTime;
+    const aiProvider = aiContent && ANTHROPIC_API_KEY ? 'CLAUDE' : aiContent && Deno.env.get('GOOGLE_API_KEY') ? 'GEMINI' : 'OPENAI';
+    const aiModel = aiProvider === 'CLAUDE' ? 'claude-sonnet-4-20250514' : aiProvider === 'GEMINI' ? 'gemini-3-pro-preview' : 'gpt-4o';
+    if (aiContent) {
+      try {
+        await supabase.from('ai_usage_log').insert({
+          function_name: 'next-best-action', provider: aiProvider, model: aiModel,
+          tokens_input: null, tokens_output: null, success: true,
+          latency_ms: latencyMs, custo_estimado: 0, empresa: empresa || null,
+        });
+      } catch (logErr) { console.warn('[NBA] ai_usage_log error:', logErr); }
     }
 
     // Parse AI content (from Anthropic, Gemini, or OpenAI)

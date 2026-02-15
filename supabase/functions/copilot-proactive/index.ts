@@ -250,6 +250,17 @@ serve(async (req) => {
       });
     }
 
+    // Log AI usage
+    const proactiveProvider = ANTHROPIC_API_KEY && aiResponse ? 'CLAUDE' : 'GEMINI';
+    const proactiveModel = proactiveProvider === 'CLAUDE' ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview';
+    try {
+      await supabase.from('ai_usage_log').insert({
+        function_name: 'copilot-proactive', provider: proactiveProvider, model: proactiveModel,
+        tokens_input: null, tokens_output: null, success: !!aiResponse,
+        latency_ms: null, custo_estimado: 0, empresa: empresa || null,
+      });
+    } catch (logErr) { console.warn('[Proactive] ai_usage_log error:', logErr); }
+
     // Delete old non-dismissed insights before inserting new ones
     await supabase
       .from('copilot_insights')

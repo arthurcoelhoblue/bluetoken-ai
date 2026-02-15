@@ -309,23 +309,59 @@ serve(async (req) => {
         }
       }
 
-      // Send alerts if any integration is down
-      if (alerts.length > 0) {
-        const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+      // Send alerts if any integration is down (with 3x consecutive failure tracking)
+      const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
-        // Get admin users
+      // Track consecutive failures in system_settings
+      const { data: prevState } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("category", "health_check")
+        .eq("key", "consecutive_failures")
+        .maybeSingle();
+
+      const prevFailures: Record<string, number> = (prevState?.value as Record<string, number>) || {};
+      const newFailures: Record<string, number> = {};
+      const shouldAlert: string[] = [];
+
+      for (const [intg, result] of Object.entries(results)) {
+        if (result.status === "offline" || result.status === "error") {
+          newFailures[intg] = (prevFailures[intg] || 0) + 1;
+          if (newFailures[intg] === 3) {
+            shouldAlert.push(intg);
+          }
+        } else {
+          newFailures[intg] = 0;
+        }
+      }
+
+      await supabase.from("system_settings").upsert({
+        category: "health_check",
+        key: "consecutive_failures",
+        value: newFailures,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "category,key" });
+
+      // Alert ADMINs after 3 consecutive failures
+      if (shouldAlert.length > 0 || alerts.length > 0) {
         const { data: admins } = await supabase
           .from("user_roles")
           .select("user_id")
           .eq("role", "ADMIN");
 
         if (admins && admins.length > 0) {
+          const alertMsg = shouldAlert.length > 0
+            ? `🚨 CRÍTICO: ${shouldAlert.join(', ')} falharam 3x consecutivas!\n${alerts.join("\n")}`
+            : alerts.join("\n");
+
           const notifications = admins.map((a) => ({
             user_id: a.user_id,
             empresa: "BLUE" as const,
-            titulo: `🔴 ${alerts.length} integração(ões) com problema`,
-            mensagem: alerts.join("\n"),
-            tipo: "ALERTA" as const,
+            titulo: shouldAlert.length > 0
+              ? `🚨 ${shouldAlert.length} integração(ões) em falha crítica`
+              : `🔴 ${alerts.length} integração(ões) com problema`,
+            mensagem: alertMsg,
+            tipo: shouldAlert.length > 0 ? "SYSTEM_ALERT" as const : "ALERTA" as const,
             referencia_tipo: "SISTEMA",
             link: "/admin/settings",
           }));

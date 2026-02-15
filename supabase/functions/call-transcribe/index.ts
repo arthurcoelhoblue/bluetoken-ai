@@ -75,9 +75,39 @@ ${transcription}
 Retorne APENAS o JSON, sem markdown.`;
 
     let analysisText = '';
+    const analysisStartMs = Date.now();
+    let analysisProvider = '';
+    let analysisModel = '';
 
-    // Try Gemini first
-    if (googleApiKey) {
+    // Try Claude first (Primary)
+    if (anthropicKey) {
+      try {
+        const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': anthropicKey,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 1024,
+            messages: [{ role: 'user', content: analysisPrompt }],
+          }),
+        });
+        if (!claudeResp.ok) throw new Error(`Claude ${claudeResp.status}`);
+        const claudeData = await claudeResp.json();
+        analysisText = claudeData.content?.[0]?.text || '';
+        analysisProvider = 'CLAUDE';
+        analysisModel = 'claude-sonnet-4-20250514';
+        console.log('[call-transcribe] Claude analysis OK');
+      } catch (e) {
+        console.warn('[call-transcribe] Claude failed:', e);
+      }
+    }
+
+    // Fallback to Gemini
+    if (!analysisText && googleApiKey) {
       try {
         const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
           method: 'POST',
@@ -90,14 +120,16 @@ Retorne APENAS o JSON, sem markdown.`;
         if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
         const data = await resp.json();
         analysisText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        console.log('[call-transcribe] Gemini analysis OK');
+        analysisProvider = 'GEMINI';
+        analysisModel = 'gemini-3-pro-preview';
+        console.log('[call-transcribe] Gemini fallback OK');
       } catch (e) {
-        console.warn('[call-transcribe] Gemini failed:', e);
+        console.warn('[call-transcribe] Gemini fallback failed:', e);
       }
     }
 
-    // Fallback to Claude
-    if (!analysisText && anthropicKey) {
+    // Fallback 2: OpenAI
+    if (!analysisText) {
       try {
         const claudeResp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -150,6 +182,14 @@ Retorne APENAS o JSON, sem markdown.`;
     } catch {
       analysis = { summary: analysisText, sentiment: 'NEUTRO', action_items: [] };
     }
+
+    // Log AI usage (transcription + analysis)
+    try {
+      await supabase.from('ai_usage_log').insert([
+        { function_name: 'call-transcribe', provider: 'OPENAI', model: 'whisper-1', tokens_input: null, tokens_output: null, success: true, latency_ms: null, custo_estimado: 0, empresa: call.empresa },
+        { function_name: 'call-transcribe', provider: analysisProvider || 'OPENAI', model: analysisModel || 'gpt-4o', tokens_input: null, tokens_output: null, success: !!analysisText, latency_ms: Date.now() - analysisStartMs, custo_estimado: 0, empresa: call.empresa },
+      ]);
+    } catch (logErr) { console.warn('[call-transcribe] ai_usage_log error:', logErr); }
 
     // 5. Update call record
     const { error: updateErr } = await supabase.from('calls').update({
