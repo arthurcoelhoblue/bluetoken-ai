@@ -1423,6 +1423,98 @@ export type Database = {
           },
         ]
       }
+      copilot_insights: {
+        Row: {
+          categoria: string
+          created_at: string | null
+          deal_id: string | null
+          descricao: string
+          dispensado: boolean | null
+          empresa: string
+          id: string
+          lead_id: string | null
+          prioridade: string
+          titulo: string
+          user_id: string
+        }
+        Insert: {
+          categoria: string
+          created_at?: string | null
+          deal_id?: string | null
+          descricao: string
+          dispensado?: boolean | null
+          empresa: string
+          id?: string
+          lead_id?: string | null
+          prioridade?: string
+          titulo: string
+          user_id: string
+        }
+        Update: {
+          categoria?: string
+          created_at?: string | null
+          deal_id?: string | null
+          descricao?: string
+          dispensado?: boolean | null
+          empresa?: string
+          id?: string
+          lead_id?: string | null
+          prioridade?: string
+          titulo?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "copilot_insights_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "copilot_insights_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       copilot_messages: {
         Row: {
           content: string

@@ -200,7 +200,7 @@ serve(async (req) => {
           contextBlock = await enrichPipelineContext(supabase, empresa);
           break;
         case 'GERAL':
-          contextBlock = await enrichGeralContext(supabase, empresa, isAdmin, userPermissions);
+          contextBlock = await enrichGeralContext(supabase, empresa, isAdmin, userPermissions, userId);
           break;
         case 'CUSTOMER':
           contextBlock = await enrichCustomerContext(supabase, contextId);
@@ -578,6 +578,7 @@ async function enrichGeralContext(
   empresa: string,
   isAdmin: boolean,
   userPermissions: Record<string, { view: boolean; edit: boolean }> | null,
+  userId?: string,
 ): Promise<string> {
   const parts: string[] = [];
   const hasPipeline = isAdmin || canView(userPermissions, 'pipeline');
@@ -591,7 +592,7 @@ async function enrichGeralContext(
     queries.push((async () => {
       const [pipelinesRes, slaRes] = await Promise.all([
         supabase.from('workbench_pipeline_summary').select('*').eq('pipeline_empresa', empresa).limit(5),
-        supabase.from('workbench_sla_alerts').select('deal_id').limit(50),
+        supabase.from('workbench_sla_alerts').select('*').eq('owner_id', userId || '').limit(20),
       ]);
       if (pipelinesRes.data && pipelinesRes.data.length > 0) {
         const totalAbertos = pipelinesRes.data.reduce((s: number, p: any) => s + (p.deals_abertos || 0), 0);
@@ -604,7 +605,100 @@ async function enrichGeralContext(
         parts.push(`**Pipelines**:\n${summary}`);
       }
       if (slaRes.data && slaRes.data.length > 0) {
-        parts.push(`**SLA Estourados**: ${slaRes.data.length} deals`);
+        const slaDetails = slaRes.data.map((s: any) =>
+          `- ${s.deal_titulo}: SLA ${s.sla_percentual}% ${s.sla_estourado ? '⚠️ ESTOURADO' : ''} (${s.stage_nome})`
+        ).join('\n');
+        parts.push(`**SLA Alerts (${slaRes.data.length})**:\n${slaDetails}`);
+      }
+    })());
+  }
+
+  // === DEALS DO VENDEDOR COM DETALHES ===
+  if (userId) {
+    queries.push((async () => {
+      const { data: deals } = await supabase
+        .from('deals')
+        .select('id, titulo, valor, status, temperatura, updated_at, stage_id')
+        .eq('owner_id', userId)
+        .eq('status', 'ABERTO')
+        .limit(30);
+
+      if (deals && deals.length > 0) {
+        const dealsSummary = deals.map((d: any) => {
+          const diasParado = Math.floor((Date.now() - new Date(d.updated_at).getTime()) / 86400000);
+          return `- ${d.titulo}: R$ ${d.valor || 0}, temp=${d.temperatura || '-'}, ${diasParado}d parado`;
+        }).join('\n');
+        parts.push(`**Meus Deals Abertos (${deals.length})**:\n${dealsSummary}`);
+      }
+    })());
+  }
+
+  // === ATIVIDADES RECENTES DO VENDEDOR ===
+  if (userId) {
+    queries.push((async () => {
+      const { data: activities } = await supabase
+        .from('deal_activities')
+        .select('tipo, descricao, created_at, deal_id')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (activities && activities.length > 0) {
+        const acts = activities.map((a: any) =>
+          `- [${a.tipo}] ${a.descricao || '-'} (${new Date(a.created_at).toLocaleDateString('pt-BR')})`
+        ).join('\n');
+        parts.push(`**Minhas Últimas Atividades**:\n${acts}`);
+      }
+    })());
+  }
+
+  // === CADÊNCIAS ATIVAS ===
+  queries.push((async () => {
+    const { data: cadences } = await supabase
+      .from('lead_cadence_runs')
+      .select('id, lead_id, status, next_run_at, cadence_id')
+      .eq('empresa', empresa)
+      .eq('status', 'ATIVA')
+      .limit(20);
+
+    if (cadences && cadences.length > 0) {
+      parts.push(`**Cadências Ativas**: ${cadences.length} leads em cadência`);
+    }
+  })());
+
+  // === CONVERSAS RECENTES (INBOUND) ===
+  queries.push((async () => {
+    const { data: msgs } = await supabase
+      .from('lead_messages')
+      .select('lead_id, direcao, conteudo, canal, created_at')
+      .eq('empresa', empresa)
+      .order('created_at', { ascending: false })
+      .limit(15);
+
+    if (msgs && msgs.length > 0) {
+      const formatted = msgs.map((m: any) => {
+        const dir = m.direcao === 'INBOUND' ? '← Lead' : '→ SDR';
+        return `[${dir}] ${m.conteudo?.substring(0, 100) || '-'} (${new Date(m.created_at).toLocaleString('pt-BR')})`;
+      }).join('\n');
+      parts.push(`**Conversas Recentes**:\n${formatted}`);
+    }
+  })());
+
+  // === TAREFAS PENDENTES ===
+  if (userId) {
+    queries.push((async () => {
+      const { data: tarefas } = await supabase
+        .from('workbench_tarefas')
+        .select('deal_id, descricao, tarefa_prazo, deal_titulo')
+        .eq('owner_id', userId)
+        .eq('tarefa_concluida', false)
+        .limit(15);
+
+      if (tarefas && tarefas.length > 0) {
+        const list = tarefas.map((t: any) =>
+          `- ${t.deal_titulo}: ${t.descricao || 'Sem desc'} (prazo: ${t.tarefa_prazo || 'sem prazo'})`
+        ).join('\n');
+        parts.push(`**Tarefas Pendentes (${tarefas.length})**:\n${list}`);
       }
     })());
   }
@@ -621,6 +715,24 @@ async function enrichGeralContext(
       }
     })());
   }
+
+  // === LEADS QUENTES ===
+  queries.push((async () => {
+    const { data: hotLeads } = await supabase
+      .from('lead_classifications')
+      .select('lead_id, temperatura, persona, score_interno')
+      .eq('empresa', empresa)
+      .in('temperatura', ['QUENTE', 'MORNO'])
+      .order('classificado_em', { ascending: false })
+      .limit(10);
+
+    if (hotLeads && hotLeads.length > 0) {
+      const list = hotLeads.map((l: any) =>
+        `- Lead ${l.lead_id?.substring(0, 8)}: ${l.temperatura}, persona=${l.persona || '-'}, score=${l.score_interno || '-'}`
+      ).join('\n');
+      parts.push(`**Leads Quentes/Mornos (${hotLeads.length})**:\n${list}`);
+    }
+  })());
 
   if (hasCS) {
     queries.push((async () => {
@@ -642,7 +754,7 @@ async function enrichGeralContext(
       const now = new Date();
       const { data: metasData } = await supabase
         .from('metas_vendedor')
-        .select('nome_vendedor, valor_meta, valor_realizado')
+        .select('nome_vendedor, valor_meta, valor_realizado, user_id')
         .eq('empresa', empresa)
         .eq('ano', now.getFullYear())
         .eq('mes', now.getMonth() + 1)
@@ -650,7 +762,8 @@ async function enrichGeralContext(
       if (metasData && metasData.length > 0) {
         const summary = metasData.map((m: any) => {
           const pct = m.valor_meta > 0 ? Math.round((m.valor_realizado / m.valor_meta) * 100) : 0;
-          return `- ${m.nome_vendedor || 'Vendedor'}: ${pct}% da meta`;
+          const isMe = m.user_id === userId ? ' (EU)' : '';
+          return `- ${m.nome_vendedor || 'Vendedor'}${isMe}: ${pct}% da meta (R$ ${m.valor_realizado} / R$ ${m.valor_meta})`;
         }).join('\n');
         parts.push(`**Metas do Mês**:\n${summary}`);
       }

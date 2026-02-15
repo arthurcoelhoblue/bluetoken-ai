@@ -98,3 +98,6 @@ verify_jwt = false
 
 [functions.capture-form-submit]
 verify_jwt = false
+
+[functions.copilot-proactive]
+verify_jwt = false
