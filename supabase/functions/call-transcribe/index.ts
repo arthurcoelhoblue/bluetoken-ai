@@ -161,20 +161,44 @@ Retorne APENAS o JSON, sem markdown.`;
 
     if (updateErr) console.error('Error updating call:', updateErr);
 
-    // 6. If deal linked, create deal_activity
+    // 6. If deal linked, create deal_activity automatically
     if (call.deal_id && analysis.summary) {
       await supabase.from('deal_activities').insert({
         deal_id: call.deal_id,
-        tipo: 'NOTA',
-        descricao: `📞 Resumo IA da chamada: ${analysis.summary}`,
+        tipo: 'LIGACAO',
+        descricao: `📞 Chamada ${call.direcao === 'INBOUND' ? 'recebida' : 'realizada'} (${Math.round(call.duracao_segundos / 60)}min) — ${analysis.summary}`,
         user_id: call.user_id,
         metadata: {
           call_id,
           sentiment: analysis.sentiment,
           action_items: analysis.action_items,
-          source: 'call-transcribe',
+          duration_seconds: call.duracao_segundos,
+          source: 'call-transcribe-auto',
         },
       });
+      console.log('[call-transcribe] Auto-created deal activity');
+    }
+
+    // 6b. If CS customer linked, also create activity
+    if (call.cs_customer_id && analysis.summary) {
+      // Create a notification for the CSM with the call summary
+      const { data: csCustomer } = await supabase
+        .from('cs_customers')
+        .select('csm_id, empresa')
+        .eq('id', call.cs_customer_id)
+        .maybeSingle();
+
+      if (csCustomer?.csm_id) {
+        await supabase.from('notifications').insert({
+          user_id: csCustomer.csm_id,
+          empresa: csCustomer.empresa,
+          titulo: `📞 Chamada transcrita automaticamente`,
+          mensagem: analysis.summary.substring(0, 200),
+          tipo: 'INFO',
+          referencia_tipo: 'CS_CUSTOMER',
+          referencia_id: call.cs_customer_id,
+        });
+      }
     }
 
     // 7. If sentiment NEGATIVE and cs_customer linked, create incident

@@ -56,7 +56,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag }: UseDealsOpti
       if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
       if (tag) query = query.contains('tags', [tag]);
 
-      query = query.order('posicao_kanban', { ascending: true }).limit(500);
+      query = query.order('posicao_kanban', { ascending: true });
 
       const { data, error } = await query;
       if (error) throw error;

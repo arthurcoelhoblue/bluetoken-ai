@@ -173,7 +173,7 @@ Deno.serve(async (req) => {
         value: { ...context, narrative, generated_at: now.toISOString() },
       }, { onConflict: 'key' });
 
-      // Notify ADMINs (via user_roles join + user_access_assignments for empresa)
+      // Notify ADMINs and send email
       const { data: adminRoles } = await supabase
         .from('user_roles')
         .select('user_id')
@@ -183,6 +183,12 @@ Deno.serve(async (req) => {
       const adminUserIds = (adminRoles ?? []).map((r: any) => r.user_id);
 
       if (adminUserIds.length > 0) {
+        // Get admin profiles for email
+        const { data: adminProfiles } = await supabase
+          .from('profiles')
+          .select('id, email, nome')
+          .in('id', adminUserIds);
+
         // Filter by empresa via user_access_assignments
         const { data: assignments } = await supabase
           .from('user_access_assignments')
@@ -191,11 +197,10 @@ Deno.serve(async (req) => {
           .in('user_id', adminUserIds);
 
         const filteredAdmins = (assignments ?? []).map((a: any) => a.user_id);
-
-        // If no empresa-filtered admins found, notify all admins as fallback
         const notifyList = filteredAdmins.length > 0 ? filteredAdmins : adminUserIds;
 
         for (const adminId of notifyList) {
+          // In-app notification
           await supabase.from('notifications').insert({
             user_id: adminId,
             empresa,
@@ -204,6 +209,39 @@ Deno.serve(async (req) => {
             mensagem: narrative.slice(0, 200) + '...',
             link: '/relatorios/executivo',
           });
+
+          // Send email to admin
+          const adminProfile = (adminProfiles ?? []).find((p: any) => p.id === adminId);
+          if (adminProfile?.email) {
+            try {
+              await supabase.functions.invoke('email-send', {
+                body: {
+                  to: adminProfile.email,
+                  subject: `📊 Relatório Semanal ${empresa} — ${now.toLocaleDateString('pt-BR')}`,
+                  html: `
+                    <div style="font-family:sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                      <h2 style="color:#1a1a2e;">📊 Relatório Semanal — ${empresa}</h2>
+                      <p style="color:#666;font-size:14px;">${context.periodo}</p>
+                      <hr style="border:none;border-top:1px solid #eee;margin:16px 0;" />
+                      <div style="display:flex;gap:20px;margin-bottom:16px;">
+                        <div style="text-align:center;"><strong style="font-size:24px;color:#22c55e;">${context.deals_ganhos}</strong><br/><span style="font-size:12px;color:#666;">Deals Ganhos</span></div>
+                        <div style="text-align:center;"><strong style="font-size:24px;color:#ef4444;">${context.deals_perdidos}</strong><br/><span style="font-size:12px;color:#666;">Deals Perdidos</span></div>
+                        <div style="text-align:center;"><strong style="font-size:24px;color:#3b82f6;">${context.pipeline_aberto}</strong><br/><span style="font-size:12px;color:#666;">Pipeline Aberto</span></div>
+                        <div style="text-align:center;"><strong style="font-size:24px;color:#f59e0b;">${context.cs_em_risco}</strong><br/><span style="font-size:12px;color:#666;">CS em Risco</span></div>
+                      </div>
+                      <div style="background:#f8f9fa;padding:16px;border-radius:8px;margin-top:16px;">
+                        <p style="font-size:14px;line-height:1.6;color:#333;">${narrative}</p>
+                      </div>
+                      <p style="margin-top:20px;font-size:12px;color:#999;">Gerado automaticamente pela Amélia · Amélia CRM</p>
+                    </div>
+                  `,
+                },
+              });
+              console.log(`[weekly-report] Email sent to ${adminProfile.email}`);
+            } catch (emailErr) {
+              console.warn(`[weekly-report] Email failed for ${adminProfile.email}:`, emailErr);
+            }
+          }
         }
       }
     }

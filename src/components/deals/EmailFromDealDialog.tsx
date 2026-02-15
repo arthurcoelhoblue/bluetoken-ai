@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
@@ -5,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Loader2, Send } from 'lucide-react';
+import { Loader2, Send, Sparkles } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { sendEmailSchema, type SendEmailFormData } from '@/schemas/email';
@@ -16,10 +17,12 @@ interface Props {
   dealId: string;
   contactEmail: string | null;
   contactNome: string | null;
+  dealTitulo?: string;
   onSent?: () => void;
 }
 
-export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, contactNome, onSent }: Props) {
+export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, contactNome, dealTitulo, onSent }: Props) {
+  const [isGenerating, setIsGenerating] = useState(false);
   const form = useForm<SendEmailFormData>({
     resolver: zodResolver(sendEmailSchema),
     defaultValues: { to: contactEmail || '', subject: '', body: '' },
@@ -30,6 +33,44 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
       form.reset({ to: contactEmail || '', subject: '', body: '' });
     }
     onOpenChange(isOpen);
+  };
+
+  const handleGenerateDraft = async () => {
+    setIsGenerating(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('copilot-chat', {
+        body: {
+          messages: [{ role: 'user', content: `Gere um rascunho de email profissional para ${contactNome || 'o contato'} sobre o deal "${dealTitulo || 'em andamento'}". O email deve ser cordial, objetivo e incluir um call-to-action claro. Retorne APENAS o JSON: {"subject": "...", "body": "..."}` }],
+          contextType: 'DEAL',
+          contextId: dealId,
+          empresa: 'BLUE',
+        },
+      });
+
+      if (error) throw error;
+
+      try {
+        const content = data?.content || '';
+        const jsonMatch = content.match(/\{[\s\S]*"subject"[\s\S]*"body"[\s\S]*\}/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          form.setValue('subject', parsed.subject || '');
+          form.setValue('body', parsed.body || '');
+          toast.success('Rascunho gerado pela Amélia');
+        } else {
+          form.setValue('body', content);
+          toast.success('Conteúdo gerado — ajuste o assunto');
+        }
+      } catch {
+        form.setValue('body', data?.content || '');
+        toast.success('Conteúdo gerado — ajuste o assunto');
+      }
+    } catch (e) {
+      toast.error('Não foi possível gerar o rascunho');
+      console.error(e);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   const handleSend = async (data: SendEmailFormData) => {
@@ -63,7 +104,20 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
     <Dialog open={open} onOpenChange={handleOpen}>
       <DialogContent onClick={e => e.stopPropagation()}>
         <DialogHeader>
-          <DialogTitle>Enviar Email</DialogTitle>
+          <DialogTitle className="flex items-center gap-2">
+            Enviar Email
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleGenerateDraft}
+              disabled={isGenerating}
+              className="ml-auto"
+            >
+              {isGenerating ? <Loader2 className="h-3 w-3 mr-1 animate-spin" /> : <Sparkles className="h-3 w-3 mr-1" />}
+              Amélia escreve
+            </Button>
+          </DialogTitle>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSend)} className="space-y-4">
@@ -84,7 +138,7 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
             <FormField control={form.control} name="body" render={({ field }) => (
               <FormItem>
                 <FormLabel>Mensagem</FormLabel>
-                <FormControl><Textarea {...field} placeholder="Escreva sua mensagem..." rows={6} /></FormControl>
+                <FormControl><Textarea {...field} placeholder="Escreva sua mensagem ou clique em 'Amélia escreve'..." rows={6} /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />

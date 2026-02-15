@@ -25,6 +25,7 @@ import {
 } from '@/hooks/useWorkbench';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { WorkbenchGamificationCard } from '@/components/gamification/WorkbenchGamificationCard';
+import { LeaderboardCard } from '@/components/gamification/LeaderboardCard';
 import { NextBestActionCard } from '@/components/workbench/NextBestActionCard';
 import { AmeliaInsightsCard } from '@/components/workbench/AmeliaInsightsCard';
 import { useGamificationNotifications } from '@/hooks/useGamificationNotifications';
@@ -145,9 +146,10 @@ function WorkbenchContent() {
           />
         </div>
 
-        {/* Gamificação Mini Card */}
-        <div>
+        {/* Gamificação + Leaderboard */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <WorkbenchGamificationCard />
+          <LeaderboardCard />
         </div>
 
         {/* Pendências do Gestor */}
