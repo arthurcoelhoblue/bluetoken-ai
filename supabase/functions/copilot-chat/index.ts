@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
 // PATCH 7 — Copilot Chat (Amélia IA)
-// Enriquece contexto com dados do CRM e chama Gemini (primário) / Claude (fallback)
+// Hierarquia: Claude (primário) → Gemini (fallback) → GPT-4o (fallback 2)
 // ========================================
 
 const corsHeaders = {
@@ -11,22 +11,39 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version',
 };
 
-const SYSTEM_PROMPT = `Você é a Amélia, consultora de vendas e sucesso do cliente IA do Amélia CRM (Grupo Blue).
-Você ajuda vendedores a fechar mais negócios e CSMs a reter clientes com insights do CRM.
+const SYSTEM_PROMPT = `Você é a Amélia, consultora estratégica de vendas e sucesso do cliente do Amélia CRM (Grupo Blue).
+Você é a mesma Amélia que atende leads no WhatsApp — sua voz, personalidade e inteligência são consistentes em todos os canais.
 
-Diretrizes:
+## Personalidade
+- Tom profissional mas acolhedor, direto ao ponto, sem ser robótica.
+- Usa linguagem natural brasileira (pode usar "olha", "veja", "bora" quando apropriado).
+- Nunca usa muletas robóticas como "Perfeito!", "Entendi!", "Ótima pergunta!".
+- Demonstra escuta ativa referenciando dados concretos do CRM.
+- Quando não sabe, diz claramente: "Não tenho essa informação no contexto atual."
+
+## Diretrizes Operacionais
 - Responda SEMPRE em português brasileiro, de forma direta e acionável.
 - Use os dados do CRM injetados no contexto para dar respostas personalizadas.
 - NÃO invente dados — use apenas o que foi fornecido no contexto.
-- Se não tiver dados suficientes, diga claramente o que falta.
-- Seja concisa: prefira bullets e respostas curtas.
-- Foque em ações práticas que o vendedor/CSM pode tomar agora.
+- Seja concisa: prefira bullets e respostas curtas (máx 3-4 parágrafos).
+- Foque em ações práticas que o vendedor/CSM pode tomar AGORA.
 - Quando sugerir mensagens, adapte ao perfil DISC e estágio do funil se disponíveis.
-- Para leads Tokeniza, foque em investimentos tokenizados e rentabilidade.
-- Para leads Blue, foque em IR/tributação cripto e compliance.
-- Para contexto de Customer Success, foque em retenção, saúde do cliente, ações proativas para reduzir churn e expandir receita.
+
+## Contexto de Negócio
+- Para leads/deals Tokeniza: foque em investimentos tokenizados, rentabilidade e oportunidades de alocação.
+- Para leads/deals Blue: foque em IR/tributação cripto, compliance e planejamento tributário.
+- Para Customer Success: foque em retenção, saúde do cliente, ações proativas para reduzir churn e identificar oportunidades de expansão (upsell/cross-sell).
+
+## Adaptação por Perfil DISC
+- D (Dominância): Seja objetiva, vá direto ao resultado e ROI.
+- I (Influência): Seja entusiasta, destaque benefícios sociais e cases de sucesso.
+- S (Estabilidade): Seja paciente, transmita segurança e previsibilidade.
+- C (Conformidade): Seja detalhista, apresente dados e evidências.
+
+## Restrições
 - IMPORTANTE: Responda APENAS com base nos dados fornecidos no contexto. Se um módulo não aparece nos dados, diga "Não tenho acesso a essas informações no seu perfil."
-- Mantenha o foco 100% profissional e no contexto de trabalho.`;
+- Mantenha o foco 100% profissional e no contexto de trabalho.
+- Nunca compartilhe dados de um cliente com outro.`;
 
 type ContextType = 'LEAD' | 'DEAL' | 'PIPELINE' | 'GERAL' | 'CUSTOMER';
 
@@ -201,41 +218,44 @@ serve(async (req) => {
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 
     let content = '';
-    let model = 'gemini-3-pro-preview';
+    let model = '';
     let tokensInput = 0;
     let tokensOutput = 0;
+    let provider = '';
 
-    // Try Gemini first (primary)
-    if (GOOGLE_API_KEY) {
-      try {
-        content = await callGemini(GOOGLE_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
-        if (content) {
-          console.log('[Copilot] Gemini OK');
-        }
-      } catch (geminiErr) {
-        console.warn('[Copilot] Gemini falhou, tentando Claude fallback:', geminiErr);
-      }
-    }
+    // === HIERARQUIA: Claude (primário) → Gemini (fallback) → GPT-4o (fallback 2) ===
 
-    // Fallback to Claude
-    if (!content && ANTHROPIC_API_KEY) {
+    // 1. Claude (primário)
+    if (ANTHROPIC_API_KEY) {
       try {
         const claudeResult = await callClaude(ANTHROPIC_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
         content = claudeResult.content;
         model = 'claude-sonnet-4-20250514';
+        provider = 'claude';
         tokensInput = claudeResult.tokensInput;
         tokensOutput = claudeResult.tokensOutput;
-        console.log('[Copilot] Claude fallback OK');
+        if (content) console.log('[Copilot] Claude OK');
       } catch (claudeErr) {
-        console.error('[Copilot] Claude fallback também falhou:', claudeErr);
+        console.warn('[Copilot] Claude falhou, tentando Gemini fallback:', claudeErr);
       }
     }
 
-    // Fallback 2: OpenAI GPT-4o via API direta
+    // 2. Gemini (fallback)
+    if (!content && GOOGLE_API_KEY) {
+      try {
+        content = await callGemini(GOOGLE_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
+        model = 'gemini-3-pro-preview';
+        provider = 'gemini';
+        if (content) console.log('[Copilot] Gemini fallback OK');
+      } catch (geminiErr) {
+        console.warn('[Copilot] Gemini fallback falhou, tentando GPT-4o:', geminiErr);
+      }
+    }
+
+    // 3. GPT-4o (fallback 2)
     if (!content) {
       const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
       if (OPENAI_API_KEY) {
-        console.log('[Copilot] Trying OpenAI GPT-4o fallback...');
         try {
           const openaiMessages = [
             { role: 'system', content: systemContent },
@@ -258,7 +278,10 @@ serve(async (req) => {
             const gptData = await gptResp.json();
             content = gptData.choices?.[0]?.message?.content ?? '';
             model = 'gpt-4o';
-            console.log('[Copilot] OpenAI GPT-4o fallback OK');
+            provider = 'openai';
+            tokensInput = gptData.usage?.prompt_tokens || 0;
+            tokensOutput = gptData.usage?.completion_tokens || 0;
+            console.log('[Copilot] GPT-4o fallback OK');
           } else {
             console.error('[Copilot] OpenAI error:', gptResp.status);
           }
@@ -273,6 +296,31 @@ serve(async (req) => {
     }
 
     const latencyMs = Date.now() - startTime;
+
+    // === LOG DE USO NA TABELA ai_usage_log ===
+    const COST_TABLE: Record<string, { input: number; output: number }> = {
+      'claude-sonnet-4-20250514': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+      'gemini-3-pro-preview': { input: 1.25 / 1_000_000, output: 10.0 / 1_000_000 },
+      'gpt-4o': { input: 2.5 / 1_000_000, output: 10.0 / 1_000_000 },
+    };
+    const costs = COST_TABLE[model] || { input: 0, output: 0 };
+    const custoEstimado = (tokensInput * costs.input) + (tokensOutput * costs.output);
+
+    try {
+      await supabase.from('ai_usage_log').insert({
+        function_name: 'copilot-chat',
+        provider: provider || 'unknown',
+        model: model || 'unknown',
+        tokens_input: tokensInput,
+        tokens_output: tokensOutput,
+        custo_estimado: Math.round(custoEstimado * 1_000_000) / 1_000_000,
+        latency_ms: latencyMs,
+        success: !!content,
+        empresa: empresa || null,
+      });
+    } catch (logErr) {
+      console.warn('[Copilot] Erro ao salvar ai_usage_log:', logErr);
+    }
 
     return new Response(
       JSON.stringify({ content, model, tokens_input: tokensInput, tokens_output: tokensOutput, latency_ms: latencyMs }),
