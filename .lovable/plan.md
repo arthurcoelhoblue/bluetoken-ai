@@ -1,91 +1,129 @@
 
-# Fix: Classificacao consistente para todos os leads
 
-## Problema identificado
+# Plano V5 Audit — Fechar os 3 itens pendentes
 
-O sistema tem uma lacuna critica: a classificacao de leads so acontece em dois momentos:
-1. Quando chega um evento via SGT webhook (dados de entrada do Mautic/Pipedrive)
-2. Quando o `sdr-intent-classifier` computa um `classification_upgrade` baseado em intents de conversa
+A auditoria V5 identifica 4 pendencias. O item bloqueante (CRON jobs) ja esta resolvido — existem 16 jobs ativos no banco. Restam 3 frentes para chegar ao 9.3+/10.
 
-O problema e que o passo 2 **computa** o upgrade mas **nunca persiste** no banco. O `sdr-intent-classifier` retorna `classification_upgrade: { prioridade: 1, icp: 'BLUE_ALTO_TICKET_IR', score_interno: 70 }`, o orchestrator passa esse dado para o `sdr-action-executor`, mas o executor **ignora** esse campo completamente.
+---
 
-### Impacto nos dados
+## Status Real vs Auditoria
 
-| Metrica | Valor |
-|---------|-------|
-| Total de classificacoes | 1.816 |
-| Leads QUENTES | 475 |
-| QUENTES com ICP "NAO_CLASSIFICADO" | 188 (40%) |
-| QUENTES com prioridade 3 (baixa) | 166 (35%) |
-| QUENTES com score abaixo de 50 | 60 (13%) |
-| Sem justificativa | 320 (18%) |
+| Item | Auditoria diz | Realidade | Acao |
+|------|--------------|-----------|------|
+| CRON Jobs (13+ funcoes) | BLOQUEANTE - zero jobs | 16 jobs ativos no pg_cron | Nenhuma - ja resolvido |
+| Rate limiting enforced | Tabela criada, nao enforced | Tabela vazia, 0 funcoes checam | Implementar |
+| Migrar 17 funcoes para callAI() | 5/22 usam shared | Confirmado 5/22 | Migrar as 17 restantes |
+| Testes SDR + ai-provider | 15 testes, 0 para SDR | Confirmado | Criar testes |
 
-### Exemplo concreto: Marcos Bertoldi (lead atual)
+---
 
-- Temperatura: QUENTE
-- ICP: BLUE_NAO_CLASSIFICADO
-- Prioridade: 3 (baixa)
-- Score: 20/100
-- Justificativa diz: "Dados insuficientes"
-- Porem: tem intent `INTERESSE_IR` com confianca 1.0 (deveria ser P1, ICP BLUE_ALTO_TICKET_IR)
+## Frente 1: Rate Limiting enforced na callAI() (Prioridade ALTA)
 
-## Solucao
+### Arquivo: `supabase/functions/_shared/ai-provider.ts`
 
-### Parte 1: Corrigir o `sdr-action-executor` (gap principal)
+Adicionar funcao `checkRateLimit()` que e chamada automaticamente no inicio de `callAI()`:
 
-Adicionar um passo entre o 4 e o 5 no handler principal que aplica o `classification_upgrade` retornado pelo classifier:
+1. Recebe `user_id` (novo campo opcional em `CallAIOptions`) e `functionName`
+2. Faz UPSERT na tabela `ai_rate_limits` incrementando `call_count`
+3. Se `call_count` exceder o limite (ex: 100 chamadas por hora por funcao), retorna erro antes de chamar qualquer provider
+4. Se `user_id` nao for fornecido (chamadas de CRON/sistema), skip rate limiting
 
-```text
-// Novo passo no sdr-action-executor:
-if (body.classification_upgrade && lead_id) {
-  const upgrade = body.classification_upgrade;
-  const updateFields = { updated_at: now };
-  if (upgrade.prioridade) updateFields.prioridade = upgrade.prioridade;
-  if (upgrade.icp) updateFields.icp = upgrade.icp;
-  if (upgrade.score_interno) updateFields.score_interno = upgrade.score_interno;
-  
-  // Nunca sobrescrever classificacoes MANUAL
-  await supabase.from('lead_classifications')
-    .update(updateFields)
-    .eq('lead_id', lead_id)
-    .eq('empresa', empresa)
-    .neq('origem', 'MANUAL');
-}
-```
+Limites sugeridos por funcao:
 
-Isso garante que **toda mensagem futura** com intent de alta confianca ira automaticamente promover a classificacao do lead.
+| Funcao | Limite/hora |
+|--------|------------|
+| copilot-chat | 60 |
+| sdr-intent-classifier | 200 |
+| sdr-response-generator | 200 |
+| deal-scoring | 100 |
+| Outras | 100 (default) |
 
-### Parte 2: Reclassificacao em batch dos leads existentes
+A interface `CallAIOptions` ganha o campo opcional `userId?: string`.
 
-Criar uma edge function `reclassify-leads` que:
-1. Busca todos os leads QUENTES com ICP NAO_CLASSIFICADO e/ou score < 50
-2. Para cada lead, verifica os intents historicos em `lead_message_intents`
-3. Se houver intent de alta confianca (INTERESSE_COMPRA, INTERESSE_IR, etc com confianca >= 0.8), aplica o upgrade
-4. Registra as mudancas com origem 'AUTOMATICA'
+### Resultado
+- Toda chamada via `callAI()` sera automaticamente protegida
+- Funcoes que ainda usam fetch direto nao serao protegidas (incentivo adicional para migrar)
+- Tabela `ai_rate_limits` passara a ter dados reais
 
-```text
-POST /reclassify-leads { dryRun?: boolean }
+---
 
-[1] SELECT leads com temperatura QUENTE + ICP NAO_CLASSIFICADO
-[2] Para cada lead:
-    - Buscar melhor intent (maior confianca)
-    - Se intent de alta confianca >= 0.8:
-      - Blue: ICP = BLUE_ALTO_TICKET_IR, Prioridade = 1, Score = 70+
-      - Tokeniza: ICP = TOKENIZA_EMERGENTE (ou SERIAL se dados suficientes)
-    - Se intent de media confianca >= 0.7:
-      - Prioridade max(atual, 2)
-      - Score += bonus
-[3] Retornar resumo de mudancas
-```
+## Frente 2: Migrar 17 funcoes para callAI() (Prioridade MEDIA)
 
-## Arquivos modificados
+As 17 funcoes que ainda usam fetch direto com fallback manual:
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/sdr-action-executor/index.ts` | Adicionar passo de `classification_upgrade` no handler principal (~15 linhas) |
-| `supabase/functions/reclassify-leads/index.ts` | **Novo**: Edge function para reclassificacao batch dos leads existentes |
+| Funcao | Complexidade |
+|--------|-------------|
+| deal-scoring | Baixa - prompt unico |
+| deal-context-summary | Baixa |
+| deal-loss-analysis | Baixa |
+| call-coach | Baixa |
+| call-transcribe | Baixa |
+| cs-health-calculator | Baixa |
+| cs-churn-predictor | Baixa |
+| cs-daily-briefing | Baixa |
+| cs-incident-detector | Baixa |
+| cs-nps-auto | Baixa |
+| cs-trending-topics | Baixa |
+| cs-playbook-runner | Baixa |
+| revenue-forecast | Baixa |
+| weekly-report | Baixa |
+| follow-up-scheduler | Baixa |
+| icp-learner | Baixa |
+| amelia-learn | Media - multiplas chamadas IA |
+| amelia-mass-action | Media - loop com chamadas IA |
+
+Para cada funcao, a migracao consiste em:
+1. Adicionar `import { callAI } from "../_shared/ai-provider.ts"`
+2. Remover funcoes locais de fallback (callClaude/callGemini/callGPT)
+3. Substituir bloco de chamada por uma unica `callAI({ system, prompt, functionName, empresa, supabase })`
+4. Remover `ai_usage_log.insert()` manual (ja automatico no callAI)
+
+Cada funcao leva ~5 minutos. Total estimado: ~2 horas.
+
+---
+
+## Frente 3: Testes para modulos SDR + ai-provider (Prioridade MEDIA)
+
+Criar testes unitarios usando Vitest para:
+
+### 3A. `_shared/ai-provider.ts` — Teste de logica interna
+- Arquivo: `supabase/functions/_shared/__tests__/ai-provider.test.ts`
+- Testar: COST_TABLE calcula custos corretamente
+- Testar: Rate limit rejeita quando excede limite
+- Testar: Fallback chain (Claude falha -> Gemini tenta)
+- Testar: Telemetria e logada mesmo em falha
+
+### 3B. SDR Modules — Testes de integracao leve
+- Arquivo: `supabase/functions/sdr-intent-classifier/sdr-intent-classifier.test.ts`
+- Testar: Parse de JSON response valido
+- Testar: Fallback para classificacao default em caso de IA falha
+- Testar: computeClassificationUpgrade retorna upgrade correto para intents de alta confianca
+
+- Arquivo: `supabase/functions/sdr-message-parser/sdr-message-parser.test.ts`
+- Testar: Deteccao de urgencia
+- Testar: Normalizacao de telefone
+
+- Arquivo: `supabase/functions/sdr-action-executor/sdr-action-executor.test.ts`
+- Testar: Classification upgrade e aplicado quando confianca >= 0.8
+- Testar: Opt-out cancela cadencias
+
+---
 
 ## Ordem de execucao
 
-1. Modificar `sdr-action-executor` para aplicar upgrades de classificacao (corrige o futuro)
-2. Criar e executar `reclassify-leads` (corrige o passado)
+1. **Frente 1**: Rate limiting no `_shared/ai-provider.ts` (~30 min)
+2. **Frente 2**: Migrar as 17 funcoes para `callAI()` (~2h, pode ser feito em 2-3 batches)
+3. **Frente 3**: Criar testes (~1h)
+
+## Arquivos modificados/criados
+
+| Arquivo | Acao |
+|---------|------|
+| `supabase/functions/_shared/ai-provider.ts` | Adicionar `checkRateLimit()` + campo `userId` |
+| 17 edge functions | Migrar para `callAI()` |
+| 3 arquivos de teste | Criar novos |
+
+## Score esperado apos implementacao
+
+Com CRON ja resolvido + rate limiting + migracao completa + testes: **9.5/10** (production-ready com margem).
+
