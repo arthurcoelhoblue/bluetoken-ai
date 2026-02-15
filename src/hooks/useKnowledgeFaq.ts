@@ -34,6 +34,26 @@ export function useKnowledgeFaqList(filters?: FaqFilters) {
   });
 }
 
+/** Check if a FAQ can be auto-approved by calling the edge function */
+export async function checkFaqAutoApproval(pergunta: string, resposta: string, empresa: string): Promise<{
+  auto_approve: boolean;
+  confianca: number;
+  justificativa: string;
+}> {
+  try {
+    const { data, error } = await supabase.functions.invoke('faq-auto-review', {
+      body: { pergunta, resposta, empresa },
+    });
+    if (error) {
+      console.error('Auto-review error:', error);
+      return { auto_approve: false, confianca: 0, justificativa: 'Erro na verificação' };
+    }
+    return data ?? { auto_approve: false, confianca: 0, justificativa: 'Sem resposta' };
+  } catch {
+    return { auto_approve: false, confianca: 0, justificativa: 'Falha na conexão' };
+  }
+}
+
 export function useCreateFaq() {
   const qc = useQueryClient();
   return useMutation({
@@ -43,21 +63,32 @@ export function useCreateFaq() {
       categoria?: string;
       tags?: string[];
       fonte?: string;
-      status: 'RASCUNHO' | 'PENDENTE';
+      status: 'RASCUNHO' | 'PENDENTE' | 'APROVADO';
+      visivel_amelia?: boolean;
       produto_id?: string | null;
       empresa: string;
     }) => {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('Não autenticado');
 
+      const row = {
+        pergunta: faq.pergunta,
+        resposta: faq.resposta,
+        categoria: faq.categoria,
+        tags: faq.tags ?? [],
+        fonte: faq.fonte ?? 'MANUAL',
+        status: faq.status,
+        empresa: faq.empresa,
+        criado_por: user.id,
+        produto_id: faq.produto_id ?? null,
+        visivel_amelia: faq.status === 'APROVADO',
+        aprovado_por: faq.status === 'APROVADO' ? user.id : null,
+        aprovado_em: faq.status === 'APROVADO' ? new Date().toISOString() : null,
+      };
+
       const { data, error } = await supabase
         .from('knowledge_faq')
-        .insert({
-          ...faq,
-          criado_por: user.id,
-          tags: faq.tags ?? [],
-          fonte: faq.fonte ?? 'MANUAL',
-        })
+        .insert(row)
         .select()
         .single();
 
@@ -150,7 +181,6 @@ export function useFaqPendencies() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return [];
 
-      // Get all pending FAQs
       const { data: faqs, error } = await supabase
         .from('knowledge_faq')
         .select('*, autor:criado_por(id, nome, gestor_id)')
@@ -160,7 +190,6 @@ export function useFaqPendencies() {
       if (error) throw error;
       if (!faqs || faqs.length === 0) return [];
 
-      // Get current user roles
       const { data: roles } = await supabase
         .from('user_roles')
         .select('role')
@@ -168,7 +197,6 @@ export function useFaqPendencies() {
 
       const isAdmin = roles?.some(r => r.role === 'ADMIN') ?? false;
 
-      // Filter: show to gestor of author, or to ADMINs if author has no gestor
       return (faqs as unknown as (KnowledgeFaq & { autor: { id: string; nome: string; gestor_id: string | null } | null })[]).filter(faq => {
         if (!faq.autor) return isAdmin;
         if (faq.autor.gestor_id === user.id) return true;

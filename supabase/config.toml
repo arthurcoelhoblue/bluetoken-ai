@@ -101,3 +101,6 @@ verify_jwt = false
 
 [functions.copilot-proactive]
 verify_jwt = false
+
+[functions.faq-auto-review]
+verify_jwt = false

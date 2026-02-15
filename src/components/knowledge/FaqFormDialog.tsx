@@ -8,12 +8,14 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Badge } from '@/components/ui/badge';
-import { X } from 'lucide-react';
+import { X, Loader2 } from 'lucide-react';
 import { FAQ_CATEGORIAS } from '@/types/knowledge';
-import { useCreateFaq } from '@/hooks/useKnowledgeFaq';
+import { useCreateFaq, checkFaqAutoApproval } from '@/hooks/useKnowledgeFaq';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { faqCreateSchema, type FaqCreateFormData } from '@/schemas/knowledge';
+import { supabase } from '@/integrations/supabase/client';
 
 interface FaqFormDialogProps {
   open: boolean;
@@ -22,8 +24,10 @@ interface FaqFormDialogProps {
 
 export function FaqFormDialog({ open, onOpenChange }: FaqFormDialogProps) {
   const [tagInput, setTagInput] = useState('');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const createFaq = useCreateFaq();
   const { activeCompany } = useCompany();
+  const { user } = useAuth();
 
   const form = useForm<FaqCreateFormData>({
     resolver: zodResolver(faqCreateSchema),
@@ -40,26 +44,105 @@ export function FaqFormDialog({ open, onOpenChange }: FaqFormDialogProps) {
     }
   };
 
-  const handleSubmit = (status: 'RASCUNHO' | 'PENDENTE') => {
-    form.handleSubmit((data) => {
+  const handleSubmit = async (mode: 'RASCUNHO' | 'PUBLICAR') => {
+    const valid = await form.trigger();
+    if (!valid) return;
+
+    const data = form.getValues();
+    const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+
+    if (mode === 'RASCUNHO') {
       createFaq.mutate({
         pergunta: data.pergunta.trim(),
         resposta: data.resposta.trim(),
         categoria: data.categoria,
         tags: data.tags,
-        status,
-        empresa: activeCompany === 'ALL' ? 'BLUE' : activeCompany,
+        status: 'RASCUNHO',
+        empresa,
       }, {
         onSuccess: () => {
-          toast.success(status === 'PENDENTE' ? 'Enviado para aprovação' : 'Rascunho salvo');
+          toast.success('Rascunho salvo');
           form.reset();
           setTagInput('');
           onOpenChange(false);
         },
         onError: () => toast.error('Erro ao salvar'),
       });
-    })();
+      return;
+    }
+
+    // Mode = PUBLICAR: check admin first, then AI
+    setIsAnalyzing(true);
+    try {
+      // Check if user is ADMIN
+      const userId = user?.id ?? '';
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+      const isAdmin = roles?.some(r => r.role === 'ADMIN') ?? false;
+
+      let finalStatus: 'APROVADO' | 'PENDENTE' = 'PENDENTE';
+      let toastMsg = 'Enviado para aprovação do gestor';
+
+      if (isAdmin) {
+        finalStatus = 'APROVADO';
+        toastMsg = 'FAQ aprovada automaticamente (admin)';
+      } else {
+        // Call AI auto-review
+        const review = await checkFaqAutoApproval(
+          data.pergunta.trim(),
+          data.resposta.trim(),
+          empresa
+        );
+
+        if (review.auto_approve) {
+          finalStatus = 'APROVADO';
+          toastMsg = `FAQ aprovada automaticamente — ${review.justificativa}`;
+        }
+      }
+
+      createFaq.mutate({
+        pergunta: data.pergunta.trim(),
+        resposta: data.resposta.trim(),
+        categoria: data.categoria,
+        tags: data.tags,
+        status: finalStatus,
+        visivel_amelia: finalStatus === 'APROVADO',
+        empresa,
+      }, {
+        onSuccess: () => {
+          toast.success(toastMsg);
+          form.reset();
+          setTagInput('');
+          onOpenChange(false);
+        },
+        onError: () => toast.error('Erro ao salvar'),
+      });
+    } catch {
+      // Fallback: send as PENDENTE
+      createFaq.mutate({
+        pergunta: data.pergunta.trim(),
+        resposta: data.resposta.trim(),
+        categoria: data.categoria,
+        tags: data.tags,
+        status: 'PENDENTE',
+        empresa,
+      }, {
+        onSuccess: () => {
+          toast.success('Enviado para aprovação do gestor');
+          form.reset();
+          setTagInput('');
+          onOpenChange(false);
+        },
+        onError: () => toast.error('Erro ao salvar'),
+      });
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
+
+  const isBusy = createFaq.isPending || isAnalyzing;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -114,11 +197,18 @@ export function FaqFormDialog({ open, onOpenChange }: FaqFormDialogProps) {
             </div>
           </div>
           <DialogFooter className="gap-2">
-            <Button variant="outline" onClick={() => handleSubmit('RASCUNHO')} disabled={createFaq.isPending}>
+            <Button variant="outline" onClick={() => handleSubmit('RASCUNHO')} disabled={isBusy}>
               Salvar Rascunho
             </Button>
-            <Button onClick={() => handleSubmit('PENDENTE')} disabled={createFaq.isPending}>
-              Publicar para Aprovação
+            <Button onClick={() => handleSubmit('PUBLICAR')} disabled={isBusy}>
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Analisando...
+                </>
+              ) : (
+                'Publicar para Aprovação'
+              )}
             </Button>
           </DialogFooter>
         </Form>
