@@ -21,6 +21,7 @@ interface PipelineFiltersProps {
   tag: string;
   onTagChange: (t: string) => void;
   availableTags: string[];
+  ownerDisabled?: boolean;
 }
 
 export function PipelineFilters({
@@ -36,6 +37,7 @@ export function PipelineFilters({
   tag,
   onTagChange,
   availableTags,
+  ownerDisabled,
 }: PipelineFiltersProps) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -67,7 +69,7 @@ export function PipelineFilters({
       </Select>
 
       {/* Owner filter */}
-      <Select value={ownerId} onValueChange={onOwnerChange}>
+      <Select value={ownerId} onValueChange={onOwnerChange} disabled={ownerDisabled}>
         <SelectTrigger className="w-48">
           <SelectValue placeholder="Vendedor" />
         </SelectTrigger>

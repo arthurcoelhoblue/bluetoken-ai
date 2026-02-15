@@ -5,6 +5,7 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useDeals, useKanbanData } from '@/hooks/useDeals';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
@@ -29,21 +30,45 @@ function useOwnerOptions() {
   });
 }
 
+function useCurrentUserIsVendedor() {
+  const { user } = useAuth();
+  return useQuery({
+    queryKey: ['current-user-is-vendedor', user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('is_vendedor')
+        .eq('id', user!.id)
+        .single();
+      return data?.is_vendedor ?? false;
+    },
+  });
+}
+
 function PipelineContent() {
   const { activeCompany } = useCompany();
+  const { user, roles } = useAuth();
+  const isAdmin = roles.includes('ADMIN');
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
   const { data: owners = [] } = useOwnerOptions();
   const { activeOffers } = useActiveTokenizaOffers();
+  const { data: isVendedor = false } = useCurrentUserIsVendedor();
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
+  // For vendedores, force owner filter to themselves
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const [selectedDealId, setSelectedDealId] = useState<string | null>(searchParams.get('deal'));
 
   const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
+
+  // Vendedores: force filter to self
+  const effectiveOwnerId = (isVendedor && !isAdmin && user?.id) ? user.id : ownerId;
+  const ownerFilterDisabled = isVendedor && !isAdmin;
 
   useEffect(() => {
     if (pipelines && pipelines.length > 0) {
@@ -64,7 +89,7 @@ function PipelineContent() {
 
   const { data: deals, isLoading: dealsLoading } = useDeals({
     pipelineId: selectedPipelineId,
-    ownerId: ownerId !== 'all' ? ownerId : undefined,
+    ownerId: effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
     temperatura: temperatura !== 'all' ? temperatura : undefined,
     tag: tag !== 'all' ? tag : undefined,
   });
@@ -93,13 +118,14 @@ function PipelineContent() {
             onPipelineChange={setSelectedPipelineId}
             temperatura={temperatura}
             onTemperaturaChange={setTemperatura}
-            ownerId={ownerId}
-            onOwnerChange={setOwnerId}
+            ownerId={effectiveOwnerId}
+            onOwnerChange={ownerFilterDisabled ? () => {} : setOwnerId}
             owners={owners}
             onNewDeal={() => setShowCreateDeal(true)}
             tag={tag}
             onTagChange={setTag}
             availableTags={availableTags}
+            ownerDisabled={ownerFilterDisabled}
           />
 
           <div className="flex-1 min-h-0 flex flex-col">

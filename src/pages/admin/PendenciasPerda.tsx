@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { AlertTriangle, Check, Bot, User, Shield, HelpCircle } from 'lucide-react';
+import { AlertTriangle, Check, Bot, User, Shield, HelpCircle, UserX } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,6 +13,9 @@ import { toast } from 'sonner';
 import { useLossPendencies, useResolveLoss, type LossPendency } from '@/hooks/useLossPendencies';
 import { useLossCategories } from '@/hooks/useDeals';
 import { useFaqPendencies, useResolveFaq } from '@/hooks/useKnowledgeFaq';
+import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/useOrphanDeals';
+import { useQuery } from '@tanstack/react-query';
+import { supabase } from '@/integrations/supabase/client';
 import type { KnowledgeFaq } from '@/types/knowledge';
 
 // --- Loss Pendency Card (existing) ---
@@ -173,13 +176,73 @@ function FaqPendencyCard({ faq }: { faq: KnowledgeFaq }) {
   );
 }
 
+// --- Orphan Deal Card ---
+function OrphanDealCard({ deal }: { deal: OrphanDeal }) {
+  const assignOwner = useAssignDealOwner();
+  const [selectedOwner, setSelectedOwner] = useState('');
+  const { data: vendedores = [] } = useQuery({
+    queryKey: ['vendedores-list'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('is_active', true)
+        .eq('is_vendedor', true)
+        .order('nome');
+      if (error) throw error;
+      return (data ?? []).map(p => ({ id: p.id, nome: p.nome || p.id }));
+    },
+  });
+
+  const handleAssign = () => {
+    if (!selectedOwner) { toast.error('Selecione um vendedor'); return; }
+    assignOwner.mutate({ dealId: deal.id, ownerId: selectedOwner });
+  };
+
+  return (
+    <Card className="border-orange-500/30">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="text-base">{deal.titulo}</CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {deal.contact_nome ?? 'Sem contato'} • {deal.pipeline_nome ?? '—'} • R$ {deal.valor.toLocaleString('pt-BR')}
+            </p>
+          </div>
+          <Badge variant="outline" className="bg-orange-500/10 text-orange-600 border-orange-500/30">
+            <UserX className="h-3 w-3 mr-1" />Sem Dono
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-center gap-2">
+          <Select value={selectedOwner} onValueChange={setSelectedOwner}>
+            <SelectTrigger className="w-52">
+              <SelectValue placeholder="Selecione vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              {vendedores.map(v => (
+                <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Button size="sm" onClick={handleAssign} disabled={assignOwner.isPending || !selectedOwner}>
+            Atribuir
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // --- Main Page ---
 export default function PendenciasPerda() {
   const { data: lossPendencies = [], isLoading: loadingLoss } = useLossPendencies();
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
+  const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
 
-  const isLoading = loadingLoss || loadingFaq;
-  const totalPendencies = lossPendencies.length + faqPendencies.length;
+  const isLoading = loadingLoss || loadingFaq || loadingOrphan;
+  const totalPendencies = lossPendencies.length + faqPendencies.length + orphanDeals.length;
 
   return (
     <AppLayout>
@@ -200,8 +263,25 @@ export default function PendenciasPerda() {
           </Card>
         ) : (
           <>
-            {faqPendencies.map(faq => <FaqPendencyCard key={faq.id} faq={faq} />)}
-            {lossPendencies.map(p => <PendencyCard key={p.id} pendency={p} />)}
+            {orphanDeals.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <UserX className="h-5 w-5 text-orange-500" />
+                  Deals sem Vendedor ({orphanDeals.length})
+                </h2>
+                {orphanDeals.map(d => <OrphanDealCard key={d.id} deal={d} />)}
+              </div>
+            )}
+            {faqPendencies.length > 0 && (
+              <div className="space-y-3">
+                {faqPendencies.map(faq => <FaqPendencyCard key={faq.id} faq={faq} />)}
+              </div>
+            )}
+            {lossPendencies.length > 0 && (
+              <div className="space-y-3">
+                {lossPendencies.map(p => <PendencyCard key={p.id} pendency={p} />)}
+              </div>
+            )}
           </>
         )}
       </div>

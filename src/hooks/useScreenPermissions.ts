@@ -26,12 +26,14 @@ export function useScreenPermissions() {
         }, {} as PermissionsMap);
       }
 
-      // Try access_profiles assignment
+      // Try access_profiles assignment (with override)
       const { data: assignment } = await supabase
         .from('user_access_assignments')
-        .select('access_profile_id')
+        .select('access_profile_id, permissions_override')
         .eq('user_id', user!.id)
         .maybeSingle();
+
+      const overrideMap = (assignment?.permissions_override as unknown as PermissionsMap) ?? null;
 
       if (assignment?.access_profile_id) {
         const { data: profile } = await supabase
@@ -42,12 +44,28 @@ export function useScreenPermissions() {
 
         if (profile?.permissions) {
           const perms = profile.permissions as unknown as PermissionsMap;
-          // Ensure all screens exist
+          // Merge: override > profile > deny
           return SCREEN_REGISTRY.reduce((acc, s) => {
-            acc[s.key] = perms[s.key] ?? { view: false, edit: false };
+            const profilePerm = perms[s.key] ?? { view: false, edit: false };
+            const overridePerm = overrideMap?.[s.key];
+            acc[s.key] = overridePerm
+              ? { view: overridePerm.view, edit: overridePerm.edit }
+              : profilePerm;
             return acc;
           }, {} as PermissionsMap);
         }
+      }
+
+      // If no profile but has override, use override over fallback
+      if (overrideMap) {
+        const fallback = buildPermissionsFromRoles(roles);
+        return SCREEN_REGISTRY.reduce((acc, s) => {
+          const overridePerm = overrideMap[s.key];
+          acc[s.key] = overridePerm
+            ? { view: overridePerm.view, edit: overridePerm.edit }
+            : (fallback[s.key] ?? { view: false, edit: false });
+          return acc;
+        }, {} as PermissionsMap);
       }
 
       // Fallback to legacy roles
