@@ -8,16 +8,16 @@ import { z } from "https://esm.sh/zod@3.25.76";
 // ========================================
 
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+import type { EmpresaTipo, Temperatura, TipoLead } from "../_shared/types.ts";
+import { isPlaceholderEmailForDedup, generatePhoneVariationsForSearch } from "../_shared/phone-utils.ts";
+import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 // ========================================
-// TIPOS
+// TIPOS (locais ao bluechat-inbound)
 // ========================================
-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 type ChannelType = 'WHATSAPP' | 'EMAIL' | 'SMS';
-type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
-type TipoLead = 'INVESTIDOR' | 'CAPTADOR';
 
 interface BlueChatPayload {
   conversation_id: string;       // ID da conversa no Blue Chat
@@ -186,22 +186,18 @@ interface BlueChatResponse {
 }
 
 // ========================================
-// UTILITÁRIOS
+// UTILITÁRIOS (locais)
 // ========================================
 
 /**
- * Normaliza número de telefone para formato E.164
+ * Normaliza número de telefone para formato E.164 (versão simples local)
  */
 function normalizePhone(raw: string): { normalized: string; e164: string } {
   let normalized = raw.replace(/\D/g, '');
-  
-  // Se tiver 11 dígitos (sem DDI), adiciona 55
   if (normalized.length === 11) {
     normalized = '55' + normalized;
   }
-  
   const e164 = normalized.startsWith('+') ? normalized : `+${normalized}`;
-  
   return { normalized, e164 };
 }
 
@@ -255,104 +251,29 @@ function extractFirstName(fullName: string | null | undefined): string | null {
   return parts[0] || null;
 }
 
+// ========================================
+// ROTEAMENTO + DEDUP — importados de _shared/
+// ========================================
+
 /**
- * Gera variações do telefone para busca
+ * Gera variações do telefone para busca no campo 'telefone' (sem prefixo +)
+ * Diferente de generatePhoneVariationsForSearch que busca em 'telefone_e164'
  */
 function generatePhoneVariations(phone: string): string[] {
   const variations: string[] = [phone];
-  
   const withoutDDI = phone.startsWith('55') ? phone.slice(2) : phone;
   const ddd = withoutDDI.slice(0, 2);
   const number = withoutDDI.slice(2);
-  
   if (number.length === 8) {
     variations.push(`55${ddd}9${number}`);
     variations.push(`${ddd}9${number}`);
   }
-  
   if (number.length === 9 && number.startsWith('9')) {
     variations.push(`55${ddd}${number.slice(1)}`);
     variations.push(`${ddd}${number.slice(1)}`);
   }
-  
   variations.push(withoutDDI);
-  
   return [...new Set(variations)];
-}
-
-// ========================================
-// ROTEAMENTO INTELIGENTE + DETECÇÃO DUPLICATAS
-// ========================================
-const PLACEHOLDER_EMAILS_DEDUP = ['sememail@', 'sem-email@', 'noemail@', 'sem@', 'nao-informado@', 'teste@teste', 'email@email', 'x@x', 'a@a', 'placeholder', '@exemplo.', '@example.', 'test@test', 'nao@tem'];
-
-function isPlaceholderEmailForDedup(email: string | null): boolean {
-  if (!email) return true;
-  return PLACEHOLDER_EMAILS_DEDUP.some(p => email.trim().toLowerCase().includes(p));
-}
-
-function generatePhoneVariationsForSearch(phone: string | null): string[] {
-  if (!phone) return [];
-  const digits = phone.replace(/\D/g, '');
-  if (digits.length < 8) return [];
-  const variations: string[] = [`+${digits}`];
-  const withoutDDI = digits.startsWith('55') ? digits.slice(2) : digits;
-  const ddd = withoutDDI.slice(0, 2);
-  const number = withoutDDI.slice(2);
-  variations.push(`+55${withoutDDI}`);
-  if (number.length === 8) variations.push(`+55${ddd}9${number}`);
-  if (number.length === 9 && number.startsWith('9')) variations.push(`+55${ddd}${number.slice(1)}`);
-  return [...new Set(variations.filter(v => v.length >= 10))];
-}
-
-function resolveTargetPipeline(
-  empresa: EmpresaTipo, tipoLead: TipoLead, temperatura: Temperatura, isPriority: boolean
-): { pipelineId: string; stageId: string } {
-  if (empresa === 'BLUE') {
-    const pipelineId = '21e577cc-32eb-4f1c-895e-b11bfc056e99';
-    const stageMap: Record<Temperatura, string> = { 'FRIO': '7e6ee75a-8efd-4cc4-8264-534bf77993c7', 'MORNO': 'bb39da09-d2cb-4111-a662-85c69e057077', 'QUENTE': 'e7cca7b0-941a-4522-9543-fc0d975b9dac' };
-    return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
-  }
-  if (tipoLead === 'CAPTADOR') {
-    const pipelineId = 'a74d511a-f8b4-4d14-9f5c-0c13da61cb15';
-    const stageMap: Record<Temperatura, string> = { 'FRIO': 'f45b020e-1247-42a1-89e7-bd0caf614a7e', 'MORNO': 'ece6bc09-c924-4b30-b064-e792f8e44c72', 'QUENTE': '34aa1201-d14d-46d9-8ce6-108ac811e79f' };
-    return { pipelineId, stageId: stageMap[temperatura] || stageMap['FRIO'] };
-  }
-  const pipelineId = '5bbac98b-5ae9-4b31-9b7f-896d7b732a2c';
-  const stageMap: Record<Temperatura, string> = { 'FRIO': 'da80e912-b462-401d-b367-1b6a9b2ec4da', 'MORNO': '90b33102-0472-459e-8eef-a455b0d37acf', 'QUENTE': 'c48dc6c2-c5dc-47c1-9f27-c058b01898c3' };
-  return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
-}
-
-async function findExistingDealForPerson(
-  supabase: SupabaseClient, empresa: EmpresaTipo,
-  dados: { telefone_e164?: string | null; telefone?: string | null; email?: string | null; cpf?: string | null }
-): Promise<{ contactId: string; dealId: string } | null> {
-  const extractDeal = (row: Record<string, unknown>): { contactId: string; dealId: string } | null => {
-    const deals = row.deals as unknown;
-    const dealId = Array.isArray(deals) ? (deals[0] as Record<string, string>)?.id : (deals as Record<string, string>)?.id;
-    return dealId ? { contactId: row.id as string, dealId } : null;
-  };
-  if (dados.cpf) {
-    const cleaned = dados.cpf.replace(/\D/g, '');
-    if (cleaned.length >= 11) {
-      const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('cpf', cleaned).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-      if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match CPF:', m); return m; } }
-    }
-  }
-  if (dados.telefone_e164) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('telefone_e164', dados.telefone_e164).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match tel_e164:', m); return m; } }
-  }
-  const phoneVars = generatePhoneVariationsForSearch(dados.telefone || dados.telefone_e164);
-  if (phoneVars.length > 0) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).in('telefone_e164', phoneVars).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match var_tel:', m); return m; } }
-  }
-  if (dados.email && !isPlaceholderEmailForDedup(dados.email)) {
-    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('email', dados.email.trim().toLowerCase()).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
-    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match email:', m); return m; } }
-  }
-  console.log('[Dedup] Nenhuma duplicata');
-  return null;
 }
 
 /**
