@@ -82,6 +82,73 @@ interface FrameworkData {
 // Todo o código lê em minúsculas, então normalizamos aqui
 // ========================================
 
+// ========================================
+// CLASSIFICATION UPGRADE LOGIC
+// Pure function: computes priority/ICP/score upgrades based on intent signals
+// ========================================
+
+const HIGH_CONFIDENCE_INTENTS: LeadIntentTipo[] = [
+  'INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'
+];
+const MEDIUM_CONFIDENCE_INTENTS: LeadIntentTipo[] = [
+  'DUVIDA_PRECO', 'DUVIDA_PRODUTO'
+];
+
+interface ClassificationUpgradeInput {
+  novaTemperatura: TemperaturaTipo;
+  intent: LeadIntentTipo;
+  confianca: number;
+  icpAtual: ICPTipo;
+  prioridadeAtual: number;
+  empresa: EmpresaTipo;
+  origem?: string;
+}
+
+interface ClassificationUpgradeResult {
+  prioridade?: number;
+  icp?: ICPTipo;
+  score_interno?: number;
+}
+
+function computeClassificationUpgrade(input: ClassificationUpgradeInput): ClassificationUpgradeResult {
+  const { novaTemperatura, intent, confianca, icpAtual, prioridadeAtual, empresa, origem } = input;
+  const result: ClassificationUpgradeResult = {};
+
+  // Never overwrite manual classifications
+  if (origem === 'MANUAL') return result;
+
+  const isHighIntent = HIGH_CONFIDENCE_INTENTS.includes(intent) && confianca >= 0.8;
+  const isMediumIntent = MEDIUM_CONFIDENCE_INTENTS.includes(intent) && confianca >= 0.7;
+
+  // --- Priority upgrade ---
+  if (novaTemperatura === 'QUENTE' && isHighIntent) {
+    result.prioridade = 1;
+  } else if (novaTemperatura === 'MORNO' && (isHighIntent || isMediumIntent)) {
+    if (prioridadeAtual > 2) result.prioridade = 2;
+  }
+  // FRIO: never degrade priority automatically
+
+  // --- ICP behavioral promotion ---
+  const isNaoClassificado = icpAtual?.endsWith('_NAO_CLASSIFICADO');
+  if (isNaoClassificado && isHighIntent && (novaTemperatura === 'QUENTE' || novaTemperatura === 'MORNO')) {
+    if (empresa === 'BLUE') {
+      result.icp = 'BLUE_ALTO_TICKET_IR';
+    } else {
+      result.icp = 'TOKENIZA_EMERGENTE';
+    }
+  }
+
+  // --- Score recalculation ---
+  if (result.prioridade || result.icp) {
+    const baseTemp = novaTemperatura === 'QUENTE' ? 30 : novaTemperatura === 'MORNO' ? 15 : 5;
+    const bonusIntent = isHighIntent ? 30 : isMediumIntent ? 15 : 0;
+    const bonusIcp = result.icp ? 10 : 0;
+    result.score_interno = baseTemp + bonusIntent + bonusIcp;
+  }
+
+  return result;
+}
+
 function normalizeSubKeys(obj: any): Record<string, string | null> {
   if (!obj || typeof obj !== 'object') return {};
   const result: Record<string, string | null> = {};
@@ -2855,6 +2922,8 @@ O AGENTE SEMPRE DEVE:
       parsed.acao_detalhes = { 
         ...parsed.acao_detalhes, 
         nova_temperatura: novaTemp,
+        intent: parsed.intent,
+        confianca: parsed.confidence || 0,
         motivo: `Ajuste automático baseado em intent ${parsed.intent}`
       };
       console.log('[IA] Temperatura ajustada automaticamente:', { 
@@ -3352,33 +3421,62 @@ async function applyAction(
             // Verificar se já existe classificação para este lead
             const { data: existingClassification } = await supabase
               .from('lead_classifications')
-              .select('id')
+              .select('id, icp, prioridade, score_interno, origem')
               .eq('lead_id', leadId)
               .eq('empresa', empresaLead)
               .maybeSingle();
             
+            // Compute classification upgrade based on intent signals
+            const intentForUpgrade = (detalhes?.intent || parsed_intent) as LeadIntentTipo;
+            const confiancaForUpgrade = detalhes?.confidence ?? detalhes?.confianca ?? 0;
+            const currentIcp = (existingClassification?.icp || defaultIcp) as ICPTipo;
+            const currentPrioridade = existingClassification?.prioridade ?? 3;
+            const currentOrigem = existingClassification?.origem || 'AUTOMATICA';
+
+            const upgrade = computeClassificationUpgrade({
+              novaTemperatura: novaTemp,
+              intent: intentForUpgrade,
+              confianca: confiancaForUpgrade,
+              icpAtual: currentIcp,
+              prioridadeAtual: currentPrioridade,
+              empresa: empresaLead as EmpresaTipo,
+              origem: currentOrigem,
+            });
+
             let upsertError;
             
             if (existingClassification) {
-              // UPDATE: Apenas atualizar temperatura se já existe
+              // UPDATE: temperatura + any upgrades from intent signals
+              const updatePayload: Record<string, any> = { 
+                temperatura: novaTemp,
+                updated_at: new Date().toISOString()
+              };
+              if (upgrade.prioridade !== undefined) updatePayload.prioridade = upgrade.prioridade;
+              if (upgrade.icp !== undefined) updatePayload.icp = upgrade.icp;
+              if (upgrade.score_interno !== undefined) updatePayload.score_interno = upgrade.score_interno;
+
               const { error } = await supabase
                 .from('lead_classifications')
-                .update({ 
-                  temperatura: novaTemp,
-                  updated_at: new Date().toISOString()
-                })
+                .update(updatePayload)
                 .eq('id', existingClassification.id);
               upsertError = error;
+
+              if (upgrade.prioridade || upgrade.icp) {
+                console.log('[Ação] Classification upgrade aplicado:', {
+                  leadId, upgrade, intent: intentForUpgrade, confianca: confiancaForUpgrade
+                });
+              }
             } else {
-              // INSERT: Criar nova classificação com valores padrão
+              // INSERT: Criar nova classificação com valores padrão + upgrades
               const { error } = await supabase
                 .from('lead_classifications')
                 .insert({
                   lead_id: leadId,
                   empresa: empresaLead,
                   temperatura: novaTemp,
-                  icp: defaultIcp,
-                  prioridade: 3,
+                  icp: upgrade.icp || defaultIcp,
+                  prioridade: upgrade.prioridade || 3,
+                  score_interno: upgrade.score_interno || null,
                   origem: 'AUTOMATICA',
                 });
               upsertError = error;
@@ -3386,7 +3484,8 @@ async function applyAction(
                 leadId, 
                 empresa: empresaLead, 
                 temperatura: novaTemp,
-                icp: defaultIcp
+                icp: upgrade.icp || defaultIcp,
+                prioridade: upgrade.prioridade || 3,
               });
             }
             
