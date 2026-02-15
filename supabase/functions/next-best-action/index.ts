@@ -138,34 +138,32 @@ Sem markdown, sem explicação, apenas o JSON.`;
       const errText = await aiResponse.text();
       console.error('[NBA] Anthropic error:', aiResponse.status, errText);
 
-      // Fallback 1: Try Gemini via Lovable AI Gateway
-      const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-      if (LOVABLE_API_KEY) {
-        console.log('[NBA] Trying Gemini fallback...');
+      // Fallback 1: Try Gemini Direct API
+      const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+      if (GOOGLE_API_KEY) {
+        console.log('[NBA] Trying Gemini 3 Pro direct fallback...');
         try {
-          const geminiRes = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${LOVABLE_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'google/gemini-3-pro-preview',
-              messages: [
-                { role: 'system', content: systemPrompt },
-                { role: 'user', content: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.` },
-              ],
-            }),
-          });
+          const prompt = `${systemPrompt}\n\nContexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.`;
+          const geminiRes = await fetch(
+            `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+              }),
+            }
+          );
           if (geminiRes.ok) {
             const geminiData = await geminiRes.json();
-            aiContent = geminiData.choices?.[0]?.message?.content ?? '';
-            console.log('[NBA] Gemini fallback succeeded');
+            aiContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+            console.log('[NBA] Gemini direct fallback succeeded');
           } else {
-            console.error('[NBA] Gemini fallback error:', geminiRes.status);
+            console.error('[NBA] Gemini direct fallback error:', geminiRes.status);
           }
         } catch (geminiErr) {
-          console.error('[NBA] Gemini fallback exception:', geminiErr);
+          console.error('[NBA] Gemini direct fallback exception:', geminiErr);
         }
       }
     }
