@@ -25,19 +25,19 @@ Deno.serve(async (req) => {
     const weekAgoISO = weekAgo.toISOString();
 
     for (const empresa of empresas) {
-      // 1. Deals closed this week
+      // 1. Deals closed this week (join contacts for empresa filter)
       const { data: dealsGanhos } = await supabase
         .from('deals')
-        .select('id, titulo, valor, status')
-        .eq('empresa', empresa)
+        .select('id, titulo, valor, status, contacts!inner(empresa)')
+        .eq('contacts.empresa', empresa)
         .eq('status', 'GANHO')
         .gte('updated_at', weekAgoISO)
         .limit(50);
 
       const { data: dealsPerdidos } = await supabase
         .from('deals')
-        .select('id, titulo, valor, status, motivo_perda')
-        .eq('empresa', empresa)
+        .select('id, titulo, valor, status, motivo_perda, contacts!inner(empresa)')
+        .eq('contacts.empresa', empresa)
         .eq('status', 'PERDIDO')
         .gte('updated_at', weekAgoISO)
         .limit(50);
@@ -45,8 +45,8 @@ Deno.serve(async (req) => {
       // 2. Pipeline open
       const { data: dealsAbertos } = await supabase
         .from('deals')
-        .select('id, valor')
-        .eq('empresa', empresa)
+        .select('id, valor, contacts!inner(empresa)')
+        .eq('contacts.empresa', empresa)
         .eq('status', 'ABERTO');
 
       // 3. CS risks
@@ -139,11 +139,10 @@ Deno.serve(async (req) => {
         }
       }
 
-      // Fallback 2: OpenAI GPT-4o via API direta
+      // Fallback 2: OpenAI GPT-4o
       if (!narrative) {
         const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
         if (OPENAI_API_KEY) {
-          console.log(`[weekly-report] Trying OpenAI GPT-4o fallback for ${empresa}...`);
           try {
             const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
               method: 'POST',
@@ -153,7 +152,6 @@ Deno.serve(async (req) => {
             if (gptResp.ok) {
               const gptData = await gptResp.json();
               narrative = gptData.choices?.[0]?.message?.content ?? '';
-              console.log('[weekly-report] OpenAI GPT-4o fallback succeeded');
             }
           } catch (gptErr) {
             console.error('[weekly-report] OpenAI exception:', gptErr);
@@ -175,23 +173,38 @@ Deno.serve(async (req) => {
         value: { ...context, narrative, generated_at: now.toISOString() },
       }, { onConflict: 'key' });
 
-      // Notify ADMINs
-      const { data: admins } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('empresa', empresa)
+      // Notify ADMINs (via user_roles join + user_access_assignments for empresa)
+      const { data: adminRoles } = await supabase
+        .from('user_roles')
+        .select('user_id')
         .eq('role', 'ADMIN')
         .limit(20);
 
-      for (const admin of (admins ?? [])) {
-        await supabase.from('notifications').insert({
-          user_id: admin.id,
-          empresa,
-          tipo: 'INFO',
-          titulo: `📊 Relatório Semanal — ${empresa}`,
-          mensagem: narrative.slice(0, 200) + '...',
-          link: '/relatorios/executivo',
-        });
+      const adminUserIds = (adminRoles ?? []).map((r: any) => r.user_id);
+
+      if (adminUserIds.length > 0) {
+        // Filter by empresa via user_access_assignments
+        const { data: assignments } = await supabase
+          .from('user_access_assignments')
+          .select('user_id')
+          .eq('empresa', empresa)
+          .in('user_id', adminUserIds);
+
+        const filteredAdmins = (assignments ?? []).map((a: any) => a.user_id);
+
+        // If no empresa-filtered admins found, notify all admins as fallback
+        const notifyList = filteredAdmins.length > 0 ? filteredAdmins : adminUserIds;
+
+        for (const adminId of notifyList) {
+          await supabase.from('notifications').insert({
+            user_id: adminId,
+            empresa,
+            tipo: 'INFO',
+            titulo: `📊 Relatório Semanal — ${empresa}`,
+            mensagem: narrative.slice(0, 200) + '...',
+            link: '/relatorios/executivo',
+          });
+        }
       }
     }
 

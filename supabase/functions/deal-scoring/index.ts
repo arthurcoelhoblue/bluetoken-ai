@@ -280,14 +280,22 @@ serve(async (req) => {
         // Check for significant drop
         const oldScore = deal.score_probabilidade;
         if (oldScore && oldScore - finalScore > 20 && deal.owner_id) {
+          // Get empresa from pipeline (deals don't have empresa column)
+          let dealEmpresa = 'BLUE';
+          try {
+            const { data: pip } = await supabase.from('pipelines').select('empresa').eq('id', deal.pipeline_id).single();
+            if (pip?.empresa) dealEmpresa = pip.empresa;
+          } catch { /* fallback to BLUE */ }
+
           await supabase.from('notifications').insert({
             user_id: deal.owner_id,
-            empresa: 'BLUE',
+            empresa: dealEmpresa,
             tipo: 'DEAL_SCORE_DROP',
             titulo: `⚠️ Score caiu: ${deal.titulo}`,
             mensagem: `Probabilidade caiu de ${oldScore}% para ${finalScore}%. ${proximaAcao || 'Revise o deal.'}`,
-            referencia_id: deal.id,
-            referencia_tipo: 'deal',
+            entity_id: deal.id,
+            entity_type: 'deal',
+            metadata: { old_score: oldScore, new_score: finalScore },
           }).then(() => {}).catch(() => {});
         }
 

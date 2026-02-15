@@ -1,5 +1,5 @@
 
-# Auditoria Completa do Sistema Amelia CRM
+# Auditoria Completa do Sistema Amelia CRM (CORRIGIDO)
 
 ## Resumo Executivo
 
