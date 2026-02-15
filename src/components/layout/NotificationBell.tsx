@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useNotifications } from '@/hooks/useNotifications';
 
 const TIPO_LABELS: Record<string, string> = {
@@ -15,6 +17,12 @@ const TIPO_LABELS: Record<string, string> = {
   AMELIA_ALERTA: '🚨 Alerta Amélia',
   AMELIA_CORRECAO: '📝 Correção Amélia',
   AMELIA_SEQUENCIA: '⛓️ Sequência Risco',
+};
+
+const FILTER_GROUPS: Record<string, string[]> = {
+  ALERTAS: ['SLA_ESTOURADO', 'AMELIA_ALERTA', 'AMELIA_SEQUENCIA'],
+  INSIGHTS: ['AMELIA_INSIGHT', 'AMELIA_CORRECAO', 'LEAD_QUENTE'],
+  DEALS: ['DEAL_PARADO', 'DEAL_AUTO_CRIADO'],
 };
 
 function timeAgo(dateStr: string): string {
@@ -30,6 +38,12 @@ function timeAgo(dateStr: string): string {
 export function NotificationBell() {
   const { data: notifications, unreadCount, markAsRead, markAllAsRead } = useNotifications();
   const navigate = useNavigate();
+  const [filter, setFilter] = useState('ALL');
+
+  const filteredNotifications = notifications?.filter(n => {
+    if (filter === 'ALL') return true;
+    return FILTER_GROUPS[filter]?.includes(n.tipo) ?? true;
+  });
 
   const handleClick = (notif: { id: string; link: string | null; lida: boolean }) => {
     if (!notif.lida) markAsRead.mutate(notif.id);
@@ -62,10 +76,18 @@ export function NotificationBell() {
             </Button>
           )}
         </div>
-        <ScrollArea className="max-h-80">
-          {notifications && notifications.length > 0 ? (
+        <div className="px-3 py-2 border-b">
+          <ToggleGroup type="single" value={filter} onValueChange={(v) => v && setFilter(v)} className="justify-start gap-1">
+            <ToggleGroupItem value="ALL" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">Todas</ToggleGroupItem>
+            <ToggleGroupItem value="ALERTAS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-destructive data-[state=on]:text-destructive-foreground">🚨 Alertas</ToggleGroupItem>
+            <ToggleGroupItem value="INSIGHTS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">💡 Insights</ToggleGroupItem>
+            <ToggleGroupItem value="DEALS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground">📊 Deals</ToggleGroupItem>
+          </ToggleGroup>
+        </div>
+        <ScrollArea className="h-80">
+          {filteredNotifications && filteredNotifications.length > 0 ? (
             <div className="divide-y">
-              {notifications.map(n => (
+              {filteredNotifications.map(n => (
                 <button
                   key={n.id}
                   onClick={() => handleClick(n)}

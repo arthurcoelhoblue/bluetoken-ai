@@ -60,6 +60,41 @@ export function useCSCustomerById(id: string | undefined) {
   });
 }
 
+interface CreateCSCustomerData {
+  contact_id: string;
+  empresa: 'BLUE' | 'TOKENIZA';
+  valor_mrr?: number;
+  proxima_renovacao?: string | null;
+  notas?: string | null;
+  csm_id?: string | null;
+}
+
+export function useCreateCSCustomer() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: CreateCSCustomerData) => {
+      const { data: row, error } = await supabase
+        .from('cs_customers')
+        .insert({
+          contact_id: data.contact_id,
+          empresa: data.empresa,
+          valor_mrr: data.valor_mrr ?? 0,
+          proxima_renovacao: data.proxima_renovacao ?? null,
+          notas: data.notas ?? null,
+          csm_id: data.csm_id ?? null,
+        } as any)
+        .select()
+        .single();
+      if (error) throw error;
+      return row;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cs-customers'] });
+      qc.invalidateQueries({ queryKey: ['cs-metrics'] });
+    },
+  });
+}
+
 export function useUpdateCSCustomer() {
   const qc = useQueryClient();
   return useMutation({
