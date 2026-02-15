@@ -1,71 +1,91 @@
 
+# Fix: Classificacao consistente para todos os leads
 
-# Copilot contextual na TopBar -- detectar rota automaticamente
+## Problema identificado
 
-## Problema
+O sistema tem uma lacuna critica: a classificacao de leads so acontece em dois momentos:
+1. Quando chega um evento via SGT webhook (dados de entrada do Mautic/Pipedrive)
+2. Quando o `sdr-intent-classifier` computa um `classification_upgrade` baseado em intents de conversa
 
-O CopilotPanel na TopBar sempre usa `type: 'GERAL'` sem `contextId`. Quando o usuario esta na pagina de um lead (`/leads/:id/:empresa`), deal, ou cliente CS, o Copilot nao tem acesso aos dados especificos daquela entidade.
+O problema e que o passo 2 **computa** o upgrade mas **nunca persiste** no banco. O `sdr-intent-classifier` retorna `classification_upgrade: { prioridade: 1, icp: 'BLUE_ALTO_TICKET_IR', score_interno: 70 }`, o orchestrator passa esse dado para o `sdr-action-executor`, mas o executor **ignora** esse campo completamente.
+
+### Impacto nos dados
+
+| Metrica | Valor |
+|---------|-------|
+| Total de classificacoes | 1.816 |
+| Leads QUENTES | 475 |
+| QUENTES com ICP "NAO_CLASSIFICADO" | 188 (40%) |
+| QUENTES com prioridade 3 (baixa) | 166 (35%) |
+| QUENTES com score abaixo de 50 | 60 (13%) |
+| Sem justificativa | 320 (18%) |
+
+### Exemplo concreto: Marcos Bertoldi (lead atual)
+
+- Temperatura: QUENTE
+- ICP: BLUE_NAO_CLASSIFICADO
+- Prioridade: 3 (baixa)
+- Score: 20/100
+- Justificativa diz: "Dados insuficientes"
+- Porem: tem intent `INTERESSE_IR` com confianca 1.0 (deveria ser P1, ICP BLUE_ALTO_TICKET_IR)
 
 ## Solucao
 
-Modificar a TopBar para extrair automaticamente o contexto da rota atual usando `useLocation` + `useParams` (ou parsing manual do pathname). O backend ja tem todas as funcoes de enriquecimento prontas (`enrichLeadContext`, `enrichDealContext`, `enrichCustomerContext`, `enrichPipelineContext`) -- so precisa receber o `contextType` e `contextId` corretos.
+### Parte 1: Corrigir o `sdr-action-executor` (gap principal)
 
-## Mudanca
-
-### Arquivo: `src/components/layout/TopBar.tsx`
-
-Adicionar uma funcao `getContextFromRoute(pathname)` que retorna `{ type, id?, leadNome?, estadoFunil? }` baseado na rota:
-
-| Rota | Contexto |
-|------|----------|
-| `/leads/:leadId/:empresa` | `type: 'LEAD', id: leadId` |
-| `/pipeline` | `type: 'PIPELINE'` |
-| `/cs/clientes/:id` | `type: 'CUSTOMER', id: customerId` |
-| `/conversas` | `type: 'GERAL'` (conversas nao tem ID unico) |
-| Qualquer outra rota | `type: 'GERAL'` |
-
-A funcao faz parsing simples do pathname (split por `/`) para extrair IDs sem precisar de `useParams` (que so funciona dentro da rota especifica).
-
-O CopilotPanel na TopBar passara a receber o contexto dinamico em vez do fixo `GERAL`.
-
-## Detalhamento tecnico
-
-1. Criar funcao `getCopilotContext(pathname: string, empresa: string)`:
+Adicionar um passo entre o 4 e o 5 no handler principal que aplica o `classification_upgrade` retornado pelo classifier:
 
 ```text
-function getCopilotContext(pathname, empresa) {
-  // /leads/:leadId/:empresa
-  const leadMatch = pathname.match(/^\/leads\/([^/]+)\/([^/]+)$/);
-  if (leadMatch) return { type: 'LEAD', id: leadMatch[1], empresa: leadMatch[2] };
-
-  // /cs/clientes/:customerId
-  const csMatch = pathname.match(/^\/cs\/clientes\/([^/]+)$/);
-  if (csMatch) return { type: 'CUSTOMER', id: csMatch[1], empresa };
-
-  // /pipeline
-  if (pathname === '/pipeline') return { type: 'PIPELINE', empresa };
-
-  // fallback
-  return { type: 'GERAL', empresa };
+// Novo passo no sdr-action-executor:
+if (body.classification_upgrade && lead_id) {
+  const upgrade = body.classification_upgrade;
+  const updateFields = { updated_at: now };
+  if (upgrade.prioridade) updateFields.prioridade = upgrade.prioridade;
+  if (upgrade.icp) updateFields.icp = upgrade.icp;
+  if (upgrade.score_interno) updateFields.score_interno = upgrade.score_interno;
+  
+  // Nunca sobrescrever classificacoes MANUAL
+  await supabase.from('lead_classifications')
+    .update(updateFields)
+    .eq('lead_id', lead_id)
+    .eq('empresa', empresa)
+    .neq('origem', 'MANUAL');
 }
 ```
 
-2. Substituir a linha 98 (context fixo) pelo contexto dinamico:
+Isso garante que **toda mensagem futura** com intent de alta confianca ira automaticamente promover a classificacao do lead.
+
+### Parte 2: Reclassificacao em batch dos leads existentes
+
+Criar uma edge function `reclassify-leads` que:
+1. Busca todos os leads QUENTES com ICP NAO_CLASSIFICADO e/ou score < 50
+2. Para cada lead, verifica os intents historicos em `lead_message_intents`
+3. Se houver intent de alta confianca (INTERESSE_COMPRA, INTERESSE_IR, etc com confianca >= 0.8), aplica o upgrade
+4. Registra as mudancas com origem 'AUTOMATICA'
 
 ```text
-// Antes:
-<CopilotPanel context={{ type: 'GERAL', empresa: activeCompany }} variant="icon" />
+POST /reclassify-leads { dryRun?: boolean }
 
-// Depois:
-const copilotCtx = getCopilotContext(location.pathname, activeCompany);
-<CopilotPanel context={copilotCtx} variant="icon" />
+[1] SELECT leads com temperatura QUENTE + ICP NAO_CLASSIFICADO
+[2] Para cada lead:
+    - Buscar melhor intent (maior confianca)
+    - Se intent de alta confianca >= 0.8:
+      - Blue: ICP = BLUE_ALTO_TICKET_IR, Prioridade = 1, Score = 70+
+      - Tokeniza: ICP = TOKENIZA_EMERGENTE (ou SERIAL se dados suficientes)
+    - Se intent de media confianca >= 0.7:
+      - Prioridade max(atual, 2)
+      - Score += bonus
+[3] Retornar resumo de mudancas
 ```
 
-## Resultado esperado
+## Arquivos modificados
 
-- Na pagina `/leads/59359ed2.../BLUE`: Copilot abre com contexto LEAD, carrega classificacao, mensagens, intents, contato, organizacao do Marcos Bertoldi
-- Na pagina `/pipeline`: Copilot abre com contexto PIPELINE, mostra resumo de deals e SLA
-- Na pagina `/cs/clientes/:id`: Copilot abre com contexto CUSTOMER, mostra health score, incidencias, MRR
-- Em qualquer outra pagina: comportamento atual (GERAL) com deals do vendedor, metas, tarefas
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/sdr-action-executor/index.ts` | Adicionar passo de `classification_upgrade` no handler principal (~15 linhas) |
+| `supabase/functions/reclassify-leads/index.ts` | **Novo**: Edge function para reclassificacao batch dos leads existentes |
 
-Apenas 1 arquivo modificado: `src/components/layout/TopBar.tsx`
+## Ordem de execucao
+
+1. Modificar `sdr-action-executor` para aplicar upgrades de classificacao (corrige o futuro)
+2. Criar e executar `reclassify-leads` (corrige o passado)
