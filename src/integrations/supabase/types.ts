@@ -270,6 +270,68 @@ export type Database = {
           },
         ]
       }
+      analytics_events: {
+        Row: {
+          created_at: string
+          empresa: string
+          event_category: string
+          event_name: string
+          id: string
+          metadata: Json | null
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          event_category?: string
+          event_name: string
+          id?: string
+          metadata?: Json | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          event_category?: string
+          event_name?: string
+          id?: string
+          metadata?: Json | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "analytics_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "analytics_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "analytics_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "analytics_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       cadence_runner_logs: {
         Row: {
           details: Json | null
@@ -2664,6 +2726,42 @@ export type Database = {
           },
         ]
       }
+      follow_up_optimal_hours: {
+        Row: {
+          canal: string
+          dia_semana: number
+          empresa: string
+          hora: number
+          id: string
+          taxa_resposta: number | null
+          total_envios: number | null
+          total_respostas: number | null
+          updated_at: string
+        }
+        Insert: {
+          canal?: string
+          dia_semana: number
+          empresa: string
+          hora: number
+          id?: string
+          taxa_resposta?: number | null
+          total_envios?: number | null
+          total_respostas?: number | null
+          updated_at?: string
+        }
+        Update: {
+          canal?: string
+          dia_semana?: number
+          empresa?: string
+          hora?: number
+          id?: string
+          taxa_resposta?: number | null
+          total_envios?: number | null
+          total_respostas?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       import_jobs: {
         Row: {
           completed_at: string | null
@@ -4515,6 +4613,104 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      prompt_versions: {
+        Row: {
+          content: string
+          created_at: string
+          created_by: string | null
+          function_name: string
+          id: string
+          is_active: boolean | null
+          notes: string | null
+          prompt_key: string
+          version: number
+        }
+        Insert: {
+          content: string
+          created_at?: string
+          created_by?: string | null
+          function_name: string
+          id?: string
+          is_active?: boolean | null
+          notes?: string | null
+          prompt_key?: string
+          version?: number
+        }
+        Update: {
+          content?: string
+          created_at?: string
+          created_by?: string | null
+          function_name?: string
+          id?: string
+          is_active?: boolean | null
+          notes?: string | null
+          prompt_key?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "prompt_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "prompt_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "prompt_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "prompt_versions_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      rate_limit_log: {
+        Row: {
+          blocked: boolean | null
+          created_at: string
+          empresa: string | null
+          function_name: string
+          id: string
+          request_count: number
+          user_id: string | null
+          window_start: string
+        }
+        Insert: {
+          blocked?: boolean | null
+          created_at?: string
+          empresa?: string | null
+          function_name: string
+          id?: string
+          request_count?: number
+          user_id?: string | null
+          window_start?: string
+        }
+        Update: {
+          blocked?: boolean | null
+          created_at?: string
+          empresa?: string | null
+          function_name?: string
+          id?: string
+          request_count?: number
+          user_id?: string | null
+          window_start?: string
+        }
+        Relationships: []
       }
       revenue_forecast_log: {
         Row: {
