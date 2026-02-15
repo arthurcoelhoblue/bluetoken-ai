@@ -86,7 +86,7 @@ export function PessoaCard({ pessoa, relacionamentos, isLoading }: PessoaCardPro
           {pessoa.email_principal && (
             <div>
               <p className="text-sm text-muted-foreground">Email</p>
-              <p className="font-medium truncate">{pessoa.email_principal}</p>
+              <p className="font-medium truncate select-all cursor-pointer" title={pessoa.email_principal}>{pessoa.email_principal}</p>
             </div>
           )}
         </div>

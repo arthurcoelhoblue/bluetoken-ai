@@ -184,7 +184,7 @@ function LeadDetailContent() {
               {contact.email && (
                 <div className="flex items-center gap-2 min-w-0">
                   <Mail className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span className="truncate">{contact.email}</span>
+                  <span className="truncate select-all cursor-pointer" title={contact.email}>{contact.email}</span>
                 </div>
               )}
               {contact.telefone && (
