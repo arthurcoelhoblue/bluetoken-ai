@@ -5367,6 +5367,33 @@ export type Database = {
           },
         ]
       }
+      webhook_rate_limits: {
+        Row: {
+          call_count: number
+          created_at: string
+          function_name: string
+          id: string
+          identifier: string
+          window_start: string
+        }
+        Insert: {
+          call_count?: number
+          created_at?: string
+          function_name: string
+          id?: string
+          identifier: string
+          window_start: string
+        }
+        Update: {
+          call_count?: number
+          created_at?: string
+          function_name?: string
+          id?: string
+          identifier?: string
+          window_start?: string
+        }
+        Relationships: []
+      }
       zadarma_config: {
         Row: {
           api_key: string

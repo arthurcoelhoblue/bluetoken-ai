@@ -8,6 +8,7 @@ import { z } from "https://esm.sh/zod@3.25.76";
 // ========================================
 
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+import { checkWebhookRateLimit, rateLimitResponse, simpleHash } from "../_shared/webhook-rate-limit.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
@@ -558,6 +559,14 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+    // Rate limiting (200 req/min per token+phone)
+    const rateLimitId = simpleHash((Deno.env.get('WHATSAPP_INBOUND_SECRET') || '') + phoneNormalized);
+    const rateCheck = await checkWebhookRateLimit(supabase, 'whatsapp-inbound', rateLimitId, 200);
+    if (!rateCheck.allowed) {
+      console.warn('[Inbound] Rate limit exceeded:', rateCheck.currentCount);
+      return rateLimitResponse(corsHeaders);
+    }
 
     // 1. Buscar lead pelo telefone (com suporte a handoff)
     const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);

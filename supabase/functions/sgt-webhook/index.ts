@@ -11,6 +11,7 @@ import type { EmpresaTipo as EmpresaTipoShared, Temperatura, TipoLead } from "..
 import { isPlaceholderEmailForDedup, generatePhoneVariationsForSearch, normalizePhoneE164, DDI_CONHECIDOS, type PhoneNormalized } from "../_shared/phone-utils.ts";
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
+import { checkWebhookRateLimit, rateLimitResponse, simpleHash } from "../_shared/webhook-rate-limit.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
 
@@ -1451,6 +1452,14 @@ serve(async (req) => {
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+
+    // Rate limiting (120 req/min per token)
+    const tokenId = simpleHash(req.headers.get('x-webhook-secret') || req.headers.get('authorization') || 'unknown');
+    const rateCheck = await checkWebhookRateLimit(supabase, 'sgt-webhook', tokenId, 120);
+    if (!rateCheck.allowed) {
+      console.warn('[SGT Webhook] Rate limit exceeded:', rateCheck.currentCount);
+      return rateLimitResponse(corsHeaders);
     }
 
     let payload: SGTPayload;
