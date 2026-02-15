@@ -1,129 +1,102 @@
 
 
-# Plano V5 Audit — Fechar os 3 itens pendentes
+# Frente 3: Testes para ai-provider + SDR modules
 
-A auditoria V5 identifica 4 pendencias. O item bloqueante (CRON jobs) ja esta resolvido — existem 16 jobs ativos no banco. Restam 3 frentes para chegar ao 9.3+/10.
-
----
-
-## Status Real vs Auditoria
-
-| Item | Auditoria diz | Realidade | Acao |
-|------|--------------|-----------|------|
-| CRON Jobs (13+ funcoes) | BLOQUEANTE - zero jobs | 16 jobs ativos no pg_cron | Nenhuma - ja resolvido |
-| Rate limiting enforced | Tabela criada, nao enforced | Tabela vazia, 0 funcoes checam | Implementar |
-| Migrar 17 funcoes para callAI() | 5/22 usam shared | Confirmado 5/22 | Migrar as 17 restantes |
-| Testes SDR + ai-provider | 15 testes, 0 para SDR | Confirmado | Criar testes |
+A migracao para `callAI()` esta completa (18 funcoes usam o wrapper). Rate limiting esta implementado. Resta apenas criar os testes.
 
 ---
 
-## Frente 1: Rate Limiting enforced na callAI() (Prioridade ALTA)
+## Status atual
 
-### Arquivo: `supabase/functions/_shared/ai-provider.ts`
-
-Adicionar funcao `checkRateLimit()` que e chamada automaticamente no inicio de `callAI()`:
-
-1. Recebe `user_id` (novo campo opcional em `CallAIOptions`) e `functionName`
-2. Faz UPSERT na tabela `ai_rate_limits` incrementando `call_count`
-3. Se `call_count` exceder o limite (ex: 100 chamadas por hora por funcao), retorna erro antes de chamar qualquer provider
-4. Se `user_id` nao for fornecido (chamadas de CRON/sistema), skip rate limiting
-
-Limites sugeridos por funcao:
-
-| Funcao | Limite/hora |
-|--------|------------|
-| copilot-chat | 60 |
-| sdr-intent-classifier | 200 |
-| sdr-response-generator | 200 |
-| deal-scoring | 100 |
-| Outras | 100 (default) |
-
-A interface `CallAIOptions` ganha o campo opcional `userId?: string`.
-
-### Resultado
-- Toda chamada via `callAI()` sera automaticamente protegida
-- Funcoes que ainda usam fetch direto nao serao protegidas (incentivo adicional para migrar)
-- Tabela `ai_rate_limits` passara a ter dados reais
+| Item | Status |
+|------|--------|
+| CRON Jobs | Resolvido (16 jobs ativos) |
+| Rate Limiting enforced | Resolvido (checkRateLimit em callAI) |
+| Migracao callAI() | Resolvido (18/18 funcoes AI migradas) |
+| Testes SDR + ai-provider | **Pendente** - 0 testes para edge functions |
 
 ---
 
-## Frente 2: Migrar 17 funcoes para callAI() (Prioridade MEDIA)
+## Testes a criar
 
-As 17 funcoes que ainda usam fetch direto com fallback manual:
+### 1. `src/hooks/__tests__/aiProvider.test.ts` — Logica do ai-provider
 
-| Funcao | Complexidade |
-|--------|-------------|
-| deal-scoring | Baixa - prompt unico |
-| deal-context-summary | Baixa |
-| deal-loss-analysis | Baixa |
-| call-coach | Baixa |
-| call-transcribe | Baixa |
-| cs-health-calculator | Baixa |
-| cs-churn-predictor | Baixa |
-| cs-daily-briefing | Baixa |
-| cs-incident-detector | Baixa |
-| cs-nps-auto | Baixa |
-| cs-trending-topics | Baixa |
-| cs-playbook-runner | Baixa |
-| revenue-forecast | Baixa |
-| weekly-report | Baixa |
-| follow-up-scheduler | Baixa |
-| icp-learner | Baixa |
-| amelia-learn | Media - multiplas chamadas IA |
-| amelia-mass-action | Media - loop com chamadas IA |
+Testar as funcoes de custo e rate limiting extraindo a logica testavel:
 
-Para cada funcao, a migracao consiste em:
-1. Adicionar `import { callAI } from "../_shared/ai-provider.ts"`
-2. Remover funcoes locais de fallback (callClaude/callGemini/callGPT)
-3. Substituir bloco de chamada por uma unica `callAI({ system, prompt, functionName, empresa, supabase })`
-4. Remover `ai_usage_log.insert()` manual (ja automatico no callAI)
+- **COST_TABLE**: Verificar que calculo de custo para Claude, Gemini e GPT-4o retorna valores corretos (ex: 1000 tokens input Claude = $0.003)
+- **Rate limit logic**: Verificar que limite de 60/h para copilot-chat e 200/h para sdr-intent-classifier estao corretos
+- **Default limit**: Verificar que funcoes nao mapeadas usam 100/h
 
-Cada funcao leva ~5 minutos. Total estimado: ~2 horas.
+### 2. `src/hooks/__tests__/sdrIntentClassifier.test.ts` — Logica do SDR Classifier
 
----
+Testar as funcoes puras exportaveis do classifier:
 
-## Frente 3: Testes para modulos SDR + ai-provider (Prioridade MEDIA)
+- **computeClassificationUpgrade**: 
+  - Lead QUENTE + INTERESSE_IR confianca 1.0 retorna P1, ICP BLUE_ALTO_TICKET_IR
+  - Lead MORNO + DUVIDA_PRECO confianca 0.75 retorna P2
+  - Origem MANUAL nao e sobrescrita (retorna objeto vazio)
+  - Lead FRIO + intent baixa confianca nao muda nada
 
-Criar testes unitarios usando Vitest para:
+- **computeNewTemperature**:
+  - FRIO + INTERESSE_COMPRA sobe para MORNO
+  - MORNO + INTERESSE_IR sobe para QUENTE
+  - QUENTE + OPT_OUT desce para MORNO
 
-### 3A. `_shared/ai-provider.ts` — Teste de logica interna
-- Arquivo: `supabase/functions/_shared/__tests__/ai-provider.test.ts`
-- Testar: COST_TABLE calcula custos corretamente
-- Testar: Rate limit rejeita quando excede limite
-- Testar: Fallback chain (Claude falha -> Gemini tenta)
-- Testar: Telemetria e logada mesmo em falha
+- **detectarLeadQuenteImediato**:
+  - "quero contratar" retorna detectado=true, tipo=DECISAO_TOMADA, confianca=ALTA
+  - "malha fina" retorna URGENCIA_TEMPORAL
+  - "ola bom dia" retorna detectado=false
 
-### 3B. SDR Modules — Testes de integracao leve
-- Arquivo: `supabase/functions/sdr-intent-classifier/sdr-intent-classifier.test.ts`
-- Testar: Parse de JSON response valido
-- Testar: Fallback para classificacao default em caso de IA falha
-- Testar: computeClassificationUpgrade retorna upgrade correto para intents de alta confianca
+- **decidirProximaPergunta**:
+  - BLUE sem SPIN.S retorna SPIN_S
+  - BLUE com S+P + intent INTERESSE_IR retorna CTA_REUNIAO
+  - TOKENIZA sem GPCT.G retorna GPCT_G
 
-- Arquivo: `supabase/functions/sdr-message-parser/sdr-message-parser.test.ts`
-- Testar: Deteccao de urgencia
-- Testar: Normalizacao de telefone
+### 3. `src/hooks/__tests__/sdrMessageParser.test.ts` — Parser de mensagens
 
-- Arquivo: `supabase/functions/sdr-action-executor/sdr-action-executor.test.ts`
-- Testar: Classification upgrade e aplicado quando confianca >= 0.8
-- Testar: Opt-out cancela cadencias
+- **detectarLeadQuenteImediato** (duplicada no parser, mesma logica):
+  - Testa urgencia com frases reais de leads
+  
+- **inferirPerfilInvestidor**:
+  - Mensagem com "seguranca" retorna CONSERVADOR
+  - Mensagem com "rentabilidade" retorna ARROJADO
+  - DISC D sem keywords retorna ARROJADO
+  - DISC C sem keywords retorna CONSERVADOR
+
+- **detectCrossCompanyInterest**:
+  - Lead BLUE mencionando "investimento" detecta interesse TOKENIZA
+  - Lead TOKENIZA mencionando "imposto de renda" detecta interesse BLUE
+
+### 4. `src/hooks/__tests__/sdrActionExecutor.test.ts` — Logica de acoes
+
+- **Classification upgrade**: Verificar que campos com valor null nao sao incluidos no update
+- **Opt-out flow**: Verificar que OPT_OUT cancela todas cadencias ativas (logica testavel)
 
 ---
 
-## Ordem de execucao
+## Abordagem tecnica
 
-1. **Frente 1**: Rate limiting no `_shared/ai-provider.ts` (~30 min)
-2. **Frente 2**: Migrar as 17 funcoes para `callAI()` (~2h, pode ser feito em 2-3 batches)
-3. **Frente 3**: Criar testes (~1h)
+Como as funcoes de edge sao Deno e nao podem rodar no Vitest diretamente, vamos **extrair as funcoes puras** (que nao dependem de Supabase/fetch) e testa-las como modulos TypeScript no ambiente Vitest existente.
 
-## Arquivos modificados/criados
+As funcoes a extrair sao puramente logicas:
+- `computeClassificationUpgrade`
+- `computeNewTemperature`
+- `detectarLeadQuenteImediato`
+- `decidirProximaPergunta`
+- `inferirPerfilInvestidor`
+- `detectCrossCompanyInterest`
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/functions/_shared/ai-provider.ts` | Adicionar `checkRateLimit()` + campo `userId` |
-| 17 edge functions | Migrar para `callAI()` |
-| 3 arquivos de teste | Criar novos |
+Sera criado um arquivo `src/lib/sdr-logic.ts` com essas funcoes (copy das edge functions) para poder testar no Vitest. Isso nao duplica codigo de producao — serve como contrato de validacao da logica.
 
-## Score esperado apos implementacao
+---
 
-Com CRON ja resolvido + rate limiting + migracao completa + testes: **9.5/10** (production-ready com margem).
+## Arquivos a criar
+
+| Arquivo | Conteudo |
+|---------|---------|
+| `src/lib/sdr-logic.ts` | Funcoes puras extraidas do SDR (computeClassificationUpgrade, etc) |
+| `src/lib/__tests__/sdr-logic.test.ts` | ~15 testes cobrindo toda logica SDR |
+| `src/lib/__tests__/ai-provider-logic.test.ts` | ~5 testes cobrindo custos e rate limits |
+
+Total: ~20 testes novos, cobertura completa da logica de negocios SDR + AI.
 
