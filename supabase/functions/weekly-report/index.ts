@@ -139,6 +139,28 @@ Deno.serve(async (req) => {
         }
       }
 
+      // Fallback 2: OpenAI GPT-4o via API direta
+      if (!narrative) {
+        const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+        if (OPENAI_API_KEY) {
+          console.log(`[weekly-report] Trying OpenAI GPT-4o fallback for ${empresa}...`);
+          try {
+            const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+              method: 'POST',
+              headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+              body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.4, max_tokens: 600 }),
+            });
+            if (gptResp.ok) {
+              const gptData = await gptResp.json();
+              narrative = gptData.choices?.[0]?.message?.content ?? '';
+              console.log('[weekly-report] OpenAI GPT-4o fallback succeeded');
+            }
+          } catch (gptErr) {
+            console.error('[weekly-report] OpenAI exception:', gptErr);
+          }
+        }
+      }
+
       // Deterministic fallback
       if (!narrative) {
         narrative = `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${atividadeCount} atividades registradas.`;

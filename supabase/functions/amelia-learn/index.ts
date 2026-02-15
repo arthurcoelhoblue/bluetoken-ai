@@ -30,24 +30,62 @@ async function callAI(googleApiKey: string | undefined, anthropicKey: string | u
   }
 
   if (anthropicKey) {
-    const resp = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: maxTokens,
-        temperature,
-        ...(system ? { system } : {}),
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if (!resp.ok) throw new Error(`Claude ${resp.status}`);
-    const data = await resp.json();
-    return data.content?.[0]?.text ?? '';
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': anthropicKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: maxTokens,
+          temperature,
+          ...(system ? { system } : {}),
+          messages: [{ role: 'user', content: prompt }],
+        }),
+      });
+      if (!resp.ok) throw new Error(`Claude ${resp.status}`);
+      const data = await resp.json();
+      const text = data.content?.[0]?.text ?? '';
+      if (text) return text;
+    } catch (e) {
+      console.warn('[amelia-learn] Claude failed:', e);
+    }
+  }
+
+  // Fallback 2: OpenAI GPT-4o via API direta
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  if (OPENAI_API_KEY) {
+    console.log('[amelia-learn] Trying OpenAI GPT-4o fallback...');
+    try {
+      const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            ...(system ? [{ role: 'system', content: system }] : []),
+            { role: 'user', content: prompt },
+          ],
+          temperature,
+          max_tokens: maxTokens,
+        }),
+      });
+      if (gptResp.ok) {
+        const gptData = await gptResp.json();
+        const text = gptData.choices?.[0]?.message?.content ?? '';
+        if (text) {
+          console.log('[amelia-learn] OpenAI GPT-4o fallback succeeded');
+          return text;
+        }
+      } else {
+        console.error('[amelia-learn] OpenAI error:', gptResp.status);
+      }
+    } catch (gptErr) {
+      console.error('[amelia-learn] OpenAI exception:', gptErr);
+    }
   }
 
   throw new Error('No AI API key available');

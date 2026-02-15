@@ -253,6 +253,28 @@ serve(async (req) => {
               console.warn('[deal-scoring] Claude fallback failed:', e);
             }
           }
+
+          // Fallback 2: OpenAI GPT-4o
+          if (!proximaAcao) {
+            const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+            if (OPENAI_API_KEY) {
+              console.log('[deal-scoring] Trying OpenAI GPT-4o fallback...');
+              try {
+                const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                  method: 'POST',
+                  headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], temperature: 0.3, max_tokens: 100 }),
+                });
+                if (gptResp.ok) {
+                  const gptData = await gptResp.json();
+                  proximaAcao = gptData.choices?.[0]?.message?.content?.trim() ?? null;
+                  console.log('[deal-scoring] OpenAI GPT-4o fallback succeeded');
+                }
+              } catch (gptErr) {
+                console.error('[deal-scoring] OpenAI exception:', gptErr);
+              }
+            }
+          }
         }
 
         // Check for significant drop

@@ -118,25 +118,57 @@ Retorne APENAS o JSON, sem markdown.`;
 
         // Fallback to Claude
         if (!content && ANTHROPIC_API_KEY) {
-          const response = await fetch('https://api.anthropic.com/v1/messages', {
-            method: 'POST',
-            headers: {
-              'x-api-key': ANTHROPIC_API_KEY,
-              'anthropic-version': '2023-06-01',
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'claude-sonnet-4-20250514',
-              max_tokens: 1500,
-              temperature: 0.3,
-              system: benchmarkSystemPrompt,
-              messages: [{ role: 'user', content: userPrompt }],
-            }),
-          });
-          if (!response.ok) throw new Error(`Claude ${response.status}`);
-          const data = await response.json();
-          content = data.content?.[0]?.text || '';
-          tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+          try {
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1500,
+                temperature: 0.3,
+                system: benchmarkSystemPrompt,
+                messages: [{ role: 'user', content: userPrompt }],
+              }),
+            });
+            if (response.ok) {
+              const data = await response.json();
+              content = data.content?.[0]?.text || '';
+              tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+            } else {
+              console.error('[Benchmark] Claude error:', response.status);
+            }
+          } catch (claudeErr) {
+            console.error('[Benchmark] Claude exception:', claudeErr);
+          }
+        }
+
+        // Fallback 2: OpenAI GPT-4o via API direta
+        if (!content) {
+          const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+          if (OPENAI_API_KEY) {
+            console.log('[Benchmark] Trying OpenAI GPT-4o fallback...');
+            try {
+              const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: benchmarkSystemPrompt }, { role: 'user', content: userPrompt }], temperature: 0.3, max_tokens: 1500 }),
+              });
+              if (gptResp.ok) {
+                const gptData = await gptResp.json();
+                content = gptData.choices?.[0]?.message?.content ?? '';
+                tokens = gptData.usage?.total_tokens || 0;
+                console.log('[Benchmark] OpenAI GPT-4o fallback succeeded');
+              } else {
+                console.error('[Benchmark] OpenAI error:', gptResp.status);
+              }
+            } catch (gptErr) {
+              console.error('[Benchmark] OpenAI exception:', gptErr);
+            }
+          }
         }
 
         const tempoMs = Date.now() - startTime;

@@ -227,6 +227,28 @@ Temperatura: ${deal.temperatura || "não definida"}`;
           }
         }
 
+        // Fallback 2: OpenAI GPT-4o via API direta
+        if (!message) {
+          const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+          if (OPENAI_API_KEY) {
+            console.log('[amelia-mass-action] Trying OpenAI GPT-4o fallback...');
+            try {
+              const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], temperature: 0.5, max_tokens: 500 }),
+              });
+              if (gptResp.ok) {
+                const gptData = await gptResp.json();
+                message = gptData.choices?.[0]?.message?.content ?? '';
+                console.log('[amelia-mass-action] OpenAI GPT-4o fallback succeeded');
+              }
+            } catch (gptErr) {
+              console.error('[amelia-mass-action] OpenAI exception:', gptErr);
+            }
+          }
+        }
+
         if (message) {
           messagesPreview.push({ deal_id: deal.id, contact_name: contactName, message, approved: true });
         } else {
