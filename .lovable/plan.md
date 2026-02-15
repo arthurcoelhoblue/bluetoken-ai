@@ -1,74 +1,30 @@
 
-# Correcao: "useCompany must be used within CompanyProvider"
+# Correcao: Clique em "Proximo Passo" gera 404
 
 ## Causa Raiz
 
-O `CompanyProvider` esta posicionado DENTRO do `AppLayout` (linha 36 de `AppLayout.tsx`). Isso cria dois problemas:
-
-1. **Paginas que usam `AppLayout` mas chamam `useCompany` no corpo do componente** (antes de renderizar `AppLayout`): os hooks rodam antes do `CompanyProvider` existir na arvore React.
-   - `MetasPage` (linha 35: `useCompany()`)
-   - `AmeliaMassActionPage` (linha 53: `useCompany()`)
-   - `AnalyticsExecutivoPage` (linha 27: `useCompany()`)
-
-2. **Paginas do modulo CS que NAO usam `AppLayout`**: usam apenas `PageShell` (que e um componente visual simples, sem providers). Os hooks internos (`useCSMetrics`, `useCSSurveys`, `useCSIncidents`, `useCSCustomers`, `useCSPlaybooks`) todos chamam `useCompany()` internamente, mas nao ha `CompanyProvider` na arvore.
-   - `CSDashboardPage`
-   - `CSClientesPage`
-   - `CSClienteDetailPage`
-   - `CSPesquisasPage`
-   - `CSIncidenciasPage`
-   - `CSPlaybooksPage`
-
-**Total: 9 paginas quebradas** pelo mesmo motivo.
-
----
+A rota de detalhe do lead exige dois parametros: `/leads/:leadId/:empresa`. Porem, o `NextBestActionCard` navega para `/leads/${acao.lead_id}` sem incluir a empresa, resultando em 404.
 
 ## Solucao
 
-Mover o `CompanyProvider` de dentro do `AppLayout` para o `App.tsx`, no nivel global, envolvendo todas as rotas protegidas. Isso garante que QUALQUER componente filho tenha acesso ao contexto de empresa, independente de usar `AppLayout` ou nao.
+### Alteracao 1: `src/components/workbench/NextBestActionCard.tsx`
 
-### Alteracao 1: `src/App.tsx`
+No `handleClick`, quando a acao tem `lead_id`, incluir a empresa ativa na navegacao:
 
-Importar `CompanyProvider` e envolver todo o bloco de rotas dentro de `AuthProvider`:
-
-```text
-<AuthProvider>
-  <CompanyProvider>      <-- NOVO: movido pra ca
-    <ErrorBoundary>
-      <Suspense>
-        <Routes>...</Routes>
-      </Suspense>
-    </ErrorBoundary>
-  </CompanyProvider>
-</AuthProvider>
 ```
-
-### Alteracao 2: `src/components/layout/AppLayout.tsx`
-
-Remover o `CompanyProvider` do `AppLayout`, pois ja esta no nivel superior. O `ThemeProvider` permanece.
-
-```text
 // Antes:
-<ThemeProvider>
-  <CompanyProvider>
-    <SidebarProvider>...</SidebarProvider>
-  </CompanyProvider>
-</ThemeProvider>
+if (acao.lead_id) navigate(`/leads/${acao.lead_id}`);
 
 // Depois:
-<ThemeProvider>
-  <SidebarProvider>...</SidebarProvider>
-</ThemeProvider>
+if (acao.lead_id) navigate(`/leads/${acao.lead_id}/${activeCompany ?? 'BLUE'}`);
 ```
 
----
+Importar `useCompany` e extrair `activeCompany` no componente.
 
-## Impacto
+### Alteracao 2 (seguranca extra): Tratar `activeCompany === 'ALL'`
 
-- **Zero mudanca de comportamento**: o `CompanyProvider` continua usando `localStorage` para persistir a empresa ativa
-- **9 paginas corrigidas de uma vez**: MetasPage, AmeliaMassActionPage, AnalyticsExecutivoPage, e todas as 6 paginas do modulo CS
-- **Prevencao futura**: qualquer nova pagina ou hook que use `useCompany` funcionara automaticamente, sem precisar se preocupar com `AppLayout`
+Se a empresa ativa for `ALL`, usar a empresa do lead (se disponivel na resposta da edge function) ou um fallback como `'BLUE'`.
 
 ## Arquivos editados
 
-1. `src/App.tsx` -- adicionar `CompanyProvider` envolvendo as rotas
-2. `src/components/layout/AppLayout.tsx` -- remover `CompanyProvider` (evitar duplicacao)
+1. `src/components/workbench/NextBestActionCard.tsx` -- adicionar `useCompany`, incluir empresa na rota de navegacao
