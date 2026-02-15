@@ -231,6 +231,43 @@ serve(async (req) => {
       }
     }
 
+    // Fallback 2: OpenAI GPT-4o via API direta
+    if (!content) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        console.log('[Copilot] Trying OpenAI GPT-4o fallback...');
+        try {
+          const openaiMessages = [
+            { role: 'system', content: systemContent },
+            ...messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
+          ];
+          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o',
+              messages: openaiMessages,
+              temperature: 0.4,
+              max_tokens: 2048,
+            }),
+          });
+          if (gptResp.ok) {
+            const gptData = await gptResp.json();
+            content = gptData.choices?.[0]?.message?.content ?? '';
+            model = 'gpt-4o';
+            console.log('[Copilot] OpenAI GPT-4o fallback OK');
+          } else {
+            console.error('[Copilot] OpenAI error:', gptResp.status);
+          }
+        } catch (gptErr) {
+          console.error('[Copilot] OpenAI exception:', gptErr);
+        }
+      }
+    }
+
     if (!content) {
       content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
     }

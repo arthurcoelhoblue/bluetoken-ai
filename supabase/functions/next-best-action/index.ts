@@ -168,7 +168,42 @@ Sem markdown, sem explicação, apenas o JSON.`;
       }
     }
 
-    // Parse AI content (from Anthropic or Gemini)
+    // Fallback 2: OpenAI GPT-4o via API direta
+    if (!aiContent) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        console.log('[NBA] Trying OpenAI GPT-4o fallback...');
+        try {
+          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${OPENAI_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'gpt-4o',
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: `Contexto do vendedor:\n${JSON.stringify(contextSummary, null, 2)}\n\nSugira as próximas ações prioritárias com narrativa do dia.` },
+              ],
+              temperature: 0.3,
+              max_tokens: 1500,
+            }),
+          });
+          if (gptResp.ok) {
+            const gptData = await gptResp.json();
+            aiContent = gptData.choices?.[0]?.message?.content ?? '';
+            console.log('[NBA] OpenAI GPT-4o fallback succeeded');
+          } else {
+            console.error('[NBA] OpenAI error:', gptResp.status);
+          }
+        } catch (gptErr) {
+          console.error('[NBA] OpenAI exception:', gptErr);
+        }
+      }
+    }
+
+    // Parse AI content (from Anthropic, Gemini, or OpenAI)
     if (aiContent) {
       try {
         const cleaned = aiContent.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();

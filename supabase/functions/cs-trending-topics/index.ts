@@ -83,6 +83,28 @@ serve(async (req) => {
       }
     }
 
+    // Fallback 2: OpenAI GPT-4o via API direta
+    if (!content) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        console.log('[CS-Trending-Topics] Trying OpenAI GPT-4o fallback...');
+        try {
+          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], temperature: 0.3, max_tokens: 1500 }),
+          });
+          if (gptResp.ok) {
+            const gptData = await gptResp.json();
+            content = gptData.choices?.[0]?.message?.content ?? '';
+            console.log('[CS-Trending-Topics] OpenAI GPT-4o fallback succeeded');
+          }
+        } catch (gptErr) {
+          console.error('[CS-Trending-Topics] OpenAI exception:', gptErr);
+        }
+      }
+    }
+
     let result = { topics: [], wordCloud: [] };
     if (content) {
       try {

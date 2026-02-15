@@ -159,6 +159,30 @@ ${transcript.substring(0, 8000)}`;
       }
     }
 
+    // Fallback 2: OpenAI GPT-4o via API direta
+    if (!content) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        console.log('[deal-context-summary] Trying OpenAI GPT-4o fallback...');
+        try {
+          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: userContent }], temperature: 0.3, max_tokens: 2000 }),
+          });
+          if (gptResp.ok) {
+            const gptData = await gptResp.json();
+            content = gptData.choices?.[0]?.message?.content ?? '';
+            console.log('[deal-context-summary] OpenAI GPT-4o fallback OK');
+          } else {
+            console.error('[deal-context-summary] OpenAI error:', gptResp.status);
+          }
+        } catch (gptErr) {
+          console.error('[deal-context-summary] OpenAI exception:', gptErr);
+        }
+      }
+    }
+
     if (!content) {
       return new Response(JSON.stringify({ error: 'AI processing failed' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

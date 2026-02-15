@@ -101,6 +101,28 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
           }
         }
 
+        // Fallback 2: OpenAI GPT-4o via API direta
+        if (!briefingText) {
+          const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+          if (OPENAI_API_KEY) {
+            console.log(`[CS-Briefing] Trying OpenAI GPT-4o fallback for CSM ${csmId}...`);
+            try {
+              const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+                body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'system', content: systemPrompt }, { role: 'user', content: contextText }], temperature: 0.4, max_tokens: 1000 }),
+              });
+              if (gptResp.ok) {
+                const gptData = await gptResp.json();
+                briefingText = gptData.choices?.[0]?.message?.content ?? '';
+                console.log('[CS-Briefing] OpenAI GPT-4o fallback succeeded');
+              }
+            } catch (gptErr) {
+              console.error('[CS-Briefing] OpenAI exception:', gptErr);
+            }
+          }
+        }
+
         if (!briefingText) {
           briefingText = 'Briefing indisponível no momento.';
         }

@@ -151,6 +151,28 @@ Retorne APENAS o JSON, sem markdown.`;
       }
     }
 
+    // Fallback 2: OpenAI GPT-4o via API direta
+    if (!coachingText) {
+      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+      if (OPENAI_API_KEY) {
+        console.log('[call-coach] Trying OpenAI GPT-4o fallback...');
+        try {
+          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${OPENAI_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ model: 'gpt-4o', messages: [{ role: 'user', content: prompt }], temperature: 0.3, max_tokens: 1024 }),
+          });
+          if (gptResp.ok) {
+            const gptData = await gptResp.json();
+            coachingText = gptData.choices?.[0]?.message?.content ?? '';
+            console.log('[call-coach] OpenAI GPT-4o fallback OK');
+          }
+        } catch (gptErr) {
+          console.error('[call-coach] OpenAI exception:', gptErr);
+        }
+      }
+    }
+
     let coaching: Record<string, unknown>;
     try {
       const cleaned = (coachingText || '{}').replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
