@@ -119,3 +119,6 @@ verify_jwt = false
 
 [functions.sdr-action-executor]
 verify_jwt = false
+
+[functions.reclassify-leads]
+verify_jwt = false

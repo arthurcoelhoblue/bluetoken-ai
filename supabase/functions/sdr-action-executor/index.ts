@@ -285,7 +285,26 @@ serve(async (req) => {
       if (intentData) actionsExecuted.push(`Intent salvo: ${(intentData as any).id}`);
     }
 
-    // 4. Update conversation state
+    // 4a. Apply classification upgrade (from sdr-intent-classifier)
+    if (body.classification_upgrade && lead_id) {
+      const upgrade = body.classification_upgrade;
+      const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (upgrade.prioridade != null) updateFields.prioridade = upgrade.prioridade;
+      if (upgrade.icp) updateFields.icp = upgrade.icp;
+      if (upgrade.score_interno != null) updateFields.score_interno = upgrade.score_interno;
+
+      if (Object.keys(updateFields).length > 1) {
+        const { error } = await supabase.from('lead_classifications')
+          .update(updateFields)
+          .eq('lead_id', lead_id)
+          .eq('empresa', empresa)
+          .neq('origem', 'MANUAL');
+        if (!error) actionsExecuted.push(`Classification upgrade: P${upgrade.prioridade || '?'} ICP=${upgrade.icp || '?'} Score=${upgrade.score_interno || '?'}`);
+        else console.error('[ClassUpgrade] Error:', error);
+      }
+    }
+
+    // 4b. Update conversation state
     if (lead_id && (novo_estado_funil || framework_updates || disc_estimado)) {
       const validEstados = ['SAUDACAO', 'DIAGNOSTICO', 'QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'];
       const stateUpdates: any = {};
