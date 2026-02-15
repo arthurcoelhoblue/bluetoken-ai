@@ -1,75 +1,73 @@
 
-# Correção: Prioridade não Acompanha Sinais de Urgência da Amélia
+
+# Correção: Dados SPIN Não Sendo Extraídos das Conversas
 
 ## Problema
-Quando a Amélia detecta intents de alta confiança (INTERESSE_COMPRA, INTERESSE_IR, AGENDAMENTO_REUNIAO), ela ajusta corretamente a **temperatura** para QUENTE, mas a **prioridade** permanece no valor original (3 = Baixa). Isso acontece porque o bloco `AJUSTAR_TEMPERATURA` no `sdr-ia-interpret` só faz `update({ temperatura })` sem tocar em prioridade, ICP ou score.
 
-O caso do Marcos Bertoldi ilustra: confiança 1.0 em INTERESSE_COMPRA, escalado para humano, mas continua como P3/NAO_CLASSIFICADO no painel.
+O lead Marcos Bertoldi tem `framework_data: {spin: {}, bant: {}, gpct: {}}` completamente vazio, apesar de haver dados claros na conversa para preencher pelo menos S (Situation) do SPIN:
+
+- **S (Situação)**: Reunião prévia com Michel, quer orçamento para declaração de IR cripto, 1 ano de declaração
+- **P (Problema)**: Precisa declarar impostos sobre criptomoedas (implícito)
+
+A IA processou os intents corretamente (INTERESSE_IR, INTERESSE_COMPRA) mas retornou `frameworks_atualizados: {}` vazio em todas as interpretações.
+
+## Causa Raiz
+
+Duas falhas contribuem:
+
+1. **Prompt com exemplo vazio**: O formato JSON de resposta mostra `"frameworks_atualizados":{}` como placeholder, induzindo a IA a retornar vazio quando não há pergunta explícita de framework
+2. **Sem extração retroativa**: Quando o lead responde com dados que mapeiam para campos do framework (ex: "1 ano" = timeline/situação), a IA não os extrai porque o prompt não instrui a fazer extração passiva de dados conversacionais
 
 ## Solução
 
-### 1. Ampliar a ação AJUSTAR_TEMPERATURA para incluir prioridade e ICP comportamental
+### 1. Melhorar o prompt para exigir extração contínua de framework
 
-No `supabase/functions/sdr-ia-interpret/index.ts`, modificar o case `AJUSTAR_TEMPERATURA` (linhas ~3362-3415):
+No `sdr-ia-interpret/index.ts`, atualizar o system prompt para instruir explicitamente:
+- SEMPRE extrair dados de framework de QUALQUER mensagem do lead, mesmo quando não é uma pergunta direta do framework
+- Preencher campos com base em inferências conversacionais
+- Incluir exemplo concreto no formato JSON mostrando preenchimento parcial
 
-- Quando `nova_temperatura === 'QUENTE'` E os detalhes contêm um intent de alta confiança (`INTERESSE_COMPRA`, `INTERESSE_IR`, `AGENDAMENTO_REUNIAO`, `SOLICITACAO_CONTATO`):
-  - Atualizar `prioridade` para **1**
-  - Se ICP atual é `*_NAO_CLASSIFICADO`, promover para ICP comportamental:
-    - BLUE: `BLUE_ALTO_TICKET_IR` (indica interesse ativo em IR)
-    - TOKENIZA: `TOKENIZA_EMERGENTE` (baseline para interesse ativo)
-  - Recalcular `score_interno` com bonus de intent (+30 pontos)
+### 2. Correção pontual do Marcos Bertoldi
 
-- Quando `nova_temperatura === 'MORNO'`:
-  - Se prioridade atual > 2, atualizar para **2**
+Atualizar `lead_conversation_state` com os dados SPIN que já existem na conversa:
+- `s`: "Reunião prévia com Michel, quer orçamento para declaração de IR cripto, 1 ano de declaração"
+- `p`: "Precisa declarar impostos sobre operações cripto"
 
-- Quando `nova_temperatura === 'FRIO'`:
-  - Manter prioridade atual (não degradar automaticamente)
+### 3. Adicionar instrução de extração passiva no prompt
 
-### 2. Criar funcao auxiliar `computeClassificationUpgrade`
-
-Nova funcao pura que recebe o estado atual (temperatura, prioridade, ICP, intent, confiança) e retorna os campos a atualizar. Isso mantém a logica testavel e separada do I/O.
+Adicionar ao bloco de regras do prompt (perto de onde lista o formato JSON):
 
 ```text
-computeClassificationUpgrade(
-  novaTemp, intentAtual, confianca, icpAtual, prioridadeAtual, empresa
-) => { prioridade?, icp?, score_interno? }
+## REGRA CRÍTICA DE FRAMEWORK
+EXTRAIA dados do framework de TODA mensagem do lead, mesmo que ele não esteja respondendo a uma pergunta de qualificação.
+Exemplo: Se o lead diz "quero um orçamento para declaração", isso é SPIN_S (situação = precisa de declaração).
+Se o lead diz "1 ano", isso complementa a situação.
+NUNCA retorne frameworks_atualizados vazio se houver qualquer informação inferível na mensagem.
 ```
 
-Regras:
-- Intent INTERESSE_COMPRA/INTERESSE_IR/AGENDAMENTO_REUNIAO com confiança >= 0.8 E temp QUENTE => P1
-- Intent DUVIDA_PRECO/DUVIDA_PRODUTO com confiança >= 0.7 E temp MORNO => P2
-- ICP *_NAO_CLASSIFICADO + intent de compra => promover para ICP comportamental
-- Score: base_temperatura(QUENTE=30) + bonus_intent(alta_confianca=30) + bonus_icp(promovido=10)
+### 4. Corrigir o exemplo de formato JSON
 
-### 3. Corrigir o lead do Marcos Bertoldi imediatamente
-
-Executar uma migracao pontual para corrigir o registro atual:
-
-```sql
-UPDATE lead_classifications
-SET prioridade = 1,
-    icp = 'BLUE_ALTO_TICKET_IR',
-    score_interno = 65,
-    updated_at = now()
-WHERE lead_id = '202f5ba6-2ced-4dc0-b6de-693b00f4ee8a'
-  AND empresa = 'BLUE';
+Mudar de:
+```json
+"frameworks_atualizados":{}
 ```
-
-Isso corrige o caso imediato enquanto o fix sistêmico previne recorrência.
+Para:
+```json
+"frameworks_atualizados":{"spin":{"s":"dado extraído da mensagem se houver"}}
+```
 
 ## Arquivos a Editar
 
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar `computeClassificationUpgrade()`, ampliar case AJUSTAR_TEMPERATURA |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Atualizar system prompt com regra de extração passiva e exemplo de formato JSON preenchido |
 
-## Migracao de Dados
+## Migração de Dados
 
-Uma migracao SQL para corrigir o lead do Marcos Bertoldi (caso pontual).
+Uma migração SQL para corrigir o `framework_data` do lead Marcos Bertoldi com os dados SPIN já disponíveis na conversa.
 
 ## Impacto
 
-- Todos os leads futuros com intent de compra de alta confiança terão prioridade promovida automaticamente
-- Leads existentes NAO_CLASSIFICADO que demonstram interesse ativo ganham ICP comportamental
-- Score interno refletirá sinais de intent, não apenas dados estáticos do SGT
-- Zero impacto em leads que já possuem classificação manual (origem = MANUAL não será sobrescrita)
+- Todos os leads futuros terão dados de framework extraídos de forma contínua, não apenas quando respondem a perguntas diretas
+- A UI do "Estado da Conversa" mostrará progresso real do SPIN/GPCT/BANT
+- Zero risco de regressão pois a lógica de merge já existe (linhas 4121-4129)
