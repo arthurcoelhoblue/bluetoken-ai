@@ -313,6 +313,7 @@ serve(async (req) => {
       }
 
       if (timelines.length >= 5 && (GOOGLE_API_KEY || ANTHROPIC_API_KEY)) {
+        const aiStartTime = Date.now();
         try {
           const prompt = `Analise estas timelines de deals que foram PERDIDOS e identifique subsequências de 2-4 eventos que aparecem em 50%+ dos casos.
 
@@ -325,6 +326,9 @@ Retorne JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window
             system: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM. Retorne APENAS JSON válido sem markdown.',
             temperature: 0.3, maxTokens: 1500,
           });
+
+          // Telemetry
+          try { await supabase.from('ai_usage_log').insert({ function_name: 'amelia-learn', provider: ANTHROPIC_API_KEY ? 'claude' : 'gemini', model: ANTHROPIC_API_KEY ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview', latency_ms: Date.now() - aiStartTime, success: true, empresa }); } catch { /* ignore */ }
 
           let args: any = { sequences: [] };
           try {
@@ -386,6 +390,7 @@ Retorne JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window
       }
 
       if (churnTimelines.length >= 3 && (GOOGLE_API_KEY || ANTHROPIC_API_KEY)) {
+        const aiStartTime2 = Date.now();
         try {
           const prompt = `Analise estas timelines de leads que fizeram OPT-OUT (cancelamento). Identifique subsequências de 2-4 intents que precedem o cancelamento em 50%+ dos casos.
 
@@ -398,6 +403,9 @@ Retorne APENAS JSON: {"sequences": [{"events": ["string"], "match_pct": number, 
             system: 'Analista de padrões de churn em CRM. Retorne APENAS JSON válido sem markdown.',
             temperature: 0.3, maxTokens: 1500,
           });
+
+          // Telemetry
+          try { await supabase.from('ai_usage_log').insert({ function_name: 'amelia-learn', provider: ANTHROPIC_API_KEY ? 'claude' : 'gemini', model: ANTHROPIC_API_KEY ? 'claude-sonnet-4-20250514' : 'gemini-3-pro-preview', latency_ms: Date.now() - aiStartTime2, success: true, empresa }); } catch { /* ignore */ }
 
           let args: any = { sequences: [] };
           try {

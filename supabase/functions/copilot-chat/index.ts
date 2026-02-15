@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
 
 // ========================================
 // PATCH 7 — Copilot Chat (Amélia IA)
-// Hierarquia: Claude (primário) → Gemini (fallback) → GPT-4o (fallback 2)
+// Usa callAI() da camada compartilhada com fallback automático
 // ========================================
 
 const corsHeaders = {
@@ -54,68 +55,10 @@ interface CopilotRequest {
   empresa: string;
 }
 
-async function callGemini(googleApiKey: string, systemContent: string, messages: Array<{ role: string; content: string }>, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
-  const { temperature = 0.4, maxTokens = 2048 } = options;
-  const conversationText = messages.map(m => `[${m.role}]: ${m.content}`).join('\n');
-  const fullPrompt = `${systemContent}\n\n${conversationText}`;
-
-  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      contents: [{ parts: [{ text: fullPrompt }] }],
-      generationConfig: { temperature, maxOutputTokens: maxTokens },
-    }),
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Gemini error ${resp.status}: ${errText}`);
-  }
-
-  const data = await resp.json();
-  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-}
-
-async function callClaude(anthropicKey: string, systemContent: string, messages: Array<{ role: string; content: string }>, options: { temperature?: number; maxTokens?: number } = {}): Promise<{ content: string; tokensInput: number; tokensOutput: number }> {
-  const { temperature = 0.4, maxTokens = 2048 } = options;
-  const anthropicMessages = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
-
-  const resp = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01',
-      'content-type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: maxTokens,
-      temperature,
-      system: systemContent,
-      messages: anthropicMessages,
-    }),
-  });
-
-  if (!resp.ok) {
-    const errText = await resp.text();
-    throw new Error(`Claude error ${resp.status}: ${errText}`);
-  }
-
-  const data = await resp.json();
-  return {
-    content: data.content?.[0]?.text || '',
-    tokensInput: data.usage?.input_tokens || 0,
-    tokensOutput: data.usage?.output_tokens || 0,
-  };
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
-
-  const startTime = Date.now();
 
   try {
     const { messages, contextType, contextId, empresa } = await req.json() as CopilotRequest;
@@ -127,17 +70,15 @@ serve(async (req) => {
       );
     }
 
-    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
-    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-
     // Try loading dynamic prompt from prompt_versions with A/B testing
     let dynamicPrompt = '';
     let selectedPromptVersionId: string | null = null;
+    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-      const sbInit = createClient(supabaseUrl, supabaseKey);
-      const { data: pvList } = await sbInit
+      const { data: pvList } = await supabase
         .from('prompt_versions')
         .select('id, content, ab_weight')
         .eq('function_name', 'copilot-chat')
@@ -146,7 +87,6 @@ serve(async (req) => {
         .gt('ab_weight', 0);
 
       if (pvList && pvList.length > 0) {
-        // Weighted random selection for A/B testing
         const totalWeight = pvList.reduce((sum: number, p: any) => sum + (p.ab_weight || 100), 0);
         let rand = Math.random() * totalWeight;
         let selected = pvList[0];
@@ -162,29 +102,18 @@ serve(async (req) => {
 
     const ACTIVE_SYSTEM_PROMPT = dynamicPrompt || SYSTEM_PROMPT;
 
-    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
-      console.error('[Copilot] Nenhuma API key de IA configurada');
-      return new Response(
-        JSON.stringify({ error: 'Configuração de IA ausente' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
-
     // ========================================
     // EXTRAIR USER_ID E PERMISSÕES
     // ========================================
     let userPermissions: Record<string, { view: boolean; edit: boolean }> | null = null;
     let isAdmin = false;
+    let userId: string | undefined;
 
     const authHeader = req.headers.get('Authorization');
     if (authHeader) {
       const token = authHeader.replace('Bearer ', '');
       const { data: userData } = await supabase.auth.getUser(token);
-      const userId = userData?.user?.id;
+      userId = userData?.user?.id;
 
       if (userId) {
         const { data: roles } = await supabase
@@ -250,114 +179,26 @@ serve(async (req) => {
 
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 
-    let content = '';
-    let model = '';
-    let tokensInput = 0;
-    let tokensOutput = 0;
-    let provider = '';
+    // === CHAMADA UNIFICADA VIA callAI() ===
+    const aiResult = await callAI({
+      system: systemContent,
+      prompt: '', // not used when messages is provided
+      functionName: 'copilot-chat',
+      empresa,
+      temperature: 0.4,
+      maxTokens: 2048,
+      promptVersionId: selectedPromptVersionId || undefined,
+      supabase,
+      messages,
+    });
 
-    // === HIERARQUIA: Claude (primário) → Gemini (fallback) → GPT-4o (fallback 2) ===
-
-    // 1. Claude (primário)
-    if (ANTHROPIC_API_KEY) {
-      try {
-        const claudeResult = await callClaude(ANTHROPIC_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
-        content = claudeResult.content;
-        model = 'claude-sonnet-4-20250514';
-        provider = 'claude';
-        tokensInput = claudeResult.tokensInput;
-        tokensOutput = claudeResult.tokensOutput;
-        if (content) console.log('[Copilot] Claude OK');
-      } catch (claudeErr) {
-        console.warn('[Copilot] Claude falhou, tentando Gemini fallback:', claudeErr);
-      }
-    }
-
-    // 2. Gemini (fallback)
-    if (!content && GOOGLE_API_KEY) {
-      try {
-        content = await callGemini(GOOGLE_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
-        model = 'gemini-3-pro-preview';
-        provider = 'gemini';
-        if (content) console.log('[Copilot] Gemini fallback OK');
-      } catch (geminiErr) {
-        console.warn('[Copilot] Gemini fallback falhou, tentando GPT-4o:', geminiErr);
-      }
-    }
-
-    // 3. GPT-4o (fallback 2)
-    if (!content) {
-      const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
-      if (OPENAI_API_KEY) {
-        try {
-          const openaiMessages = [
-            { role: 'system', content: systemContent },
-            ...messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content })),
-          ];
-          const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Authorization': `Bearer ${OPENAI_API_KEY}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o',
-              messages: openaiMessages,
-              temperature: 0.4,
-              max_tokens: 2048,
-            }),
-          });
-          if (gptResp.ok) {
-            const gptData = await gptResp.json();
-            content = gptData.choices?.[0]?.message?.content ?? '';
-            model = 'gpt-4o';
-            provider = 'openai';
-            tokensInput = gptData.usage?.prompt_tokens || 0;
-            tokensOutput = gptData.usage?.completion_tokens || 0;
-            console.log('[Copilot] GPT-4o fallback OK');
-          } else {
-            console.error('[Copilot] OpenAI error:', gptResp.status);
-          }
-        } catch (gptErr) {
-          console.error('[Copilot] OpenAI exception:', gptErr);
-        }
-      }
-    }
-
+    let content = aiResult.content;
     if (!content) {
       content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
     }
 
-    const latencyMs = Date.now() - startTime;
-
-    // === LOG DE USO NA TABELA ai_usage_log ===
-    const COST_TABLE: Record<string, { input: number; output: number }> = {
-      'claude-sonnet-4-20250514': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
-      'gemini-3-pro-preview': { input: 1.25 / 1_000_000, output: 10.0 / 1_000_000 },
-      'gpt-4o': { input: 2.5 / 1_000_000, output: 10.0 / 1_000_000 },
-    };
-    const costs = COST_TABLE[model] || { input: 0, output: 0 };
-    const custoEstimado = (tokensInput * costs.input) + (tokensOutput * costs.output);
-
-    try {
-      await supabase.from('ai_usage_log').insert({
-        function_name: 'copilot-chat',
-        provider: provider || 'unknown',
-        model: model || 'unknown',
-        tokens_input: tokensInput,
-        tokens_output: tokensOutput,
-        custo_estimado: Math.round(custoEstimado * 1_000_000) / 1_000_000,
-        latency_ms: latencyMs,
-        success: !!content,
-        empresa: empresa || null,
-        prompt_version_id: selectedPromptVersionId,
-      });
-    } catch (logErr) {
-      console.warn('[Copilot] Erro ao salvar ai_usage_log:', logErr);
-    }
-
     return new Response(
-      JSON.stringify({ content, model, tokens_input: tokensInput, tokens_output: tokensOutput, latency_ms: latencyMs }),
+      JSON.stringify({ content, model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

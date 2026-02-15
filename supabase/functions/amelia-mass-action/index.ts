@@ -253,6 +253,8 @@ Temperatura: ${deal.temperatura || "não definida"}`;
         }
 
         if (message) {
+          // Telemetry
+          try { await sb.from('ai_usage_log').insert({ function_name: 'amelia-mass-action', provider: msgProvider || 'unknown', model: msgProvider === 'CLAUDE' ? 'claude-sonnet-4-20250514' : msgProvider === 'GEMINI' ? 'gemini-3-pro-preview' : 'gpt-4o', success: true, empresa: job.empresa || null }); } catch { /* ignore */ }
           messagesPreview.push({ deal_id: deal.id, contact_name: contactName, message, approved: true });
         } else {
           messagesPreview.push({
