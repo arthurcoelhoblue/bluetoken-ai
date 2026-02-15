@@ -1,12 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { Bot, Send, Sparkles, MessageCircle } from 'lucide-react';
+import { Bot, Send, Sparkles, MessageCircle, Trash2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
+import { useCopilotMessages } from '@/hooks/useCopilotMessages';
+import { useCopilotInsights } from '@/hooks/useCopilotInsights';
+import { CopilotInsightCard } from './CopilotInsightCard';
 import type { CopilotContextType } from '@/types/conversas';
 
 interface CopilotContext {
@@ -16,11 +19,6 @@ interface CopilotContext {
   leadNome?: string;
   estadoFunil?: string;
   framework?: string;
-}
-
-interface LocalMessage {
-  role: 'user' | 'assistant';
-  content: string;
 }
 
 interface CopilotPanelProps {
@@ -51,24 +49,53 @@ const QUICK_SUGGESTIONS: Record<CopilotContextType, string[]> = {
 
 export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps) {
   const [open, setOpen] = useState(false);
-  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const {
+    messages, isLoading: historyLoading, saveMessage, clearHistory,
+    addLocalMessage, sessionBreaks,
+  } = useCopilotMessages({
+    contextType: context.type,
+    contextId: context.id,
+    empresa: context.empresa,
+    enabled: open,
+  });
+
+  const { insights, generateInsights, dismissInsight, pendingCount } = useCopilotInsights(context.empresa);
+
+  // Generate proactive insights when opening
+  useEffect(() => {
+    if (open && context.type === 'GERAL') {
+      generateInsights();
+    }
+  }, [open, context.type, generateInsights]);
+
+  // Auto-scroll
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
 
   const suggestions = QUICK_SUGGESTIONS[context.type] || QUICK_SUGGESTIONS.GERAL;
 
   const sendMessage = async (content: string) => {
     if (!content.trim()) return;
-
-    const userMsg: LocalMessage = { role: 'user', content: content.trim() };
-    setMessages(prev => [...prev, userMsg]);
+    const trimmed = content.trim();
     setInput('');
     setIsLoading(true);
 
+    // Save user message to DB
+    await saveMessage('user', trimmed);
+
     try {
+      const allMsgs = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: trimmed }];
+
       const { data, error } = await supabase.functions.invoke('copilot-chat', {
         body: {
-          messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })),
+          messages: allMsgs,
           contextType: context.type,
           contextId: context.id,
           empresa: context.empresa,
@@ -76,8 +103,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
       });
 
       if (error) {
-        // Check for rate limit or payment errors
-        const status = (error as Record<string, unknown>)?.status ?? (error as Record<string, unknown> & { context?: { status?: number } })?.context?.status;
+        const status = (error as any)?.status ?? (error as any)?.context?.status;
         if (status === 429) {
           toast({ title: 'Rate limit', description: 'Muitas requisições. Aguarde alguns segundos.', variant: 'destructive' });
         } else if (status === 402) {
@@ -86,35 +112,46 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
         throw error;
       }
 
-      const assistantMsg: LocalMessage = {
-        role: 'assistant',
-        content: data?.content || 'Sem resposta da IA.',
-      };
-      setMessages(prev => [...prev, assistantMsg]);
+      const responseContent = data?.content || 'Sem resposta da IA.';
+      await saveMessage('assistant', responseContent, {
+        model_used: data?.model,
+        tokens_input: data?.tokens_input,
+        tokens_output: data?.tokens_output,
+        latency_ms: data?.latency_ms,
+      });
     } catch (err) {
       console.error('[Copilot] Erro:', err);
-      const errorMsg: LocalMessage = {
-        role: 'assistant',
-        content: '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.',
-      };
-      setMessages(prev => [...prev, errorMsg]);
+      addLocalMessage('assistant', '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
   };
 
   const trigger = variant === 'icon' ? (
-    <Button variant="ghost" size="icon" className="h-8 w-8">
+    <Button variant="ghost" size="icon" className="h-8 w-8 relative">
       <Sparkles className="h-4 w-4" />
+      {pendingCount > 0 && (
+        <span className="absolute -top-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-destructive text-[10px] font-bold text-destructive-foreground">
+          {pendingCount > 9 ? '9+' : pendingCount}
+        </span>
+      )}
     </Button>
   ) : variant === 'fab' ? (
-    <Button size="icon" className="fixed bottom-6 right-6 h-12 w-12 rounded-full shadow-lg z-50">
+    <Button size="icon" className="fixed bottom-6 right-6 h-12 w-12 rounded-full shadow-lg z-50 relative">
       <Bot className="h-5 w-5" />
+      {pendingCount > 0 && (
+        <span className="absolute -top-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-destructive text-xs font-bold text-destructive-foreground">
+          {pendingCount > 9 ? '9+' : pendingCount}
+        </span>
+      )}
     </Button>
   ) : (
     <Button variant="outline" size="sm" className="gap-1.5">
       <Sparkles className="h-3.5 w-3.5" />
       Copilot
+      {pendingCount > 0 && (
+        <Badge variant="destructive" className="ml-1 text-[10px] px-1.5 py-0">{pendingCount}</Badge>
+      )}
     </Button>
   );
 
@@ -123,15 +160,40 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
       <SheetTrigger asChild>{trigger}</SheetTrigger>
       <SheetContent className="w-[440px] sm:max-w-[440px] flex flex-col">
         <SheetHeader>
-          <SheetTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5 text-primary" />
-            Amélia Copilot
-            <Badge variant="secondary" className="text-xs">Beta</Badge>
-          </SheetTitle>
+          <div className="flex items-center justify-between">
+            <SheetTitle className="flex items-center gap-2">
+              <Bot className="h-5 w-5 text-primary" />
+              Amélia Copilot
+              <Badge variant="secondary" className="text-xs">Beta</Badge>
+            </SheetTitle>
+            {messages.length > 0 && (
+              <Button variant="ghost" size="icon" className="h-7 w-7" onClick={clearHistory} title="Limpar histórico">
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            )}
+          </div>
         </SheetHeader>
 
         <ScrollArea className="flex-1 py-4">
-          {messages.length === 0 ? (
+          {/* Proactive Insights */}
+          {insights.length > 0 && (
+            <div className="space-y-2 mb-4">
+              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">💡 Insights da Amélia</p>
+              {insights.map(insight => (
+                <CopilotInsightCard key={insight.id} insight={insight} onDismiss={dismissInsight} />
+              ))}
+            </div>
+          )}
+
+          {historyLoading ? (
+            <div className="flex justify-center py-8">
+              <div className="flex items-center gap-1">
+                <span className="h-2 w-2 bg-muted-foreground/40 rounded-full animate-bounce" />
+                <span className="h-2 w-2 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:0.2s]" />
+                <span className="h-2 w-2 bg-muted-foreground/40 rounded-full animate-bounce [animation-delay:0.4s]" />
+              </div>
+            </div>
+          ) : messages.length === 0 ? (
             <div className="space-y-4">
               <p className="text-sm text-muted-foreground text-center">
                 Pergunte à Amélia sobre este {context.type.toLowerCase()}.
@@ -152,18 +214,24 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
           ) : (
             <div className="space-y-3">
               {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  <div
-                    className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap ${
-                      msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-br-none'
-                        : 'bg-muted rounded-bl-none'
-                    }`}
-                  >
-                    {msg.content}
+                <div key={msg.id}>
+                  {sessionBreaks.has(i) && (
+                    <div className="flex items-center gap-2 my-4">
+                      <div className="flex-1 border-t" />
+                      <span className="text-[10px] text-muted-foreground whitespace-nowrap">Nova conversa</span>
+                      <div className="flex-1 border-t" />
+                    </div>
+                  )}
+                  <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                    <div
+                      className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap ${
+                        msg.role === 'user'
+                          ? 'bg-primary text-primary-foreground rounded-br-none'
+                          : 'bg-muted rounded-bl-none'
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -178,6 +246,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
                   </div>
                 </div>
               )}
+              <div ref={scrollRef} />
             </div>
           )}
         </ScrollArea>
