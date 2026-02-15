@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ChevronLeft, ChevronRight, Search, Users } from 'lucide-react';
 import { healthStatusConfig, npsConfig, type CSHealthStatus, type CSCustomerFilters } from '@/types/customerSuccess';
+import { CSCustomerCreateDialog } from '@/components/cs/CSCustomerCreateDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -35,7 +36,9 @@ export default function CSClientesPage() {
   return (
     <AppLayout>
     <div className="flex-1 overflow-auto">
-      <PageShell icon={Users} title="Clientes CS" description="Lista de clientes no módulo de Sucesso do Cliente" />
+      <PageShell icon={Users} title="Clientes CS" description="Lista de clientes no módulo de Sucesso do Cliente">
+        <CSCustomerCreateDialog />
+      </PageShell>
 
       <div className="px-6 pb-6 space-y-4">
         {/* Filters */}
