@@ -6,6 +6,43 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function callGeminiSimple(googleApiKey: string, prompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.3, maxTokens = 100 } = options;
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: { temperature, maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!resp.ok) throw new Error(`Gemini error ${resp.status}`);
+  const data = await resp.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+async function callClaudeSimple(anthropicKey: string, systemPrompt: string, userPrompt: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.3, maxTokens = 100 } = options;
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      temperature,
+      system: systemPrompt,
+      messages: [{ role: 'user', content: userPrompt }],
+    }),
+  });
+  if (!resp.ok) throw new Error(`Claude error ${resp.status}`);
+  const data = await resp.json();
+  return data.content?.[0]?.text?.trim() || '';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -14,6 +51,7 @@ serve(async (req) => {
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
     );
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
     let body: any = {};
@@ -45,12 +83,11 @@ serve(async (req) => {
       });
     }
 
-    // Pre-fetch shared data
     const pipelineIds = [...new Set(deals.map((d: any) => d.pipeline_id))];
 
     const [stagesRes, avgTicketRes] = await Promise.all([
       supabase.from('pipeline_stages').select('id, posicao, pipeline_id').in('pipeline_id', pipelineIds).order('posicao'),
-      supabase.rpc('', {}).then(() => null).catch(() => null), // placeholder
+      supabase.rpc('', {}).then(() => null).catch(() => null),
     ]);
 
     const stagesByPipeline: Record<string, any[]> = {};
@@ -59,7 +96,6 @@ serve(async (req) => {
       stagesByPipeline[s.pipeline_id].push(s);
     }
 
-    // Get avg ticket per pipeline (deals GANHO)
     const { data: wonDeals } = await supabase
       .from('deals')
       .select('pipeline_id, valor')
@@ -81,7 +117,6 @@ serve(async (req) => {
       }
     }
 
-    // Get stage avg time from deal_stage_history
     const { data: stageHistAvg } = await supabase
       .from('deal_stage_history')
       .select('to_stage_id, tempo_no_stage_anterior_ms')
@@ -108,10 +143,8 @@ serve(async (req) => {
         const totalStages = stages.length;
         const stagePos = (deal.pipeline_stages as any)?.posicao ?? 1;
 
-        // 1. Stage Progress (25%)
         const stageProgress = totalStages > 1 ? ((stagePos - 1) / (totalStages - 1)) * 100 : 50;
 
-        // 2. Tempo na Stage (20%)
         const daysInStage = (Date.now() - new Date(deal.updated_at).getTime()) / 86400000;
         const avgMs = stageAvgTime[deal.stage_id];
         const avgDays = avgMs ? avgMs / 86400000 : 14;
@@ -120,7 +153,6 @@ serve(async (req) => {
           tempoScore = daysInStage > avgDays * 2 ? 0 : Math.max(0, 100 - (daysInStage / avgDays) * 50);
         }
 
-        // 3. Engajamento (20%)
         const { data: activities } = await supabase
           .from('deal_activities')
           .select('tipo')
@@ -136,14 +168,12 @@ serve(async (req) => {
         }
         const engajamento = Math.min(100, engPoints * 10);
 
-        // 4. Temperatura Lead (15%)
         let temperaturaScore = 50;
         const temp = deal.temperatura;
         if (temp === 'QUENTE') temperaturaScore = 100;
         else if (temp === 'MORNO') temperaturaScore = 60;
         else if (temp === 'FRIO') temperaturaScore = 20;
 
-        // Check ICP bonus via lead_classifications
         const legacyLeadId = (deal.contacts as any)?.legacy_lead_id;
         if (legacyLeadId) {
           const { data: classif } = await supabase
@@ -156,7 +186,6 @@ serve(async (req) => {
           else if (classif?.[0]?.icp === 'ICP_B') temperaturaScore = Math.min(100, temperaturaScore + 10);
         }
 
-        // 5. Valor vs Ticket (10%)
         const ticket = avgTicket[deal.pipeline_id] || 0;
         let valorScore = 50;
         if (ticket > 0 && deal.valor) {
@@ -166,7 +195,6 @@ serve(async (req) => {
           else valorScore = 60;
         }
 
-        // 6. Sentimento (10%)
         let sentimentoScore = 50;
         if (legacyLeadId) {
           const { data: intents } = await supabase
@@ -181,7 +209,6 @@ serve(async (req) => {
           else if (['OBJECAO', 'RECLAMACAO'].includes(lastIntent)) sentimentoScore = 20;
         }
 
-        // Weighted score
         const score = Math.round(
           stageProgress * 0.25 +
           tempoScore * 0.20 +
@@ -203,34 +230,28 @@ serve(async (req) => {
           media_stage_dias: Math.round(avgDays),
         };
 
-        // Generate proxima_acao_sugerida via Claude (only for single deal or top deals)
+        // Generate proxima_acao_sugerida via AI (Gemini primary, Claude fallback)
         let proximaAcao: string | null = null;
-        if (ANTHROPIC_API_KEY && (targetDealId || finalScore < 50)) {
-          try {
-            const aiRes = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'x-api-key': ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 100,
-                temperature: 0.3,
-                system: 'Você sugere a próxima ação para um vendedor. Responda com UMA frase curta e acionável em português. Sem markdown.',
-                messages: [{
-                  role: 'user',
-                  content: `Deal "${deal.titulo}" (R$ ${deal.valor || 0}). Stage: ${(deal.pipeline_stages as any)?.nome}. ${Math.round(daysInStage)} dias na stage (média ${Math.round(avgDays)}d). Temperatura: ${temp || 'N/A'}. Engajamento 14d: ${activities?.length || 0} atividades. Score: ${finalScore}/100. Dimensões: ${JSON.stringify(dimensoes)}. Qual a próxima ação mais importante?`,
-                }],
-              }),
-            });
-            if (aiRes.ok) {
-              const aiData = await aiRes.json();
-              proximaAcao = aiData.content?.[0]?.text?.trim() || null;
+        if ((GOOGLE_API_KEY || ANTHROPIC_API_KEY) && (targetDealId || finalScore < 50)) {
+          const systemPrompt = 'Você sugere a próxima ação para um vendedor. Responda com UMA frase curta e acionável em português. Sem markdown.';
+          const userPrompt = `Deal "${deal.titulo}" (R$ ${deal.valor || 0}). Stage: ${(deal.pipeline_stages as any)?.nome}. ${Math.round(daysInStage)} dias na stage (média ${Math.round(avgDays)}d). Temperatura: ${temp || 'N/A'}. Engajamento 14d: ${activities?.length || 0} atividades. Score: ${finalScore}/100. Dimensões: ${JSON.stringify(dimensoes)}. Qual a próxima ação mais importante?`;
+
+          // Try Gemini first
+          if (GOOGLE_API_KEY) {
+            try {
+              proximaAcao = await callGeminiSimple(GOOGLE_API_KEY, `${systemPrompt}\n\n${userPrompt}`, { temperature: 0.3, maxTokens: 100 });
+            } catch (e) {
+              console.warn('[deal-scoring] Gemini failed:', e);
             }
-          } catch (e) {
-            console.warn('[deal-scoring] AI suggestion failed:', e);
+          }
+
+          // Fallback to Claude
+          if (!proximaAcao && ANTHROPIC_API_KEY) {
+            try {
+              proximaAcao = await callClaudeSimple(ANTHROPIC_API_KEY, systemPrompt, userPrompt, { temperature: 0.3, maxTokens: 100 });
+            } catch (e) {
+              console.warn('[deal-scoring] Claude fallback failed:', e);
+            }
           }
         }
 
@@ -239,7 +260,7 @@ serve(async (req) => {
         if (oldScore && oldScore - finalScore > 20 && deal.owner_id) {
           await supabase.from('notifications').insert({
             user_id: deal.owner_id,
-            empresa: 'BLUE', // fallback
+            empresa: 'BLUE',
             tipo: 'DEAL_SCORE_DROP',
             titulo: `⚠️ Score caiu: ${deal.titulo}`,
             mensagem: `Probabilidade caiu de ${oldScore}% para ${finalScore}%. ${proximaAcao || 'Revise o deal.'}`,
@@ -248,7 +269,6 @@ serve(async (req) => {
           }).then(() => {}).catch(() => {});
         }
 
-        // Update deal
         await supabase.from('deals').update({
           score_probabilidade: finalScore,
           scoring_dimensoes: dimensoes,

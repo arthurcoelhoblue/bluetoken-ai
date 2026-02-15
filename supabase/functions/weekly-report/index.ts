@@ -11,10 +11,10 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const googleApiKey = Deno.env.get('GOOGLE_API_KEY');
     const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY');
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Get all active empresas
     const { data: configs } = await supabase.from('system_settings').select('empresa').limit(10);
     const empresas = [...new Set((configs ?? []).map((c: any) => c.empresa).filter(Boolean))];
     if (empresas.length === 0) empresas.push('BLUE', 'TOKENIZA');
@@ -95,8 +95,29 @@ Deno.serve(async (req) => {
       };
 
       let narrative = '';
+      const prompt = `Gere um relatório semanal executivo em português (2-3 parágrafos) para a empresa ${empresa}, baseado nestes dados:\n${JSON.stringify(context)}\n\nSeja direto, mencione números, destaque conquistas, riscos e recomendações para a próxima semana. Formato: texto corrido, sem markdown.`;
 
-      if (anthropicKey) {
+      // Try Gemini first
+      if (googleApiKey) {
+        try {
+          const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: { temperature: 0.4, maxOutputTokens: 600 },
+            }),
+          });
+          if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+          const data = await resp.json();
+          narrative = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        } catch (e) {
+          console.warn('[weekly-report] Gemini failed:', e);
+        }
+      }
+
+      // Fallback to Claude
+      if (!narrative && anthropicKey) {
         try {
           const aiResp = await fetch('https://api.anthropic.com/v1/messages', {
             method: 'POST',
@@ -108,19 +129,18 @@ Deno.serve(async (req) => {
             body: JSON.stringify({
               model: 'claude-sonnet-4-20250514',
               max_tokens: 600,
-              messages: [{
-                role: 'user',
-                content: `Gere um relatório semanal executivo em português (2-3 parágrafos) para a empresa ${empresa}, baseado nestes dados:\n${JSON.stringify(context)}\n\nSeja direto, mencione números, destaque conquistas, riscos e recomendações para a próxima semana. Formato: texto corrido, sem markdown.`,
-              }],
+              messages: [{ role: 'user', content: prompt }],
             }),
           });
           const aiData = await aiResp.json();
-          narrative = aiData.content?.[0]?.text || 'Relatório indisponível.';
+          narrative = aiData.content?.[0]?.text || '';
         } catch (e) {
-          console.error('AI error:', e);
-          narrative = `Semana encerrada com ${context.deals_ganhos} deals ganhos (${(ganhoValor / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}) e ${context.deals_perdidos} perdidos. Pipeline ativo: ${context.pipeline_aberto} deals. ${context.cs_em_risco} clientes em risco.`;
+          console.error('[weekly-report] Claude fallback failed:', e);
         }
-      } else {
+      }
+
+      // Deterministic fallback
+      if (!narrative) {
         narrative = `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${atividadeCount} atividades registradas.`;
       }
 

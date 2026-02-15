@@ -6,6 +6,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function callGeminiWithSystem(googleApiKey: string, systemPrompt: string, userContent: string, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.3, maxTokens = 2000 } = options;
+  const fullPrompt = `${systemPrompt}\n\n${userContent}`;
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: fullPrompt }] }],
+      generationConfig: { temperature, maxOutputTokens: maxTokens },
+    }),
+  });
+  if (!resp.ok) throw new Error(`Gemini error ${resp.status}`);
+  const data = await resp.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -17,13 +33,11 @@ serve(async (req) => {
       });
     }
 
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY not configured' }), {
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'No AI API key configured' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
@@ -105,32 +119,51 @@ ${intents.map((i: any) => `- ${i.intent}: ${i.intent_summary || ''} (${i.acao_re
 CONVERSA (${messages.length} mensagens):
 ${transcript.substring(0, 8000)}`;
 
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2000,
-        temperature: 0.3,
-        system: systemPrompt,
-        messages: [{ role: 'user', content: userContent }],
-      }),
-    });
+    let content = '';
 
-    if (!aiResponse.ok) {
-      const errText = await aiResponse.text();
-      console.error('[deal-context-summary] Anthropic error:', aiResponse.status, errText);
+    // Try Gemini first
+    if (GOOGLE_API_KEY) {
+      try {
+        content = await callGeminiWithSystem(GOOGLE_API_KEY, systemPrompt, userContent, { temperature: 0.3, maxTokens: 2000 });
+        console.log('[deal-context-summary] Gemini OK');
+      } catch (e) {
+        console.warn('[deal-context-summary] Gemini failed:', e);
+      }
+    }
+
+    // Fallback to Claude
+    if (!content && ANTHROPIC_API_KEY) {
+      try {
+        const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': ANTHROPIC_API_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 2000,
+            temperature: 0.3,
+            system: systemPrompt,
+            messages: [{ role: 'user', content: userContent }],
+          }),
+        });
+
+        if (!aiResponse.ok) throw new Error(`Claude error ${aiResponse.status}`);
+        const aiData = await aiResponse.json();
+        content = aiData.content?.[0]?.text ?? '';
+        console.log('[deal-context-summary] Claude fallback OK');
+      } catch (e) {
+        console.error('[deal-context-summary] Claude fallback failed:', e);
+      }
+    }
+
+    if (!content) {
       return new Response(JSON.stringify({ error: 'AI processing failed' }), {
         status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
-
-    const aiData = await aiResponse.json();
-    const content = aiData.content?.[0]?.text ?? '';
 
     let contextSdr: any = null;
     try {

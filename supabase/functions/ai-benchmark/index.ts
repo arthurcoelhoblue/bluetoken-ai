@@ -13,28 +13,26 @@ serve(async (req) => {
 
   if (req.method !== 'POST') {
     return new Response(JSON.stringify({ error: 'Method not allowed' }), {
-      status: 405,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 
   try {
-    const { limit = 20, modelo = 'claude-sonnet-4-20250514' } = await req.json();
+    const { limit = 20, modelo = 'gemini-3-pro-preview' } = await req.json();
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL')!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
 
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY não configurada' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'No AI API key configured' }), {
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    // Buscar mensagens INBOUND recentes que já têm interpretação
     const { data: intents, error: intentsError } = await supabase
       .from('lead_message_intents')
       .select('id, message_id, intent, intent_confidence, acao_recomendada, resposta_automatica_texto, modelo_ia, tokens_usados, tempo_processamento_ms, empresa, lead_id')
@@ -43,8 +41,7 @@ serve(async (req) => {
 
     if (intentsError || !intents || intents.length === 0) {
       return new Response(JSON.stringify({ error: 'Nenhuma interpretação encontrada', details: intentsError }), {
-        status: 404,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
@@ -56,7 +53,6 @@ serve(async (req) => {
 
     const messageMap = new Map((messages || []).map(m => [m.id, m]));
 
-    // Verificar quais já foram benchmarkadas
     const intentIds = intents.map(i => i.id);
     const { data: existingBenchmarks } = await supabase
       .from('ai_model_benchmarks')
@@ -68,13 +64,10 @@ serve(async (req) => {
     const toProcess = intents.filter(i => !alreadyDone.has(i.id));
 
     if (toProcess.length === 0) {
-      return new Response(JSON.stringify({ 
+      return new Response(JSON.stringify({
         message: 'Todas as mensagens já foram benchmarkadas com este modelo',
-        total: intents.length,
-        processed: 0,
-      }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+        total: intents.length, processed: 0,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     console.log(`[Benchmark] Processando ${toProcess.length} mensagens com ${modelo}`);
@@ -100,32 +93,52 @@ Retorne APENAS o JSON, sem markdown.`;
       const startTime = Date.now();
 
       try {
-        const response = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: modelo,
-            max_tokens: 1500,
-            temperature: 0.3,
-            system: benchmarkSystemPrompt,
-            messages: [{ role: 'user', content: userPrompt }],
-          }),
-        });
+        let content = '';
+        let tokens = 0;
 
-        if (!response.ok) {
-          const errText = await response.text();
-          console.error(`[Benchmark] Anthropic falhou:`, response.status, errText);
-          results.push({ message_id: intent.message_id, error: `Anthropic ${response.status}` });
-          continue;
+        // Try Gemini first
+        if (GOOGLE_API_KEY) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${benchmarkSystemPrompt}\n\n${userPrompt}` }] }],
+                generationConfig: { temperature: 0.3, maxOutputTokens: 1500 },
+              }),
+            });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            content = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            tokens = data.usageMetadata?.totalTokenCount || 0;
+          } catch (e) {
+            console.warn('[Benchmark] Gemini failed:', e);
+          }
         }
 
-        const data = await response.json();
-        const content = data.content?.[0]?.text;
-        const tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+        // Fallback to Claude
+        if (!content && ANTHROPIC_API_KEY) {
+          const response = await fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': ANTHROPIC_API_KEY,
+              'anthropic-version': '2023-06-01',
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: 'claude-sonnet-4-20250514',
+              max_tokens: 1500,
+              temperature: 0.3,
+              system: benchmarkSystemPrompt,
+              messages: [{ role: 'user', content: userPrompt }],
+            }),
+          });
+          if (!response.ok) throw new Error(`Claude ${response.status}`);
+          const data = await response.json();
+          content = data.content?.[0]?.text || '';
+          tokens = (data.usage?.input_tokens || 0) + (data.usage?.output_tokens || 0);
+        }
+
         const tempoMs = Date.now() - startTime;
 
         if (content) {
@@ -161,7 +174,6 @@ Retorne APENAS o JSON, sem markdown.`;
       await new Promise(r => setTimeout(r, 500));
     }
 
-    // Métricas agregadas
     const successResults = results.filter(r => !r.error);
     const intentMatch = successResults.filter(r => r.concordam_intent).length;
     const acaoMatch = successResults.filter(r => r.concordam_acao).length;
@@ -184,12 +196,10 @@ Retorne APENAS o JSON, sem markdown.`;
     return new Response(JSON.stringify({ summary, results }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
-
   } catch (error) {
     console.error('[Benchmark] Erro geral:', error);
     return new Response(JSON.stringify({ error: String(error) }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   }
 });

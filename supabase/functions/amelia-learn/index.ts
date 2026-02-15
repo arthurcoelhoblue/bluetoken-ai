@@ -6,6 +6,53 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
+async function callAI(googleApiKey: string | undefined, anthropicKey: string | undefined, prompt: string, options: { system?: string; temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { system, temperature = 0.3, maxTokens = 1500 } = options;
+  const fullPrompt = system ? `${system}\n\n${prompt}` : prompt;
+
+  if (googleApiKey) {
+    try {
+      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: fullPrompt }] }],
+          generationConfig: { temperature, maxOutputTokens: maxTokens },
+        }),
+      });
+      if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+      const data = await resp.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      if (text) return text;
+    } catch (e) {
+      console.warn('[amelia-learn] Gemini failed:', e);
+    }
+  }
+
+  if (anthropicKey) {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: maxTokens,
+        temperature,
+        ...(system ? { system } : {}),
+        messages: [{ role: 'user', content: prompt }],
+      }),
+    });
+    if (!resp.ok) throw new Error(`Claude ${resp.status}`);
+    const data = await resp.json();
+    return data.content?.[0]?.text ?? '';
+  }
+
+  throw new Error('No AI API key available');
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -15,13 +62,14 @@ serve(async (req) => {
     const { empresa, periodo_horas = 72 } = await req.json();
     if (!empresa) {
       return new Response(JSON.stringify({ error: 'empresa is required' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
+    const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
     const supabase = createClient(supabaseUrl, serviceKey);
 
     const since = new Date(Date.now() - periodo_horas * 3600_000).toISOString();
@@ -39,7 +87,6 @@ serve(async (req) => {
       .limit(200);
 
     if (takeovers && takeovers.length >= 3) {
-      // Group by motivo
       const byMotivo: Record<string, number> = {};
       for (const t of takeovers) {
         const motivo = t.motivo || 'SEM_MOTIVO';
@@ -51,9 +98,7 @@ serve(async (req) => {
           const existing = await checkDuplicate(supabase, hash);
           if (!existing) {
             learnings.push({
-              empresa,
-              tipo: 'PADRAO_TAKEOVER',
-              categoria: 'conversacao',
+              empresa, tipo: 'PADRAO_TAKEOVER', categoria: 'conversacao',
               titulo: `Takeover recorrente: ${motivo}`,
               descricao: `Vendedores assumiram conversas ${count}x pelo motivo "${motivo}" nas últimas ${periodo_horas}h. Considerar automatizar este cenário.`,
               dados: { motivo, count, periodo_horas },
@@ -89,9 +134,7 @@ serve(async (req) => {
           const existing = await checkDuplicate(supabase, hash);
           if (!existing) {
             learnings.push({
-              empresa,
-              tipo: 'PADRAO_PERDA',
-              categoria: 'pipeline',
+              empresa, tipo: 'PADRAO_PERDA', categoria: 'pipeline',
               titulo: `${Math.round(pct * 100)}% das perdas por "${cat}"`,
               descricao: `${count} de ${total} deals perdidos recentemente tiveram a categoria "${cat}". Revisar abordagem comercial.`,
               dados: { categoria: cat, count, total, pct: Math.round(pct * 100) },
@@ -114,7 +157,6 @@ serve(async (req) => {
       .limit(200);
 
     if (corrections && corrections.length >= 5) {
-      // Count temperature corrections
       let tempCorrections = 0;
       for (const c of corrections) {
         if ((c as any).temperatura_anterior && (c as any).temperatura !== (c as any).temperatura_anterior) {
@@ -126,9 +168,7 @@ serve(async (req) => {
         const existing = await checkDuplicate(supabase, hash);
         if (!existing) {
           learnings.push({
-            empresa,
-            tipo: 'CORRECAO_CLASSIFICACAO',
-            categoria: 'classificacao',
+            empresa, tipo: 'CORRECAO_CLASSIFICACAO', categoria: 'classificacao',
             titulo: `${tempCorrections} correções de temperatura recentes`,
             descricao: `Humanos corrigiram a temperatura da IA ${tempCorrections}x. Revisar critérios de classificação automática.`,
             dados: { tempCorrections, total: corrections.length },
@@ -140,7 +180,7 @@ serve(async (req) => {
     }
 
     // ========================================
-    // ANÁLISE 4: Deals sem atividade (Alerta Crítico)
+    // ANÁLISE 4: Deals sem atividade
     // ========================================
     const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
     const { data: inactiveDeals } = await supabase
@@ -156,9 +196,7 @@ serve(async (req) => {
         const existing = await checkDuplicate(supabase, hash);
         if (!existing) {
           learnings.push({
-            empresa,
-            tipo: 'ALERTA_CRITICO',
-            categoria: 'pipeline',
+            empresa, tipo: 'ALERTA_CRITICO', categoria: 'pipeline',
             titulo: `Deal "${deal.titulo}" sem atividade há 48h+`,
             descricao: `O deal de ${(deal.contacts as any)?.nome} está sem atividade. Risco de perda por inação.`,
             dados: { deal_id: deal.id, owner_id: deal.owner_id },
@@ -166,17 +204,13 @@ serve(async (req) => {
             hash_titulo: hash,
           });
 
-          // Create notification for owner
           if (deal.owner_id) {
             await supabase.from('notifications').insert({
-              user_id: deal.owner_id,
-              empresa,
+              user_id: deal.owner_id, empresa,
               tipo: 'AMELIA_ALERTA',
               titulo: `Deal "${deal.titulo}" sem atividade`,
               mensagem: `Há mais de 48h sem atividade. Ação recomendada para evitar perda.`,
-              link: `/pipeline`,
-              entity_id: deal.id,
-              entity_type: 'deal',
+              link: `/pipeline`, entity_id: deal.id, entity_type: 'deal',
             });
           }
         }
@@ -184,7 +218,7 @@ serve(async (req) => {
     }
 
     // ========================================
-    // ANÁLISE 5: Leads quentes sem followup (Alerta Crítico)
+    // ANÁLISE 5: Leads quentes sem followup
     // ========================================
     const fourHoursAgo = new Date(Date.now() - 4 * 3600_000).toISOString();
     const { data: hotIntents } = await supabase
@@ -198,7 +232,6 @@ serve(async (req) => {
 
     if (hotIntents) {
       for (const intent of hotIntents) {
-        // Check if there's a followup
         const { data: followup } = await supabase
           .from('lead_messages')
           .select('id')
@@ -212,9 +245,7 @@ serve(async (req) => {
           const existing = await checkDuplicate(supabase, hash);
           if (!existing) {
             learnings.push({
-              empresa,
-              tipo: 'ALERTA_CRITICO',
-              categoria: 'conversacao',
+              empresa, tipo: 'ALERTA_CRITICO', categoria: 'conversacao',
               titulo: `Lead quente sem followup há 4h+`,
               descricao: `Lead demonstrou INTERESSE_COMPRA mas não recebeu followup. Ação imediata recomendada.`,
               dados: { lead_id: intent.lead_id },
@@ -249,77 +280,51 @@ serve(async (req) => {
           .limit(20);
 
         if (activities && activities.length >= 2) {
-          timelines.push({
-            dealId: deal.id,
-            titulo: deal.titulo,
-            events: activities.map(a => a.tipo),
-          });
+          timelines.push({ dealId: deal.id, titulo: deal.titulo, events: activities.map(a => a.tipo) });
         }
       }
 
-      if (timelines.length >= 5) {
-        // Find common subsequences using AI
-        const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-        if (ANTHROPIC_API_KEY) {
-          try {
-            const prompt = `Analise estas timelines de deals que foram PERDIDOS e identifique subsequências de 2-4 eventos que aparecem em 50%+ dos casos. Cada timeline é uma lista de tipos de atividade em ordem cronológica.
+      if (timelines.length >= 5 && (GOOGLE_API_KEY || ANTHROPIC_API_KEY)) {
+        try {
+          const prompt = `Analise estas timelines de deals que foram PERDIDOS e identifique subsequências de 2-4 eventos que aparecem em 50%+ dos casos.
 
 Timelines:
 ${timelines.map((t, i) => `${i + 1}. ${t.events.join(' → ')}`).join('\n')}
 
-Retorne APENAS um JSON com tool_calls. Para cada padrão encontrado, use a tool "report_sequence" com: events (array de strings), match_pct (number 0-100), window_days (number estimado), description (string em PT-BR).`;
+Retorne JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window_days": number, "description": "string em PT-BR"}]}`;
 
-            const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'x-api-key': ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                temperature: 0.3,
-                system: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM. Retorne APENAS JSON válido sem markdown.',
-                messages: [{ role: 'user', content: `${prompt}\n\nRetorne JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window_days": number, "description": "string em PT-BR"}]}` }],
-              }),
-            });
+          const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, {
+            system: 'Você é um analista de dados que identifica padrões em sequências de eventos de CRM. Retorne APENAS JSON válido sem markdown.',
+            temperature: 0.3, maxTokens: 1500,
+          });
 
-            if (aiResponse.ok) {
-              const aiData = await aiResponse.json();
-              const content = aiData.content?.[0]?.text ?? '';
-              let args: any = { sequences: [] };
-              try {
-                const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                args = JSON.parse(cleaned);
-              } catch { /* ignore */ }
-              if (args) {
-                for (const seq of (args.sequences || [])) {
-                  if (seq.match_pct >= 50 && seq.events.length >= 2) {
-                    const hash = `seq_perda_${seq.events.join('_')}_${empresa}`;
-                    const existing = await checkDuplicate(supabase, hash);
-                    if (!existing) {
-                      learnings.push({
-                        empresa,
-                        tipo: 'SEQUENCIA_PERDA',
-                        categoria: 'sequencia',
-                        titulo: `Sequência de perda: ${seq.events.join(' → ')}`,
-                        descricao: seq.description,
-                        dados: { timelines_analyzed: timelines.length },
-                        confianca: Math.min(0.95, seq.match_pct / 100),
-                        sequencia_eventos: seq.events,
-                        sequencia_match_pct: seq.match_pct,
-                        sequencia_janela_dias: seq.window_days,
-                        hash_titulo: hash,
-                      });
-                    }
-                  }
-                }
+          let args: any = { sequences: [] };
+          try {
+            const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            args = JSON.parse(cleaned);
+          } catch { /* ignore */ }
+
+          for (const seq of (args.sequences || [])) {
+            if (seq.match_pct >= 50 && seq.events.length >= 2) {
+              const hash = `seq_perda_${seq.events.join('_')}_${empresa}`;
+              const existing = await checkDuplicate(supabase, hash);
+              if (!existing) {
+                learnings.push({
+                  empresa, tipo: 'SEQUENCIA_PERDA', categoria: 'sequencia',
+                  titulo: `Sequência de perda: ${seq.events.join(' → ')}`,
+                  descricao: seq.description,
+                  dados: { timelines_analyzed: timelines.length },
+                  confianca: Math.min(0.95, seq.match_pct / 100),
+                  sequencia_eventos: seq.events,
+                  sequencia_match_pct: seq.match_pct,
+                  sequencia_janela_dias: seq.window_days,
+                  hash_titulo: hash,
+                });
               }
             }
-          } catch (aiErr) {
-            console.error('[amelia-learn] AI sequence analysis error:', aiErr);
           }
+        } catch (aiErr) {
+          console.error('[amelia-learn] AI sequence analysis error:', aiErr);
         }
       }
     }
@@ -348,75 +353,51 @@ Retorne APENAS um JSON com tool_calls. Para cada padrão encontrado, use a tool 
           .limit(15);
 
         if (intents && intents.length >= 2) {
-          churnTimelines.push({
-            leadId: lead.legacy_lead_id,
-            intents: intents.map(i => i.intent),
-          });
+          churnTimelines.push({ leadId: lead.legacy_lead_id, intents: intents.map(i => i.intent) });
         }
       }
 
-      if (churnTimelines.length >= 3) {
-        const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-        if (ANTHROPIC_API_KEY) {
-          try {
-            const prompt = `Analise estas timelines de leads que fizeram OPT-OUT (cancelamento). Identifique subsequências de 2-4 intents que precedem o cancelamento em 50%+ dos casos.
+      if (churnTimelines.length >= 3 && (GOOGLE_API_KEY || ANTHROPIC_API_KEY)) {
+        try {
+          const prompt = `Analise estas timelines de leads que fizeram OPT-OUT (cancelamento). Identifique subsequências de 2-4 intents que precedem o cancelamento em 50%+ dos casos.
 
 Timelines de intents:
 ${churnTimelines.map((t, i) => `${i + 1}. ${t.intents.join(' → ')}`).join('\n')}
 
 Retorne APENAS JSON: {"sequences": [{"events": ["string"], "match_pct": number, "window_days": number, "description": "string em PT-BR"}]}`;
 
-            const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-              method: 'POST',
-              headers: {
-                'x-api-key': ANTHROPIC_API_KEY,
-                'anthropic-version': '2023-06-01',
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                model: 'claude-sonnet-4-20250514',
-                max_tokens: 1500,
-                temperature: 0.3,
-                system: 'Analista de padrões de churn em CRM. Retorne APENAS JSON válido sem markdown.',
-                messages: [{ role: 'user', content: prompt }],
-              }),
-            });
+          const content = await callAI(GOOGLE_API_KEY, ANTHROPIC_API_KEY, prompt, {
+            system: 'Analista de padrões de churn em CRM. Retorne APENAS JSON válido sem markdown.',
+            temperature: 0.3, maxTokens: 1500,
+          });
 
-            if (aiResponse.ok) {
-              const aiData = await aiResponse.json();
-              const content = aiData.content?.[0]?.text ?? '';
-              let args: any = { sequences: [] };
-              try {
-                const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                args = JSON.parse(cleaned);
-              } catch { /* ignore */ }
-              if (args) {
-                for (const seq of (args.sequences || [])) {
-                  if (seq.match_pct >= 50 && seq.events.length >= 2) {
-                    const hash = `seq_churn_${seq.events.join('_')}_${empresa}`;
-                    const existing = await checkDuplicate(supabase, hash);
-                    if (!existing) {
-                      learnings.push({
-                        empresa,
-                        tipo: 'SEQUENCIA_CHURN',
-                        categoria: 'sequencia',
-                        titulo: `Sequência de churn: ${seq.events.join(' → ')}`,
-                        descricao: seq.description,
-                        dados: { timelines_analyzed: churnTimelines.length },
-                        confianca: Math.min(0.95, seq.match_pct / 100),
-                        sequencia_eventos: seq.events,
-                        sequencia_match_pct: seq.match_pct,
-                        sequencia_janela_dias: seq.window_days,
-                        hash_titulo: hash,
-                      });
-                    }
-                  }
-                }
+          let args: any = { sequences: [] };
+          try {
+            const cleaned = content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            args = JSON.parse(cleaned);
+          } catch { /* ignore */ }
+
+          for (const seq of (args.sequences || [])) {
+            if (seq.match_pct >= 50 && seq.events.length >= 2) {
+              const hash = `seq_churn_${seq.events.join('_')}_${empresa}`;
+              const existing = await checkDuplicate(supabase, hash);
+              if (!existing) {
+                learnings.push({
+                  empresa, tipo: 'SEQUENCIA_CHURN', categoria: 'sequencia',
+                  titulo: `Sequência de churn: ${seq.events.join(' → ')}`,
+                  descricao: seq.description,
+                  dados: { timelines_analyzed: churnTimelines.length },
+                  confianca: Math.min(0.95, seq.match_pct / 100),
+                  sequencia_eventos: seq.events,
+                  sequencia_match_pct: seq.match_pct,
+                  sequencia_janela_dias: seq.window_days,
+                  hash_titulo: hash,
+                });
               }
             }
-          } catch (aiErr) {
-            console.error('[amelia-learn] AI churn sequence error:', aiErr);
           }
+        } catch (aiErr) {
+          console.error('[amelia-learn] AI churn sequence error:', aiErr);
         }
       }
     }
@@ -427,7 +408,7 @@ Retorne APENAS JSON: {"sequences": [{"events": ["string"], "match_pct": number, 
     if (learnings.length > 0) {
       const { error: insertError } = await supabase
         .from('amelia_learnings')
-        .insert(learnings.slice(0, 10)); // Max 10 per run
+        .insert(learnings.slice(0, 10));
 
       if (insertError) {
         console.error('[amelia-learn] Insert error:', insertError);
@@ -437,12 +418,7 @@ Retorne APENAS JSON: {"sequences": [{"events": ["string"], "match_pct": number, 
     console.log(`[amelia-learn] ${empresa}: ${learnings.length} learnings generated`);
 
     return new Response(
-      JSON.stringify({
-        success: true,
-        empresa,
-        learnings_count: learnings.length,
-        types: learnings.map(l => l.tipo),
-      }),
+      JSON.stringify({ success: true, empresa, learnings_count: learnings.length, types: learnings.map(l => l.tipo) }),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

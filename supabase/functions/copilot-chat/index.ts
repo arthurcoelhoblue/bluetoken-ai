@@ -3,7 +3,7 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
 // PATCH 7 — Copilot Chat (Amélia IA)
-// Enriquece contexto com dados do CRM e chama Lovable AI Gateway
+// Enriquece contexto com dados do CRM e chama Gemini (primário) / Claude (fallback)
 // ========================================
 
 const corsHeaders = {
@@ -37,6 +37,62 @@ interface CopilotRequest {
   empresa: string;
 }
 
+async function callGemini(googleApiKey: string, systemContent: string, messages: Array<{ role: string; content: string }>, options: { temperature?: number; maxTokens?: number } = {}): Promise<string> {
+  const { temperature = 0.4, maxTokens = 2048 } = options;
+  const conversationText = messages.map(m => `[${m.role}]: ${m.content}`).join('\n');
+  const fullPrompt = `${systemContent}\n\n${conversationText}`;
+
+  const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ parts: [{ text: fullPrompt }] }],
+      generationConfig: { temperature, maxOutputTokens: maxTokens },
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Gemini error ${resp.status}: ${errText}`);
+  }
+
+  const data = await resp.json();
+  return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+}
+
+async function callClaude(anthropicKey: string, systemContent: string, messages: Array<{ role: string; content: string }>, options: { temperature?: number; maxTokens?: number } = {}): Promise<{ content: string; tokensInput: number; tokensOutput: number }> {
+  const { temperature = 0.4, maxTokens = 2048 } = options;
+  const anthropicMessages = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+
+  const resp = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01',
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-20250514',
+      max_tokens: maxTokens,
+      temperature,
+      system: systemContent,
+      messages: anthropicMessages,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Claude error ${resp.status}: ${errText}`);
+  }
+
+  const data = await resp.json();
+  return {
+    content: data.content?.[0]?.text || '',
+    tokensInput: data.usage?.input_tokens || 0,
+    tokensOutput: data.usage?.output_tokens || 0,
+  };
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -54,9 +110,10 @@ serve(async (req) => {
       );
     }
 
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      console.error('[Copilot] ANTHROPIC_API_KEY não configurada');
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      console.error('[Copilot] Nenhuma API key de IA configurada');
       return new Response(
         JSON.stringify({ error: 'Configuração de IA ausente' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -80,7 +137,6 @@ serve(async (req) => {
       const userId = userData?.user?.id;
 
       if (userId) {
-        // Check if user is ADMIN
         const { data: roles } = await supabase
           .from('user_roles')
           .select('role')
@@ -89,7 +145,6 @@ serve(async (req) => {
         isAdmin = roles?.some((r: any) => r.role === 'ADMIN') ?? false;
 
         if (!isAdmin) {
-          // Fetch access profile permissions
           const { data: assignment } = await supabase
             .from('user_access_assignments')
             .select('access_profile_id')
@@ -143,53 +198,43 @@ serve(async (req) => {
       ? `${SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
       : SYSTEM_PROMPT;
 
-    const aiMessages = [
-      { role: 'system', content: systemContent },
-      ...messages.map(m => ({ role: m.role, content: m.content })),
-    ];
-
     console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
 
-    // Build Anthropic messages (system is separate param)
-    const anthropicMessages = messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }));
+    let content = '';
+    let model = 'gemini-3-pro-preview';
+    let tokensInput = 0;
+    let tokensOutput = 0;
 
-    const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 2048,
-        temperature: 0.4,
-        system: systemContent,
-        messages: anthropicMessages,
-      }),
-    });
-
-    if (aiResponse.status === 429) {
-      return new Response(
-        JSON.stringify({ error: 'Rate limit atingido. Tente novamente em alguns segundos.' }),
-        { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Try Gemini first (primary)
+    if (GOOGLE_API_KEY) {
+      try {
+        content = await callGemini(GOOGLE_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
+        if (content) {
+          console.log('[Copilot] Gemini OK');
+        }
+      } catch (geminiErr) {
+        console.warn('[Copilot] Gemini falhou, tentando Claude fallback:', geminiErr);
+      }
     }
 
-    if (!aiResponse.ok) {
-      const errorText = await aiResponse.text();
-      console.error('[Copilot] Erro Anthropic:', aiResponse.status, errorText);
-      return new Response(
-        JSON.stringify({ error: 'Erro ao processar resposta da IA' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+    // Fallback to Claude
+    if (!content && ANTHROPIC_API_KEY) {
+      try {
+        const claudeResult = await callClaude(ANTHROPIC_API_KEY, systemContent, messages, { temperature: 0.4, maxTokens: 2048 });
+        content = claudeResult.content;
+        model = 'claude-sonnet-4-20250514';
+        tokensInput = claudeResult.tokensInput;
+        tokensOutput = claudeResult.tokensOutput;
+        console.log('[Copilot] Claude fallback OK');
+      } catch (claudeErr) {
+        console.error('[Copilot] Claude fallback também falhou:', claudeErr);
+      }
     }
 
-    const aiData = await aiResponse.json();
-    const content = aiData.content?.[0]?.text || 'Sem resposta da IA.';
-    const tokensInput = aiData.usage?.input_tokens || 0;
-    const tokensOutput = aiData.usage?.output_tokens || 0;
-    const model = 'claude-sonnet-4-20250514';
+    if (!content) {
+      content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
+    }
+
     const latencyMs = Date.now() - startTime;
 
     return new Response(
@@ -241,7 +286,6 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
       .eq('lead_id', leadId)
       .eq('empresa', empresa)
       .maybeSingle(),
-    // BLOCO 5: Intents recentes do lead
     supabase
       .from('lead_message_intents')
       .select('intent, intent_confidence, intent_summary, acao_recomendada, sentimento, created_at')
@@ -274,7 +318,6 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
     }
   }
 
-  // BLOCO 5: Custom fields do contato vinculado ao lead
   if (contactResult.data?.telefone) {
     const { data: linkedContact } = await supabase
       .from('contacts')
@@ -288,7 +331,6 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
       parts.push(`**Organização**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
     }
 
-    // Custom field values do contato
     if (linkedContact?.id) {
       const { data: cfValues } = await supabase
         .from('custom_field_values')
@@ -307,7 +349,6 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
     }
   }
 
-  // BLOCO 5: Intents recentes
   if (intentsResult.data && intentsResult.data.length > 0) {
     const intents = intentsResult.data.map((i: any) =>
       `- [${i.intent}] conf=${i.intent_confidence} | ${i.intent_summary?.substring(0, 80) || '-'}${i.sentimento ? ` | Sent=${i.sentimento}` : ''}`
@@ -461,7 +502,6 @@ async function enrichGeralContext(
 
   const queries: Promise<void>[] = [];
 
-  // Pipeline data
   if (hasPipeline) {
     queries.push((async () => {
       const [pipelinesRes, slaRes] = await Promise.all([
@@ -484,7 +524,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // Leads count
   if (hasLeads) {
     queries.push((async () => {
       const { count } = await supabase
@@ -498,7 +537,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // CS summary
   if (hasCS) {
     queries.push((async () => {
       const { data: csData } = await supabase
@@ -514,7 +552,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // Metas progress
   if (hasMetas) {
     queries.push((async () => {
       const now = new Date();
@@ -563,7 +600,6 @@ async function enrichCustomerContext(supabase: any, customerId: string | undefin
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle(),
-    // Deals linked to this contact
     supabase
       .from('cs_customers')
       .select('contact_id')
@@ -614,7 +650,6 @@ async function enrichCustomerContext(supabase: any, customerId: string | undefin
     parts.push(list);
   }
 
-  // Fetch deals for this contact
   if (dealsRes.data?.contact_id) {
     const { data: deals } = await supabase
       .from('deals')

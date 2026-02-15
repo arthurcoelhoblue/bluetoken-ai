@@ -11,9 +11,10 @@ serve(async (req) => {
 
   try {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const GOOGLE_API_KEY = Deno.env.get('GOOGLE_API_KEY');
     const ANTHROPIC_API_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (!ANTHROPIC_API_KEY) {
-      return new Response(JSON.stringify({ error: 'ANTHROPIC_API_KEY não configurada' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (!GOOGLE_API_KEY && !ANTHROPIC_API_KEY) {
+      return new Response(JSON.stringify({ error: 'No AI API key configured' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { data: csmRows } = await supabase.from('cs_customers').select('csm_id').eq('is_active', true).not('csm_id', 'is', null);
@@ -24,6 +25,7 @@ serve(async (req) => {
     }
 
     let briefings = 0;
+    const systemPrompt = 'Você é a Amélia, assistente de Customer Success. Gere um briefing diário conciso em português brasileiro com: 1) Resumo do portfólio, 2) Alertas urgentes, 3) Top 3 ações recomendadas para hoje. Use bullets, seja direta e acionável. Máximo 300 palavras.';
 
     for (const csmId of csmIds) {
       const [customersRes, incidentsRes, renewalsRes] = await Promise.all([
@@ -52,29 +54,56 @@ Renovações próximas (30 dias): ${renewals.length} totalizando R$ ${renewals.r
 Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c: any) => (c as any).contacts?.nome || 'N/A').join(', ') || 'Nenhum'}`;
 
       try {
-        const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
-          method: 'POST',
-          headers: {
-            'x-api-key': ANTHROPIC_API_KEY,
-            'anthropic-version': '2023-06-01',
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'claude-sonnet-4-20250514',
-            max_tokens: 1000,
-            temperature: 0.4,
-            system: 'Você é a Amélia, assistente de Customer Success. Gere um briefing diário conciso em português brasileiro com: 1) Resumo do portfólio, 2) Alertas urgentes, 3) Top 3 ações recomendadas para hoje. Use bullets, seja direta e acionável. Máximo 300 palavras.',
-            messages: [{ role: 'user', content: contextText }],
-          }),
-        });
+        let briefingText = '';
 
-        if (!aiResponse.ok) {
-          console.warn(`[CS-Briefing] Anthropic error for CSM ${csmId}: ${aiResponse.status}`);
-          continue;
+        // Try Gemini first
+        if (GOOGLE_API_KEY) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemPrompt}\n\n${contextText}` }] }],
+                generationConfig: { temperature: 0.4, maxOutputTokens: 1000 },
+              }),
+            });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            briefingText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          } catch (e) {
+            console.warn(`[CS-Briefing] Gemini failed for CSM ${csmId}:`, e);
+          }
         }
 
-        const aiData = await aiResponse.json();
-        const briefingText = aiData.content?.[0]?.text || 'Briefing indisponível.';
+        // Fallback to Claude
+        if (!briefingText && ANTHROPIC_API_KEY) {
+          try {
+            const aiResponse = await fetch('https://api.anthropic.com/v1/messages', {
+              method: 'POST',
+              headers: {
+                'x-api-key': ANTHROPIC_API_KEY,
+                'anthropic-version': '2023-06-01',
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                model: 'claude-sonnet-4-20250514',
+                max_tokens: 1000,
+                temperature: 0.4,
+                system: systemPrompt,
+                messages: [{ role: 'user', content: contextText }],
+              }),
+            });
+            if (!aiResponse.ok) throw new Error(`Claude ${aiResponse.status}`);
+            const aiData = await aiResponse.json();
+            briefingText = aiData.content?.[0]?.text || '';
+          } catch (e) {
+            console.warn(`[CS-Briefing] Claude fallback failed for CSM ${csmId}:`, e);
+          }
+        }
+
+        if (!briefingText) {
+          briefingText = 'Briefing indisponível no momento.';
+        }
 
         await supabase.from('notifications').insert({
           user_id: csmId,

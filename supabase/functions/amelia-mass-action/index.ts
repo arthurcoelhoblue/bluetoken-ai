@@ -17,6 +17,7 @@ serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const googleApiKey = Deno.env.get("GOOGLE_API_KEY");
     const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY");
     const sb = createClient(supabaseUrl, serviceKey);
 
@@ -126,7 +127,7 @@ serve(async (req) => {
       });
     }
 
-    // ========== GENERATE BRANCH (existing) ==========
+    // ========== GENERATE BRANCH ==========
     const { data: job, error: jobErr } = await sb
       .from("mass_action_jobs")
       .select("*")
@@ -176,39 +177,62 @@ Temperatura: ${deal.temperatura || "não definida"}`;
       }
 
       try {
-        if (anthropicApiKey) {
-          const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
-            method: "POST",
-            headers: {
-              "x-api-key": anthropicApiKey,
-              "anthropic-version": "2023-06-01",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({
-              model: "claude-sonnet-4-20250514",
-              max_tokens: 500,
-              temperature: 0.5,
-              system: systemPrompt,
-              messages: [{ role: "user", content: userPrompt }],
-            }),
-          });
+        let message = '';
 
-          if (aiResp.ok) {
-            const aiData = await aiResp.json();
-            const message = aiData.content?.[0]?.text || "";
-            messagesPreview.push({ deal_id: deal.id, contact_name: contactName, message, approved: true });
-          } else {
-            const errText = await aiResp.text();
-            console.error("Anthropic error:", aiResp.status, errText);
-            messagesPreview.push({
-              deal_id: deal.id, contact_name: contactName,
-              message: `[Erro na geração - status ${aiResp.status}]`, approved: false,
+        // Try Gemini first
+        if (googleApiKey) {
+          try {
+            const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${googleApiKey}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+                generationConfig: { temperature: 0.5, maxOutputTokens: 500 },
+              }),
             });
+            if (!resp.ok) throw new Error(`Gemini ${resp.status}`);
+            const data = await resp.json();
+            message = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+          } catch (e) {
+            console.warn('[amelia-mass-action] Gemini failed:', e);
           }
+        }
+
+        // Fallback to Claude
+        if (!message && anthropicApiKey) {
+          try {
+            const aiResp = await fetch("https://api.anthropic.com/v1/messages", {
+              method: "POST",
+              headers: {
+                "x-api-key": anthropicApiKey,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+              },
+              body: JSON.stringify({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 500,
+                temperature: 0.5,
+                system: systemPrompt,
+                messages: [{ role: "user", content: userPrompt }],
+              }),
+            });
+            if (aiResp.ok) {
+              const aiData = await aiResp.json();
+              message = aiData.content?.[0]?.text || "";
+            } else {
+              console.error("Claude error:", aiResp.status);
+            }
+          } catch (e) {
+            console.error('[amelia-mass-action] Claude fallback failed:', e);
+          }
+        }
+
+        if (message) {
+          messagesPreview.push({ deal_id: deal.id, contact_name: contactName, message, approved: true });
         } else {
           messagesPreview.push({
             deal_id: deal.id, contact_name: contactName,
-            message: "[ANTHROPIC_API_KEY não configurada]", approved: false,
+            message: "[Erro na geração - nenhuma API disponível]", approved: false,
           });
         }
       } catch (e) {
