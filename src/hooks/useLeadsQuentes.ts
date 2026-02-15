@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany, type ActiveCompany } from "@/contexts/CompanyContext";
 
 export interface LeadQuente {
   id: string;
@@ -7,29 +8,34 @@ export interface LeadQuente {
   empresa: "TOKENIZA" | "BLUE";
   motivo: string;
   created_at: string;
-  // Lead contact info
   nome: string | null;
   telefone: string | null;
   email: string | null;
-  // Classification
   temperatura: "FRIO" | "MORNO" | "QUENTE" | null;
   icp: string | null;
-  // Conversation state
   estado_funil: string | null;
   framework_ativo: string | null;
   perfil_disc: string | null;
-  // Intent details
   intent?: string;
   intent_summary?: string;
   acao_recomendada?: string;
 }
 
+function applyEmpresaFilter<T>(query: T, activeCompany: ActiveCompany): T {
+  if (activeCompany !== "ALL") {
+    return (query as any).eq("empresa", activeCompany);
+  }
+  return query;
+}
+
 export function useLeadsQuentes() {
+  const { activeCompany } = useCompany();
+
   return useQuery({
-    queryKey: ["leads-quentes"],
+    queryKey: ["leads-quentes", activeCompany],
     queryFn: async () => {
       // Buscar intents com ações que precisam de closer
-      const { data: intents, error: intentsError } = await supabase
+      let intentsQuery = supabase
         .from("lead_message_intents")
         .select(`
           id,
@@ -45,15 +51,21 @@ export function useLeadsQuentes() {
         .order("created_at", { ascending: false })
         .limit(50);
 
+      intentsQuery = applyEmpresaFilter(intentsQuery, activeCompany);
+      const { data: intents, error: intentsError } = await intentsQuery;
+
       if (intentsError) throw intentsError;
 
       // Buscar classificações quentes
-      const { data: classifications, error: classError } = await supabase
+      let classQuery = supabase
         .from("lead_classifications")
         .select("lead_id, empresa, temperatura, icp")
         .eq("temperatura", "QUENTE")
         .order("classificado_em", { ascending: false })
         .limit(50);
+
+      classQuery = applyEmpresaFilter(classQuery, activeCompany);
+      const { data: classifications, error: classError } = await classQuery;
 
       if (classError) throw classError;
 
@@ -105,22 +117,28 @@ export function useLeadsQuentes() {
 
       // Buscar contatos
       const leadIdList = Array.from(leadsMap.values()).map(l => l.lead_id);
-      const { data: contacts } = await supabase
+      let contactsQuery = supabase
         .from("lead_contacts")
         .select("lead_id, empresa, nome, telefone, email, telefone_e164")
         .in("lead_id", leadIdList);
+      contactsQuery = applyEmpresaFilter(contactsQuery, activeCompany);
+      const { data: contacts } = await contactsQuery;
 
       // Buscar estados de conversa
-      const { data: convStates } = await supabase
+      let convQuery = supabase
         .from("lead_conversation_state")
         .select("lead_id, empresa, estado_funil, framework_ativo, perfil_disc")
         .in("lead_id", leadIdList);
+      convQuery = applyEmpresaFilter(convQuery, activeCompany);
+      const { data: convStates } = await convQuery;
 
       // Buscar classificações (para os que não vieram da query de quentes)
-      const { data: allClassifications } = await supabase
+      let allClassQuery = supabase
         .from("lead_classifications")
         .select("lead_id, empresa, temperatura, icp")
         .in("lead_id", leadIdList);
+      allClassQuery = applyEmpresaFilter(allClassQuery, activeCompany);
+      const { data: allClassifications } = await allClassQuery;
 
       // Enriquecer dados
       const results: LeadQuente[] = [];

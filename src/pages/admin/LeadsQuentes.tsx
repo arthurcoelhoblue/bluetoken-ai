@@ -161,7 +161,7 @@ function LeadCard({ lead }: { lead: LeadQuente }) {
   );
 }
 
-type FilterType = 'TODOS' | 'QUENTES' | 'CRIAR_TAREFA_CLOSER' | 'ESCALAR_HUMANO' | 'TOKENIZA' | 'BLUE';
+type FilterType = 'TODOS' | 'QUENTES' | 'CRIAR_TAREFA_CLOSER' | 'ESCALAR_HUMANO';
 
 export default function LeadsQuentes() {
   const { data: leads, isLoading } = useLeadsQuentes();
@@ -172,15 +172,11 @@ export default function LeadsQuentes() {
     { label: 'Quentes', value: 'QUENTES', emoji: '🔥' },
     { label: 'Criar Tarefa Closer', value: 'CRIAR_TAREFA_CLOSER' },
     { label: 'Escalar Humano', value: 'ESCALAR_HUMANO' },
-    { label: 'TOKENIZA', value: 'TOKENIZA' },
-    { label: 'BLUE', value: 'BLUE' },
   ];
 
   const filteredLeads = leads?.filter((lead) => {
     if (activeFilter === 'TODOS') return true;
     if (activeFilter === 'QUENTES') return lead.temperatura === 'QUENTE';
-    if (activeFilter === 'TOKENIZA') return lead.empresa === 'TOKENIZA';
-    if (activeFilter === 'BLUE') return lead.empresa === 'BLUE';
     return lead.acao_recomendada === activeFilter;
   });
 
