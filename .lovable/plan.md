@@ -1,89 +1,91 @@
 
-# Migracao: Gemini 3 Pro Primario + Claude Fallback (todas as funcoes)
+
+# Adicionar OpenAI API Direta como Terceira Camada de Fallback
 
 ## Resumo
 
-Inverter a ordem de chamada em todas as edge functions que usam IA: Gemini 3 Pro Preview via Google API direta sera o motor primario, e Claude Sonnet sera o fallback caso o Gemini falhe. Isso reduz custos significativamente mantendo qualidade.
+Adicionar uma chamada direta a API da OpenAI como terceiro fallback em todas as 13 edge functions que usam IA. Usando o secret `OPENAI_API_KEY` ja configurado no projeto.
 
-## Funcoes que serao alteradas (12 funcoes)
-
-| # | Funcao | Chamadas Anthropic | Complexidade |
-|---|--------|-------------------|--------------|
-| 1 | copilot-chat | 1 | Media (system+messages) |
-| 2 | deal-scoring | 1 | Baixa (prompt simples) |
-| 3 | deal-loss-analysis | 2 (individual + portfolio) | Media |
-| 4 | deal-context-summary | 1 | Media (system+user) |
-| 5 | weekly-report | 1 (ja tem fallback Gemini) | Baixa |
-| 6 | cs-daily-briefing | 1 | Baixa |
-| 7 | call-coach | 1 | Media |
-| 8 | call-transcribe | 1 (analise pos-whisper) | Baixa |
-| 9 | ai-benchmark | 1 | Baixa |
-| 10 | amelia-learn | 2 (sequencia perda + churn) | Media |
-| 11 | cs-trending-topics | 1 | Baixa |
-| 12 | amelia-mass-action | 1 | Baixa |
-
-## Funcoes ja migradas ou sem IA (sem alteracao)
-
-- **next-best-action** -- ja migrado
-- **sdr-ia-interpret** -- ja usa tryGoogleDirect como primario
-- **notify-closer, cs-churn-predictor, revenue-forecast, cs-incident-detector** -- nao usam IA
-
-## Padrao de implementacao (igual em todas)
-
-Cada chamada Anthropic sera substituida por este padrao:
+## Hierarquia final (4 camadas)
 
 ```text
-1. Tentar Gemini 3 Pro Preview (primario)
-   - POST https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent?key=${GOOGLE_API_KEY}
-   - Body: { contents: [{ parts: [{ text: systemPrompt + userPrompt }] }], generationConfig: { temperature, maxOutputTokens } }
-   - Parse: candidates[0].content.parts[0].text
-
-2. Se falhar -> Tentar Anthropic Claude (fallback)
-   - Manter chamada existente como esta hoje
-   - Apenas envolvida em bloco de fallback
-
-3. Se ambos falharem -> Fallback deterministico (quando existir)
+1. Gemini 3 Pro Preview (primario)
+      |  falhou?
+2. Claude Sonnet (fallback 1)
+      |  falhou?
+3. OpenAI GPT-4o via API direta (fallback 2)
+      |  falhou?
+4. Regras deterministicas (fallback final, onde existir)
 ```
+
+## Modelo escolhido: gpt-4o
+
+O modelo `gpt-5.2` existe apenas no Lovable AI Gateway. Na API direta da OpenAI, o equivalente de alto desempenho disponivel e o `gpt-4o` -- multimodal, rapido, e com excelente capacidade de seguir instrucoes JSON.
+
+## Funcoes alteradas (13)
+
+next-best-action, copilot-chat, deal-scoring, deal-loss-analysis, deal-context-summary, weekly-report, cs-daily-briefing, call-coach, call-transcribe, ai-benchmark, amelia-learn, cs-trending-topics, amelia-mass-action
 
 ## Secao Tecnica
 
-### Adaptacao system prompt vs user prompt
-
-O Google Generative AI nao tem campo `system` separado como Anthropic. Para funcoes que usam system prompt, concatenaremos:
+### Bloco OpenAI padrao (inserido apos Claude, antes do fallback deterministico)
 
 ```typescript
-const fullPrompt = `${systemPrompt}\n\n${userPrompt}`;
-// ou para copilot-chat com multiplas mensagens:
-const fullPrompt = `${systemContent}\n\n${messages.map(m => `[${m.role}]: ${m.content}`).join('\n')}`;
+// Fallback 2: OpenAI GPT-4o via API direta
+if (!content) {
+  const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY');
+  if (OPENAI_API_KEY) {
+    console.log('[FUNCAO] Trying OpenAI GPT-4o fallback...');
+    try {
+      const gptResp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.3,
+          max_tokens: 1500,
+        }),
+      });
+      if (gptResp.ok) {
+        const gptData = await gptResp.json();
+        content = gptData.choices?.[0]?.message?.content ?? '';
+        console.log('[FUNCAO] OpenAI GPT-4o fallback succeeded');
+      } else {
+        console.error('[FUNCAO] OpenAI error:', gptResp.status);
+      }
+    } catch (gptErr) {
+      console.error('[FUNCAO] OpenAI exception:', gptErr);
+    }
+  }
+}
 ```
 
-### Copilot-chat (caso especial)
+### Adaptacoes por funcao
 
-O copilot-chat envia multiplas mensagens (historico de conversa). Para Gemini, concatenaremos o historico em um unico prompt com marcadores de role, mantendo o system prompt no inicio.
+- **Funcoes simples** (10 funcoes): Bloco padrao com system + user prompt
+- **copilot-chat**: Usa array de mensagens nativo do formato OpenAI (system + historico completo)
+- **deal-loss-analysis / amelia-learn**: Cada chamada AI interna recebe seu proprio bloco OpenAI
+- **next-best-action**: Estrutura diferente (Anthropic primario, Gemini fallback 1) -- OpenAI sera fallback 2 antes das regras deterministicas
 
-### Funcoes com 2 chamadas (deal-loss-analysis, amelia-learn)
+### Vantagem do formato OpenAI
 
-Cada chamada individual dentro da funcao recebera seu proprio bloco try Gemini / catch fallback Claude.
+O formato `messages` com roles e nativo da API -- nao precisa concatenar system + user em texto unico como no Gemini.
 
-### Secret necessario
+### Secret
 
-`GOOGLE_API_KEY` -- ja configurado no projeto.
+`OPENAI_API_KEY` -- ja configurado no projeto. Nenhuma acao necessaria.
 
-### Config.toml
+### Sem outras alteracoes
 
-Sem alteracoes necessarias -- todas as funcoes ja estao registradas.
+- Sem migracoes SQL
+- Sem alteracoes de frontend
+- Sem novos secrets
+- Todas as 13 funcoes editadas em paralelo
 
-### Nenhuma alteracao de frontend
-
-O frontend chama as edge functions da mesma forma. Apenas o motor de IA interno muda.
-
-### Ordem de implementacao
-
-Todas as 12 funcoes serao editadas em paralelo na mesma sessao, ja que sao independentes.
-
-### Riscos e mitigacao
-
-- **Risco**: Gemini pode retornar JSON malformado em casos raros
-- **Mitigacao**: O fallback para Claude captura esse cenario automaticamente
-- **Risco**: Rate limit do Google API
-- **Mitigacao**: Claude como fallback garante continuidade
