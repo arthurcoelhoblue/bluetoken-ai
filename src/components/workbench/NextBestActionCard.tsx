@@ -8,6 +8,7 @@ import {
   AlertTriangle, Clock, Flame, HeartPulse,
 } from 'lucide-react';
 import { useNextBestAction, type NextBestAction } from '@/hooks/useNextBestAction';
+import { useCompany } from '@/contexts/CompanyContext';
 
 const ACTION_ICONS: Record<string, React.ReactNode> = {
   TAREFA: <CheckSquare className="h-4 w-4" />,
@@ -27,13 +28,17 @@ const PRIORITY_STYLES: Record<string, string> = {
 export function NextBestActionCard() {
   const { data, isLoading, isError, refresh, isFetching } = useNextBestAction();
   const navigate = useNavigate();
+  const { activeCompany } = useCompany();
 
   const acoes = data?.acoes ?? [];
   const narrativaDia = data?.narrativa_dia ?? '';
 
   const handleClick = (acao: NextBestAction) => {
     if (acao.deal_id) navigate(`/pipeline?deal=${acao.deal_id}`);
-    else if (acao.lead_id) navigate(`/leads/${acao.lead_id}`);
+    else if (acao.lead_id) {
+      const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+      navigate(`/leads/${acao.lead_id}/${empresa}`);
+    }
   };
 
   if (isError) return null;
