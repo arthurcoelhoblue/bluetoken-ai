@@ -133,6 +133,51 @@ export type Database = {
           },
         ]
       }
+      ai_usage_log: {
+        Row: {
+          created_at: string | null
+          custo_estimado: number | null
+          empresa: string | null
+          error_message: string | null
+          function_name: string
+          id: string
+          latency_ms: number | null
+          model: string
+          provider: string
+          success: boolean | null
+          tokens_input: number | null
+          tokens_output: number | null
+        }
+        Insert: {
+          created_at?: string | null
+          custo_estimado?: number | null
+          empresa?: string | null
+          error_message?: string | null
+          function_name: string
+          id?: string
+          latency_ms?: number | null
+          model: string
+          provider: string
+          success?: boolean | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+        }
+        Update: {
+          created_at?: string | null
+          custo_estimado?: number | null
+          empresa?: string | null
+          error_message?: string | null
+          function_name?: string
+          id?: string
+          latency_ms?: number | null
+          model?: string
+          provider?: string
+          success?: boolean | null
+          tokens_input?: number | null
+          tokens_output?: number | null
+        }
+        Relationships: []
+      }
       amelia_learnings: {
         Row: {
           aplicado: boolean | null
