@@ -22,12 +22,12 @@ export function usePipelines() {
       const { data, error } = await query;
       if (error) throw error;
 
-      return (data ?? []).map((p: any) => ({
+      return (data ?? []).map((p) => ({
         ...p,
-        pipeline_stages: (p.pipeline_stages ?? []).sort(
+        pipeline_stages: ((p as PipelineWithStages).pipeline_stages ?? []).sort(
           (a: PipelineStage, b: PipelineStage) => a.posicao - b.posicao
         ),
-      }));
+      })) as PipelineWithStages[];
     },
   });
 }

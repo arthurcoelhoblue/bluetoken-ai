@@ -79,7 +79,7 @@ export function useNotifications() {
     mutationFn: async (notificationId: string) => {
       const { error } = await supabase
         .from('notifications')
-        .update({ lida: true } as any)
+        .update({ lida: true })
         .eq('id', notificationId);
       if (error) throw error;
     },
@@ -90,7 +90,7 @@ export function useNotifications() {
     mutationFn: async () => {
       const { error } = await supabase
         .from('notifications')
-        .update({ lida: true } as any)
+        .update({ lida: true })
         .eq('user_id', user!.id)
         .eq('lida', false);
       if (error) throw error;

@@ -24,7 +24,7 @@ export function useCaptureForms() {
 
       if (error) throw error;
 
-      return (data || []).map((f: any) => ({
+      return (data || []).map((f) => ({
         ...f,
         fields: (f.fields as unknown as CaptureFormField[]) || [],
         settings: (f.settings as unknown as CaptureFormSettings) || {},
@@ -80,7 +80,7 @@ export function useCreateCaptureForm() {
       qc.invalidateQueries({ queryKey: ['capture-forms'] });
       toast.success('Form criado com sucesso');
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
@@ -110,7 +110,7 @@ export function useUpdateCaptureForm() {
       qc.invalidateQueries({ queryKey: ['capture-form'] });
       toast.success('Form atualizado');
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 }
 
@@ -126,6 +126,6 @@ export function useDeleteCaptureForm() {
       qc.invalidateQueries({ queryKey: ['capture-forms'] });
       toast.success('Form excluído');
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: Error) => toast.error(e.message),
   });
 }

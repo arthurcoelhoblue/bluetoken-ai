@@ -24,7 +24,7 @@ export function useCreateAccessProfile() {
     mutationFn: async (payload: { nome: string; descricao?: string; permissions: PermissionsMap }) => {
       const { data, error } = await supabase
         .from('access_profiles')
-        .insert({ nome: payload.nome, descricao: payload.descricao ?? null, permissions: payload.permissions as any })
+        .insert({ nome: payload.nome, descricao: payload.descricao ?? null, permissions: payload.permissions as never })
         .select()
         .single();
       if (error) throw error;
@@ -44,7 +44,7 @@ export function useUpdateAccessProfile() {
     mutationFn: async (payload: { id: string; nome: string; descricao?: string; permissions: PermissionsMap }) => {
       const { error } = await supabase
         .from('access_profiles')
-        .update({ nome: payload.nome, descricao: payload.descricao ?? null, permissions: payload.permissions as any })
+        .update({ nome: payload.nome, descricao: payload.descricao ?? null, permissions: payload.permissions as never })
         .eq('id', payload.id);
       if (error) throw error;
     },
@@ -104,15 +104,16 @@ export function useUsersWithProfiles() {
         .select('id, nome');
       if (apErr) throw apErr;
 
-      const assignMap = new Map((assignments ?? []).map((a: any) => [a.user_id, a]));
-      const profileMap = new Map((accessProfiles ?? []).map((p: any) => [p.id, p.nome]));
+      const assignMap = new Map((assignments ?? []).map((a) => [(a as unknown as { user_id: string }).user_id, a]));
+      const profileMap = new Map((accessProfiles ?? []).map((p) => [(p as unknown as { id: string; nome: string }).id, (p as unknown as { id: string; nome: string }).nome]));
 
-      return (profiles ?? []).map((u: any) => {
-        const assignment = assignMap.get(u.id) || null;
+      return (profiles ?? []).map((u) => {
+        const user = u as unknown as { id: string; email: string; nome: string; avatar_url: string | null; is_active: boolean; is_vendedor: boolean };
+        const assignment = assignMap.get(user.id) || null;
         return {
-          ...u,
+          ...user,
           assignment,
-          profile_name: assignment ? (profileMap.get(assignment.access_profile_id) ?? null) : null,
+          profile_name: assignment ? (profileMap.get((assignment as unknown as { access_profile_id: string }).access_profile_id) ?? null) : null,
         };
       });
     },

@@ -26,7 +26,8 @@ export function useAutoRules() {
         .select('*, from_stage:from_stage_id(nome), to_stage:to_stage_id(nome), pipeline:pipeline_id(nome)')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return ((data as any[]) ?? []).map((r: any) => ({
+      type AutoRuleRow = AutoRule & { from_stage?: { nome: string } | null; to_stage?: { nome: string } | null; pipeline?: { nome: string } | null };
+      return ((data ?? []) as unknown as AutoRuleRow[]).map((r) => ({
         ...r,
         from_stage_nome: r.from_stage?.nome ?? null,
         to_stage_nome: r.to_stage?.nome ?? null,

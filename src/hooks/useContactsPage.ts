@@ -18,7 +18,7 @@ export function useContactsPage(opts: {
     queryKey: ['contacts_with_stats', activeCompany, search, tipoFilter, clienteFilter, page],
     queryFn: async (): Promise<{ data: ContactWithStats[]; count: number }> => {
       let query = supabase
-        .from('contacts_with_stats' as any)
+        .from('contacts_with_stats' as never)
         .select('*', { count: 'exact' })
         .eq('is_active', true)
         .order('created_at', { ascending: false })
@@ -52,7 +52,7 @@ export function useContactDetail(id: string | null) {
     enabled: !!id,
     queryFn: async (): Promise<ContactWithStats | null> => {
       const { data, error } = await supabase
-        .from('contacts_with_stats' as any)
+        .from('contacts_with_stats' as never)
         .select('*')
         .eq('id', id!)
         .maybeSingle();
@@ -66,7 +66,7 @@ export function useCreateContactPage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: ContactFormData) => {
-      const { error } = await supabase.from('contacts').insert(data as any);
+      const { error } = await supabase.from('contacts').insert(data as never);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -80,7 +80,7 @@ export function useUpdateContactPage() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<ContactFormData> & { id: string }) => {
-      const { error } = await supabase.from('contacts').update(data as any).eq('id', id);
+      const { error } = await supabase.from('contacts').update(data as never).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -96,7 +96,7 @@ export function useDeleteContactPage() {
   return useMutation({
     mutationFn: async (id: string) => {
       // Soft delete
-      const { error } = await supabase.from('contacts').update({ is_active: false } as any).eq('id', id);
+      const { error } = await supabase.from('contacts').update({ is_active: false }).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => {

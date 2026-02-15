@@ -22,7 +22,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
         .order('updated_at', { ascending: false });
 
       if (empresa && empresa !== 'ALL') {
-        query = query.eq('empresa', empresa as any);
+        query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA');
       }
       if (filters.health_status) query = query.eq('health_status', filters.health_status);
       if (filters.nps_categoria) query = query.eq('nps_categoria', filters.nps_categoria);
@@ -82,7 +82,7 @@ export function useCreateCSCustomer() {
           proxima_renovacao: data.proxima_renovacao ?? null,
           notas: data.notas ?? null,
           csm_id: data.csm_id ?? null,
-        } as any)
+        })
         .select()
         .single();
       if (error) throw error;
@@ -101,7 +101,7 @@ export function useUpdateCSCustomer() {
     mutationFn: async ({ id, ...updates }: Partial<CSCustomer> & { id: string }) => {
       const { data, error } = await supabase
         .from('cs_customers')
-        .update(updates as any)
+        .update(updates as never)
         .eq('id', id)
         .select()
         .single();

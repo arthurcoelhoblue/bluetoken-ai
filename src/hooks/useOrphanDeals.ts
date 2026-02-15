@@ -27,15 +27,18 @@ export function useOrphanDeals() {
         .eq('status', 'ABERTO')
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((d: any) => ({
-        id: d.id,
-        titulo: d.titulo,
-        valor: d.valor ?? 0,
-        status: d.status,
-        created_at: d.created_at,
-        contact_nome: d.contacts?.nome ?? null,
-        pipeline_nome: d.pipelines?.nome ?? null,
-      })) as OrphanDeal[];
+      return (data ?? []).map((d) => {
+        const row = d as { id: string; titulo: string; valor: number | null; status: string; created_at: string; contacts: { nome: string } | null; pipelines: { nome: string } | null };
+        return {
+          id: row.id,
+          titulo: row.titulo,
+          valor: row.valor ?? 0,
+          status: row.status,
+          created_at: row.created_at,
+          contact_nome: row.contacts?.nome ?? null,
+          pipeline_nome: row.pipelines?.nome ?? null,
+        };
+      }) as OrphanDeal[];
     },
   });
 }

@@ -1,73 +1,74 @@
-# Welcome to your Lovable project
+# BlueToken AI — CRM Inteligente
 
-## Project info
+CRM com SDR IA integrada, gestão de pipeline, cadências automatizadas e módulo de Customer Success para as empresas Blue e Tokeniza.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Arquitetura
 
-## How can I edit this code?
+| Camada | Tecnologia |
+|--------|-----------|
+| Frontend | React 18 + Vite + TypeScript + Tailwind CSS + shadcn/ui |
+| Backend | Lovable Cloud (Supabase) — PostgreSQL + Edge Functions (Deno) |
+| IA | Lovable AI (Gemini / GPT) via Edge Functions |
+| Autenticação | Supabase Auth com RBAC customizado |
+| Realtime | Supabase Realtime (Kanban, notificações) |
 
-There are several ways of editing your application.
+## Estrutura do Projeto
 
-**Use Lovable**
+```
+src/
+├── components/     # Componentes React organizados por domínio
+├── contexts/       # AuthContext, CompanyContext, ThemeContext
+├── hooks/          # Custom hooks (queries, mutations, lógica de negócio)
+├── pages/          # Páginas da aplicação (rotas)
+├── schemas/        # Validação Zod para formulários
+├── types/          # Interfaces TypeScript
+├── lib/            # Utilitários e lógica pura
+└── integrations/   # Cliente Supabase (auto-gerado)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+supabase/
+├── functions/      # 46 Edge Functions (webhooks, IA, automações)
+│   └── _shared/    # Módulos compartilhados (CORS, AI provider, logger)
+└── migrations/     # Migrações SQL do banco
+```
 
-Changes made via Lovable will be committed automatically to this repo.
+## Módulos Principais
 
-**Use your preferred IDE**
+- **Pipeline / Kanban** — gestão visual de negócios com drag & drop
+- **SDR IA** — classificação de intenção, geração de resposta, qualificação automática
+- **Cadências** — motor de follow-up multicanal (WhatsApp, e-mail)
+- **Customer Success** — health score, NPS, playbooks, alertas de churn
+- **Gamificação** — pontos, badges, leaderboard para vendedores
+- **Analytics** — funil, conversão, esforço por canal, projeções
+- **Copilot** — assistente IA contextual por deal/lead
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Como Rodar Localmente
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+```bash
+# 1. Clone o repositório
+git clone <URL_DO_REPO>
+cd <NOME_DO_PROJETO>
 
-Follow these steps:
+# 2. Instale as dependências
+npm install
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
+# 3. Configure variáveis de ambiente
+# O arquivo .env é gerado automaticamente pelo Lovable Cloud.
+# Para desenvolvimento local, crie .env com:
+#   VITE_SUPABASE_URL=<url>
+#   VITE_SUPABASE_PUBLISHABLE_KEY=<anon_key>
 
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 4. Inicie o servidor de desenvolvimento
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+## Testes
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+npm run test        # Roda todos os testes com Vitest
+```
 
-**Use GitHub Codespaces**
+## Versionamento
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+O projeto segue [Semantic Versioning](https://semver.org/). Versão atual: **1.0.0**.
 
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+Changelog detalhado em `docs/CHANGELOG.md`.

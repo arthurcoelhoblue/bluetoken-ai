@@ -54,17 +54,17 @@ export function useRunImport() {
       let imported = 0;
       let skipped = 0;
       let errors = 0;
-      const errorLog: any[] = [];
+      const errorLog: { entity: string; source_id: number | string; error: string }[] = [];
 
       // 1. Create job
       const { data: job, error: jobErr } = await supabase
         .from('import_jobs')
         .insert({
           tipo: 'PIPEDRIVE_FULL',
-          empresa: empresa as any,
+          empresa: empresa as never,
           status: 'RUNNING',
           total_records: totalRecords,
-          config: config as any,
+          config: config as never,
           started_by: profile?.id,
           started_at: new Date().toISOString(),
         })
@@ -76,7 +76,7 @@ export function useRunImport() {
       // Helper: insert mapping
       const addMapping = async (entityType: string, sourceId: string, targetId: string) => {
         await supabase.from('import_mapping').upsert(
-          { import_job_id: jobId, entity_type: entityType, source_id: String(sourceId), target_id: targetId, empresa: empresa as any },
+          { import_job_id: jobId, entity_type: entityType, source_id: String(sourceId), target_id: targetId, empresa: empresa as never },
           { onConflict: 'entity_type,source_id,empresa' }
         );
       };
@@ -88,7 +88,7 @@ export function useRunImport() {
           .select('target_id')
           .eq('entity_type', entityType)
           .eq('source_id', String(sourceId))
-          .eq('empresa', empresa as any)
+          .eq('empresa', empresa as never)
           .maybeSingle();
         return data?.target_id || null;
       };
@@ -106,7 +106,7 @@ export function useRunImport() {
             .from('organizations')
             .insert({
               nome: org.name || `Org ${org.id}`,
-              empresa: empresa as any,
+              empresa: empresa as never,
               endereco: org.address || null,
             })
             .select('id')
@@ -114,9 +114,9 @@ export function useRunImport() {
           if (insErr) throw insErr;
           await addMapping('ORGANIZATION', String(org.id), inserted.id);
           imported++;
-        } catch (e: any) {
+        } catch (e: unknown) {
           errors++;
-          errorLog.push({ entity: 'ORG', source_id: org.id, error: e.message });
+          errorLog.push({ entity: 'ORG', source_id: org.id, error: e instanceof Error ? e.message : String(e) });
         }
         setProgress({ phase: 'orgs', current: i + 1, total: orgs.length, imported, skipped, errors });
       }
@@ -132,7 +132,7 @@ export function useRunImport() {
           }
           const email = Array.isArray(p.email) ? p.email.find(e => e.primary)?.value || p.email[0]?.value : p.email || null;
           const phone = Array.isArray(p.phone) ? p.phone.find(ph => ph.primary)?.value || p.phone[0]?.value : p.phone || null;
-          const orgSourceId = typeof p.org_id === 'object' ? (p.org_id as any)?.value : p.org_id;
+          const orgSourceId = typeof p.org_id === 'object' ? (p.org_id as { value?: string | number } | null)?.value : p.org_id;
           const orgId = orgSourceId ? await getMapping('ORGANIZATION', String(orgSourceId)) : null;
 
           const { data: inserted, error: insErr } = await supabase
@@ -143,7 +143,7 @@ export function useRunImport() {
               sobrenome: p.last_name || null,
               email,
               telefone: phone,
-              empresa: empresa as any,
+              empresa: empresa as never,
               organization_id: orgId,
             })
             .select('id')
@@ -151,9 +151,9 @@ export function useRunImport() {
           if (insErr) throw insErr;
           await addMapping('CONTACT', String(p.id), inserted.id);
           imported++;
-        } catch (e: any) {
+        } catch (e: unknown) {
           errors++;
-          errorLog.push({ entity: 'CONTACT', source_id: p.id, error: e.message });
+          errorLog.push({ entity: 'CONTACT', source_id: p.id, error: e instanceof Error ? e.message : String(e) });
         }
         setProgress({ phase: 'contacts', current: i + 1, total: persons.length, imported, skipped, errors });
       }
@@ -187,7 +187,7 @@ export function useRunImport() {
 
           const ownerId = d.user_id ? config.owner_mapping?.[String(d.user_id)] : undefined;
 
-          const insertData: any = {
+          const insertData: Record<string, unknown> = {
             titulo: d.title || `Deal ${d.id}`,
             valor: d.value || 0,
             moeda: d.currency || 'BRL',
@@ -213,15 +213,15 @@ export function useRunImport() {
 
           const { data: inserted, error: insErr } = await supabase
             .from('deals')
-            .insert(insertData)
+            .insert(insertData as never)
             .select('id')
             .single();
           if (insErr) throw insErr;
           await addMapping('DEAL', String(d.id), inserted.id);
           imported++;
-        } catch (e: any) {
+        } catch (e: unknown) {
           errors++;
-          errorLog.push({ entity: 'DEAL', source_id: d.id, error: e.message });
+          errorLog.push({ entity: 'DEAL', source_id: d.id, error: e instanceof Error ? e.message : String(e) });
         }
         setProgress({ phase: 'deals', current: i + 1, total: deals.length, imported, skipped, errors });
       }
@@ -235,7 +235,7 @@ export function useRunImport() {
           imported,
           skipped,
           errors,
-          error_log: errorLog as any,
+          error_log: errorLog as never,
           completed_at: new Date().toISOString(),
         })
         .eq('id', jobId);
