@@ -1,71 +1,125 @@
 
-# Filtros Avancados na Tela de Acao em Massa
 
-## Objetivo
+# Correcao de Layout CS + Envio de Pesquisa em Massa
 
-Quanto mais nichada a selecao de deals, melhor a personalizacao da Amelia. Hoje so existe busca por texto e pipeline. Vamos adicionar filtros para **todas as colunas relevantes**, permitindo combinacoes como "Deals QUENTES no estagio Proposta do vendedor X com tag Y criados nos ultimos 30 dias".
+## Parte 1: Corrigir Layout das Paginas CS (sidebar + botao voltar)
 
-## Filtros a Adicionar
+Todas as 6 paginas CS estao renderizando sem `AppLayout`, por isso nao tem sidebar nem TopBar. A correcao e simples: envolver o conteudo de cada pagina com `<AppLayout>`.
 
-| Filtro | Tipo | Valores |
-|--------|------|---------|
-| **Pipeline** | Select | Ja existe |
-| **Estagio** | Select (dinamico por pipeline) | Stages do pipeline selecionado |
-| **Temperatura** | Select | Frio, Morno, Quente |
-| **Vendedor (Owner)** | Select | Lista de owners dos deals |
-| **Tags** | Select | Tags unicas extraidas dos deals |
-| **Origem** | Select | Valores unicos de `origem` (ex: WhatsApp, Formulario, Manual) |
-| **Valor minimo / maximo** | Input numerico | Range de valor do deal |
-| **Data de criacao** | Select de periodo | Hoje, 7 dias, 30 dias, 90 dias, Todos |
-| **Score probabilidade** | Select de faixa | Alto (>=70), Medio (40-69), Baixo (<40) |
-
-## Design da UI
-
-- Area de filtros expandivel usando `Collapsible` com botao "Mais filtros" / "Menos filtros"
-- Primeira linha (sempre visivel): Busca + Pipeline + Temperatura + Estagio
-- Segunda linha (collapsible): Vendedor + Tags + Origem + Valor + Periodo + Score
-- Badge indicando quantos filtros ativos alem do padrao
-- Botao "Limpar filtros" quando houver filtros ativos
-- Tabela ganha novas colunas: **Vendedor**, **Origem**, **Tags** para dar visibilidade ao que esta sendo filtrado
-
-## Mudancas na Query de Deals
-
-O hook `useDeals` ja busca deals de UM pipeline. Para a tela de massa, precisamos buscar deals de TODOS os pipelines (ou do selecionado). Vamos:
-
-1. Quando `filterPipeline === "ALL"`, buscar deals de todos os pipelines da empresa ativa
-2. Aplicar todos os filtros client-side no `useMemo` (ja que o volume e limitado a deals ABERTOS)
-
-## Arquivos a Modificar
+### Arquivos a modificar
 
 | Arquivo | Mudanca |
 |---------|---------|
-| `src/pages/AmeliaMassActionPage.tsx` | Adicionar estados dos filtros, UI collapsible, logica de filtragem expandida, novas colunas na tabela, badge de filtros ativos, botao limpar |
+| `src/pages/cs/CSDashboardPage.tsx` | Importar `AppLayout`, envolver return com `<AppLayout>` |
+| `src/pages/cs/CSClientesPage.tsx` | Idem |
+| `src/pages/cs/CSClienteDetailPage.tsx` | Idem |
+| `src/pages/cs/CSPesquisasPage.tsx` | Idem |
+| `src/pages/cs/CSIncidenciasPage.tsx` | Idem |
+| `src/pages/cs/CSPlaybooksPage.tsx` | Idem |
 
-## Detalhes Tecnicos
-
-### Estados de filtro adicionados
+### Padrao a seguir (mesmo das outras paginas)
 
 ```typescript
-const [filterStage, setFilterStage] = useState('ALL');
-const [filterTemperatura, setFilterTemperatura] = useState('ALL');
-const [filterOwner, setFilterOwner] = useState('ALL');
-const [filterTag, setFilterTag] = useState('ALL');
-const [filterOrigem, setFilterOrigem] = useState('ALL');
-const [filterValorMin, setFilterValorMin] = useState('');
-const [filterValorMax, setFilterValorMax] = useState('');
-const [filterPeriodo, setFilterPeriodo] = useState('ALL');
-const [filterScore, setFilterScore] = useState('ALL');
-const [showMoreFilters, setShowMoreFilters] = useState(false);
+import { AppLayout } from '@/components/layout/AppLayout';
+
+export default function CSIncidenciasPage() {
+  return (
+    <AppLayout>
+      <div className="flex-1 overflow-auto">
+        {/* conteudo existente */}
+      </div>
+    </AppLayout>
+  );
+}
 ```
 
-### Logica de filtragem expandida no useMemo
+### Registrar rotas CS no TopBar
 
-Cada filtro e aplicado sequencialmente no array de deals. Opcoes dinamicas (stages, owners, tags, origens) sao extraidas dos deals carregados para popular os selects.
+Adicionar titulos em `src/components/layout/TopBar.tsx` no objeto `ROUTE_TITLES`:
 
-### Busca multi-pipeline
+```typescript
+'/cs': 'Dashboard CS',
+'/cs/clientes': 'Clientes CS',
+'/cs/pesquisas': 'Pesquisas CS',
+'/cs/incidencias': 'Incidencias CS',
+'/cs/playbooks': 'Playbooks CS',
+```
 
-Quando `filterPipeline === "ALL"`, buscar deals de todos os pipelines usando multiplas chamadas ao `useDeals` ou uma query customizada direta.
+---
 
-### Contagem de filtros ativos
+## Parte 2: Envio de Pesquisa CS em Massa pela Amelia
 
-Um contador mostra quantos filtros estao diferentes do padrao ("ALL"/vazio), exibido como badge no botao "Mais filtros".
+### Objetivo
+
+Permitir que o CSM selecione multiplos clientes CS e dispare pesquisas (NPS ou CSAT) em lote, usando a mesma logica da tela de Acao em Massa da Amelia.
+
+### Nova pagina: `src/pages/cs/CSPesquisaMassaPage.tsx`
+
+Uma tela dedicada com:
+
+1. **Filtros de selecao de clientes**:
+   - Health Status (Saudavel, Atencao, Em Risco, Critico)
+   - NPS Categoria (Promotor, Neutro, Detrator)
+   - CSM responsavel
+   - Periodo sem pesquisa (30, 60, 90+ dias)
+   - Busca por nome
+
+2. **Tabela de clientes** com colunas:
+   - Nome, Health Score, Ultimo NPS, Ultimo CSAT, CSM, Ultimo contato
+   - Checkbox de selecao (individual + selecionar todos)
+
+3. **Painel de acao**:
+   - Tipo de pesquisa: NPS ou CSAT
+   - Canal: WhatsApp ou Email (baseado no dado disponivel)
+   - Botao "Enviar para X selecionados"
+   - Preview da mensagem que sera enviada
+
+4. **Execucao**:
+   - Chama a edge function `cs-nps-auto` para cada cliente selecionado
+   - Progresso visual (barra + contador)
+   - Resultado final (enviados com sucesso / falhas)
+
+### Hook: `src/hooks/useCSMassSurvey.ts`
+
+```typescript
+// Busca clientes elegiveis com filtros
+// Dispara envio em lote chamando cs-nps-auto por cliente
+// Retorna progresso e resultado
+```
+
+### Rota e navegacao
+
+- Rota: `/cs/pesquisas/massa`
+- Link na pagina de Pesquisas CS (botao "Envio em Massa")
+- Registrar no `App.tsx` e `TopBar.tsx`
+- Adicionar item no menu lateral (AppSidebar) dentro do grupo CS
+
+### Arquivos a criar/modificar
+
+| Arquivo | Acao |
+|---------|------|
+| `src/pages/cs/CSPesquisaMassaPage.tsx` | Criar - pagina principal |
+| `src/hooks/useCSMassSurvey.ts` | Criar - logica de selecao e envio |
+| `src/App.tsx` | Adicionar rota `/cs/pesquisas/massa` |
+| `src/components/layout/TopBar.tsx` | Adicionar titulo da rota CS + massa |
+| `src/components/layout/AppSidebar.tsx` | Verificar se ja tem link, adicionar se nao |
+| `src/pages/cs/CSPesquisasPage.tsx` | Adicionar botao "Envio em Massa" |
+
+### Detalhes tecnicos
+
+A edge function `cs-nps-auto` ja suporta envio individual (com `customer_id` no body). Para o envio em massa, o hook fara chamadas sequenciais (com throttle de 500ms entre cada) para evitar sobrecarga:
+
+```typescript
+async function sendBulkSurveys(customerIds: string[], tipo: 'NPS' | 'CSAT') {
+  const results = [];
+  for (const id of customerIds) {
+    const res = await supabase.functions.invoke('cs-nps-auto', {
+      body: { customer_id: id, tipo }
+    });
+    results.push({ id, success: !res.error });
+    await new Promise(r => setTimeout(r, 500)); // throttle
+  }
+  return results;
+}
+```
+
