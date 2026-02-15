@@ -1,142 +1,107 @@
 
 
-# Plano de Acao - Auditoria BlueToken AI
+# Fase 2 da Auditoria - Qualidade de Codigo
 
-Relatorio recebido com nota de maturidade **6.5/10**. Abaixo, o plano para atacar os problemas identificados em ordem de prioridade, focando no que gera impacto real em estabilidade e seguranca.
+Proximos itens do plano: 2.1 (eliminar `any`), 2.2 (quebrar hooks), 2.4 (quebrar componentes), 4.1 (README), 4.2 (versionamento).
 
----
-
-## RESUMO DA AUDITORIA
-
-| Area | Nota | Status |
-|------|------|--------|
-| Funcionalidade | 8/10 | OK |
-| Qualidade de Codigo | 5/10 | Precisa melhorar |
-| Testes | 2/10 | Critico |
-| Seguranca | 5/10 | Precisa melhorar |
-| Performance | 6/10 | Atencao |
-| Documentacao | 6/10 | Atencao |
+Vou agrupar o que cabe nesta sessao sem quebrar nenhuma importacao existente.
 
 ---
 
-## FASE 1 - CRITICO (Seguranca + Validacao)
+## Item 2.1 - Eliminar `any` nos hooks criticos
 
-### 1.1 Validacao de entrada nas Edge Functions publicas
-Adicionar validacao Zod no body de todas as Edge Functions que recebem dados externos (webhooks e endpoints publicos). Funcoes prioritarias:
-- `sgt-webhook`
-- `bluechat-inbound`
-- `whatsapp-inbound`
-- `capture-form-submit`
-- `zadarma-webhook`
+Substituir `as any` e `: any` por tipos corretos nos hooks que tocam o banco. Todos os casts de `as any` em `.from()`, `.insert()`, `.update()` e callbacks de `.map()` serao tipados corretamente.
 
-Para cada uma: parsear o body com um schema Zod e retornar 400 se invalido, antes de processar qualquer logica.
+**Arquivos afetados (11 hooks):**
 
-### 1.2 Rate Limiting basico nos webhooks
-Implementar rate limiting via tabela `rate_limits` no banco, com verificacao nas Edge Functions publicas. Logica simples: contar requests por IP/minuto e rejeitar com 429 acima do threshold.
+| Arquivo | Qtd `any` | Correcao |
+|---------|-----------|----------|
+| `useContactsPage.ts` | 6 | Remover `as any` dos `.from()`, `.insert()`, `.update()` -- usar cast generico no retorno |
+| `useCSCustomers.ts` | 3 | Tipar insert/update payload com interface dedicada |
+| `useAutoRules.ts` | 5 | Tipar `pipeline_auto_rules` e callbacks |
+| `useCaptureForms.ts` | 4 | Tipar `onError` como `Error` e callback de `.map()` |
+| `useImportacao.ts` | 5 | Tipar `errorLog`, `insertData`, e `catch (e)` |
+| `useNotifications.ts` | 2 | Remover `as any` do `.update()` |
+| `usePipelines.ts` | 1 | Tipar callback `.map()` |
+| `usePipelineConfig.ts` | 5 | Tipar acessos a `pipeline_stages` |
+| `useAccessControl.ts` | 3 | Tipar callbacks de `.map()` |
+| `useCopilotMessages.ts` | 4 | Tipar `.filter()` e `.map()` callbacks, empresa cast |
+| `useOrphanDeals.ts` | 1 | Tipar callback `.map()` |
 
-### 1.3 CORS restritivo
-Substituir `Access-Control-Allow-Origin: '*'` por whitelist com os dominios reais do projeto:
-- `https://sdrgrupobue.lovable.app` (producao)
-- Dominio de preview (desenvolvimento)
-
-Criar constante compartilhada em `supabase/functions/_shared/cors.ts` e importar em todas as 46 funcoes.
-
----
-
-## FASE 2 - ALTA (Qualidade de Codigo)
-
-### 2.1 Eliminar `any` nos arquivos mais criticos
-A auditoria encontrou 92 ocorrencias de `any`. Priorizar os que tocam operacoes de banco:
-- Hooks de deals, contacts, cadences
-- Edge Functions que fazem insert/update
-
-Substituir por tipos especificos do `src/integrations/supabase/types.ts` ou criar interfaces dedicadas.
-
-### 2.2 Quebrar hooks grandes
-Os hooks mais criticos para dividir:
-- `useCadences.ts` (752 linhas) -> dividir em `useCadenceList`, `useCadenceActions`, `useCadenceRuns`
-- `useLeadClassification.ts` (293 linhas) -> dividir em `useClassification`, `useClassificationUpdate`
-- `useDeals.ts` (289 linhas) -> dividir em `useDealList`, `useDealMutations`
-
-### 2.3 Quebrar Edge Functions grandes
-- `sgt-webhook` (2.255 linhas) -> extrair handlers por tipo de evento em arquivos separados dentro de `_shared/`
-- `bluechat-inbound` (1.552 linhas) -> extrair parser, classifier e responder em modulos
-- `cadence-runner` (987 linhas) -> extrair executor de step por canal
-
-### 2.4 Quebrar componentes grandes
-- `sidebar.tsx` (637 linhas) -> extrair `SidebarNav`, `SidebarHeader`, `SidebarFooter`
-- `DealDetailSheet.tsx` (484 linhas) -> extrair tabs em subcomponentes
-- `ConversationView.tsx` (384 linhas) -> extrair `MessageBubble`, `ConversationHeader`
+**Estrategia:** Para tabelas/views que nao existem nos tipos gerados (ex: `contacts_with_stats`, `pipeline_auto_rules`), manter o cast `as any` APENAS no `.from()` (inevitavel pois o tipo gerado nao conhece a view) mas tipar o retorno com `as unknown as TipoCorreto`. Para callbacks `.map((x: any) => ...)`, substituir `any` pelo tipo inferido do Supabase ou por uma interface local.
 
 ---
 
-## FASE 3 - MEDIA (Testes + Performance)
+## Item 2.2 - Quebrar `useDeals.ts`
 
-### 3.1 Testes para fluxos criticos
-Adicionar testes unitarios para:
-- Autenticacao (login, roles, permissoes)
-- SDR IA pipeline (parser, classifier, generator)
-- Cadence runner (logica de proximo step)
-- Deal scoring (calculo de probabilidade)
+O hook `useDeals.ts` (289 linhas) exporta 10 funcoes/hooks misturando queries, mutations e loss categories. Vou dividir em 2 arquivos mantendo re-exports no arquivo original para nao quebrar nenhum import existente.
 
-Meta: sair de 6 arquivos de teste para pelo menos 20, cobrindo os fluxos que quebram o negocio.
+**Nova estrutura:**
 
-### 3.2 Paginacao nas listas
-Adicionar paginacao nas queries de:
-- Leads (LeadsList)
-- Contacts (ContatosPage)
-- Deals (PipelinePage - modo lista)
-- Organizations
-- CS Customers
+| Arquivo | Conteudo |
+|---------|----------|
+| `src/hooks/deals/useDealQueries.ts` | `useDeals`, `useKanbanData` |
+| `src/hooks/deals/useDealMutations.ts` | `useCreateDeal`, `useUpdateDeal`, `useMoveDeal`, `useDeleteDeal`, `useCloseDeal`, `useLossCategories`, CRUD de loss categories |
+| `src/hooks/useDeals.ts` | Re-exporta tudo de `deals/useDealQueries` e `deals/useDealMutations` (zero quebra) |
 
-Usar `range()` do Supabase com controle de pagina no frontend.
-
-### 3.3 Otimizar queries N+1
-Revisar hooks que fazem queries sequenciais e consolidar com joins ou `select` com relacoes do Supabase (ex: `select('*, contact:contacts(*)')`).
+**Impacto:** ZERO. Todos os 8 arquivos que importam de `@/hooks/useDeals` continuam funcionando porque o barrel file re-exporta tudo.
 
 ---
 
-## FASE 4 - BAIXA (Documentacao + Governanca)
+## Item 2.4 - Quebrar `DealDetailSheet.tsx`
 
-### 4.1 README customizado
-Reescrever o README.md com:
-- Descricao real do projeto
-- Arquitetura (frontend, backend, edge functions)
-- Variaveis de ambiente necessarias
-- Como rodar localmente
+O componente (484 linhas) sera dividido extraindo as tabs em subcomponentes:
 
-### 4.2 Versionamento
-Atualizar `package.json` de `0.0.0` para `1.0.0` e adotar semver.
-
-### 4.3 Logger estruturado
-Criar `supabase/functions/_shared/logger.ts` com niveis (info, warn, error) e metadata padronizada. Substituir `console.log/error` nas Edge Functions.
+| Arquivo | Conteudo |
+|---------|----------|
+| `src/components/deals/DealDetailHeader.tsx` | Header com titulo, status, badges, botoes de acao (fechar, reabrir, editar) |
+| `src/components/deals/DealDetailOverviewTab.tsx` | Tab "Visao Geral" com campos editaveis, contato, owner, valor |
+| `src/components/deals/DealDetailActivitiesTab.tsx` | Tab "Atividades" com timeline e formulario de nova atividade |
+| `src/components/deals/DealDetailSheet.tsx` | Orquestra as tabs, passa props para os subcomponentes |
 
 ---
 
-## SOBRE PONTOS QUE NAO SAO PROBLEMAS REAIS
+## Item 4.1 + 4.2 - README + Versionamento
 
-Alguns itens da auditoria merecem contexto:
+**README.md:** Reescrever com descricao real do projeto, arquitetura (frontend React + backend functions + banco), variaveis de ambiente, como rodar localmente.
 
-- **VITE_SUPABASE_URL e PUBLISHABLE_KEY expostas**: Isso e **por design**. Sao chaves publicas (anon key) e o Supabase depende delas no frontend. A seguranca esta no RLS, que ja esta implementado.
-- **CORS aberto**: Concordo que precisa restringir, mas nao e uma vulnerabilidade critica porque o RLS protege os dados. E uma boa pratica, nao um bloqueador.
-- **84 migracoes**: Normal para um projeto com 70k linhas. Os nomes hash sao padrao do Supabase e nao afetam operacao.
+**package.json:** Atualizar versao de `0.0.0` para `1.0.0`.
 
 ---
 
-## SEQUENCIA DE IMPLEMENTACAO
+## Sequencia de execucao
 
-| Ordem | Item | Estimativa | Status |
-|-------|------|-----------|--------|
-| 1 | CORS restritivo (1.3) | 1 sessao | ✅ Concluído |
-| 2 | Validacao Zod nos webhooks (1.1) | 2 sessoes | ✅ Concluído |
-| 3 | Eliminar `any` criticos (2.1) | 2-3 sessoes | ⏳ Pendente |
-| 4 | Quebrar hooks grandes (2.2) | 2-3 sessoes | ⏳ Pendente |
-| 5 | Testes fluxos criticos (3.1) | 3-4 sessoes | ⏳ Pendente |
-| 6 | Quebrar Edge Functions (2.3) | 2-3 sessoes | ⏳ Pendente |
-| 7 | Paginacao (3.2) | 2 sessoes | ⏳ Pendente |
-| 8 | README + versao (4.1, 4.2) | 1 sessao | ⏳ Pendente |
-| 9 | Logger estruturado (4.3) | 1 sessao | ⏳ Pendente |
-| 10 | Rate limiting (1.2) | 1-2 sessoes | ⏳ Pendente |
+1. Criar pasta `src/hooks/deals/` e mover logica do `useDeals.ts` (2.2)
+2. Extrair subcomponentes do `DealDetailSheet.tsx` (2.4)
+3. Eliminar `any` nos 11 hooks (2.1)
+4. Reescrever README.md e atualizar versao (4.1 + 4.2)
+5. Atualizar `.lovable/plan.md` marcando itens concluidos
 
-Recomendo comecar pela **Fase 1** (seguranca) e depois ir para **Fase 2** (qualidade), que sao os itens que mais impactam a nota de maturidade.
+---
+
+## Detalhes tecnicos
+
+### Re-export pattern para useDeals.ts
+```typescript
+// src/hooks/useDeals.ts (barrel file)
+export { useDeals, useKanbanData } from './deals/useDealQueries';
+export { useCreateDeal, useUpdateDeal, useMoveDeal, useDeleteDeal, useCloseDeal, useLossCategories, useCreateLossCategory, useUpdateLossCategory, useDeleteLossCategory, useReorderLossCategories } from './deals/useDealMutations';
+export type { CloseDealData } from './deals/useDealMutations';
+```
+
+### Tipagem para `any` em callbacks
+Onde o Supabase retorna `data` sem tipo inferido (views, tabelas nao tipadas), o pattern sera:
+```typescript
+// ANTES
+.map((r: any) => ({ ...r, from_stage_nome: r.from_stage?.nome }))
+
+// DEPOIS  
+.map((r) => {
+  const row = r as { id: string; from_stage?: { nome: string }; ... };
+  return { ...row, from_stage_nome: row.from_stage?.nome ?? null };
+})
+```
+
+### DealDetailSheet - props interface
+Cada subcomponente recebera props tipadas com os dados que precisa, evitando prop drilling excessivo. O `DealDetailSheet` continuara sendo o unico a fazer os `useQuery` calls e passara dados via props.
 
