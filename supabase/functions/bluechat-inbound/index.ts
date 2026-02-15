@@ -16,6 +16,8 @@ const corsHeaders = {
 // ========================================
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 type ChannelType = 'WHATSAPP' | 'EMAIL' | 'SMS';
+type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
+type TipoLead = 'INVESTIDOR' | 'CAPTADOR';
 
 interface BlueChatPayload {
   conversation_id: string;       // ID da conversa no Blue Chat
@@ -35,6 +37,7 @@ interface BlueChatPayload {
   };
   context?: {
     empresa?: EmpresaTipo;       // TOKENIZA ou BLUE (default: BLUE)
+    tipo_lead?: 'INVESTIDOR' | 'CAPTADOR'; // Tipo de lead (TOKENIZA)
     agent_id?: string;           // Qual agente (amelia, etc)
     tags?: string[];             // Tags do Blue Chat
     history_summary?: string;    // Resumo do histórico
@@ -275,6 +278,81 @@ function generatePhoneVariations(phone: string): string[] {
   variations.push(withoutDDI);
   
   return [...new Set(variations)];
+}
+
+// ========================================
+// ROTEAMENTO INTELIGENTE + DETECÇÃO DUPLICATAS
+// ========================================
+const PLACEHOLDER_EMAILS_DEDUP = ['sememail@', 'sem-email@', 'noemail@', 'sem@', 'nao-informado@', 'teste@teste', 'email@email', 'x@x', 'a@a', 'placeholder', '@exemplo.', '@example.', 'test@test', 'nao@tem'];
+
+function isPlaceholderEmailForDedup(email: string | null): boolean {
+  if (!email) return true;
+  return PLACEHOLDER_EMAILS_DEDUP.some(p => email.trim().toLowerCase().includes(p));
+}
+
+function generatePhoneVariationsForSearch(phone: string | null): string[] {
+  if (!phone) return [];
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length < 8) return [];
+  const variations: string[] = [`+${digits}`];
+  const withoutDDI = digits.startsWith('55') ? digits.slice(2) : digits;
+  const ddd = withoutDDI.slice(0, 2);
+  const number = withoutDDI.slice(2);
+  variations.push(`+55${withoutDDI}`);
+  if (number.length === 8) variations.push(`+55${ddd}9${number}`);
+  if (number.length === 9 && number.startsWith('9')) variations.push(`+55${ddd}${number.slice(1)}`);
+  return [...new Set(variations.filter(v => v.length >= 10))];
+}
+
+function resolveTargetPipeline(
+  empresa: EmpresaTipo, tipoLead: TipoLead, temperatura: Temperatura, isPriority: boolean
+): { pipelineId: string; stageId: string } {
+  if (empresa === 'BLUE') {
+    const pipelineId = '21e577cc-32eb-4f1c-895e-b11bfc056e99';
+    const stageMap: Record<Temperatura, string> = { 'FRIO': '7e6ee75a-8efd-4cc4-8264-534bf77993c7', 'MORNO': 'bb39da09-d2cb-4111-a662-85c69e057077', 'QUENTE': 'e7cca7b0-941a-4522-9543-fc0d975b9dac' };
+    return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
+  }
+  if (tipoLead === 'CAPTADOR') {
+    const pipelineId = 'a74d511a-f8b4-4d14-9f5c-0c13da61cb15';
+    const stageMap: Record<Temperatura, string> = { 'FRIO': 'f45b020e-1247-42a1-89e7-bd0caf614a7e', 'MORNO': 'ece6bc09-c924-4b30-b064-e792f8e44c72', 'QUENTE': '34aa1201-d14d-46d9-8ce6-108ac811e79f' };
+    return { pipelineId, stageId: stageMap[temperatura] || stageMap['FRIO'] };
+  }
+  const pipelineId = '5bbac98b-5ae9-4b31-9b7f-896d7b732a2c';
+  const stageMap: Record<Temperatura, string> = { 'FRIO': 'da80e912-b462-401d-b367-1b6a9b2ec4da', 'MORNO': '90b33102-0472-459e-8eef-a455b0d37acf', 'QUENTE': 'c48dc6c2-c5dc-47c1-9f27-c058b01898c3' };
+  return { pipelineId, stageId: isPriority ? stageMap['QUENTE'] : (stageMap[temperatura] || stageMap['FRIO']) };
+}
+
+async function findExistingDealForPerson(
+  supabase: SupabaseClient, empresa: EmpresaTipo,
+  dados: { telefone_e164?: string | null; telefone?: string | null; email?: string | null; cpf?: string | null }
+): Promise<{ contactId: string; dealId: string } | null> {
+  const extractDeal = (row: Record<string, unknown>): { contactId: string; dealId: string } | null => {
+    const deals = row.deals as unknown;
+    const dealId = Array.isArray(deals) ? (deals[0] as Record<string, string>)?.id : (deals as Record<string, string>)?.id;
+    return dealId ? { contactId: row.id as string, dealId } : null;
+  };
+  if (dados.cpf) {
+    const cleaned = dados.cpf.replace(/\D/g, '');
+    if (cleaned.length >= 11) {
+      const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('cpf', cleaned).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
+      if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match CPF:', m); return m; } }
+    }
+  }
+  if (dados.telefone_e164) {
+    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('telefone_e164', dados.telefone_e164).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
+    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match tel_e164:', m); return m; } }
+  }
+  const phoneVars = generatePhoneVariationsForSearch(dados.telefone || dados.telefone_e164);
+  if (phoneVars.length > 0) {
+    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).in('telefone_e164', phoneVars).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
+    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match var_tel:', m); return m; } }
+  }
+  if (dados.email && !isPlaceholderEmailForDedup(dados.email)) {
+    const { data } = await supabase.from('contacts').select('id, deals!inner(id)').eq('empresa', empresa).eq('email', dados.email.trim().toLowerCase()).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
+    if (data) { const m = extractDeal(data as Record<string, unknown>); if (m) { console.log('[Dedup] Match email:', m); return m; } }
+  }
+  console.log('[Dedup] Nenhuma duplicata');
+  return null;
 }
 
 /**
@@ -927,6 +1005,93 @@ serve(async (req) => {
       }
     }
     
+    // ========================================
+    // AUTO-CRIAÇÃO DE DEAL (Roteamento + Dedup)
+    // ========================================
+    try {
+      const { data: crmContact } = await supabase
+        .from('contacts')
+        .select('id, telefone_e164, email, cpf, nome')
+        .eq('legacy_lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      if (crmContact) {
+        const duplicateMatch = await findExistingDealForPerson(supabase, empresa, {
+          telefone_e164: crmContact.telefone_e164 || leadContact.telefone_e164,
+          telefone: leadContact.telefone,
+          email: crmContact.email || leadContact.email || payload.contact.email,
+          cpf: crmContact.cpf,
+        });
+
+        if (duplicateMatch) {
+          console.log('[BlueChat] Duplicata detectada, deal existente:', duplicateMatch.dealId);
+          const enrichUpdates: Record<string, unknown> = {};
+          if (payload.contact.email && !crmContact.email) enrichUpdates.email = payload.contact.email;
+          if (payload.contact.name && !crmContact.nome) enrichUpdates.nome = payload.contact.name;
+          if (Object.keys(enrichUpdates).length > 0) {
+            await supabase.from('contacts').update(enrichUpdates).eq('id', duplicateMatch.contactId);
+          }
+        } else {
+          const tipoLead = (payload.context?.tipo_lead as TipoLead) || 'INVESTIDOR';
+          const { data: leadClassif } = await supabase
+            .from('lead_classifications')
+            .select('temperatura')
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          const temperatura: Temperatura = (leadClassif?.temperatura as Temperatura) || 'MORNO';
+          const routing = resolveTargetPipeline(empresa, tipoLead, temperatura, false);
+          const dealTitulo = `${leadContact.nome || payload.contact.name || 'Lead'} — Blue Chat`;
+
+          const { data: newDeal, error: dealError } = await supabase
+            .from('deals')
+            .insert({
+              contact_id: crmContact.id,
+              pipeline_id: routing.pipelineId,
+              stage_id: routing.stageId,
+              titulo: dealTitulo,
+              valor: 0,
+              moeda: 'BRL',
+              temperatura,
+              status: 'ABERTO',
+              origem: 'BLUECHAT',
+            } as Record<string, unknown>)
+            .select('id')
+            .single();
+
+          if (dealError) {
+            console.error('[BlueChat] Erro ao criar deal:', dealError);
+          } else {
+            console.log('[BlueChat] Deal criado:', newDeal.id, '| Pipeline:', routing.pipelineId);
+            await supabase.from('deal_activities').insert({
+              deal_id: newDeal.id,
+              tipo: 'CRIACAO',
+              descricao: `Deal criado via Blue Chat (${temperatura})`,
+              metadata: { origem: 'BLUECHAT', temperatura, tipo_lead: tipoLead },
+            } as Record<string, unknown>);
+
+            if (temperatura === 'QUENTE') {
+              await supabase.from('notifications').insert({
+                tipo: 'DEAL_NOVO_PRIORITARIO',
+                titulo: '🔥 Lead QUENTE entrou pelo Blue Chat!',
+                mensagem: `${leadContact.nome || payload.contact.name} — ${empresa}`,
+                empresa,
+                link: `/pipeline?deal=${newDeal.id}`,
+                metadata: { deal_id: newDeal.id, temperatura },
+              } as Record<string, unknown>);
+            }
+          }
+        }
+      } else {
+        console.log('[BlueChat] Contact CRM não encontrado para lead:', leadContact.lead_id);
+      }
+    } catch (dealErr) {
+      console.error('[BlueChat] Erro no fluxo de auto-criação de deal:', dealErr);
+    }
+
     // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
     const triageSummary = parseTriageSummary(payload.message.text);
     
