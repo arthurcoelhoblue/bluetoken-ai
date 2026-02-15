@@ -2,10 +2,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { encodeHex } from 'https://deno.land/std@0.224.0/encoding/hex.ts';
 import { encodeBase64 } from 'https://deno.land/std@0.224.0/encoding/base64.ts';
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 const ZADARMA_API_URL = 'https://api.zadarma.com';
 
@@ -58,6 +55,7 @@ async function zadarmaRequest(apiKey: string, apiSecret: string, apiPath: string
 }
 
 Deno.serve(async (req) => {
+  const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {

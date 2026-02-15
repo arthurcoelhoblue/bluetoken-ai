@@ -3,10 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 
 // SDR Response Generator — generates + sanitizes personalized AI response
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
 // ANTI-ROBOTIC SANITIZATION (from monolith PATCH 5K)

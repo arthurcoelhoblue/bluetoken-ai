@@ -17,10 +17,9 @@ const emailSendPayload = z.object({
 // ========================================
 // CORS Headers
 // ========================================
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
 // Tipos

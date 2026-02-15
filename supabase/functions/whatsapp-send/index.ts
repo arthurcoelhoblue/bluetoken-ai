@@ -6,10 +6,9 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // Suporta Blue Chat e Mensageria conforme integration_company_config
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // API Mensageria
 const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/send-message';

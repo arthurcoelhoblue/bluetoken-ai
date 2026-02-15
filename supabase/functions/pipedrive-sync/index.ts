@@ -6,10 +6,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 // Sincronização bi-direcional com Pipedrive
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders();
 
 // Pipedrive API base URL
 const PIPEDRIVE_API_BASE = 'https://grupoblue.pipedrive.com/api/v1';

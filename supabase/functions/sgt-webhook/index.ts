@@ -6,10 +6,9 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // Atualizado conforme documentação oficial SGT v1.0
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-sgt-signature, x-sgt-timestamp, x-webhook-secret',
-};
+import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
 
 // ========================================
 // TIPOS - Alinhados com documentação SGT

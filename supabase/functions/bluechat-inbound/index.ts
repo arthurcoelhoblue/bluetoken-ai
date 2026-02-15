@@ -1,15 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.25.76";
 
 // ========================================
 // PATCH Blue Chat Inbound Webhook
 // Integração Blue Chat → Amélia (SDR IA)
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
-};
+import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 // ========================================
 // TIPOS
@@ -829,7 +829,42 @@ serve(async (req) => {
     }
 
   try {
-    const payload: BlueChatPayload = await req.json();
+    const rawPayload = await req.json();
+
+    // Zod validation for incoming payload
+    const blueChatSchema = z.object({
+      conversation_id: z.string().min(1),
+      ticket_id: z.string().optional(),
+      message_id: z.string().min(1),
+      timestamp: z.string().optional(),
+      channel: z.enum(['WHATSAPP', 'EMAIL', 'SMS']).optional().default('WHATSAPP'),
+      contact: z.object({
+        phone: z.string().min(8).max(20),
+        name: z.string().max(200).optional(),
+        email: z.string().email().max(255).optional(),
+      }),
+      message: z.object({
+        type: z.enum(['text', 'audio', 'image', 'document']).optional().default('text'),
+        text: z.string().min(1).max(10000),
+        media_url: z.string().url().optional(),
+      }),
+      context: z.object({
+        empresa: z.enum(['TOKENIZA', 'BLUE']).optional(),
+        tipo_lead: z.enum(['INVESTIDOR', 'CAPTADOR']).optional(),
+        agent_id: z.string().optional(),
+        tags: z.array(z.string()).optional(),
+        history_summary: z.string().optional(),
+      }).optional(),
+    });
+
+    const parsed = blueChatSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid payload', details: parsed.error.errors[0]?.message }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const payload: BlueChatPayload = parsed.data as BlueChatPayload;
     
   console.log('[BlueChat] Webhook recebido:', {
       conversation_id: payload.conversation_id,
@@ -839,17 +874,6 @@ serve(async (req) => {
       phone: payload.contact?.phone,
       textPreview: payload.message?.text?.substring(0, 50),
     });
-
-    // Validar campos obrigatórios
-    if (!payload.conversation_id || !payload.message_id || !payload.contact?.phone || !payload.message?.text) {
-      return new Response(
-        JSON.stringify({ 
-          error: 'Missing required fields',
-          required: ['conversation_id', 'message_id', 'contact.phone', 'message.text']
-        }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;

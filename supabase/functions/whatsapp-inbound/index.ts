@@ -1,15 +1,15 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.25.76";
 
 // ========================================
 // PATCH 5F - WhatsApp Inbound Webhook
 // Recebe mensagens de leads via WhatsApp
 // ========================================
 
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-api-key',
-};
+import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+
+const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 // ========================================
 // TIPOS
@@ -526,20 +526,32 @@ serve(async (req) => {
   }
 
   try {
-    const payload: InboundPayload = await req.json();
+    const rawPayload = await req.json();
+
+    // Zod validation
+    const inboundSchema = z.object({
+      from: z.string().min(8, 'Phone number required').max(20),
+      message_id: z.string().min(1, 'message_id required').max(200),
+      timestamp: z.string().optional(),
+      text: z.string().min(1, 'Message text required').max(10000),
+      media_url: z.string().url().optional(),
+      media_type: z.string().optional(),
+    });
+
+    const parsed = inboundSchema.safeParse(rawPayload);
+    if (!parsed.success) {
+      return new Response(
+        JSON.stringify({ error: parsed.error.errors[0]?.message || 'Invalid payload' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    const payload: InboundPayload = parsed.data;
     
     console.log('[Inbound] Webhook recebido:', {
       from: payload.from,
       message_id: payload.message_id,
       textPreview: payload.text?.substring(0, 50),
     });
-
-    if (!payload.from || !payload.message_id || !payload.text) {
-      return new Response(
-        JSON.stringify({ error: 'Missing required fields: from, message_id, text' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
 
     const phoneNormalized = normalizePhone(payload.from);
     
