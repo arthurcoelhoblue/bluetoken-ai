@@ -9,6 +9,10 @@ const corsHeaders = getWebhookCorsHeaders();
 
 type HealthStatus = 'SAUDAVEL' | 'ATENCAO' | 'EM_RISCO' | 'CRITICO';
 interface Dimensoes { nps: number; csat: number; engajamento: number; financeiro: number; tempo: number; sentimento: number; }
+interface IdRow { id: string }
+interface NotaRow { nota: number }
+interface StatusRow { status: string }
+interface SentimentRow { sentiment_score: number }
 
 function getStatus(score: number): HealthStatus {
   if (score >= 75) return 'SAUDAVEL';
@@ -34,7 +38,7 @@ serve(async (req) => {
     if (singleId) customerIds = [singleId];
     else {
       const { data } = await supabase.from('cs_customers').select('id').eq('is_active', true);
-      customerIds = (data ?? []).map((c: any) => c.id);
+      customerIds = (data ?? []).map((c: IdRow) => c.id);
     }
 
     if (customerIds.length === 0) return new Response(JSON.stringify({ processed: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -50,22 +54,22 @@ serve(async (req) => {
         const [npsRes, csatRes, engagementRes, dealsRes, sentimentRes] = await Promise.all([
           supabase.from('cs_surveys').select('nota').eq('customer_id', customerId).eq('tipo', 'NPS').not('nota', 'is', null).order('respondido_em', { ascending: false }).limit(1).maybeSingle(),
           supabase.from('cs_surveys').select('nota').eq('customer_id', customerId).eq('tipo', 'CSAT').not('nota', 'is', null).order('respondido_em', { ascending: false }).limit(3),
-          supabase.from('deal_activities').select('id, deal_id').gte('created_at', thirtyDaysAgo).in('deal_id', (await supabase.from('deals').select('id').eq('contact_id', customer.contact_id)).data?.map((d: any) => d.id) || []),
+          supabase.from('deal_activities').select('id, deal_id').gte('created_at', thirtyDaysAgo).in('deal_id', (await supabase.from('deals').select('id').eq('contact_id', customer.contact_id)).data?.map((d: IdRow) => d.id) || []),
           supabase.from('deals').select('id, status').eq('contact_id', customer.contact_id),
           supabase.from('cs_surveys').select('sentiment_score').eq('customer_id', customerId).not('sentiment_score', 'is', null).order('respondido_em', { ascending: false }).limit(10),
         ]);
 
         const npsScore = npsRes.data?.nota != null ? npsRes.data.nota * 10 : 50;
         const csatData = csatRes.data ?? [];
-        const csatScore = csatData.length > 0 ? (csatData.reduce((s: number, r: any) => s + r.nota, 0) / csatData.length) * 20 : 50;
+        const csatScore = csatData.length > 0 ? (csatData.reduce((s: number, r: NotaRow) => s + r.nota, 0) / csatData.length) * 20 : 50;
         const actCount = engagementRes.data?.length ?? 0;
         const engajamentoScore = actCount === 0 ? 0 : actCount <= 3 ? 40 : actCount <= 8 ? 70 : 100;
         const allDeals = dealsRes.data ?? [];
-        const financeiroScore = allDeals.length > 0 ? (allDeals.filter((d: any) => d.status === 'GANHO').length / allDeals.length) * 100 : 50;
+        const financeiroScore = allDeals.length > 0 ? (allDeals.filter((d: StatusRow) => d.status === 'GANHO').length / allDeals.length) * 100 : 50;
         let tempoScore = 50;
         if (customer.data_primeiro_ganho) tempoScore = Math.min((Date.now() - new Date(customer.data_primeiro_ganho).getTime()) / (1000 * 60 * 60 * 24 * 30) / 24, 1) * 100;
         const sentData = sentimentRes.data ?? [];
-        const sentimentoScore = sentData.length > 0 ? (sentData.reduce((s: number, r: any) => s + r.sentiment_score, 0) / sentData.length) * 100 : 50;
+        const sentimentoScore = sentData.length > 0 ? (sentData.reduce((s: number, r: SentimentRow) => s + r.sentiment_score, 0) / sentData.length) * 100 : 50;
 
         const dimensoes: Dimensoes = { nps: Math.round(npsScore), csat: Math.round(csatScore), engajamento: engajamentoScore, financeiro: Math.round(financeiroScore), tempo: Math.round(tempoScore), sentimento: Math.round(sentimentoScore) };
         const newScore = calcWeighted(dimensoes);
@@ -89,7 +93,7 @@ serve(async (req) => {
             if (aiResult.content) motivo = aiResult.content;
           }
 
-          await supabase.from('cs_health_log').insert({ customer_id: customerId, score: newScore, status: newStatus, dimensoes: dimensoes as any, motivo_mudanca: motivo });
+          await supabase.from('cs_health_log').insert({ customer_id: customerId, score: newScore, status: newStatus, dimensoes: dimensoes as Record<string, number>, motivo_mudanca: motivo });
         }
 
         await supabase.from('cs_customers').update({ health_score: newScore, health_status: newStatus, updated_at: new Date().toISOString() }).eq('id', customerId);
