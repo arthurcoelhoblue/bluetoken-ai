@@ -55,9 +55,9 @@ export function useZadarmaExtensions(empresa: EmpresaTipo | null) {
         .eq('empresa', empresa!)
         .order('extension_number');
       if (error) throw error;
-      return (data ?? []).map((e: any) => ({
+      return (data ?? []).map((e: Record<string, unknown>) => ({
         ...e,
-        user_nome: e.profiles?.nome ?? null,
+        user_nome: (e.profiles as { nome?: string } | null)?.nome ?? null,
       })) as ZadarmaExtension[];
     },
   });
@@ -134,10 +134,10 @@ export function useDealCalls(dealId: string | null) {
         .order('created_at', { ascending: false })
         .limit(50);
       if (error) throw error;
-      return (data ?? []).map((c: any) => ({
+      return (data ?? []).map((c: Record<string, unknown>) => ({
         ...c,
-        contact_nome: c.contacts?.nome ?? null,
-        user_nome: c.profiles?.nome ?? null,
+        contact_nome: (c.contacts as { nome?: string } | null)?.nome ?? null,
+        user_nome: (c.profiles as { nome?: string } | null)?.nome ?? null,
       })) as Call[];
     },
   });

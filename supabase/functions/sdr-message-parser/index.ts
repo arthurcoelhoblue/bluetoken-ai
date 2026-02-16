@@ -80,9 +80,12 @@ function detectarLeadQuenteImediato(mensagem: string) {
 // LEAD PRONTO DETECTION (from monolith PATCH 10)
 // ========================================
 
-function detectarLeadProntoParaEscalar(mensagem: string, historico: any[], frameworkData?: any) {
+interface HistoricoMessage { direcao: string; conteudo: string; id?: string }
+interface FrameworkDataInput { spin?: { s?: boolean; p?: boolean } }
+
+function detectarLeadProntoParaEscalar(mensagem: string, historico: HistoricoMessage[], frameworkData?: FrameworkDataInput) {
   const msgLower = mensagem.toLowerCase();
-  const historicoText = historico.filter((h: any) => h.direcao === 'INBOUND').map((h: any) => h.conteudo.toLowerCase()).join(' ');
+  const historicoText = historico.filter((h) => h.direcao === 'INBOUND').map((h) => h.conteudo.toLowerCase()).join(' ');
   const todoTexto = msgLower + ' ' + historicoText;
 
   const conscienciaPatterns = ['sei que preciso', 'tenho que declarar', 'preciso regularizar', 'quero resolver', 'preciso resolver', 'quero investir', 'estou pronto'];
@@ -176,7 +179,7 @@ async function loadFullContext(supabase: SupabaseClient, messageId: string) {
       .eq('lead_id', leadId).limit(5),
   ]);
 
-  const historico = (histRes.data || []).filter((h: any) => h.id !== messageId);
+  const historico = (histRes.data || []).filter((h: HistoricoMessage) => h.id !== messageId);
   const contato = contactRes.data || null;
   const classificacao = classRes.data || null;
   let conversationState = stateRes.data || null;
@@ -198,7 +201,7 @@ async function loadFullContext(supabase: SupabaseClient, messageId: string) {
       .from('lead_cadence_runs')
       .select('cadence_id, cadences(nome)')
       .eq('id', message.run_id).maybeSingle();
-    cadenciaNome = (run?.cadences as any)?.nome || null;
+    cadenciaNome = (run?.cadences as { nome: string } | null)?.nome || null;
   }
 
   // Load pessoa context if available
@@ -208,13 +211,14 @@ async function loadFullContext(supabase: SupabaseClient, messageId: string) {
       const { data: pessoa } = await supabase.from('pessoas').select('*').eq('id', contato.pessoa_id).single();
       if (pessoa) {
         const { data: contacts } = await supabase.from('lead_contacts').select('lead_id, empresa, tokeniza_investor_id, blue_client_id').eq('pessoa_id', contato.pessoa_id);
-        const relacionamentos: any[] = [];
-        const empresas = [...new Set(contacts?.map((c: any) => c.empresa) || [])];
+        interface LeadContactRow { lead_id: string; empresa: string; tokeniza_investor_id?: string; blue_client_id?: string }
+        const relacionamentos: { empresa: string; tipo_relacao: string }[] = [];
+        const empresas = [...new Set(contacts?.map((c: LeadContactRow) => c.empresa) || [])];
         for (const emp of empresas) {
-          const empContacts = contacts?.filter((c: any) => c.empresa === emp) || [];
+          const empContacts = contacts?.filter((c: LeadContactRow) => c.empresa === emp) || [];
           let tipo_relacao = 'DESCONHECIDO';
-          if (emp === 'BLUE') tipo_relacao = empContacts.some((c: any) => c.blue_client_id) ? 'CLIENTE_IR' : 'LEAD_IR';
-          else if (emp === 'TOKENIZA') tipo_relacao = empContacts.some((c: any) => c.tokeniza_investor_id) ? 'INVESTIDOR' : 'LEAD_INVESTIDOR';
+          if (emp === 'BLUE') tipo_relacao = empContacts.some((c) => c.blue_client_id) ? 'CLIENTE_IR' : 'LEAD_IR';
+          else if (emp === 'TOKENIZA') tipo_relacao = empContacts.some((c) => c.tokeniza_investor_id) ? 'INVESTIDOR' : 'LEAD_INVESTIDOR';
           relacionamentos.push({ empresa: emp, tipo_relacao });
         }
         pessoaContext = {

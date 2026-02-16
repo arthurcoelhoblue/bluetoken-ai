@@ -91,15 +91,15 @@ export function UserPermissionOverrideDialog({
       const permissionsOverride = toPermissionsMap(overrides);
       const { error } = await supabase
         .from('user_access_assignments')
-        .update({ permissions_override: permissionsOverride as any })
+        .update({ permissions_override: permissionsOverride as unknown as import('@/integrations/supabase/types').Json })
         .eq('user_id', userId);
       if (error) throw error;
       qc.invalidateQueries({ queryKey: ['users-with-profiles'] });
       qc.invalidateQueries({ queryKey: ['screen-permissions'] });
       toast.success('Permissões individuais salvas');
       onOpenChange(false);
-    } catch (e: any) {
-      toast.error(`Erro: ${e.message}`);
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setSaving(false);
     }

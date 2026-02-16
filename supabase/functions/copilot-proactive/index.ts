@@ -1,10 +1,37 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+interface CopilotInsight {
+  categoria: string;
+  titulo: string;
+  descricao: string;
+  prioridade: string;
+  deal_id: string | null;
+  lead_id: string | null;
+}
+
+interface DealRow {
+  id: string;
+  titulo: string;
+  valor: number | null;
+  status: string;
+  temperatura: string | null;
+  updated_at: string;
+  stage_id: string | null;
+  pipeline_id: string | null;
+  contact_id: string | null;
+}
+
+interface ActivityRow { tipo: string; descricao: string | null; created_at: string; deal_id: string }
+interface SlaRow { deal_id: string; deal_titulo: string; sla_percentual: number; sla_estourado: boolean; stage_nome: string }
+interface TarefaRow { deal_id: string; descricao: string | null; tarefa_prazo: string | null; deal_titulo: string }
+interface MetaRow { valor_meta: number; valor_realizado: number }
+interface MessageRow { lead_id: string; direcao: string; conteudo: string; created_at: string }
 
 const COACHING_PROMPT = `Você é a Amélia no modo COACHING ATIVO.
 Analise os dados completos do vendedor abaixo e gere 3-5 insights acionáveis.
@@ -34,12 +61,12 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const log = createLogger('copilot-proactive');
+
   try {
     const { empresa } = await req.json();
-    const log = createLogger('copilot-proactive');
     const supabase = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_SERVICE_ROLE_KEY);
 
-    // Extract user from auth header
     const authHeader = req.headers.get('Authorization');
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Não autorizado' }), {
@@ -56,7 +83,6 @@ serve(async (req) => {
       });
     }
 
-    // Check if we already have recent insights (< 30min)
     const { data: recentInsights } = await supabase
       .from('copilot_insights')
       .select('id')
@@ -101,9 +127,8 @@ serve(async (req) => {
         .eq('empresa', empresa).eq('status', 'ATIVA').limit(20),
     ]);
 
-    // Build context
     if (dealsRes.data && dealsRes.data.length > 0) {
-      const dealsSummary = dealsRes.data.map((d: any) => {
+      const dealsSummary = (dealsRes.data as DealRow[]).map((d) => {
         const diasParado = Math.floor((Date.now() - new Date(d.updated_at).getTime()) / 86400000);
         return `- ${d.titulo}: R$ ${d.valor || 0}, temp=${d.temperatura || '-'}, ${diasParado} dias parado`;
       }).join('\n');
@@ -111,35 +136,36 @@ serve(async (req) => {
     }
 
     if (activitiesRes.data && activitiesRes.data.length > 0) {
-      const acts = activitiesRes.data.slice(0, 10).map((a: any) =>
+      const acts = (activitiesRes.data as ActivityRow[]).slice(0, 10).map((a) =>
         `- [${a.tipo}] ${a.descricao || '-'} (${new Date(a.created_at).toLocaleDateString('pt-BR')})`
       ).join('\n');
       contextParts.push(`**Últimas Atividades**:\n${acts}`);
     }
 
     if (slaRes.data && slaRes.data.length > 0) {
-      const sla = slaRes.data.map((s: any) =>
+      const sla = (slaRes.data as SlaRow[]).map((s) =>
         `- ${s.deal_titulo}: SLA ${s.sla_percentual}% ${s.sla_estourado ? '⚠️ ESTOURADO' : ''} (${s.stage_nome})`
       ).join('\n');
       contextParts.push(`**SLA Alerts**:\n${sla}`);
     }
 
     if (tarefasRes.data && tarefasRes.data.length > 0) {
-      const tarefas = tarefasRes.data.map((t: any) =>
+      const tarefas = (tarefasRes.data as TarefaRow[]).map((t) =>
         `- ${t.deal_titulo}: ${t.descricao || 'Sem desc'} (prazo: ${t.tarefa_prazo || 'sem prazo'})`
       ).join('\n');
       contextParts.push(`**Tarefas Pendentes (${tarefasRes.data.length})**:\n${tarefas}`);
     }
 
     if (metasRes.data) {
-      const pct = metasRes.data.valor_meta > 0
-        ? Math.round((metasRes.data.valor_realizado / metasRes.data.valor_meta) * 100)
+      const m = metasRes.data as MetaRow;
+      const pct = m.valor_meta > 0
+        ? Math.round((m.valor_realizado / m.valor_meta) * 100)
         : 0;
-      contextParts.push(`**Meta do Mês**: ${pct}% (R$ ${metasRes.data.valor_realizado} / R$ ${metasRes.data.valor_meta})`);
+      contextParts.push(`**Meta do Mês**: ${pct}% (R$ ${m.valor_realizado} / R$ ${m.valor_meta})`);
     }
 
     if (msgsRes.data && msgsRes.data.length > 0) {
-      const msgs = msgsRes.data.slice(0, 5).map((m: any) =>
+      const msgs = (msgsRes.data as MessageRow[]).slice(0, 5).map((m) =>
         `- Lead ${m.lead_id?.substring(0, 8)}: "${m.conteudo.substring(0, 80)}" (${new Date(m.created_at).toLocaleString('pt-BR')})`
       ).join('\n');
       contextParts.push(`**Mensagens Inbound Recentes**:\n${msgs}`);
@@ -157,7 +183,6 @@ serve(async (req) => {
       });
     }
 
-    // === CALL AI via unified provider ===
     const aiResult = await callAI({
       system: COACHING_PROMPT,
       prompt: `Dados do vendedor:\n\n${fullContext}\n\nData/hora atual: ${new Date().toLocaleString('pt-BR')}`,
@@ -174,8 +199,7 @@ serve(async (req) => {
       });
     }
 
-    // Parse JSON from AI response
-    let parsedInsights: any[] = [];
+    let parsedInsights: CopilotInsight[] = [];
     try {
       const jsonMatch = aiResult.content.match(/\[[\s\S]*\]/);
       if (jsonMatch) {
@@ -188,7 +212,6 @@ serve(async (req) => {
       });
     }
 
-    // Delete old non-dismissed insights before inserting new ones
     await supabase
       .from('copilot_insights')
       .delete()
@@ -196,8 +219,7 @@ serve(async (req) => {
       .eq('empresa', empresa)
       .eq('dispensado', false);
 
-    // Save new insights
-    const insightsToInsert = parsedInsights.slice(0, 5).map((ins: any) => ({
+    const insightsToInsert = parsedInsights.slice(0, 5).map((ins) => ({
       user_id: userId,
       empresa,
       categoria: ins.categoria || 'COACHING',
@@ -217,10 +239,11 @@ serve(async (req) => {
     });
 
   } catch (error) {
+    const log = createLogger('copilot-proactive');
     log.error('Erro geral', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 });

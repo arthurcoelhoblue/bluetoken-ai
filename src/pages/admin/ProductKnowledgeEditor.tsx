@@ -89,8 +89,8 @@ export default function ProductKnowledgeEditor() {
         await updateProduct.mutateAsync({ id: productId!, ...formData });
         toast.success("Produto atualizado");
       }
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao salvar produto");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar produto");
     }
   };
 
@@ -268,8 +268,8 @@ function SectionEditor({
   productId: string;
   tipo: KnowledgeSectionTipo;
   sections: KnowledgeSection[];
-  onSave: (section: any) => Promise<any>;
-  onDelete: (id: string) => Promise<any>;
+  onSave: (section: Partial<KnowledgeSection>) => Promise<unknown>;
+  onDelete: (id: string) => Promise<unknown>;
   isSaving: boolean;
 }) {
   const [editingSection, setEditingSection] = useState<Partial<KnowledgeSection> | null>(null);
@@ -294,8 +294,8 @@ function SectionEditor({
       await onSave(editingSection);
       setEditingSection(null);
       toast.success("Seção salva");
-    } catch (error: any) {
-      toast.error(error.message || "Erro ao salvar seção");
+    } catch (error: unknown) {
+      toast.error(error instanceof Error ? error.message : "Erro ao salvar seção");
     }
   };
 
@@ -428,8 +428,8 @@ function DocumentManager({
 }: {
   productId: string;
   documents: KnowledgeDocument[];
-  onUpload: (params: { productId: string; file: File; tipoDocumento?: string; descricao?: string }) => Promise<any>;
-  onDelete: (id: string, storagePath: string) => Promise<any>;
+  onUpload: (params: { productId: string; file: File; tipoDocumento?: string; descricao?: string }) => Promise<unknown>;
+  onDelete: (id: string, storagePath: string) => Promise<unknown>;
   isUploading: boolean;
 }) {
   const [dragActive, setDragActive] = useState(false);
@@ -441,8 +441,8 @@ function DocumentManager({
       try {
         await onUpload({ productId, file });
         toast.success(`"${file.name}" enviado`);
-      } catch (error: any) {
-        toast.error(`Erro ao enviar "${file.name}": ${error.message}`);
+      } catch (error: unknown) {
+        toast.error(`Erro ao enviar "${file.name}": ${error instanceof Error ? error.message : String(error)}`);
       }
     }
   };

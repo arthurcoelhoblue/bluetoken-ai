@@ -17,7 +17,7 @@ serve(async (req) => {
 
     const supabase = createServiceClient();
     const since = new Date(Date.now() - periodo_horas * 3600_000).toISOString();
-    const learnings: any[] = [];
+    const learnings: Record<string, unknown>[] = [];
 
     // ANÁLISE 1: Padrões de Takeover
     const { data: takeovers } = await supabase.from('conversation_takeover_log').select('*').eq('empresa', empresa).gte('created_at', since).order('created_at', { ascending: false }).limit(200);
@@ -38,7 +38,7 @@ serve(async (req) => {
     const { data: perdas } = await supabase.from('deal_activities').select('deal_id, tipo, descricao, metadata, created_at').eq('tipo', 'PERDA').gte('created_at', since).limit(200);
     if (perdas && perdas.length >= 3) {
       const byCategoria: Record<string, number> = {};
-      for (const p of perdas) { const cat = (p.metadata as any)?.categoria || 'SEM_CATEGORIA'; byCategoria[cat] = (byCategoria[cat] || 0) + 1; }
+      for (const p of perdas) { const cat = (p.metadata as Record<string, unknown> | null)?.categoria as string || 'SEM_CATEGORIA'; byCategoria[cat] = (byCategoria[cat] || 0) + 1; }
       const total = perdas.length;
       for (const [cat, count] of Object.entries(byCategoria)) {
         const pct = count / total;
@@ -52,10 +52,10 @@ serve(async (req) => {
     }
 
     // ANÁLISE 3: Correções de Classificação
-    const { data: corrections } = await supabase.from('lead_classifications' as any).select('*').eq('empresa', empresa).gte('created_at', since).limit(200);
+    const { data: corrections } = await supabase.from('lead_classifications').select('*').eq('empresa', empresa).gte('created_at', since).limit(200);
     if (corrections && corrections.length >= 5) {
       let tempCorrections = 0;
-      for (const c of corrections) { if ((c as any).temperatura_anterior && (c as any).temperatura !== (c as any).temperatura_anterior) tempCorrections++; }
+      for (const c of corrections) { const rec = c as Record<string, unknown>; if (rec.temperatura_anterior && rec.temperatura !== rec.temperatura_anterior) tempCorrections++; }
       if (tempCorrections >= 3) {
         const hash = `correcao_temp_${empresa}`;
         if (!(await checkDuplicate(supabase, hash))) {
@@ -71,7 +71,8 @@ serve(async (req) => {
       for (const deal of inactiveDeals) {
         const hash = `inativo_${deal.id}`;
         if (!(await checkDuplicate(supabase, hash))) {
-          learnings.push({ empresa, tipo: 'ALERTA_CRITICO', categoria: 'pipeline', titulo: `Deal "${deal.titulo}" sem atividade há 48h+`, descricao: `O deal de ${(deal.contacts as any)?.nome} está sem atividade.`, dados: { deal_id: deal.id, owner_id: deal.owner_id }, confianca: 0.85, hash_titulo: hash });
+          const contactNome = (deal.contacts as { nome: string } | null)?.nome ?? 'Desconhecido';
+          learnings.push({ empresa, tipo: 'ALERTA_CRITICO', categoria: 'pipeline', titulo: `Deal "${deal.titulo}" sem atividade há 48h+`, descricao: `O deal de ${contactNome} está sem atividade.`, dados: { deal_id: deal.id, owner_id: deal.owner_id }, confianca: 0.85, hash_titulo: hash });
           if (deal.owner_id) {
             await supabase.from('notifications').insert({ user_id: deal.owner_id, empresa, tipo: 'AMELIA_ALERTA', titulo: `Deal "${deal.titulo}" sem atividade`, mensagem: `Há mais de 48h sem atividade. Ação recomendada.`, link: `/pipeline`, entity_id: deal.id, entity_type: 'deal' });
           }
@@ -114,7 +115,7 @@ serve(async (req) => {
             supabase,
           });
 
-          let args: any = { sequences: [] };
+          let args: { sequences: Array<{ events: string[]; match_pct: number; window_days: number; description: string }> } = { sequences: [] };
           try { args = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()); } catch { /* ignore */ }
           for (const seq of (args.sequences || [])) {
             if (seq.match_pct >= 50 && seq.events.length >= 2) {
@@ -148,7 +149,7 @@ serve(async (req) => {
             supabase,
           });
 
-          let args: any = { sequences: [] };
+          let args: { sequences: Array<{ events: string[]; match_pct: number; window_days: number; description: string }> } = { sequences: [] };
           try { args = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()); } catch { /* ignore */ }
           for (const seq of (args.sequences || [])) {
             if (seq.match_pct >= 50 && seq.events.length >= 2) {

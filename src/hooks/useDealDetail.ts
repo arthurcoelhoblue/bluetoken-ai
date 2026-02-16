@@ -9,7 +9,7 @@ export function useDealDetail(dealId: string | null) {
     enabled: !!dealId,
     queryFn: async (): Promise<DealFullDetail> => {
       const { data, error } = await supabase
-        .from('deals_full_detail' as any)
+        .from('deals_full_detail' as 'deals')
         .select('*')
         .eq('id', dealId!)
         .single();
@@ -30,11 +30,11 @@ export function useDealActivities(dealId: string | null) {
         .eq('deal_id', dealId!)
         .order('created_at', { ascending: false });
       if (error) throw error;
-      return (data ?? []).map((a: any) => ({
+      return (data ?? []).map((a) => ({
         ...a,
-        user_nome: a.profiles?.nome ?? null,
-        user_avatar: a.profiles?.avatar_url ?? null,
-      }));
+        user_nome: (a as Record<string, unknown>).profiles ? ((a as Record<string, unknown>).profiles as { nome?: string; avatar_url?: string })?.nome ?? null : null,
+        user_avatar: (a as Record<string, unknown>).profiles ? ((a as Record<string, unknown>).profiles as { nome?: string; avatar_url?: string })?.avatar_url ?? null : null,
+      })) as DealActivity[];
     },
   });
 }

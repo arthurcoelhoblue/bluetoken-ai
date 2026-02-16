@@ -1,10 +1,45 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createServiceClient, envConfig } from '../_shared/config.ts';
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
 const log = createLogger('cs-playbook-runner');
 const corsHeaders = getWebhookCorsHeaders();
+
+interface PlaybookStep {
+  type: string;
+  title?: string;
+  message?: string;
+  template?: string;
+  subject?: string;
+  body?: string;
+  user_id?: string;
+  survey_type?: string;
+  delay_days?: number;
+}
+
+interface StepResult {
+  step: number;
+  type: string;
+  status: string;
+  error?: string;
+  at: string;
+}
+
+interface PipelineStageRow {
+  id: string;
+  posicao: number;
+  is_won: boolean;
+  is_lost: boolean;
+}
+
+interface ContactRow {
+  nome: string | null;
+  primeiro_nome: string | null;
+  telefone: string | null;
+  email: string | null;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
@@ -14,12 +49,11 @@ serve(async (req) => {
   try {
     const supabase = createServiceClient();
 
-    let body: any = {};
+    let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* cron call without body */ }
 
-    const { trigger_type, customer_id } = body;
+    const { trigger_type, customer_id } = body as { trigger_type?: string; customer_id?: string };
 
-    // If called with specific trigger+customer, create a run for matching playbooks
     if (trigger_type && customer_id) {
       const result = await createRunsForTrigger(supabase, trigger_type, customer_id);
       return new Response(JSON.stringify(result), {
@@ -27,7 +61,6 @@ serve(async (req) => {
       });
     }
 
-    // CRON mode: Phase 1 (auto-detect) + Phase 2 (execute pending steps)
     console.log('[PlaybookRunner] CRON mode — detecting triggers + executing pending steps');
 
     const phase1 = await autoDetectTriggers(supabase);
@@ -52,10 +85,9 @@ serve(async (req) => {
 
 // ─── Phase 1: Auto-detect triggers ───
 
-async function autoDetectTriggers(supabase: any) {
+async function autoDetectTriggers(supabase: SupabaseClient) {
   let created = 0;
 
-  // 1. NPS Detrator: cs_surveys with nota <= 6 in last 24h without a run
   const { data: detractors } = await supabase
     .from('cs_surveys')
     .select('customer_id, empresa')
@@ -66,7 +98,6 @@ async function autoDetectTriggers(supabase: any) {
     created += await createRunIfNew(supabase, 'NPS_DETRACTOR', d.customer_id, d.empresa);
   }
 
-  // 2. Health degraded: cs_health_log where new status is EM_RISCO or CRITICO in last 24h
   const { data: healthDrops } = await supabase
     .from('cs_health_log')
     .select('customer_id, empresa')
@@ -77,7 +108,6 @@ async function autoDetectTriggers(supabase: any) {
     created += await createRunIfNew(supabase, 'HEALTH_DEGRADED', h.customer_id, h.empresa);
   }
 
-  // 3. Renewal near: cs_customers with proxima_renovacao <= 60 days
   const sixtyDays = new Date(Date.now() + 60 * 86400000).toISOString().split('T')[0];
   const { data: renewals } = await supabase
     .from('cs_customers')
@@ -90,7 +120,6 @@ async function autoDetectTriggers(supabase: any) {
     created += await createRunIfNew(supabase, 'RENEWAL_NEAR', r.id, r.empresa);
   }
 
-  // 4. Incident critical: cs_incidents with gravidade ALTA or CRITICA in last 24h
   const { data: incidents } = await supabase
     .from('cs_incidents')
     .select('customer_id, empresa')
@@ -105,8 +134,7 @@ async function autoDetectTriggers(supabase: any) {
   return { created };
 }
 
-async function createRunIfNew(supabase: any, triggerType: string, customerId: string, empresa: string): Promise<number> {
-  // Check for existing active run of this trigger type for this customer
+async function createRunIfNew(supabase: SupabaseClient, triggerType: string, customerId: string, empresa: string): Promise<number> {
   const { data: existing } = await supabase
     .from('cs_playbook_runs')
     .select('id')
@@ -116,7 +144,6 @@ async function createRunIfNew(supabase: any, triggerType: string, customerId: st
 
   if (existing && existing.length > 0) return 0;
 
-  // Find matching active playbook
   const { data: playbooks } = await supabase
     .from('cs_playbooks')
     .select('id, steps')
@@ -137,13 +164,13 @@ async function createRunIfNew(supabase: any, triggerType: string, customerId: st
       step_results: [],
       started_at: new Date().toISOString(),
       next_step_at: new Date().toISOString(),
-    } as any);
+    } as Record<string, unknown>);
     if (!error) count++;
   }
   return count;
 }
 
-async function createRunsForTrigger(supabase: any, triggerType: string, customerId: string) {
+async function createRunsForTrigger(supabase: SupabaseClient, triggerType: string, customerId: string) {
   const { data: customer } = await supabase
     .from('cs_customers')
     .select('id, empresa')
@@ -153,14 +180,13 @@ async function createRunsForTrigger(supabase: any, triggerType: string, customer
   if (!customer) return { error: 'Customer not found', created: 0 };
 
   const created = await createRunIfNew(supabase, triggerType, customerId, customer.empresa);
-  // Also execute immediately
   const phase2 = await executePendingSteps(supabase);
   return { created, steps_executed: phase2.executed };
 }
 
 // ─── Phase 2: Execute pending steps ───
 
-async function executePendingSteps(supabase: any) {
+async function executePendingSteps(supabase: SupabaseClient) {
   const now = new Date().toISOString();
 
   const { data: runs } = await supabase
@@ -174,24 +200,23 @@ async function executePendingSteps(supabase: any) {
   let errors = 0;
 
   for (const run of runs ?? []) {
-    const playbook = (run as any).cs_playbooks;
-    const steps = (playbook?.steps || []) as any[];
+    const playbook = run.cs_playbooks as { nome: string; steps: PlaybookStep[]; empresa: string } | null;
+    const steps = (playbook?.steps || []) as PlaybookStep[];
     const currentIdx = run.current_step ?? 0;
 
     if (currentIdx >= steps.length) {
-      // All steps done
       await supabase.from('cs_playbook_runs').update({
         status: 'CONCLUIDA',
         completed_at: now,
-      } as any).eq('id', run.id);
+      } as Record<string, unknown>).eq('id', run.id);
       continue;
     }
 
     const step = steps[currentIdx];
-    const stepResults = (run.step_results || []) as any[];
+    const stepResults = (run.step_results || []) as StepResult[];
 
     try {
-      await executeStep(supabase, step, run.customer_id, playbook?.empresa);
+      await executeStep(supabase, step, run.customer_id, playbook?.empresa ?? '');
       stepResults.push({ step: currentIdx, type: step.type, status: 'ok', at: now });
       executed++;
     } catch (err) {
@@ -210,13 +235,13 @@ async function executePendingSteps(supabase: any) {
         step_results: stepResults,
         status: 'CONCLUIDA',
         completed_at: now,
-      } as any).eq('id', run.id);
+      } as Record<string, unknown>).eq('id', run.id);
     } else {
       await supabase.from('cs_playbook_runs').update({
         current_step: nextIdx,
         step_results: stepResults,
         next_step_at: nextAt,
-      } as any).eq('id', run.id);
+      } as Record<string, unknown>).eq('id', run.id);
     }
   }
 
@@ -224,7 +249,7 @@ async function executePendingSteps(supabase: any) {
   return { executed, errors };
 }
 
-async function executeStep(supabase: any, step: any, customerId: string, empresa: string) {
+async function executeStep(supabase: SupabaseClient, step: PlaybookStep, customerId: string, empresa: string) {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
   const headers = {
@@ -232,14 +257,13 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
     'Authorization': `Bearer ${serviceKey}`,
   };
 
-  // Get customer + contact info
   const { data: customer } = await supabase
     .from('cs_customers')
     .select('id, empresa, contact_id, csm_id, valor_mrr, health_score, contacts(nome, primeiro_nome, telefone, email)')
     .eq('id', customerId)
     .single();
 
-  const contact = (customer as any)?.contacts;
+  const contact = (customer?.contacts ?? null) as ContactRow | null;
 
   switch (step.type) {
     case 'notification': {
@@ -303,10 +327,8 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
     }
 
     case 'CRIAR_DEAL_RENOVACAO': {
-      // CS-Renovation Bridge (Patch 7 T4)
       if (!customer) break;
 
-      // Find renovation pipeline by tipo (not name) per architecture convention
       const { data: pipelines } = await supabase
         .from('pipelines')
         .select('id, pipeline_stages(id, posicao, is_won, is_lost)')
@@ -321,9 +343,10 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
         break;
       }
 
-      const firstStage = ((pipeline as any).pipeline_stages || [])
-        .filter((s: any) => !s.is_won && !s.is_lost)
-        .sort((a: any, b: any) => a.posicao - b.posicao)[0];
+      const stages = (pipeline.pipeline_stages || []) as PipelineStageRow[];
+      const firstStage = stages
+        .filter((s) => !s.is_won && !s.is_lost)
+        .sort((a, b) => a.posicao - b.posicao)[0];
 
       if (!firstStage) break;
 
@@ -350,7 +373,6 @@ async function executeStep(supabase: any, step: any, customerId: string, empresa
           to_stage_id: firstStage.id,
         });
 
-        // If health is bad, notify manager
         if ((customer.health_score ?? 100) < 50) {
           const { data: admins } = await supabase
             .from('user_roles')

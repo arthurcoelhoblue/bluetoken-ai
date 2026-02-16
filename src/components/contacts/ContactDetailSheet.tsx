@@ -189,16 +189,16 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                 {!deals?.length ? (
                   <p className="text-sm text-muted-foreground text-center py-8">Nenhum deal vinculado.</p>
                 ) : (
-                  deals.map((d: any) => (
+                  deals.map((d) => (
                     <Card key={d.id} className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setSelectedDealId(d.id)}>
                       <CardContent className="p-3">
                         <div className="flex items-center justify-between">
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{d.titulo}</p>
                             <div className="flex items-center gap-2 mt-1">
-                              {d.pipeline_stages && (
-                                <Badge variant="outline" className="text-xs" style={{ borderColor: d.pipeline_stages.cor, color: d.pipeline_stages.cor }}>
-                                  {d.pipeline_stages.nome}
+                              {(d as Record<string, unknown>).pipeline_stages && (
+                                <Badge variant="outline" className="text-xs" style={{ borderColor: ((d as Record<string, unknown>).pipeline_stages as { cor: string; nome: string }).cor, color: ((d as Record<string, unknown>).pipeline_stages as { cor: string; nome: string }).cor }}>
+                                  {((d as Record<string, unknown>).pipeline_stages as { cor: string; nome: string }).nome}
                                 </Badge>
                               )}
                               <Badge variant={d.status === 'GANHO' ? 'default' : d.status === 'PERDIDO' ? 'destructive' : 'secondary'} className="text-xs">
@@ -292,7 +292,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                     leadNome={contact.nome}
                     messages={messages}
                     isLoading={messagesLoading}
-                    modo={(bridge.conversationState?.modo as any) || 'SDR_IA'}
+                    modo={(bridge.conversationState?.modo as 'SDR_IA' | 'MANUAL' | 'HIBRIDO') || 'SDR_IA'}
                     assumidoPorNome={null}
                     maxHeight="400px"
                   />

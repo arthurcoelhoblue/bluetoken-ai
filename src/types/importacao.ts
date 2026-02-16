@@ -11,7 +11,7 @@ export interface ImportJob {
   imported: number;
   skipped: number;
   errors: number;
-  error_log: any[];
+  error_log: Array<{ message: string; entity_type?: string; source_id?: string }>;
   config: ImportConfig;
   started_by: string | null;
   started_by_nome?: string | null;
@@ -59,7 +59,7 @@ export interface PipedriveDealRow {
   lost_reason?: string;
   expected_close_date?: string;
   note?: string;
-  [key: string]: any;
+  [key: string]: string | number | undefined;
 }
 
 export interface PipedrivePersonRow {
@@ -71,7 +71,7 @@ export interface PipedrivePersonRow {
   phone?: Array<{ value: string; primary?: boolean }> | string;
   org_id?: number | string | { value: number | string };
   add_time?: string;
-  [key: string]: any;
+  [key: string]: string | number | Array<{ value: string; primary?: boolean }> | { value: number | string } | undefined;
 }
 
 export interface PipedriveOrgRow {
@@ -79,7 +79,7 @@ export interface PipedriveOrgRow {
   name?: string;
   address?: string;
   add_time?: string;
-  [key: string]: any;
+  [key: string]: string | number | undefined;
 }
 
 export interface ImportProgress {

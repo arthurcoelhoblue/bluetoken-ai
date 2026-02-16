@@ -120,7 +120,7 @@ describe('useCadences Hook', () => {
 
     it('deve retornar estatísticas zeradas para cadência sem runs', () => {
       const cadenceId = 'cad-sem-runs';
-      const runs: any[] = [];
+      const runs: { cadence_id: string; status: string }[] = [];
 
       const statsMap: Record<string, { total: number; ativas: number; concluidas: number }> = {};
 
@@ -200,7 +200,7 @@ describe('useCadences Hook', () => {
 
   describe('Tratamento de Erros', () => {
     it('deve retornar array vazio se não houver cadências', () => {
-      const cadences: any[] = [];
+      const cadences: { id: string; nome: string }[] = [];
       
       expect(cadences).toHaveLength(0);
       expect(Array.isArray(cadences)).toBe(true);
@@ -212,9 +212,9 @@ describe('useCadences Hook', () => {
         { id: 'cad-2', nome: 'Cadência 2' },
       ];
 
-      const runs: any[] = [];
+      const runs: { cadence_id: string; status: string }[] = [];
 
-      const statsMap: Record<string, any> = {};
+      const statsMap: Record<string, { total: number; ativas: number; concluidas: number }> = {};
       runs.forEach((run) => {
         if (!statsMap[run.cadence_id]) {
           statsMap[run.cadence_id] = { total: 0, ativas: 0, concluidas: 0 };
