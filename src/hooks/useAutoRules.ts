@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 
 export interface AutoRule {
   id: string;
@@ -18,12 +19,14 @@ export interface AutoRule {
 }
 
 export function useAutoRules() {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ['auto-rules'],
+    queryKey: ['auto-rules', activeCompany],
     queryFn: async (): Promise<AutoRule[]> => {
       const { data, error } = await supabase
         .from('pipeline_auto_rules' as any)
         .select('*, from_stage:from_stage_id(nome), to_stage:to_stage_id(nome), pipeline:pipeline_id(nome)')
+        .eq('empresa', activeCompany)
         .order('created_at', { ascending: false });
       if (error) throw error;
       type AutoRuleRow = AutoRule & { from_stage?: { nome: string } | null; to_stage?: { nome: string } | null; pipeline?: { nome: string } | null };
