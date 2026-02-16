@@ -1,110 +1,74 @@
 
+# Conexao com API de Busca de Leads do SGT
 
-# Copilot Proativo Autonomo + Rastreamento de Atividade do Usuario
+## Objetivo
 
-## Problema atual
+Criar uma edge function no projeto que atua como proxy para consultar a API do SGT (`buscar-lead-api`), permitindo buscar dados de leads por email ou telefone. Essa funcao podera ser chamada pelo frontend para enriquecer dados ou validar leads.
 
-O `generateInsights()` so e chamado quando o usuario abre o painel manualmente. O Copilot nao "observa" o que o usuario faz na tela.
-
-## Solucao em 2 partes
-
-### Parte 1: Auto-geracao de insights (frontend)
-
-**Arquivo: `src/components/copilot/CopilotFab.tsx`**
-
-Adicionar um `useEffect` que:
-1. Chama `generateInsights()` ao montar o componente (primeira vez que o FAB aparece)
-2. Configura um `setInterval` de 30 minutos para repetir a chamada automaticamente
-3. O cache de 30 min no hook + backend garante que chamadas duplicadas sao ignoradas sem custo
-
-```
-useEffect(() => {
-  generateInsights();
-  const interval = setInterval(() => generateInsights(), 30 * 60 * 1000);
-  return () => clearInterval(interval);
-}, [generateInsights]);
-```
-
-### Parte 2: Rastreamento de acoes do usuario para contexto
-
-Criar um hook `useUserActivityTracker` que registra acoes significativas do usuario em uma tabela leve e envia esse contexto para a edge function.
-
-**Nova tabela: `user_activity_log`**
-
-| Coluna | Tipo | Descricao |
-|--------|------|-----------|
-| id | uuid PK | |
-| user_id | uuid | Referencia ao usuario |
-| empresa | text | |
-| action_type | text | Tipo: PAGE_VIEW, DEAL_UPDATED, NOTE_ADDED, LEAD_VIEWED, PIPELINE_FILTERED |
-| action_detail | jsonb | Metadados (ex: deal_id, titulo, rota) |
-| created_at | timestamptz | |
-
-RLS: usuarios so veem suas proprias acoes.
-
-**Novo hook: `src/hooks/useUserActivityTracker.ts`**
-
-- Registra `PAGE_VIEW` automaticamente a cada mudanca de rota (via `useLocation`)
-- Exporta funcao `trackAction(type, detail)` para componentes registrarem acoes explicitas (ex: mover deal no pipeline, adicionar nota)
-- Faz debounce para evitar spam (maximo 1 registro por rota a cada 30s)
-- Mantem apenas as ultimas 48h de atividade (limpeza via trigger ou TTL)
-
-**Arquivo: `src/components/copilot/CopilotFab.tsx`**
-
-- Importar e ativar o `useUserActivityTracker` dentro do FAB (que ja esta montado globalmente)
-
-**Arquivo: `supabase/functions/copilot-proactive/index.ts`**
-
-- Adicionar query para buscar as ultimas 20 entradas de `user_activity_log` do usuario
-- Incluir no `contextParts` enviado a IA como "Navegacao Recente do Usuario"
-- Atualizar o prompt para incluir instrucao: "Observe o que o usuario tem feito nos ultimos minutos e adapte seus insights ao contexto de uso atual"
-
-### Parte 3: Integracao com acoes existentes
-
-Adicionar chamadas `trackAction()` nos pontos-chave ja existentes:
-
-| Local | Acao rastreada |
-|-------|----------------|
-| `useDealDetail.ts` (addActivity) | `DEAL_ACTIVITY_ADDED` com deal_id e tipo |
-| Pipeline drag-and-drop | `DEAL_MOVED` com deal_id, stage anterior e novo |
-| Pagina de lead | `LEAD_VIEWED` com lead_id |
-| `PipelineConfigPage` | `CONFIG_CHANGED` com pipeline_id |
-
-Isso sera feito de forma incremental — inicialmente apenas `PAGE_VIEW` automatico, depois acoes explicitas.
-
-## Fluxo completo
+## Arquitetura
 
 ```text
-Usuario navega/age no app
-        |
-        v
-useUserActivityTracker registra em user_activity_log
-        |
-        v (a cada 30 min via setInterval)
-CopilotFab chama generateInsights()
-        |
-        v
-copilot-proactive le: deals + SLA + tarefas + metas + ATIVIDADE DO USUARIO
-        |
-        v
-IA gera insights contextualizados ao que o usuario esta fazendo
-        |
-        v
-Bolha de notificacao aparece no FAB
+Frontend (hook)
+     |
+     v
+Edge Function: sgt-buscar-lead (nosso projeto)
+     |  POST com x-api-key
+     v
+SGT API: buscar-lead-api (Supabase externo)
+     |
+     v
+Retorna dados do lead
 ```
 
-## Arquivos alterados/criados
+## Implementacao
+
+### 1. Atualizar o secret `SGT_WEBHOOK_SECRET`
+
+O secret ja existe, mas o valor precisa ser atualizado para: `JIKLSFhofjhalosfSA7W8PR9UFEAUOJIF54702a` (valor fornecido pelo usuario). Sera usado tanto para autenticar webhooks de entrada quanto para chamadas de saida ao SGT.
+
+### 2. Nova Edge Function: `supabase/functions/sgt-buscar-lead/index.ts`
+
+Funcao serverless que:
+- Recebe POST com `{ email }` ou `{ telefone }` do frontend
+- Valida autenticacao do usuario (JWT do Supabase)
+- Faz a chamada ao endpoint externo do SGT: `https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api`
+- Envia header `x-api-key` com o valor de `SGT_WEBHOOK_SECRET`
+- Retorna os dados do lead encontrado
+
+Estrutura:
+```text
+supabase/functions/sgt-buscar-lead/
+  index.ts      # Logica principal
+```
+
+Logica resumida:
+- Validar que o request tem JWT valido (usuario autenticado)
+- Extrair `email` ou `telefone` do body
+- Chamar a API externa do SGT com `fetch()`
+- Retornar a resposta ao frontend
+
+### 3. Novo Hook Frontend: `src/hooks/useSGTLeadSearch.ts`
+
+Hook React Query que:
+- Exporta funcao `searchLead({ email?, telefone? })`
+- Chama a edge function `sgt-buscar-lead` via `supabase.functions.invoke()`
+- Retorna dados do lead, loading state e erro
+- Usara `useMutation` do TanStack Query (busca sob demanda, nao automatica)
+
+### 4. Integracao opcional com UI existente
+
+O hook ficara disponivel para ser integrado em qualquer tela (ex: LeadDetail, lista de leads, formulario de contato). A integracao com UI especifica pode ser feita em um proximo passo.
+
+## Arquivos criados/alterados
 
 | Arquivo | Acao |
 |---------|------|
-| `src/hooks/useUserActivityTracker.ts` | **Novo** — rastreia navegacao e acoes |
-| `src/components/copilot/CopilotFab.tsx` | Adicionar auto-generate + activity tracker |
-| `supabase/functions/copilot-proactive/index.ts` | Incluir activity_log no contexto da IA |
-| Migracao SQL | Criar tabela `user_activity_log` com RLS |
+| `supabase/functions/sgt-buscar-lead/index.ts` | **Novo** - Edge function proxy |
+| `src/hooks/useSGTLeadSearch.ts` | **Novo** - Hook para busca de leads |
+| Secret `SGT_WEBHOOK_SECRET` | **Atualizar** valor |
 
 ## Seguranca
 
-- RLS restrita: `user_id = auth.uid()`
-- Dados de atividade sao efemeros (ultimas 48h)
-- Nenhum dado sensivel e armazenado — apenas tipo de acao e IDs de referencia
-- Rate limit do backend (30 min) impede abuso de chamadas a IA
+- A edge function exige JWT valido (usuario logado) para ser chamada
+- O secret `SGT_WEBHOOK_SECRET` nunca e exposto ao frontend
+- A URL do SGT externo fica apenas no backend
