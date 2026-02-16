@@ -3,19 +3,22 @@
  * Facilita a criação de mocks consistentes para testes
  */
 
-import { vi } from 'vitest';
+import { vi, type Mock } from 'vitest';
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type MockFn = Mock<(...args: any[]) => any>;
 
 export interface MockSupabaseClient {
-  from: ReturnType<typeof vi.fn>;
+  from: MockFn;
   auth: {
-    getSession: ReturnType<typeof vi.fn>;
-    getUser: ReturnType<typeof vi.fn>;
-    signInWithOAuth: ReturnType<typeof vi.fn>;
-    signOut: ReturnType<typeof vi.fn>;
+    getSession: MockFn;
+    getUser: MockFn;
+    signInWithOAuth: MockFn;
+    signOut: MockFn;
   };
-  rpc: ReturnType<typeof vi.fn>;
+  rpc: MockFn;
   storage: {
-    from: ReturnType<typeof vi.fn>;
+    from: MockFn;
   };
 }
 
@@ -46,14 +49,14 @@ export function createMockSupabaseClient(): MockSupabaseClient {
       limit: vi.fn().mockReturnThis(),
       single: vi.fn().mockResolvedValue({ data: null, error: null }),
       maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })),
+    })) as MockFn,
     auth: {
-      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }),
-      getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }),
-      signInWithOAuth: vi.fn().mockResolvedValue({ data: null, error: null }),
-      signOut: vi.fn().mockResolvedValue({ error: null }),
+      getSession: vi.fn().mockResolvedValue({ data: { session: null }, error: null }) as MockFn,
+      getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) as MockFn,
+      signInWithOAuth: vi.fn().mockResolvedValue({ data: null, error: null }) as MockFn,
+      signOut: vi.fn().mockResolvedValue({ error: null }) as MockFn,
     },
-    rpc: vi.fn().mockResolvedValue({ data: null, error: null }),
+    rpc: vi.fn().mockResolvedValue({ data: null, error: null }) as MockFn,
     storage: {
       from: vi.fn(() => ({
         upload: vi.fn().mockResolvedValue({ data: null, error: null }),
@@ -61,7 +64,7 @@ export function createMockSupabaseClient(): MockSupabaseClient {
         remove: vi.fn().mockResolvedValue({ data: null, error: null }),
         list: vi.fn().mockResolvedValue({ data: [], error: null }),
         getPublicUrl: vi.fn().mockReturnValue({ data: { publicUrl: '' } }),
-      })),
+      })) as MockFn,
     },
   };
 
