@@ -1,82 +1,113 @@
 
 
-# Fase 1.1 - Migrar Validacao Manual para Zod no sgt-webhook
+# Plano de Acao — Auditoria v2: Rumo a v1.0 Estavel
 
-## Contexto
+## Resumo do Diagnostico
 
-O relatorio de validacao da Manus AI identificou que o `sgt-webhook` usa validacao manual (`validatePayload`) em vez de Zod schemas. Os outros dois webhooks (`bluechat-inbound` e `whatsapp-inbound`) ja usam Zod corretamente.
+A auditoria v2 da Manus AI elevou a nota geral de **6.5 para 7.5/10**, reconhecendo as melhorias em seguranca e arquitetura. Quatro pontos remanescentes foram identificados, organizados por prioridade.
 
-## Escopo
+## Scorecard Atual
 
-Apenas 1 arquivo precisa ser alterado: `supabase/functions/sgt-webhook/index.ts`
+| Categoria | Antes | Agora | Meta v1.0 |
+|---|---|---|---|
+| Qualidade de Codigo | 6 | 7 | 9 |
+| Seguranca | 5 | 8 | 9 |
+| Cobertura de Testes | 2 | 3 | 6 |
+| Arquitetura | 7 | 8 | 9 |
+| **Geral** | **6.5** | **7.5** | **8.5+** |
 
-## O que muda
+---
 
-### Substituir `validatePayload` (linhas 808-841) por schema Zod
+## Fase A — Validacao Centralizada de Env Vars (Ponto 2 - Alto)
 
-O schema Zod cobrira:
+**Problema**: 468 chamadas `Deno.env.get()` espalhadas em 46 edge functions, muitas usando `!` (non-null assertion) sem validacao. Se uma variavel essencial estiver faltando, a funcao quebra de forma imprevisivel em runtime.
 
-```text
-sgtPayloadSchema = z.object({
-  lead_id:    z.string().min(1),
-  evento:     z.enum(['LEAD_NOVO', 'ATUALIZACAO', 'CARRINHO_ABANDONADO', 'MQL', 'SCORE_ATUALIZADO', 'CLIQUE_OFERTA', 'FUNIL_ATUALIZADO']),
-  empresa:    z.enum(['TOKENIZA', 'BLUE']),
-  timestamp:  z.string().min(1),
-  dados_lead: z.object({
-    nome:     z.string().max(200).optional(),
-    email:    z.string().email().max(255),
-    telefone: z.string().max(20).optional(),
-    utm_source / utm_medium / utm_campaign / utm_term / utm_content: z.string().optional(),
-    score:    z.number().optional(),
-    stage:    z.string().optional(),
-    ...demais campos opcionais
-  }),
-  dados_empresa:       z.record(z.unknown()).optional(),
-  prioridade_marketing: z.enum(['URGENTE','QUENTE','MORNO','FRIO']).optional(),
-  metadata:            z.record(z.unknown()).optional(),
-})
-```
+**Acao**: Criar `supabase/functions/_shared/config.ts` que:
+- Le e valida as variaveis essenciais (`SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`) na inicializacao
+- Exporta um objeto tipado `envConfig`
+- Lanca erro claro e imediato se uma variavel obrigatoria estiver ausente
+- Variaveis opcionais (ex: `OPENAI_API_KEY`, `PIPEDRIVE_API_TOKEN`) sao expostas via funcoes que retornam `string | null`
 
-### Preservar `normalizePayloadFormat`
+**Arquivos**:
+- Criar: `supabase/functions/_shared/config.ts`
+- Editar: As 46 edge functions para importar de `config.ts` em vez de chamar `Deno.env.get()` diretamente
 
-A funcao `normalizePayloadFormat` (que converte formato flat para nested) continua existindo e sera executada ANTES do parse Zod. Isso garante retrocompatibilidade com integradores que enviam campos no nivel raiz.
+**Escopo realista para esta iteracao**: Aplicar em todas as edge functions, priorizando as 3 publicas (sgt-webhook, bluechat-inbound, whatsapp-inbound) e as mais criticas (cadence-runner, sdr-action-executor, email-send, whatsapp-send).
 
-### Fluxo atualizado
+---
 
-```text
-1. JSON.parse(body)
-2. normalizePayloadFormat(raw)   -- flat -> nested
-3. sgtPayloadSchema.safeParse()  -- Zod validation
-4. Se !success -> 400 com errors formatados
-5. Continua processamento com dados tipados
-```
+## Fase B — Eliminacao de `any` Explicito (Ponto 1 - Critico, parte pratica)
 
-### Adicionar import do Zod
+**Problema**: 145 ocorrencias de `: any` explicitamente no codigo (594 no backend, ~180 no frontend por grep). Isso anula beneficios do TypeScript.
 
-```text
-import { z } from "https://esm.sh/zod@3.25.76";
-```
+**Acao**: Substituir `: any` por tipos especificos ou `unknown` com narrowing.
 
-(Mesmo import ja usado em bluechat-inbound e whatsapp-inbound)
+**Abordagem por camada**:
 
-## O que NAO muda
+1. **Backend (edge functions)** — Foco nos arquivos com mais ocorrencias:
+   - `revenue-forecast/index.ts` — criar interfaces para deal features e AI response
+   - `next-best-action/index.ts` — tipar os maps de contexto
+   - `amelia-learn/index.ts` — tipar learnings array e AI args
+   - Demais funcoes: substituir `: any` por tipos inline ou `unknown`
 
-- Nenhuma logica de negocio (classificacao, dedup, cadencia, CRM)
-- Nenhum outro arquivo
-- Nenhuma tabela ou migracao
-- `normalizePayloadFormat` continua funcionando igual
-- Comportamento identico para payloads validos
+2. **Frontend** — Foco nos arquivos identificados:
+   - `AmeliaMassActionPage.tsx` (~25 ocorrencias) — tipar deal com a interface existente
+   - `ContactDetailSheet.tsx`, `useLeadIntents.ts`, `useDealDetail.ts`, `useZadarma.ts` — usar tipos do Supabase types
 
-## Risco
+**Nota**: Nao ativaremos `noImplicitAny: true` no tsconfig nesta iteracao. Isso quebraria centenas de pontos implicitos e e melhor feito apos eliminar os explicitos. A auditoria sera informada que o `any` explicito foi eliminado como primeiro passo.
 
-| Risco | Mitigacao |
-|-------|----------|
-| Schema Zod rejeitar payload que a validacao manual aceitava | Schema sera permissivo nos campos opcionais; campos extras permitidos via passthrough |
-| Formato de erro diferente quebrar integradores | Manter mesmo status 400 e estrutura { error: string } |
+---
 
-## Resultado
+## Fase C — Adocao Global do Logger Estruturado (Ponto 3 - Alto)
 
-- Item 1.1 passa de "Parcialmente Validado" para "Validado" na proxima auditoria
-- Consistencia: todos os 3 webhooks publicos usam Zod
-- Mensagens de erro mais ricas e precisas automaticamente
+**Problema**: 396 `console.log/warn/error` espalhados. O `_shared/logger.ts` existe mas nao e usado globalmente.
+
+**Acao**:
+1. Evoluir `_shared/logger.ts` para incluir contexto estruturado (function_name, request_id)
+2. Substituir `console.log/warn/error` por `logger.info/warn/error` nas edge functions mais criticas
+3. Manter `console.*` no frontend (logs de browser sao diferentes de logs de servidor)
+
+**Escopo**: Aplicar nas mesmas edge functions priorizadas na Fase A.
+
+---
+
+## Fase D — Reducao de Complexidade dos Arquivos Maiores (Ponto 4 - Medio)
+
+**Problema**: `sgt-webhook` tem 2.043 linhas e complexidade ciclomatica >170. `bluechat-inbound` tem 1.505 linhas.
+
+**Acao**: Extrair modulos de cada funcao sem mudar comportamento.
+
+Para `sgt-webhook`:
+- Extrair `sgt-webhook/validation.ts` (schemas Zod + validatePayload)
+- Extrair `sgt-webhook/normalization.ts` (normalizePayloadFormat + normalizeSGTEvent)
+- Extrair `sgt-webhook/classification.ts` (classificarLead + helpers ICP)
+- Extrair `sgt-webhook/cadence.ts` (startCadence + helpers)
+- `index.ts` fica como orquestrador (~200 linhas)
+
+Para `bluechat-inbound`:
+- Extrair `bluechat-inbound/schemas.ts`
+- Extrair `bluechat-inbound/contact-resolver.ts`
+- Extrair `bluechat-inbound/conversation-handler.ts`
+
+---
+
+## Fora de Escopo (Prioridade 2-3 do relatorio)
+
+Os seguintes itens ficam para iteracoes futuras:
+- Ativar `strict: true` / `noImplicitAny: true` no tsconfig (requer correcao de centenas de pontos implicitos)
+- Aumentar cobertura de testes de integracao
+- Refatorar `sidebar.tsx` e `ConversationView.tsx` (frontend, menor impacto)
+- Configurar ESLint com `no-explicit-any`
+- Integrar logger com servico externo (Logtail/Sentry)
+
+---
+
+## Sequencia de Execucao
+
+| Ordem | Fase | Impacto | Risco |
+|---|---|---|---|
+| 1 | A — Config centralizado | Alto (robustez) | Baixo |
+| 2 | B — Eliminar `any` | Alto (qualidade) | Medio |
+| 3 | C — Logger estruturado | Medio (operacao) | Baixo |
+| 4 | D — Quebrar arquivos | Medio (manutencao) | Baixo |
 
