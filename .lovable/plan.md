@@ -1,73 +1,110 @@
 
 
-# Amélia Copilot — FAB Flutuante com Notificacao Proativa
+# Copilot Proativo Autonomo + Rastreamento de Atividade do Usuario
 
-## O que muda
+## Problema atual
 
-O botao da Amélia Copilot sai da barra superior e vira um botao flutuante (FAB) no canto inferior direito, arrastavel pelo usuario. Quando a Amélia gerar insights proativos, uma "bolha" aparece ao lado do botao (estilo notificacao do WhatsApp) com o texto do insight mais recente.
+O `generateInsights()` so e chamado quando o usuario abre o painel manualmente. O Copilot nao "observa" o que o usuario faz na tela.
 
-## Arquitetura da mudanca
+## Solucao em 2 partes
 
-### 1. Novo componente: `CopilotFab.tsx`
+### Parte 1: Auto-geracao de insights (frontend)
 
-Componente independente que encapsula:
-- **Botao flutuante** com icone da Amélia (Bot) e badge de contagem
-- **Drag-and-drop** usando `onPointerDown/Move/Up` nativo (sem dependencias extras)
-- **Bolha de notificacao** que aparece quando `pendingCount` muda de 0 para N, mostrando o titulo do insight mais recente por 8 segundos
-- Ao clicar no FAB, abre o Sheet (CopilotPanel) normalmente
+**Arquivo: `src/components/copilot/CopilotFab.tsx`**
 
-Posicao inicial: `bottom: 24px, right: 24px` (logo acima do ZadarmaPhoneWidget que fica em `bottom: 6`).
-Posicao salva em `localStorage` para persistir entre sessoes.
+Adicionar um `useEffect` que:
+1. Chama `generateInsights()` ao montar o componente (primeira vez que o FAB aparece)
+2. Configura um `setInterval` de 30 minutos para repetir a chamada automaticamente
+3. O cache de 30 min no hook + backend garante que chamadas duplicadas sao ignoradas sem custo
 
-### 2. Alteracoes no `TopBar.tsx`
-
-- Remover o `CopilotPanel` da barra superior (linha ~112)
-- Remover o import e a chamada `getCopilotContext` (ja nao sera necessario aqui)
-
-### 3. Alteracoes no `AppLayout.tsx`
-
-- Adicionar `<CopilotFab />` ao lado do `<ZadarmaPhoneWidget />`
-- O contexto sera derivado da rota via `useLocation()` dentro do proprio `CopilotFab`
-
-### 4. Alteracoes no `CopilotPanel.tsx`
-
-- Adicionar prop `externalOpen` e `onOpenChange` para controle externo do Sheet (o FAB controla abrir/fechar)
-- Manter todo o restante intacto (mensagens, insights, suggestions)
-
-## Bolha de notificacao (estilo WhatsApp)
-
-```text
-+------------------------------------------+
-|  Amelia: "Deal X parado ha 5 dias"    X  |
-+------------------------------------------+
-          [Bot icon FAB]
+```
+useEffect(() => {
+  generateInsights();
+  const interval = setInterval(() => generateInsights(), 30 * 60 * 1000);
+  return () => clearInterval(interval);
+}, [generateInsights]);
 ```
 
-- Aparece com animacao `animate-fade-in` quando ha novos insights
-- Desaparece apos 8s ou ao clicar no X
-- Maximo de 1 bolha por vez (insight mais recente/prioritario)
+### Parte 2: Rastreamento de acoes do usuario para contexto
 
-## Drag (arrastar)
+Criar um hook `useUserActivityTracker` que registra acoes significativas do usuario em uma tabela leve e envia esse contexto para a edge function.
 
-- Implementado com `onPointerDown`, `onPointerMove`, `onPointerUp` nativos
-- Sem bibliotecas extras (dnd-kit e para listas, nao para drag livre)
-- Limites: mantem o botao dentro da viewport
-- Posicao salva em `localStorage('copilot-fab-position')`
-- Distingue click de drag: se mover menos de 5px, trata como click (abre o painel)
+**Nova tabela: `user_activity_log`**
 
-## Arquivos alterados
+| Coluna | Tipo | Descricao |
+|--------|------|-----------|
+| id | uuid PK | |
+| user_id | uuid | Referencia ao usuario |
+| empresa | text | |
+| action_type | text | Tipo: PAGE_VIEW, DEAL_UPDATED, NOTE_ADDED, LEAD_VIEWED, PIPELINE_FILTERED |
+| action_detail | jsonb | Metadados (ex: deal_id, titulo, rota) |
+| created_at | timestamptz | |
+
+RLS: usuarios so veem suas proprias acoes.
+
+**Novo hook: `src/hooks/useUserActivityTracker.ts`**
+
+- Registra `PAGE_VIEW` automaticamente a cada mudanca de rota (via `useLocation`)
+- Exporta funcao `trackAction(type, detail)` para componentes registrarem acoes explicitas (ex: mover deal no pipeline, adicionar nota)
+- Faz debounce para evitar spam (maximo 1 registro por rota a cada 30s)
+- Mantem apenas as ultimas 48h de atividade (limpeza via trigger ou TTL)
+
+**Arquivo: `src/components/copilot/CopilotFab.tsx`**
+
+- Importar e ativar o `useUserActivityTracker` dentro do FAB (que ja esta montado globalmente)
+
+**Arquivo: `supabase/functions/copilot-proactive/index.ts`**
+
+- Adicionar query para buscar as ultimas 20 entradas de `user_activity_log` do usuario
+- Incluir no `contextParts` enviado a IA como "Navegacao Recente do Usuario"
+- Atualizar o prompt para incluir instrucao: "Observe o que o usuario tem feito nos ultimos minutos e adapte seus insights ao contexto de uso atual"
+
+### Parte 3: Integracao com acoes existentes
+
+Adicionar chamadas `trackAction()` nos pontos-chave ja existentes:
+
+| Local | Acao rastreada |
+|-------|----------------|
+| `useDealDetail.ts` (addActivity) | `DEAL_ACTIVITY_ADDED` com deal_id e tipo |
+| Pipeline drag-and-drop | `DEAL_MOVED` com deal_id, stage anterior e novo |
+| Pagina de lead | `LEAD_VIEWED` com lead_id |
+| `PipelineConfigPage` | `CONFIG_CHANGED` com pipeline_id |
+
+Isso sera feito de forma incremental — inicialmente apenas `PAGE_VIEW` automatico, depois acoes explicitas.
+
+## Fluxo completo
+
+```text
+Usuario navega/age no app
+        |
+        v
+useUserActivityTracker registra em user_activity_log
+        |
+        v (a cada 30 min via setInterval)
+CopilotFab chama generateInsights()
+        |
+        v
+copilot-proactive le: deals + SLA + tarefas + metas + ATIVIDADE DO USUARIO
+        |
+        v
+IA gera insights contextualizados ao que o usuario esta fazendo
+        |
+        v
+Bolha de notificacao aparece no FAB
+```
+
+## Arquivos alterados/criados
 
 | Arquivo | Acao |
 |---------|------|
-| `src/components/copilot/CopilotFab.tsx` | **Novo** — FAB arrastavel + bolha de notificacao |
-| `src/components/copilot/CopilotPanel.tsx` | Adicionar props `externalOpen`/`onOpenChange` |
-| `src/components/layout/TopBar.tsx` | Remover CopilotPanel |
-| `src/components/layout/AppLayout.tsx` | Adicionar CopilotFab |
+| `src/hooks/useUserActivityTracker.ts` | **Novo** — rastreia navegacao e acoes |
+| `src/components/copilot/CopilotFab.tsx` | Adicionar auto-generate + activity tracker |
+| `supabase/functions/copilot-proactive/index.ts` | Incluir activity_log no contexto da IA |
+| Migracao SQL | Criar tabela `user_activity_log` com RLS |
 
 ## Seguranca
 
-- Zero mudancas no backend
-- Zero mudancas em banco de dados
-- O `useCopilotInsights` continua funcionando exatamente igual
-- O Sheet do CopilotPanel continua identico; apenas o trigger muda
-- ZadarmaPhoneWidget nao e afetado (posicoes diferentes)
+- RLS restrita: `user_id = auth.uid()`
+- Dados de atividade sao efemeros (ultimas 48h)
+- Nenhum dado sensivel e armazenado — apenas tipo de acao e IDs de referencia
+- Rate limit do backend (30 min) impede abuso de chamadas a IA
