@@ -39,8 +39,9 @@ serve(async (req) => {
     let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* empty body = batch mode */ }
     const targetDealId = (body?.deal_id as string) || null;
+    const empresa = (body?.empresa as string) || null;
 
-    // Fetch deals to score
+    // Fetch deals to score — filter by pipeline empresa when provided
     let query = supabase.from('deals').select(`
       id, titulo, valor, temperatura, status, stage_id, pipeline_id, owner_id,
       contact_id, score_probabilidade, updated_at, created_at,
@@ -48,8 +49,21 @@ serve(async (req) => {
       contacts(id, nome, legacy_lead_id)
     `).eq('status', 'ABERTO');
 
-    if (targetDealId) query = query.eq('id', targetDealId);
-    else query = query.limit(200);
+    if (targetDealId) {
+      query = query.eq('id', targetDealId);
+    } else {
+      // In batch mode, filter by empresa via pipelines join
+      if (empresa) {
+        const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', empresa);
+        const pipelineIds = (pipelines ?? []).map(p => p.id);
+        if (pipelineIds.length > 0) {
+          query = query.in('pipeline_id', pipelineIds);
+        } else {
+          return new Response(JSON.stringify({ scored: 0, empresa }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+        }
+      }
+      query = query.limit(200);
+    }
 
     const { data: deals, error: dealsErr } = await query;
     if (dealsErr) throw dealsErr;

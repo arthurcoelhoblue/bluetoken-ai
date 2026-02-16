@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('icp-learner');
 const corsHeaders = getWebhookCorsHeaders();
@@ -16,6 +17,7 @@ interface DealWithContact {
   motivo_perda?: string | null;
   contact_id: string | null;
   contacts: {
+    empresa: string;
     linkedin_cargo: string | null;
     linkedin_empresa: string | null;
     linkedin_setor: string | null;
@@ -41,9 +43,12 @@ serve(async (req) => {
 
   try {
     const supabase = createServiceClient();
+    const body = await req.json().catch(() => ({}));
+    const empresa = body.empresa;
+    assertEmpresa(empresa);
 
-    const { data: wonDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'GANHO').order('fechado_em', { ascending: false }).limit(200);
-    const { data: lostDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, motivo_perda, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'PERDIDO').order('fechado_em', { ascending: false }).limit(200);
+    const { data: wonDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, contact_id, contacts!inner(empresa, linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('contacts.empresa', empresa).eq('status', 'GANHO').order('fechado_em', { ascending: false }).limit(200);
+    const { data: lostDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, motivo_perda, contact_id, contacts!inner(empresa, linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('contacts.empresa', empresa).eq('status', 'PERDIDO').order('fechado_em', { ascending: false }).limit(200);
 
     const won = (wonDeals || []) as unknown as DealWithContact[];
     const lost = (lostDeals || []) as unknown as DealWithContact[];
@@ -66,10 +71,10 @@ serve(async (req) => {
     }
 
     if (icpNarrative || won.length > 0) {
-      await supabase.from('system_settings').upsert({ category: 'ia', key: 'icp_profile', value: { patterns: analysisData, narrative: icpNarrative, generated_at: new Date().toISOString() } }, { onConflict: 'category,key' });
+      await supabase.from('system_settings').upsert({ category: 'ia', key: `icp_profile_${empresa}`, value: { patterns: analysisData, narrative: icpNarrative, empresa, generated_at: new Date().toISOString() } }, { onConflict: 'category,key' });
     }
 
-    return new Response(JSON.stringify({ success: true, patterns: analysisData, icpNarrative: icpNarrative.slice(0, 500) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ success: true, empresa, patterns: analysisData, icpNarrative: icpNarrative.slice(0, 500) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
     log.error('Error', { error: error instanceof Error ? error.message : 'Erro interno' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro interno' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

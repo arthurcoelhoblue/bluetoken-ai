@@ -2,6 +2,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('deal-loss-analysis');
 
@@ -54,12 +55,13 @@ Deno.serve(async (req) => {
     // ─── MODE: PORTFOLIO ───────────────────────────────
     if (body.mode === 'portfolio') {
       const empresa = body.empresa;
+      assertEmpresa(empresa);
       const dias = body.dias ?? 90;
       const cutoff = new Date(Date.now() - dias * 86400000).toISOString();
 
       const [wonsRes, lostsRes] = await Promise.all([
-        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, motivo_perda_closer, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)').eq('status', 'GANHO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
-        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, categoria_perda_ia, motivo_perda_closer, motivo_perda_ia, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)').eq('status', 'PERDIDO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
+        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, motivo_perda_closer, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome), contacts!inner(empresa)').eq('contacts.empresa', empresa).eq('status', 'GANHO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
+        supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, categoria_perda_ia, motivo_perda_closer, motivo_perda_ia, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome), contacts!inner(empresa)').eq('contacts.empresa', empresa).eq('status', 'PERDIDO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
       ]);
 
       const wons = (wonsRes.data ?? []) as unknown as DealRow[];
@@ -89,7 +91,7 @@ Deno.serve(async (req) => {
       let analysis: Record<string, unknown> = {};
       try { analysis = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()); } catch { analysis = { resumo_executivo: aiResult.content }; }
 
-      await supabase.from('system_settings').upsert({ category: 'analytics', key: 'win_loss_analysis', value: { ...analysis, summary, generated_at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: 'category,key' });
+      await supabase.from('system_settings').upsert({ category: 'analytics', key: `win_loss_analysis_${empresa}`, value: { ...analysis, summary, empresa, generated_at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: 'category,key' });
 
       return new Response(JSON.stringify({ success: true, analysis, summary }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }

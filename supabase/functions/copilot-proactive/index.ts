@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
-
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 interface CopilotInsight {
   categoria: string;
@@ -66,6 +66,7 @@ serve(async (req) => {
 
   try {
     const { empresa } = await req.json();
+    assertEmpresa(empresa);
     const supabase = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_SERVICE_ROLE_KEY);
 
     const authHeader = req.headers.get('Authorization');
@@ -98,13 +99,23 @@ serve(async (req) => {
       });
     }
 
-    // === COLLECT VENDOR SNAPSHOT ===
+    // === COLLECT VENDOR SNAPSHOT (filtered by empresa) ===
+    // Get pipeline IDs for this empresa to scope deal queries
+    const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', empresa);
+    const pipelineIds = (pipelines ?? []).map(p => p.id);
+
     const contextParts: string[] = [];
 
+    // Build deals query scoped to empresa pipelines
+    let dealsQuery = supabase.from('deals')
+      .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id')
+      .eq('owner_id', userId).eq('status', 'ABERTO').limit(50);
+    if (pipelineIds.length > 0) {
+      dealsQuery = dealsQuery.in('pipeline_id', pipelineIds);
+    }
+
     const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes, activityLogRes] = await Promise.all([
-      supabase.from('deals')
-        .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id')
-        .eq('owner_id', userId).eq('status', 'ABERTO').limit(50),
+      dealsQuery,
       supabase.from('deal_activities')
         .select('tipo, descricao, created_at, deal_id')
         .eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
@@ -256,7 +267,7 @@ serve(async (req) => {
     log.error('Erro geral', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
+      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 });
