@@ -1,30 +1,73 @@
 
 
-# Downgrade "Erro no disparo" no cadence-runner
+# Amélia Copilot — FAB Flutuante com Notificacao Proativa
 
-## Contexto
+## O que muda
 
-O cadence-runner registra 100% de falhas (25/25 runs) porque leads nao possuem conversa BlueChat ativa. No momento isso e esperado (ambiente de testes/pre-producao). Em producao sera critico e devera ser monitorado, mas nao como erro de sistema — e sim como metrica operacional.
+O botao da Amélia Copilot sai da barra superior e vira um botao flutuante (FAB) no canto inferior direito, arrastavel pelo usuario. Quando a Amélia gerar insights proativos, uma "bolha" aparece ao lado do botao (estilo notificacao do WhatsApp) com o texto do insight mais recente.
 
-## Correcao
+## Arquitetura da mudanca
 
-### Arquivo: `supabase/functions/cadence-runner/index.ts`
+### 1. Novo componente: `CopilotFab.tsx`
 
-**Linha ~637** — Alterar `log.error` para `log.warn` no bloco de "Erro no disparo":
+Componente independente que encapsula:
+- **Botao flutuante** com icone da Amélia (Bot) e badge de contagem
+- **Drag-and-drop** usando `onPointerDown/Move/Up` nativo (sem dependencias extras)
+- **Bolha de notificacao** que aparece quando `pendingCount` muda de 0 para N, mostrando o titulo do insight mais recente por 8 segundos
+- Ao clicar no FAB, abre o Sheet (CopilotPanel) normalmente
 
-```typescript
-// De:
-log.error('Erro no disparo', { error: disparo.error });
+Posicao inicial: `bottom: 24px, right: 24px` (logo acima do ZadarmaPhoneWidget que fica em `bottom: 6`).
+Posicao salva em `localStorage` para persistir entre sessoes.
 
-// Para:
-log.warn('Disparo não realizado (pré-condição não atendida)', { error: disparo.error });
+### 2. Alteracoes no `TopBar.tsx`
+
+- Remover o `CopilotPanel` da barra superior (linha ~112)
+- Remover o import e a chamada `getCopilotContext` (ja nao sera necessario aqui)
+
+### 3. Alteracoes no `AppLayout.tsx`
+
+- Adicionar `<CopilotFab />` ao lado do `<ZadarmaPhoneWidget />`
+- O contexto sera derivado da rota via `useLocation()` dentro do proprio `CopilotFab`
+
+### 4. Alteracoes no `CopilotPanel.tsx`
+
+- Adicionar prop `externalOpen` e `onOpenChange` para controle externo do Sheet (o FAB controla abrir/fechar)
+- Manter todo o restante intacto (mensagens, insights, suggestions)
+
+## Bolha de notificacao (estilo WhatsApp)
+
+```text
++------------------------------------------+
+|  Amelia: "Deal X parado ha 5 dias"    X  |
++------------------------------------------+
+          [Bot icon FAB]
 ```
 
-Isso mantém o registro nos logs estruturados (visível para auditoria) sem disparar alertas no Sentry.
+- Aparece com animacao `animate-fade-in` quando ha novos insights
+- Desaparece apos 8s ou ao clicar no X
+- Maximo de 1 bolha por vez (insight mais recente/prioritario)
 
-## Resultado
+## Drag (arrastar)
 
-- Sentry limpo: zero alertas para leads sem conversa ativa
-- Logs preservados como `WARN` para monitoramento operacional
-- Quando o sistema entrar em producao, basta promover de `log.warn` para `log.error` se o volume de warnings indicar problema real
+- Implementado com `onPointerDown`, `onPointerMove`, `onPointerUp` nativos
+- Sem bibliotecas extras (dnd-kit e para listas, nao para drag livre)
+- Limites: mantem o botao dentro da viewport
+- Posicao salva em `localStorage('copilot-fab-position')`
+- Distingue click de drag: se mover menos de 5px, trata como click (abre o painel)
 
+## Arquivos alterados
+
+| Arquivo | Acao |
+|---------|------|
+| `src/components/copilot/CopilotFab.tsx` | **Novo** — FAB arrastavel + bolha de notificacao |
+| `src/components/copilot/CopilotPanel.tsx` | Adicionar props `externalOpen`/`onOpenChange` |
+| `src/components/layout/TopBar.tsx` | Remover CopilotPanel |
+| `src/components/layout/AppLayout.tsx` | Adicionar CopilotFab |
+
+## Seguranca
+
+- Zero mudancas no backend
+- Zero mudancas em banco de dados
+- O `useCopilotInsights` continua funcionando exatamente igual
+- O Sheet do CopilotPanel continua identico; apenas o trigger muda
+- ZadarmaPhoneWidget nao e afetado (posicoes diferentes)
