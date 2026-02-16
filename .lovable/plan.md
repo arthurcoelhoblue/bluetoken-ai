@@ -1,36 +1,145 @@
 
-# Bloco 4.1 — Multi-tenancy com Schema Views + RLS Hardening
 
-## Status: ✅ CONCLUÍDO
+# Docusaurus - Documentacao do Amelia CRM
 
-## O que foi implementado
+## Objetivo
 
-### Fase 1: Schemas + Views auto-filtradas ✅
-- Schemas `blue` e `tokeniza` criados
-- **57 views por schema** com `SECURITY INVOKER`, cobrindo:
-  - Tabelas com coluna `empresa` direta (~49 tabelas): `contacts`, `organizations`, `pipelines`, `cadences`, `calls`, `cs_customers`, etc.
-  - Tabelas sem `empresa` via JOIN (~8 tabelas): `deals` (via pipelines), `deal_activities`, `deal_stage_history`, `deal_cadence_runs`, `pipeline_stages`, `cadence_steps`, `cadence_stage_triggers`, `lead_cadence_events`
-- Todas as views são `SECURITY INVOKER` = respeitam RLS do usuário
+Criar um site de documentacao profissional usando Docusaurus dentro do repositorio atual (pasta `/docs-site`), com 5 visoes/perfis de usuario e conteudo pratico baseado nos manuais existentes.
 
-### Fase 2: RLS Hardening ✅
-- **4 views SECURITY DEFINER → SECURITY INVOKER**: `analytics_evolucao_mensal`, `analytics_funil_visual`, `analytics_ltv_cohort`, `seller_leaderboard`
-- **5 policies permissivas corrigidas** (role `{public}` → `service_role`):
-  - `ai_rate_limits`: ALL {public} → ALL service_role
-  - `notifications`: INSERT {public} → INSERT service_role
-  - `sgt_event_logs`: INSERT {public} → INSERT service_role
-  - `sgt_events`: INSERT/UPDATE {public} → INSERT/UPDATE service_role
-- **1 tabela sem policies corrigida**: `webhook_rate_limits` (policy service_role adicionada)
+## Estrutura do Projeto
 
-### Fase 3: Função de provisionamento automático ✅
-- `provision_tenant_schema(empresa TEXT)` criada
-- Para adicionar nova empresa: `SELECT provision_tenant_schema('ACME')`
-- Gera automaticamente todas as views + grants
+```text
+docs-site/
+  docusaurus.config.ts
+  package.json
+  tsconfig.json
+  sidebars.ts
+  static/
+    img/
+      logo.svg
+      favicon.ico
+  src/
+    css/
+      custom.css
+    pages/
+      index.tsx          -- Landing page com cards por perfil
+  docs/
+    intro.md             -- Visao geral do sistema
+    guia-rapido.md       -- Primeiros passos (todos os perfis)
+    vendedor/
+      index.md           -- Introducao vendedor
+      meu-dia.md         -- Central de comando diaria
+      pipeline.md        -- Funil de vendas
+      deals.md           -- Detalhes de oportunidades
+      cadencias.md       -- Follow-up automatico
+      conversas.md       -- WhatsApp e BlueChat
+      leads-quentes.md   -- Oportunidades prioritarias
+      metas.md           -- Metas e comissoes
+      telefonia.md       -- Click-to-call
+      faq.md
+    cs/
+      index.md           -- Introducao CS
+      dashboard.md       -- Metricas e visao geral
+      clientes.md        -- Portfolio de clientes
+      health-score.md    -- Calculo e interpretacao
+      churn.md           -- Predicao de cancelamento
+      pesquisas.md       -- NPS e CSAT
+      incidencias.md     -- Deteccao e resolucao
+      playbooks.md       -- Automacao de CS
+      briefing.md        -- Briefing diario IA
+      renovacoes.md      -- Gestao de renovacoes
+      faq.md
+    gestor/
+      index.md           -- Introducao gestor
+      cockpit.md         -- Painel estrategico
+      analytics.md       -- Relatorios executivos
+      pipelines-config.md -- Configuracao de funis
+      usuarios.md        -- Gestao de acesso
+      campos-custom.md   -- Campos customizados
+      templates.md       -- Templates e regras
+      performance.md     -- Analise de equipe
+      faq.md
+    admin/
+      index.md           -- Introducao admin
+      ia-config.md       -- Configuracoes da Amelia
+      conhecimento.md    -- Base de conhecimento
+      custos-ia.md       -- Monitoramento de custos
+      benchmark.md       -- Benchmark de IA
+      integracoes.md     -- Webhooks e integracoes
+      importacao.md      -- Importacao de dados
+      saude-operacional.md -- Health check
+      cron-jobs.md       -- Automacao CRON
+      multi-tenancy.md   -- Schemas e isolamento
+      faq.md
+    desenvolvedor/
+      index.md           -- Arquitetura geral
+      stack.md           -- React + Vite + Supabase
+      edge-functions.md  -- Guia de edge functions
+      rls.md             -- Politicas RLS e seguranca
+      multi-tenancy.md   -- Schema views e provisioning
+      sdr-ia.md          -- Motor SDR e IA
+      cadence-engine.md  -- Motor de cadencias
+      webhooks.md        -- Integracao via webhooks
+      api-reference.md   -- Referencia de APIs
+      testes.md          -- Estrategia de testes
+      adr.md             -- Architecture Decision Records
+```
 
-### Fase 4: Zero impacto no frontend ✅
-- Frontend continua usando `public` via Supabase JS
-- Edge Functions podem optar por usar `blue.contacts` em vez de `public.contacts`
+## Implementacao
 
-## Warnings residuais (pré-existentes, não criados por esta migração)
-- Extension `pg_trgm` em schema public (inofensivo)
-- Policies `USING(true)` para `service_role` (esperado)
-- Leaked password protection disabled (config de auth)
+### 1. Configuracao base do Docusaurus
+
+- Criar `docs-site/package.json` com Docusaurus 3.x
+- `docusaurus.config.ts` com tema, navbar, footer, search
+- Tema com cores da marca Blue CRM
+- Navbar com links para cada visao
+
+### 2. Sidebar organizada por perfil
+
+Cada perfil tera uma sidebar propria com navegacao logica:
+- **Vendedor**: Fluxo do dia a dia (Meu Dia -> Pipeline -> Deals -> Cadencias)
+- **CS**: Fluxo de monitoramento (Dashboard -> Clientes -> Health -> Incidencias)
+- **Gestor**: Fluxo estrategico (Cockpit -> Analytics -> Configuracao -> Equipe)
+- **Admin**: Fluxo tecnico (IA -> Integracoes -> Importacao -> Operacional)
+- **Desenvolvedor**: Fluxo arquitetural (Stack -> Edge Functions -> RLS -> APIs)
+
+### 3. Conteudo migrado dos manuais v2
+
+- Migrar conteudo dos 5 manuais em `docs/manuais_v2/` para a estrutura Docusaurus
+- Quebrar cada manual em paginas menores e focadas (1 topico = 1 pagina)
+- Adicionar admonitions do Docusaurus (:::tip, :::warning, :::info)
+- Converter tabelas e dicas para formato Docusaurus
+
+### 4. Secao Desenvolvedor (nova)
+
+Conteudo novo baseado nos ADRs e patches existentes:
+- Arquitetura do sistema (React + Supabase + Edge Functions)
+- Guia de Edge Functions com exemplos reais do projeto
+- Documentacao do multi-tenancy (Schema Views implementado no Bloco 4.1)
+- Estrategia de RLS e seguranca
+- Motor SDR-IA e cadencias
+- Referencia de APIs e webhooks
+
+### 5. Landing page
+
+Pagina inicial com cards visuais para cada perfil, permitindo ao usuario escolher sua visao rapidamente.
+
+## Detalhes Tecnicos
+
+- **Docusaurus 3.x** com TypeScript
+- Configurado como subprojeto independente (`docs-site/package.json`)
+- Nao interfere no build do app principal (pasta separada)
+- Adicionar `docs-site` ao `.gitignore` do build principal se necessario
+- Para rodar localmente: `cd docs-site && npm install && npm start`
+- Para build: `cd docs-site && npm run build`
+
+## Escopo da primeira entrega
+
+1. Estrutura Docusaurus configurada e funcional
+2. Landing page com cards por perfil
+3. Conteudo completo para **Vendedor** e **CS** (migrado dos manuais v2)
+4. Conteudo completo para **Gestor** e **Admin** (migrado dos manuais v2)
+5. Conteudo inicial para **Desenvolvedor** (arquitetura, multi-tenancy, edge functions)
+6. Sidebar navegavel por perfil
+7. Busca integrada (Docusaurus search local)
+
