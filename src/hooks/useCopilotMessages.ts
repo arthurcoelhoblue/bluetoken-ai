@@ -54,8 +54,8 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
         }));
 
       setMessages(filtered);
-    } catch (err) {
-      console.error('[CopilotMessages] Erro ao carregar histórico:', err);
+    } catch (_err) {
+      // Error handled silently — UI shows empty chat
     } finally {
       setIsLoading(false);
     }
@@ -96,8 +96,7 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
 
       setMessages(prev => [...prev, msg]);
       return msg;
-    } catch (err) {
-      console.error('[CopilotMessages] Erro ao salvar mensagem:', err);
+    } catch (_err) {
       return null;
     }
   }, [user?.id, contextType, contextId, empresa]);
@@ -118,8 +117,8 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
 
       await query;
       setMessages([]);
-    } catch (err) {
-      console.error('[CopilotMessages] Erro ao limpar histórico:', err);
+    } catch (_err) {
+      // Error handled silently — UI already cleared
     }
   }, [user?.id, contextType, contextId, empresa]);
 

@@ -131,8 +131,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
         latency_ms: data?.latency_ms,
       });
       trackFeatureUse('copilot_message_sent', { context: context.type, model: data?.model });
-    } catch (err) {
-      console.error('[Copilot] Erro:', err);
+    } catch (_err) {
       addLocalMessage('assistant', '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
     } finally {
       setIsLoading(false);

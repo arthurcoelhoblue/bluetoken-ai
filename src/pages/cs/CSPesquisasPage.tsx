@@ -47,8 +47,7 @@ export default function CSPesquisasPage() {
       toast.success(`Pesquisa ${selectedTipo} enviada com sucesso!`);
       setDialogOpen(false);
       setSelectedCustomerId('');
-    } catch (err) {
-      console.error(err);
+    } catch (_err) {
       toast.error('Erro ao enviar pesquisa');
     } finally {
       setSending(false);
