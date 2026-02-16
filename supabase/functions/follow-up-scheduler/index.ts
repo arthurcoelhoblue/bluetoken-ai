@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('follow-up-scheduler');
 const corsHeaders = getWebhookCorsHeaders();
@@ -12,10 +13,14 @@ serve(async (req) => {
   const supabase = createServiceClient();
 
   try {
-    const { empresa, canal = "whatsapp" } = await req.json().catch(() => ({}));
+    const body = await req.json().catch(() => ({}));
+    const empresa = body.empresa;
+    assertEmpresa(empresa);
+    const canal = body.canal || "whatsapp";
 
     const { data: messages } = await supabase
       .from("lead_messages").select("created_at, direcao, empresa")
+      .eq("empresa", empresa)
       .in("direcao", ["INBOUND", "OUTBOUND"]).order("created_at", { ascending: false }).limit(5000);
 
     if (!messages || messages.length === 0) {
@@ -28,11 +33,11 @@ serve(async (req) => {
 
     for (const msg of outbounds) {
       const dt = new Date(msg.created_at);
-      const key = `${msg.empresa}|${dt.getDay()}|${dt.getHours()}`;
+      const key = `${empresa}|${dt.getDay()}|${dt.getHours()}`;
       const stats = hourStats.get(key) || { envios: 0, respostas: 0 };
       stats.envios++;
       const twoHoursLater = new Date(dt.getTime() + 2 * 60 * 60 * 1000);
-      const hasResponse = inbounds.some((r) => r.empresa === msg.empresa && new Date(r.created_at) > dt && new Date(r.created_at) < twoHoursLater);
+      const hasResponse = inbounds.some((r) => new Date(r.created_at) > dt && new Date(r.created_at) < twoHoursLater);
       if (hasResponse) stats.respostas++;
       hourStats.set(key, stats);
     }
@@ -49,7 +54,7 @@ serve(async (req) => {
     }
 
     return new Response(JSON.stringify({
-      processed: outbounds.length, hours_updated: upsertRows.length,
+      processed: outbounds.length, hours_updated: upsertRows.length, empresa,
       top_hours: upsertRows.sort((a, b) => b.taxa_resposta - a.taxa_resposta).slice(0, 5).map((r) => `${["Dom", "Seg", "Ter", "Qua", "Qui", "Sex", "Sáb"][r.dia_semana]} ${r.hora}h: ${r.taxa_resposta.toFixed(0)}%`),
     }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
   } catch (error) {
