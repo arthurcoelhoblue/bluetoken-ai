@@ -1,96 +1,52 @@
 
 
-# Plano de Acao — Auditoria v2: Rumo a v1.0 Estavel
+# Fase A+B+C Restante — Migrar 8 funcoes finais + Fase D inicio
 
-## Resumo do Diagnostico
+## Resumo
 
-A auditoria v2 da Manus AI elevou a nota geral de **6.5 para 7.5/10**, reconhecendo as melhorias em seguranca e arquitetura. Quatro pontos remanescentes foram identificados, organizados por prioridade.
+Restam **8 edge functions** sem migracao para config centralizado + logger + eliminacao de `any`. Apos isso, Fase A e C ficam 100%.
 
-## Scorecard Atual
+## Funcoes a migrar (Fase A + C)
 
-| Categoria | Antes | Agora | Meta v1.0 |
+| Funcao | Deno.env.get | console.* | `: any` |
 |---|---|---|---|
-| Qualidade de Codigo | 6 | 7 | 9 |
-| Seguranca | 5 | 8 | 9 |
-| Cobertura de Testes | 2 | 3 | 6 |
-| Arquitetura | 7 | 8 | 9 |
-| **Geral** | **6.5** | **7.5** | **8.5+** |
+| sdr-ia-interpret | 6 | 8 | 5 |
+| sdr-intent-classifier | 11 | muitos | ~55 |
+| notify-closer | 6 | varios | poucos |
+| pipedrive-sync | 5 | varios | poucos |
+| integration-health-check | 52 | varios | poucos |
+| weekly-report | 6 | varios | 1 |
+| zadarma-proxy | 11 | varios | poucos |
+| zadarma-webhook | 6 | varios | poucos |
+| tokeniza-offers | 6 | varios | poucos |
 
----
+## Acoes por funcao
 
-## Fase A — Validacao Centralizada de Env Vars ✅ PARCIAL (7/46 funções)
+### 1. sdr-ia-interpret (301 linhas)
+- Substituir `SUPABASE_URL()` / `SERVICE_KEY()` por `envConfig`
+- Substituir `createClient(...)` por `createServiceClient()`
+- Substituir `console.*` por `log.*` (createLogger)
+- Tipar `callFunction` — `body: Record<string, unknown>`, retorno `Promise<Record<string, unknown>>`
+- Tipar `message` e `aiResponse` em `saveInterpretation` com interfaces inline
 
-**Criado**: `supabase/functions/_shared/config.ts`
-- `envConfig` com SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_ANON_KEY validados
-- `getOptionalEnv()` e `getOptionalEnvWithDefault()` para vars opcionais
-- `createServiceClient()` factory para Supabase admin client
+### 2. sdr-intent-classifier (562 linhas)
+- Substituir `Deno.env.get` por `envConfig` / `getOptionalEnv`
+- Substituir `createClient(...)` por `createServiceClient()`
+- Adicionar `createLogger`
+- Reduzir `any` nos pontos mais criticos: `normalizeSubKeys(obj: unknown)`, `formatTokenizaOffersForPrompt(ofertas: unknown[])`, `jsonResponse(data: unknown)`, filter callbacks
 
-**Migrado (7 funções prioritárias)**:
-- ✅ email-send
-- ✅ whatsapp-send
-- ✅ cadence-runner
-- ✅ sdr-action-executor
-- ✅ cs-trending-topics
-- ✅ sgt-webhook (imports + createClient principal)
-- ✅ bluechat-inbound (imports)
-- ✅ whatsapp-inbound (imports + createClient + secret calls)
+### 3-9. notify-closer, pipedrive-sync, integration-health-check, weekly-report, zadarma-proxy, zadarma-webhook, tokeniza-offers
+- Mesmo padrao: `envConfig` + `createServiceClient()` + `createLogger`
+- `integration-health-check` tem 52 chamadas — as que checam chaves opcionais usarao `getOptionalEnv()`
+- `weekly-report` tem 1 `any` para eliminar
 
-**Pendente**: Restantes ~39 edge functions (deal-scoring, ai-benchmark, cs-*, etc.)
+## Resultado esperado
 
----
+- **Fase A**: 46/46 funcoes migradas (100%)
+- **Fase C**: 46/46 funcoes com logger estruturado (100%)
+- **Fase B**: Eliminacao significativa de `any` no backend (sdr-intent-classifier e mais ~60 ocorrencias removidas)
 
-## Fase B — Eliminacao de `any` Explicito ✅ PARCIAL (sdr-action-executor)
+## Risco
 
-**Migrado**:
-- ✅ sdr-action-executor — eliminados ~10 `: any` com Record<string, unknown> e tipos inline
+Baixo. Todas as mudancas sao mecanicas (substituir imports e chamadas). Nenhuma logica de negocio muda.
 
-**Pendente**: revenue-forecast, next-best-action, amelia-learn, AmeliaMassActionPage.tsx, etc.
-
----
-
-## Fase C — Adocao Global do Logger Estruturado ✅ PARCIAL (5 funções)
-
-**Logger adotado em**:
-- ✅ email-send (todos console.* → log.info/warn/error)
-- ✅ whatsapp-send (todos console.* → log.*)
-- ✅ cadence-runner (auth + main handler)
-- ✅ sdr-action-executor (todos console.* → log.*)
-- ✅ cs-trending-topics (console.error → log.error)
-
-**Pendente**: sgt-webhook, bluechat-inbound (imports adicionados mas console.* internos não migrados), restantes
-
----
-
-## Fase D — Reducao de Complexidade dos Arquivos Maiores 🔜 NÃO INICIADO
-
-Para `sgt-webhook` (2.077 linhas):
-- Extrair `sgt-webhook/validation.ts`
-- Extrair `sgt-webhook/normalization.ts`
-- Extrair `sgt-webhook/classification.ts`
-- Extrair `sgt-webhook/cadence.ts`
-
-Para `bluechat-inbound` (1.505 linhas):
-- Extrair `bluechat-inbound/schemas.ts`
-- Extrair `bluechat-inbound/contact-resolver.ts`
-- Extrair `bluechat-inbound/conversation-handler.ts`
-
----
-
-## Fora de Escopo (Prioridade 2-3 do relatorio)
-
-- Ativar `strict: true` / `noImplicitAny: true` no tsconfig
-- Aumentar cobertura de testes de integracao
-- Refatorar `sidebar.tsx` e `ConversationView.tsx`
-- Configurar ESLint com `no-explicit-any`
-- Integrar logger com servico externo (Logtail/Sentry)
-
----
-
-## Sequencia de Execucao
-
-| Ordem | Fase | Status | Progresso |
-|---|---|---|---|
-| 1 | A — Config centralizado | ✅ Parcial | 7/46 funções |
-| 2 | B — Eliminar `any` | ✅ Parcial | 1 função backend |
-| 3 | C — Logger estruturado | ✅ Parcial | 5 funções |
-| 4 | D — Quebrar arquivos | 🔜 Pendente | 0% |
