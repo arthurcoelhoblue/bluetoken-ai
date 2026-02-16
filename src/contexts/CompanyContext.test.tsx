@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { render, fireEvent, act } from "@testing-library/react";
+import { render, act } from "@testing-library/react";
 import React from "react";
 import { CompanyProvider, useCompany } from "./CompanyContext";
 
@@ -35,7 +35,7 @@ describe("CompanyContext", () => {
       )
     );
     act(() => {
-      fireEvent.click(getByText("Switch Tokeniza"));
+      getByText("Switch Tokeniza").click();
     });
     expect(getByTestId("company").textContent).toBe("TOKENIZA");
     expect(localStorage.getItem("bluecrm-company")).toBe("TOKENIZA");
