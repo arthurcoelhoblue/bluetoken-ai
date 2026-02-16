@@ -48,6 +48,7 @@ import {
   X,
 } from 'lucide-react';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
+import { SGTLeadSearchCard } from '@/components/leads/SGTLeadSearchCard';
 import type { Temperatura, ICP, Prioridade } from '@/types/classification';
 import type { EmpresaTipo } from '@/types/sgt';
 
@@ -185,6 +186,9 @@ function LeadsListContent() {
           </AlertDescription>
         </Alert>
       )}
+
+      {/* SGT Search */}
+      <SGTLeadSearchCard />
 
       {/* Search and Filters */}
       <Card className="mb-6">
