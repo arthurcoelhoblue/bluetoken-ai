@@ -6,12 +6,15 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhoneE164 } from "../_shared/phone-utils.ts";
 import { isPlaceholderEmailForDedup as isPlaceholderEmail } from "../_shared/phone-utils.ts";
+import { createLogger } from "../_shared/logger.ts";
 import type {
   EmpresaTipo, LeadStage, SGTPayload, LeadNormalizado,
   DadosTokeniza, DadosBlue, DadosMautic, DadosChatwoot, DadosNotion,
   SanitizationResult, ContactIssue,
 } from "./types.ts";
 import { LEAD_STAGES_VALIDOS } from "./types.ts";
+
+const log = createLogger('sgt-webhook/normalization');
 
 // ========================================
 // NORMALIZAÇÃO DE STAGE
@@ -58,7 +61,7 @@ function isPlaceholderEmailLocal(email: string | null): boolean {
 function isValidEmailFormat(email: string | null): boolean {
   if (!email) return false;
   const trimmed = email.trim();
-  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const re = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
   return re.test(trimmed);
 }
 
@@ -80,71 +83,37 @@ export function sanitizeLeadContact(input: {
   
   const temTelefoneInformado = telefone && telefone.trim() !== '';
   
-  // Caso 1: Sem telefone E sem email
   if (!phoneInfo && !email) {
     descartarLead = true;
-    issues.push({
-      tipo: 'SEM_CANAL_CONTATO',
-      severidade: 'ALTA',
-      mensagem: 'Lead sem telefone e sem e-mail. Não é possível contatar.'
-    });
+    issues.push({ tipo: 'SEM_CANAL_CONTATO', severidade: 'ALTA', mensagem: 'Lead sem telefone e sem e-mail. Não é possível contatar.' });
     return { descartarLead, issues, phoneInfo: null, emailPlaceholder: false };
   }
   
-  // Caso 2: Sem telefone E email placeholder
   if (!phoneInfo && !temTelefoneInformado && emailPlaceholder) {
     descartarLead = true;
-    issues.push({
-      tipo: 'SEM_CANAL_CONTATO',
-      severidade: 'ALTA',
-      mensagem: 'Lead sem telefone e com e-mail placeholder. Não é possível contatar.'
-    });
+    issues.push({ tipo: 'SEM_CANAL_CONTATO', severidade: 'ALTA', mensagem: 'Lead sem telefone e com e-mail placeholder. Não é possível contatar.' });
     return { descartarLead, issues, phoneInfo: null, emailPlaceholder: true };
   }
   
-  // Caso 3: Telefone lixo E email placeholder/inexistente
   if (!phoneInfo && temTelefoneInformado && (!email || emailPlaceholder)) {
     descartarLead = true;
-    issues.push({
-      tipo: 'TELEFONE_LIXO',
-      severidade: 'ALTA',
-      mensagem: 'Telefone inválido/lixo e e-mail ausente ou placeholder.'
-    });
+    issues.push({ tipo: 'TELEFONE_LIXO', severidade: 'ALTA', mensagem: 'Telefone inválido/lixo e e-mail ausente ou placeholder.' });
     if (emailPlaceholder) {
-      issues.push({
-        tipo: 'EMAIL_PLACEHOLDER',
-        severidade: 'MEDIA',
-        mensagem: 'E-mail identificado como placeholder.'
-      });
+      issues.push({ tipo: 'EMAIL_PLACEHOLDER', severidade: 'MEDIA', mensagem: 'E-mail identificado como placeholder.' });
     }
     return { descartarLead, issues, phoneInfo: null, emailPlaceholder };
   }
   
-  // Caso 4: Email placeholder mas telefone ok
   if (emailPlaceholder && phoneInfo) {
-    issues.push({
-      tipo: 'EMAIL_PLACEHOLDER',
-      severidade: 'MEDIA',
-      mensagem: 'E-mail identificado como placeholder. Usar telefone como canal principal.'
-    });
+    issues.push({ tipo: 'EMAIL_PLACEHOLDER', severidade: 'MEDIA', mensagem: 'E-mail identificado como placeholder. Usar telefone como canal principal.' });
   }
   
-  // Caso 5: Email com formato inválido
   if (email && !emailPlaceholder && !emailValid) {
-    issues.push({
-      tipo: 'EMAIL_INVALIDO',
-      severidade: 'BAIXA',
-      mensagem: 'Formato de e-mail parece inválido. Revisar manualmente.'
-    });
+    issues.push({ tipo: 'EMAIL_INVALIDO', severidade: 'BAIXA', mensagem: 'Formato de e-mail parece inválido. Revisar manualmente.' });
   }
   
-  // Caso 6: Telefone suspeito
   if (temTelefoneInformado && !phoneInfo && telefone!.replace(/\D/g, '').length >= 10) {
-    issues.push({
-      tipo: 'DADO_SUSPEITO',
-      severidade: 'BAIXA',
-      mensagem: 'Telefone com DDI não reconhecido. Verificar manualmente.'
-    });
+    issues.push({ tipo: 'DADO_SUSPEITO', severidade: 'BAIXA', mensagem: 'Telefone com DDI não reconhecido. Verificar manualmente.' });
   }
   
   return { descartarLead, issues, phoneInfo, emailPlaceholder };
@@ -169,7 +138,7 @@ export function extractPhoneBase(phone: string | null): PhoneBaseResult {
   }
   
   if (digits.length < 10) {
-    console.log('[extractPhoneBase] Telefone muito curto:', phone, '→', digits);
+    log.info('Telefone muito curto', { phone, digits });
     return { base: null, ddd: null, e164: null };
   }
   
@@ -185,7 +154,7 @@ export function extractPhoneBase(phone: string | null): PhoneBaseResult {
     return { base: number, ddd, e164: `+55${ddd}9${number}` };
   }
   
-  console.log('[extractPhoneBase] Formato inesperado:', phone, '→ ddd:', ddd, 'number:', number);
+  log.info('Formato inesperado', { phone, ddd, number });
   return { base: null, ddd: null, e164: null };
 }
 
@@ -205,7 +174,7 @@ export async function upsertPessoaFromContact(
   const emailNormalized = contact.email?.toLowerCase().trim() || null;
   const isEmailPlaceholderVal = isPlaceholderEmail(emailNormalized);
   
-  console.log('[Pessoa] Tentando match para:', {
+  log.info('Tentando match para pessoa', {
     nome: contact.nome,
     telefone_e164: contact.telefone_e164,
     phoneBase: phoneData.base,
@@ -224,11 +193,11 @@ export async function upsertPessoaFromContact(
       .maybeSingle();
       
     if (phoneError) {
-      console.error('[Pessoa] Erro ao buscar por telefone:', phoneError);
+      log.error('Erro ao buscar por telefone', { error: phoneError.message });
     }
     
     if (phoneMatch) {
-      console.log('[Pessoa] Match por telefone_base:', phoneMatch.id, phoneMatch.nome);
+      log.info('Match por telefone_base', { pessoaId: phoneMatch.id, nome: phoneMatch.nome });
       return phoneMatch.id;
     }
   }
@@ -242,11 +211,11 @@ export async function upsertPessoaFromContact(
       .maybeSingle();
       
     if (emailError) {
-      console.error('[Pessoa] Erro ao buscar por email:', emailError);
+      log.error('Erro ao buscar por email', { error: emailError.message });
     }
     
     if (emailMatch) {
-      console.log('[Pessoa] Match por email:', emailMatch.id, emailMatch.nome);
+      log.info('Match por email', { pessoaId: emailMatch.id, nome: emailMatch.nome });
       
       if (phoneData.base && phoneData.ddd) {
         await supabase
@@ -258,7 +227,7 @@ export async function upsertPessoaFromContact(
             updated_at: new Date().toISOString()
           })
           .eq('id', emailMatch.id);
-        console.log('[Pessoa] Telefone atualizado para pessoa existente:', emailMatch.id);
+        log.info('Telefone atualizado para pessoa existente', { pessoaId: emailMatch.id });
       }
       
       return emailMatch.id;
@@ -290,7 +259,7 @@ export async function upsertPessoaFromContact(
     .single();
     
   if (insertError) {
-    console.error('[Pessoa] Erro ao criar (pode ser race condition):', insertError);
+    log.error('Erro ao criar pessoa (pode ser race condition)', { error: insertError.message });
     
     if (phoneData.base && phoneData.ddd) {
       const { data: retryMatch } = await supabase
@@ -314,7 +283,7 @@ export async function upsertPessoaFromContact(
     return null;
   }
   
-  console.log('[Pessoa] Nova pessoa criada:', newPessoa.id, nomeNormalizado);
+  log.info('Nova pessoa criada', { pessoaId: newPessoa.id, nome: nomeNormalizado });
   return newPessoa.id;
 }
 

@@ -4,8 +4,11 @@
 // ========================================
 
 import { z } from "https://esm.sh/zod@3.25.76";
+import { createLogger } from "../_shared/logger.ts";
 import type { SGTPayload } from "./types.ts";
 import { EVENTOS_VALIDOS, EMPRESAS_VALIDAS } from "./types.ts";
+
+const log = createLogger('sgt-webhook/validation');
 
 export function normalizePayloadFormat(payload: Record<string, unknown>): Record<string, unknown> {
   // Se já tem dados_lead, retorna como está
@@ -18,7 +21,7 @@ export function normalizePayloadFormat(payload: Record<string, unknown>): Record
   const hasFlatFields = flatFields.some(f => f in payload);
   
   if (hasFlatFields) {
-    console.log('[SGT Webhook] Payload em formato flat detectado, convertendo...');
+    log.info('Payload em formato flat detectado, convertendo');
     const dadosLead: Record<string, unknown> = {};
     flatFields.forEach(field => {
       if (payload[field] !== undefined) {
