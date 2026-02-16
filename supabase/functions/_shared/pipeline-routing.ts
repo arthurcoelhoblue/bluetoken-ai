@@ -5,10 +5,9 @@
 import { type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import type { EmpresaTipo, Temperatura, TipoLead } from "./types.ts";
 import { isPlaceholderEmailForDedup, generatePhoneVariationsForSearch } from "./phone-utils.ts";
+import { createLogger } from "./logger.ts";
 
-// ========================================
-// CONSTANTES — UUIDs de Pipelines e Stages
-// ========================================
+const log = createLogger('pipeline-routing');
 
 // Blue
 const PIPELINE_BLUE = '21e577cc-32eb-4f1c-895e-b11bfc056e99';
@@ -91,7 +90,7 @@ export async function findExistingDealForPerson(
         .eq('empresa', empresa).eq('cpf', cleaned).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
       if (data) {
         const m = extractDeal(data as Record<string, unknown>);
-        if (m) { console.log('[Dedup] Match CPF:', m); return m; }
+        if (m) { log.info('Dedup match CPF', m); return m; }
       }
     }
   }
@@ -102,7 +101,7 @@ export async function findExistingDealForPerson(
       .eq('empresa', empresa).eq('telefone_e164', dados.telefone_e164).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
     if (data) {
       const m = extractDeal(data as Record<string, unknown>);
-      if (m) { console.log('[Dedup] Match telefone_e164:', m); return m; }
+      if (m) { log.info('Dedup match telefone_e164', m); return m; }
     }
   }
 
@@ -113,7 +112,7 @@ export async function findExistingDealForPerson(
       .eq('empresa', empresa).in('telefone_e164', phoneVars).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
     if (data) {
       const m = extractDeal(data as Record<string, unknown>);
-      if (m) { console.log('[Dedup] Match variação tel:', m); return m; }
+      if (m) { log.info('Dedup match variação tel', m); return m; }
     }
   }
 
@@ -123,10 +122,10 @@ export async function findExistingDealForPerson(
       .eq('empresa', empresa).eq('email', dados.email.trim().toLowerCase()).eq('deals.status', 'ABERTO').limit(1).maybeSingle();
     if (data) {
       const m = extractDeal(data as Record<string, unknown>);
-      if (m) { console.log('[Dedup] Match email:', m); return m; }
+      if (m) { log.info('Dedup match email', m); return m; }
     }
   }
 
-  console.log('[Dedup] Nenhuma duplicata encontrada');
+  log.debug('Nenhuma duplicata encontrada');
   return null;
 }

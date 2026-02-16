@@ -4,6 +4,7 @@
 // ========================================
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createLogger } from "../_shared/logger.ts";
 import type {
   EmpresaTipo, ICP, IcpTokeniza, IcpBlue,
   PersonaTokeniza, PersonaBlue, Persona,
@@ -12,6 +13,8 @@ import type {
   SGTEventoTipo, Temperatura,
 } from "./types.ts";
 import { EVENTOS_QUENTES } from "./types.ts";
+
+const log = createLogger('sgt-webhook/classification');
 
 // ========================================
 // CLASSIFICAÇÃO TOKENIZA
@@ -255,7 +258,7 @@ export async function classificarLead(
   eventId: string,
   lead: LeadNormalizado
 ): Promise<LeadClassificationResult> {
-  console.log('[Classificação] Iniciando classificação:', {
+  log.info('Iniciando classificação', {
     lead_id: lead.lead_id, empresa: lead.empresa, evento: lead.evento,
   });
 
@@ -308,7 +311,7 @@ export async function classificarLead(
     scoreInterno: scoreBreakdown.total,
   };
 
-  console.log('[Classificação] Resultado:', classification);
+  log.info('Resultado classificação', classification as unknown as Record<string, unknown>);
 
   // Score composto
   let scoreComposto: number | null = null;
@@ -322,7 +325,7 @@ export async function classificarLead(
   if (leadContactData?.score_marketing !== null && leadContactData?.score_marketing !== undefined) {
     const scoreMarketing = Math.min(leadContactData.score_marketing, 100);
     scoreComposto = Math.round((scoreBreakdown.total * 0.6) + (scoreMarketing * 0.4));
-    console.log('[Classificação] Score composto:', { score_interno: scoreBreakdown.total, score_marketing: leadContactData.score_marketing, score_composto: scoreComposto });
+    log.debug('Score composto', { score_interno: scoreBreakdown.total, score_marketing: leadContactData.score_marketing, score_composto: scoreComposto });
   }
 
   const { error: upsertError } = await supabase
@@ -341,7 +344,7 @@ export async function classificarLead(
     } as Record<string, unknown>, { onConflict: 'lead_id,empresa' });
 
   if (upsertError) {
-    console.error('[Classificação] Erro ao salvar:', upsertError);
+    log.error('Erro ao salvar classificação', { error: upsertError.message });
     throw upsertError;
   }
 
