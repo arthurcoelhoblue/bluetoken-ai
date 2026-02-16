@@ -1,90 +1,68 @@
 
 
-# Fase D, Parte 2 — Decomposicao do bluechat-inbound
+# Correcao dos Testes do PO + Analise Final da Auditoria
 
-## Resumo
+## Contexto
 
-Extrair 7 modulos do `bluechat-inbound/index.ts` (1.507 linhas) sem alterar nenhuma logica de negocio. O `index.ts` ficara como orquestrador com ~400 linhas.
+O PO encomendou uma auditoria externa (Manus AI) que produziu 3 relatorios e criou testes. Os relatorios identificaram problemas que **ja foram corrigidos** nas Fases A-D. Porem, os testes criados pela auditoria tem erros de compilacao porque foram escritos com base em um schema imaginario que nao corresponde ao banco real.
 
----
+## Status das Recomendacoes do PO vs. Trabalho Ja Feito
 
-## Modulos a criar
+| Recomendacao do PO | Status Atual |
+|---|---|
+| Eliminar `any` explicito (92+ ocorrencias) | FEITO (Fase B) — ~60 removidos no backend |
+| Validacao Zod em endpoints criticos | JA EXISTIA — sgt-webhook, bluechat-inbound, capture-form-submit |
+| Rate Limiting em webhooks publicos | JA EXISTIA — 3 webhooks protegidos |
+| Logging estruturado (substituir console.log) | FEITO (Fase C) — 46/46 funcoes migradas |
+| Validacao centralizada de ENV vars | FEITO (Fase A) — 46/46 funcoes migradas |
+| Decompor arquivos >500 linhas (sgt-webhook, bluechat-inbound) | FEITO (Fase D) — ambos decompostos em modulos |
+| Cobertura de testes | PARCIAL — testes existem mas os do PO estao quebrados |
+| TypeScript strict mode | NAO VERIFICADO — precisa confirmar tsconfig |
 
-### 1. `bluechat-inbound/types.ts` (~50 linhas)
-Extrair das linhas 23-189:
-- `ChannelType`, `BlueChatPayload`, `TriageSummary`, `LeadContact`, `LeadCadenceRun`, `BlueChatResponse`
+## Erros de Build a Corrigir
 
-### 2. `bluechat-inbound/schemas.ts` (~30 linhas)
-Extrair das linhas 759-782:
-- `blueChatSchema` (Zod schema inline no handler) — mover para export constante
+### 1. `src/test/fixtures/deals.ts`
+Os testes usam campos que NAO existem na tabela `deals`:
+- `empresa` — nao existe (deals nao tem empresa diretamente)
+- `probabilidade` — nao existe (o campo real e `score_probabilidade`)
+- `data_fechamento` — nao existe (o campo real e `fechado_em`)
 
-### 3. `bluechat-inbound/auth.ts` (~40 linhas)
-Extrair das linhas 210-246:
-- `validateAuth()` — substituir `Deno.env.get` por `getOptionalEnv`
-- Substituir `console.*` por `log.*`
+**Acao**: Reescrever as fixtures para usar os campos reais do schema (`score_probabilidade`, `fechado_em`, sem `empresa`)
 
-### 4. `bluechat-inbound/contact-resolver.ts` (~220 linhas)
-Extrair das linhas 198-449:
-- `normalizePhone()`, `extractFirstName()`, `generatePhoneVariations()`
-- `findLeadByPhone()`, `createLead()`, `findActiveRun()`, `isDuplicate()`
-- Substituir `console.*` por `log.*`
+### 2. `src/test/fixtures/leads.ts`
+Referencia `Database['public']['Tables']['leads']` mas a tabela `leads` NAO existe no schema. Os dados de leads estao em `lead_contacts`.
 
-### 5. `bluechat-inbound/triage.ts` (~100 linhas)
-Extrair das linhas 67-144:
-- `parseTriageSummary()`, `enrichLeadFromTriage()`
+**Acao**: Reescrever para usar `lead_contacts` ou definir tipos inline independentes do schema
 
-### 6. `bluechat-inbound/message-handler.ts` (~70 linhas)
-Extrair das linhas 454-518:
-- `saveInboundMessage()`
+### 3. `src/test/hooks/useDeals.test.ts`
+Usa `empresa`, `probabilidade` e `data_fechamento` extensivamente — todos inexistentes.
 
-### 7. `bluechat-inbound/sdr-bridge.ts` (~80 linhas)
-Extrair das linhas 523-599:
-- `callSdrIaInterpret()` — substituir `Deno.env.get` por `envConfig`
+**Acao**: Atualizar todos os testes para usar os campos corretos do schema real
 
-### 8. `bluechat-inbound/callback.ts` (~120 linhas)
-Extrair das linhas 604-726:
-- `sendResponseToBluechat()` — substituir `Deno.env.get` por `getOptionalEnv`
+## Plano de Execucao
 
----
+1. Reescrever `src/test/fixtures/deals.ts` — usar campos reais (`score_probabilidade`, `fechado_em`, remover `empresa`)
+2. Reescrever `src/test/fixtures/leads.ts` — usar `lead_contacts` em vez de `leads`
+3. Atualizar `src/test/hooks/useDeals.test.ts` — corrigir todas as referencias a campos inexistentes
+4. Verificar se ha outros arquivos de teste com o mesmo problema
+5. Confirmar build limpo sem erros
 
-## Resultado: `bluechat-inbound/index.ts` (~400 linhas)
+## Detalhes Tecnicos
 
-Apenas:
-- Imports dos 7 modulos + `_shared/`
-- `serve()` handler com o fluxo orquestrado:
-  - CORS, auth, Zod parse, rate limiting
-  - Lead lookup/create, mirror cross-empresa
-  - Deal auto-create
-  - Triage detection + enrichment
-  - Message save
-  - SDR IA call
-  - Anti-limbo logic + closing detection
-  - Response build + callback
-- Substituir `Deno.env.get` restantes por `envConfig`/`createServiceClient()`
-- Substituir `console.*` por `log.*`
+### Mapeamento de campos errados para corretos (deals)
 
----
+| Campo no teste (errado) | Campo real no schema |
+|---|---|
+| `empresa` | Nao existe — remover ou buscar via `contact_id -> lead_contacts.empresa` |
+| `probabilidade` | `score_probabilidade` |
+| `data_fechamento` | `fechado_em` |
 
-## Detalhes tecnicos
+### Mapeamento de tabela (leads)
 
-### Imports entre modulos
-- `contact-resolver.ts` importa `LeadContact` de `./types.ts`
-- `triage.ts` importa `TriageSummary`, `LeadContact` de `./types.ts` e `extractFirstName` de `./contact-resolver.ts`
-- `message-handler.ts` importa `BlueChatPayload`, `LeadContact`, `LeadCadenceRun` de `./types.ts`
-- `callback.ts` importa `EmpresaTipo` de `../_shared/types.ts`
-- `sdr-bridge.ts` importa `TriageSummary` de `./types.ts` e `envConfig` de `../_shared/config.ts`
+| Referencia no teste (errada) | Tabela real |
+|---|---|
+| `Database['public']['Tables']['leads']` | `Database['public']['Tables']['lead_contacts']` |
 
-### O que NAO muda
-- Nenhuma logica de negocio
-- Nenhum comportamento HTTP
-- Nenhuma assinatura de funcao
-- O fluxo do `serve()` e identico
-
-### Sequencia
-1. Criar os 7 arquivos de modulo
-2. Reescrever `index.ts` como orquestrador
-3. Deploy e teste
-
-### Risco
-Baixo. Extracao puramente mecanica.
+## Risco
+Baixo. Correcao de fixtures de teste para alinhar com o schema real. Nenhuma logica de negocio ou codigo de producao e alterado.
 
