@@ -1,56 +1,67 @@
 
 
-# Busca SGT na Tela de Leads + Sync Diaria de Clientes (06h BRT)
+# Documentacao Wiki no endereco /wiki
 
-## Resumo da alteracao
+## Contexto
 
-O plano original foi aprovado com uma unica mudanca: o CRON job de sincronizacao com o SGT rodara **uma vez por dia as 06:00 BRT (09:00 UTC)** em vez de a cada 30 minutos.
+O projeto possui um site Docusaurus em `docs-site/` com documentacao organizada por perfil (Vendedor, CS, Gestor, Admin, Desenvolvedor). Porem, o Docusaurus e um projeto separado com build proprio e nao roda dentro do Vite/React. A solucao e criar uma pagina Wiki nativa no React que renderiza o conteudo markdown dos docs diretamente na aplicacao.
 
 ## Implementacao
 
-### 1. Componente Frontend: `src/components/leads/SGTLeadSearchCard.tsx` (Novo)
+### 1. Instalar dependencia: `react-markdown`
 
-Card na tela de Leads com:
-- Toggle entre busca por Email ou Telefone
-- Campo de input + botao "Buscar"
-- Exibicao dos resultados retornados pelo SGT
-- Estados de loading e "nao encontrado"
-- Usa o hook `useSGTLeadSearch` ja existente
+Pacote leve para renderizar conteudo Markdown dentro de componentes React.
 
-### 2. Integracao na Tela de Leads: `src/pages/LeadsList.tsx` (Alterar)
+### 2. Novo componente: `src/pages/WikiPage.tsx`
 
-- Adicionar o `SGTLeadSearchCard` acima da tabela principal
+Pagina completa de wiki com:
+- Sidebar com navegacao por secao (Vendedor, CS, Gestor, Admin, Desenvolvedor)
+- Area principal que exibe o conteudo da pagina selecionada
+- Carrega os arquivos `.md` do diretorio `docs-site/docs/` via import raw
+- Estilizacao com Tailwind (prose) para renderizacao limpa do markdown
+- Busca simples por titulo de pagina
 
-### 3. Nova Edge Function: `supabase/functions/sgt-sync-clientes/index.ts` (Novo)
+### 3. Novo componente: `src/components/wiki/WikiLayout.tsx`
 
-Funcao que:
-1. Busca contatos com `is_cliente = false` que tenham email ou telefone
-2. Em lotes, consulta a API do SGT para cada contato
-3. Se o SGT indicar que e cliente: atualiza `contacts.is_cliente = true` e cria registro em `cs_customers`
+Layout com sidebar colapsavel contendo a arvore de navegacao dos docs, separada por grupo/perfil.
 
-### 4. Registro em `supabase/config.toml` (Alterar)
+### 4. Novo componente: `src/components/wiki/WikiSidebar.tsx`
 
-Adicionar `sgt-sync-clientes` com `verify_jwt = false`
+Sidebar com links para cada secao e pagina, usando a estrutura de pastas do docs-site como base.
 
-### 5. CRON Job (Migracao SQL)
+### 5. Registro de conteudo: `src/config/wikiContent.ts`
 
-Agendar execucao diaria as 06:00 BRT = 09:00 UTC:
+Arquivo que mapeia as paginas de documentacao disponiveis com titulo, grupo e conteudo importado via `?raw`:
 
-```sql
-SELECT cron.schedule(
-  'sgt-sync-clientes',
-  '0 9 * * *',
-  $$ ... $$
-);
+```text
+import introMd from '../../docs-site/docs/intro.md?raw';
+import guiaRapidoMd from '../../docs-site/docs/guia-rapido.md?raw';
+// ... demais arquivos
 ```
+
+### 6. Rota no App.tsx
+
+Adicionar rota `/wiki/*` apontando para `WikiPage`, protegida por autenticacao (usuarios logados podem acessar a wiki).
+
+### 7. Sidebar de navegacao principal
+
+Adicionar item "Wiki" no grupo "Configuracao" do `AppSidebar.tsx` com icone `BookOpen` e URL `/wiki`.
+
+Registrar a tela no `screenRegistry.ts` com key `wiki`.
+
+Adicionar titulo no `TopBar.tsx` para a rota `/wiki`.
 
 ## Arquivos
 
 | Arquivo | Acao |
 |---------|------|
-| `src/components/leads/SGTLeadSearchCard.tsx` | Novo |
-| `src/pages/LeadsList.tsx` | Alterar |
-| `supabase/functions/sgt-sync-clientes/index.ts` | Novo |
-| `supabase/config.toml` | Alterar |
-| Migracao SQL (CRON) | Nova |
+| `src/pages/WikiPage.tsx` | Novo |
+| `src/components/wiki/WikiLayout.tsx` | Novo |
+| `src/components/wiki/WikiSidebar.tsx` | Novo |
+| `src/config/wikiContent.ts` | Novo |
+| `src/App.tsx` | Alterar - adicionar rota /wiki |
+| `src/components/layout/AppSidebar.tsx` | Alterar - adicionar item Wiki |
+| `src/components/layout/TopBar.tsx` | Alterar - adicionar titulo Wiki |
+| `src/config/screenRegistry.ts` | Alterar - registrar tela wiki |
+| `package.json` | Alterar - adicionar react-markdown |
 
