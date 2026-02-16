@@ -16,7 +16,7 @@ export function useCSMetrics() {
         .eq('is_active', true);
 
       if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as any);
+        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
 
       const { data, error } = await query;

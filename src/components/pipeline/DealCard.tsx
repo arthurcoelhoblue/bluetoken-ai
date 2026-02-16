@@ -147,7 +147,7 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
     : 'border-l-success';
 
   // proxima_acao_sugerida from deal (new column)
-  const proximaAcao = (deal as any).proxima_acao_sugerida as string | null;
+  const proximaAcao = (deal as DealWithRelations & { proxima_acao_sugerida?: string }).proxima_acao_sugerida ?? null;
 
   return (
     <>

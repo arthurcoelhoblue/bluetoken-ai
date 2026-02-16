@@ -43,7 +43,7 @@ export function useCSBenchmarks() {
         empresaMap.set(emp, eEntry);
 
         if (c.csm_id) {
-          const cEntry = csmMap.get(c.csm_id) ?? { nome: (c.csm as any)?.nome ?? 'CSM', sum: 0, count: 0 };
+          const cEntry = csmMap.get(c.csm_id) ?? { nome: (c.csm as { nome?: string } | null)?.nome ?? 'CSM', sum: 0, count: 0 };
           cEntry.sum += hs; cEntry.count++;
           csmMap.set(c.csm_id, cEntry);
         }

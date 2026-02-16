@@ -134,7 +134,7 @@ export default function CSPlaybooksPage() {
                   </CardHeader>
                   <CardContent className="pt-0">
                     <p className="text-xs text-muted-foreground">
-                      {trigger?.desc || 'Trigger configurado'} • {(pb.steps as any[])?.length || 0} passos
+                      {trigger?.desc || 'Trigger configurado'} • {(pb.steps as unknown[])?.length || 0} passos
                     </p>
                   </CardContent>
                 </Card>

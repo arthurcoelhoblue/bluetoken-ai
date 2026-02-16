@@ -114,7 +114,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
       });
 
       if (error) {
-        const status = (error as any)?.status ?? (error as any)?.context?.status;
+        const status = (error as { status?: number })?.status ?? (error as { context?: { status?: number } })?.context?.status;
         if (status === 429) {
           toast({ title: 'Rate limit', description: 'Muitas requisições. Aguarde alguns segundos.', variant: 'destructive' });
         } else if (status === 402) {

@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Zap, ChevronRight } from 'lucide-react';
-import { ACAO_LABELS, getAcaoColor, getAcaoIcon } from '@/types/intent';
+import { ACAO_LABELS, getAcaoColor, getAcaoIcon, type SdrAcaoTipo } from '@/types/intent';
 import { useNavigate } from 'react-router-dom';
 
 interface ActionsBreakdownCardProps {
@@ -84,8 +84,8 @@ export function ActionsBreakdownCard({ data, isLoading }: ActionsBreakdownCardPr
         <div className="space-y-3">
           {actions.map((action) => {
             const label = ACAO_LABELS[action.acao as keyof typeof ACAO_LABELS] || action.acao;
-            const icon = getAcaoIcon(action.acao as any);
-            const colorClass = getAcaoColor(action.acao as any);
+            const icon = getAcaoIcon(action.acao as SdrAcaoTipo);
+            const colorClass = getAcaoColor(action.acao as SdrAcaoTipo);
             const taxaAplicacao = action.count > 0 
               ? Math.round((action.aplicada / action.count) * 100) 
               : 0;

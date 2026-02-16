@@ -49,7 +49,7 @@ export function useStartDealCadence() {
           last_step_ordem: 0,
           next_step_ordem: 1,
           next_run_at: new Date().toISOString(),
-        } as any)
+        } as never)
         .select('id')
         .single();
       if (runErr) throw runErr;
