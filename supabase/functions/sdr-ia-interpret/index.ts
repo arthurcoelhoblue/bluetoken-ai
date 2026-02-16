@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
 // SDR-IA INTERPRET — ORCHESTRATOR (~250 lines)
@@ -7,8 +7,11 @@ import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-
 // ========================================
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
+const log = createLogger('sdr-ia-interpret');
 
 interface InterpretRequest {
   messageId: string;
@@ -19,18 +22,46 @@ interface InterpretRequest {
   mensagens?: string[];
 }
 
-const SUPABASE_URL = () => Deno.env.get('SUPABASE_URL')!;
-const SERVICE_KEY = () => Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+interface MessageRow {
+  id: string;
+  lead_id: string;
+  run_id: string | null;
+  empresa: string;
+  conteudo: string;
+  direcao: string;
+  created_at: string;
+}
 
-async function callFunction(name: string, body: any): Promise<any> {
-  const resp = await fetch(`${SUPABASE_URL()}/functions/v1/${name}`, {
+interface ClassifierResult {
+  intent: string;
+  confidence: number;
+  summary?: string;
+  resumo?: string;
+  acao?: string;
+  acao_recomendada?: string;
+  acao_detalhes?: Record<string, unknown>;
+  deve_responder?: boolean;
+  resposta_sugerida?: string;
+  sentimento?: string;
+  novo_estado_funil?: string;
+  frameworks_atualizados?: Record<string, unknown>;
+  disc_estimado?: string | null;
+  ultima_pergunta_id?: string | null;
+  departamento_destino?: string | null;
+  provider?: string;
+  model?: string;
+  classification_upgrade?: Record<string, unknown>;
+}
+
+async function callFunction(name: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const resp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/${name}`, {
     method: 'POST',
-    headers: { 'Authorization': `Bearer ${SERVICE_KEY()}`, 'Content-Type': 'application/json' },
+    headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (!resp.ok) {
     const err = await resp.text();
-    console.error(`[Orchestrator] ${name} failed (${resp.status}):`, err);
+    log.error(`${name} failed (${resp.status})`, { error: err });
     throw new Error(`${name} failed: ${resp.status}`);
   }
   return resp.json();
@@ -53,7 +84,7 @@ serve(async (req) => {
     const { messageId, source, mode, triageSummary } = body;
     if (!messageId) return new Response(JSON.stringify({ error: 'messageId obrigatório' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const supabase = createClient(SUPABASE_URL(), SERVICE_KEY());
+    const supabase = createServiceClient();
 
     // ========================================
     // 1. LOAD MESSAGE
@@ -68,6 +99,8 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: false, error: 'Mensagem não encontrada' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
+    const msg = message as MessageRow;
+
     // ========================================
     // 2. QUICK CHECKS: duplicate, opt-out, manual mode
     // ========================================
@@ -80,32 +113,31 @@ serve(async (req) => {
     // 3. CALL sdr-message-parser
     // ========================================
     const parsedContext = await callFunction('sdr-message-parser', {
-      lead_id: message.lead_id,
-      empresa: message.empresa,
-      messageId: message.id,
-      run_id: message.run_id,
-    });
+      lead_id: msg.lead_id,
+      empresa: msg.empresa,
+      messageId: msg.id,
+      run_id: msg.run_id,
+    }) as Record<string, unknown>;
 
     // Check opt-out
     if (parsedContext.optOut) {
-      console.log('[Orchestrator] Lead opt-out, skipping');
+      log.info('Lead opt-out, skipping');
       return new Response(JSON.stringify({ success: true, optOutBlocked: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Check manual mode — still classify but don't send response
-    const isManualMode = parsedContext.conversation_state?.modo === 'MANUAL';
-    // Also check if cadence is paused due to manual mode
+    const convState = parsedContext.conversation_state as Record<string, unknown> | undefined;
+    const isManualMode = convState?.modo === 'MANUAL';
     if (isManualMode && source !== 'BLUECHAT') {
-      // Save interpretation but suppress auto-response
-      console.log('[Orchestrator] Manual mode — interpreting but suppressing response');
+      log.info('Manual mode — interpreting but suppressing response');
     }
 
     // ========================================
     // 4. CALL sdr-intent-classifier
     // ========================================
     const classifierResult = await callFunction('sdr-intent-classifier', {
-      mensagem_normalizada: message.conteudo,
-      empresa: message.empresa,
+      mensagem_normalizada: msg.conteudo,
+      empresa: msg.empresa,
       historico: parsedContext.historico || [],
       classificacao: parsedContext.classificacao,
       conversation_state: parsedContext.conversation_state,
@@ -115,13 +147,13 @@ serve(async (req) => {
       leadNome: parsedContext.leadNome,
       cadenciaNome: parsedContext.cadenciaNome,
       pessoaContext: parsedContext.pessoaContext,
-    });
+    }) as ClassifierResult;
 
-    console.log('[Orchestrator] Intent:', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
+    log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
 
     // If manual mode, save and return without response
     if (isManualMode && source !== 'BLUECHAT') {
-      const intentId = await saveInterpretation(supabase, message, classifierResult, false, false, null);
+      const intentId = await saveInterpretation(supabase, msg, classifierResult, false, false, null);
       return new Response(JSON.stringify({ success: true, intentId, intent: classifierResult.intent, confidence: classifierResult.confidence, modoManual: true, message: 'Modo MANUAL ativo — resposta automática suprimida' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
@@ -134,7 +166,8 @@ serve(async (req) => {
 
     // Anti-limbo patches for BLUECHAT
     if (source === 'BLUECHAT' && classifierResult.intent === 'NAO_ENTENDI') {
-      const hasContext = (parsedContext.historico || []).length >= 2;
+      const historico = parsedContext.historico as unknown[] | undefined;
+      const hasContext = (historico || []).length >= 2;
       if (!hasContext) {
         respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
         classifierResult.deve_responder = true;
@@ -155,13 +188,13 @@ serve(async (req) => {
         const genResult = await callFunction('sdr-response-generator', {
           resposta_sugerida: respostaTexto,
           leadNome: parsedContext.leadNome,
-          empresa: message.empresa,
-          canal: parsedContext.conversation_state?.canal || 'WHATSAPP',
+          empresa: msg.empresa,
+          canal: convState?.canal || 'WHATSAPP',
           intent: classifierResult.intent,
         });
-        respostaTexto = genResult.resposta_sanitizada || respostaTexto;
+        respostaTexto = (genResult.resposta_sanitizada as string) || respostaTexto;
       } catch (genErr) {
-        console.warn('[Orchestrator] response-generator failed, using raw:', genErr);
+        log.warn('response-generator failed, using raw', { error: genErr instanceof Error ? genErr.message : String(genErr) });
       }
     }
 
@@ -171,7 +204,7 @@ serve(async (req) => {
     let acaoAplicada = false;
     let respostaEnviada = false;
     const finalAcao = classifierResult.acao || acao;
-    const telefone = parsedContext.telefone;
+    const telefone = parsedContext.telefone as string | undefined;
 
     // Determine if we should send response
     const canRespond = source === 'BLUECHAT'
@@ -180,9 +213,9 @@ serve(async (req) => {
 
     try {
       const execResult = await callFunction('sdr-action-executor', {
-        lead_id: message.lead_id,
-        run_id: message.run_id,
-        empresa: message.empresa,
+        lead_id: msg.lead_id,
+        run_id: msg.run_id,
+        empresa: msg.empresa,
         acao: finalAcao,
         acao_detalhes: classifierResult.acao_detalhes || {},
         telefone,
@@ -190,8 +223,7 @@ serve(async (req) => {
         source,
         intent: classifierResult.intent,
         confidence: classifierResult.confidence,
-        mensagem_original: message.conteudo,
-        // State updates
+        mensagem_original: msg.conteudo,
         novo_estado_funil: classifierResult.novo_estado_funil,
         frameworks_atualizados: classifierResult.frameworks_atualizados,
         disc_estimado: classifierResult.disc_estimado,
@@ -204,21 +236,21 @@ serve(async (req) => {
         classification_upgrade: classifierResult.classification_upgrade,
       });
 
-      acaoAplicada = execResult.acaoAplicada ?? false;
-      respostaEnviada = execResult.respostaEnviada ?? false;
+      acaoAplicada = (execResult.acaoAplicada as boolean) ?? false;
+      respostaEnviada = (execResult.respostaEnviada as boolean) ?? false;
     } catch (execErr) {
-      console.error('[Orchestrator] action-executor failed:', execErr);
+      log.error('action-executor failed', { error: execErr instanceof Error ? execErr.message : String(execErr) });
     }
 
     // For BLUECHAT, response is returned via HTTP, not sent via WhatsApp
     if (source === 'BLUECHAT' && canRespond && !respostaEnviada) {
-      respostaEnviada = false; // Text is available but not sent via WhatsApp
+      respostaEnviada = false;
     }
 
     // ========================================
     // 7. SAVE INTERPRETATION
     // ========================================
-    const intentId = await saveInterpretation(supabase, message, classifierResult, acaoAplicada, respostaEnviada, respostaTexto);
+    const intentId = await saveInterpretation(supabase, msg, classifierResult, acaoAplicada, respostaEnviada, respostaTexto);
 
     // Log AI usage
     try {
@@ -229,7 +261,7 @@ serve(async (req) => {
         success: true,
         latency_ms: 0,
         custo_estimado: 0,
-        empresa: message.empresa || null,
+        empresa: msg.empresa || null,
       });
     } catch { /* ignore */ }
 
@@ -257,7 +289,7 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    console.error('[Orchestrator] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
@@ -267,8 +299,8 @@ serve(async (req) => {
 // ========================================
 async function saveInterpretation(
   supabase: SupabaseClient,
-  message: any,
-  aiResponse: any,
+  message: MessageRow,
+  aiResponse: ClassifierResult,
   acaoAplicada: boolean,
   respostaEnviada: boolean,
   respostaTexto: string | null,
@@ -294,7 +326,7 @@ async function saveInterpretation(
 
   const { data, error } = await supabase.from('lead_message_intents').insert(record).select('id').single();
   if (error) {
-    console.error('[Orchestrator] Save error:', error);
+    log.error('Save error', { error: error.message });
     throw error;
   }
   return (data as { id: string }).id;

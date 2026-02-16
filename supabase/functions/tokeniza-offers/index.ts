@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
+const log = createLogger('tokeniza-offers');
 
 interface TokenizaOffer {
   id: string;
@@ -31,130 +32,64 @@ interface TokenizaOffer {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
-
     const url = new URL(req.url);
-    const status = url.searchParams.get('status'); // 'open', 'finished', etc.
+    const status = url.searchParams.get('status');
     const offerId = url.searchParams.get('id');
 
-    console.log('[tokeniza-offers] Fetching offers from Tokeniza API...');
+    log.info('Fetching offers from Tokeniza API...');
 
-    // Fetch from Tokeniza API
     const apiUrl = 'https://plataforma.tokeniza.com.br/api/v1/crowdfunding/getCrowdfundingList';
-    const response = await fetch(apiUrl, {
-      method: 'GET',
-      headers: {
-        'Accept': 'application/json',
-      },
-    });
+    const response = await fetch(apiUrl, { method: 'GET', headers: { 'Accept': 'application/json' } });
 
     if (!response.ok) {
-      console.error('[tokeniza-offers] API error:', response.status, response.statusText);
-      return new Response(
-        JSON.stringify({ error: 'Failed to fetch offers from Tokeniza' }),
-        { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      log.error('API error', { status: response.status, statusText: response.statusText });
+      return new Response(JSON.stringify({ error: 'Failed to fetch offers from Tokeniza' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const offers: TokenizaOffer[] = await response.json();
-    console.log(`[tokeniza-offers] Received ${offers.length} offers`);
+    log.info(`Received ${offers.length} offers`);
 
-    // Filter by status if provided
     let filteredOffers = offers;
-    if (status) {
-      filteredOffers = offers.filter(o => o.status.toLowerCase() === status.toLowerCase());
-    }
+    if (status) filteredOffers = offers.filter(o => o.status.toLowerCase() === status.toLowerCase());
 
-    // Return single offer if ID provided
     if (offerId) {
       const offer = offers.find(o => o.id === offerId);
-      if (!offer) {
-        return new Response(
-          JSON.stringify({ error: 'Offer not found' }),
-          { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
-      }
-      return new Response(
-        JSON.stringify(offer),
-        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+      if (!offer) return new Response(JSON.stringify({ error: 'Offer not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify(offer), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Helper to calculate days remaining dynamically
-    const calcularDiasRestantes = (finalDate: string, status: string): number => {
-      // Finished/inactive offers have 0 days remaining
-      if (status.toLowerCase() === 'finished' || status.toLowerCase() === 'inactive') {
-        return 0;
-      }
+    const calcularDiasRestantes = (finalDate: string, offerStatus: string): number => {
+      if (offerStatus.toLowerCase() === 'finished' || offerStatus.toLowerCase() === 'inactive') return 0;
       const dataFim = new Date(finalDate);
       const hoje = new Date();
-      const diffMs = dataFim.getTime() - hoje.getTime();
-      const diffDias = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
-      return Math.max(0, diffDias);
+      return Math.max(0, Math.ceil((dataFim.getTime() - hoje.getTime()) / (1000 * 60 * 60 * 24)));
     };
 
-    // Transform for easier consumption
     const transformedOffers = filteredOffers.map(offer => ({
-      id: offer.id,
-      nome: offer.name,
-      imagem: offer.img,
-      tipo: offer.type,
-      status: offer.status,
-      empresa: offer.company,
-      empresaWebsite: offer.companyWebsite,
-      rentabilidade: offer.profitability,
-      duracaoDias: parseInt(offer.duration_days) || 0,
-      contribuicaoMinima: parseInt(offer.minimumContribution) || 0,
-      metaCaptacao: parseInt(offer.targetCapture) || 0,
-      captacaoMinima: parseInt(offer.minimumCapture) || 0,
+      id: offer.id, nome: offer.name, imagem: offer.img, tipo: offer.type, status: offer.status,
+      empresa: offer.company, empresaWebsite: offer.companyWebsite, rentabilidade: offer.profitability,
+      duracaoDias: parseInt(offer.duration_days) || 0, contribuicaoMinima: parseInt(offer.minimumContribution) || 0,
+      metaCaptacao: parseInt(offer.targetCapture) || 0, captacaoMinima: parseInt(offer.minimumCapture) || 0,
       valorCaptado: offer.moneyReceived,
-      percentualCaptado: offer.targetCapture ? 
-        Math.round((offer.moneyReceived / parseInt(offer.targetCapture)) * 100) : 0,
-      tipoRisco: offer.typeOfRisk,
-      moeda: offer.acceptedCurrency,
-      dataInicio: offer.startDate,
-      dataFim: offer.finalDate,
-      diasRestantes: calcularDiasRestantes(offer.finalDate, offer.status),
-      documentos: offer.documents,
+      percentualCaptado: offer.targetCapture ? Math.round((offer.moneyReceived / parseInt(offer.targetCapture)) * 100) : 0,
+      tipoRisco: offer.typeOfRisk, moeda: offer.acceptedCurrency,
+      dataInicio: offer.startDate, dataFim: offer.finalDate,
+      diasRestantes: calcularDiasRestantes(offer.finalDate, offer.status), documentos: offer.documents,
     }));
 
-    // Summary for active offers (API returns 'active', 'finished', 'inactive')
-    const activeOffers = transformedOffers.filter(o => 
-      o.status.toLowerCase() === 'active' || o.status.toLowerCase() === 'open'
-    );
+    const activeOffers = transformedOffers.filter(o => o.status.toLowerCase() === 'active' || o.status.toLowerCase() === 'open');
     const summary = {
-      totalOfertas: transformedOffers.length,
-      ofertasAbertas: activeOffers.length,
-      maiorRentabilidade: activeOffers.length > 0 
-        ? Math.max(...activeOffers.map(o => parseInt(o.rentabilidade) || 0))
-        : 0,
-      menorContribuicao: activeOffers.length > 0
-        ? Math.min(...activeOffers.filter(o => o.contribuicaoMinima > 0).map(o => o.contribuicaoMinima))
-        : 0,
+      totalOfertas: transformedOffers.length, ofertasAbertas: activeOffers.length,
+      maiorRentabilidade: activeOffers.length > 0 ? Math.max(...activeOffers.map(o => parseInt(o.rentabilidade) || 0)) : 0,
+      menorContribuicao: activeOffers.length > 0 ? Math.min(...activeOffers.filter(o => o.contribuicaoMinima > 0).map(o => o.contribuicaoMinima)) : 0,
     };
 
-    return new Response(
-      JSON.stringify({ 
-        ofertas: transformedOffers,
-        resumo: summary,
-        atualizadoEm: new Date().toISOString(),
-      }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-
+    return new Response(JSON.stringify({ ofertas: transformedOffers, resumo: summary, atualizadoEm: new Date().toISOString() }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[tokeniza-offers] Error:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
