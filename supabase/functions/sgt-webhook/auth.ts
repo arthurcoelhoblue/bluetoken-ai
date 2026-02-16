@@ -3,17 +3,21 @@
 // Extraído do index.ts (Fase D)
 // ========================================
 
+import { createLogger } from '../_shared/logger.ts';
+
+const log = createLogger('sgt-webhook/auth');
+
 export function validateWebhookToken(req: Request): boolean {
   const secret = Deno.env.get('SGT_WEBHOOK_SECRET');
   if (!secret) {
-    console.error('[SGT Webhook] SGT_WEBHOOK_SECRET não configurado');
+    log.error('SGT_WEBHOOK_SECRET não configurado');
     return false;
   }
 
   // 1. Prioridade: x-webhook-secret (não é interceptado pelo platform)
   const webhookSecret = req.headers.get('x-webhook-secret');
   if (webhookSecret) {
-    console.log('[SGT Webhook] Autenticando via x-webhook-secret');
+    log.info('Autenticando via x-webhook-secret');
     return webhookSecret === secret;
   }
 
@@ -22,11 +26,11 @@ export function validateWebhookToken(req: Request): boolean {
   if (authHeader) {
     const match = authHeader.match(/^Bearer\s+(.+)$/i);
     if (match) {
-      console.log('[SGT Webhook] Autenticando via Authorization Bearer (fallback)');
+      log.info('Autenticando via Authorization Bearer (fallback)');
       return match[1] === secret;
     }
   }
 
-  console.error('[SGT Webhook] Nenhum token de autenticação encontrado (x-webhook-secret ou Authorization)');
+  log.error('Nenhum token de autenticação encontrado (x-webhook-secret ou Authorization)');
   return false;
 }

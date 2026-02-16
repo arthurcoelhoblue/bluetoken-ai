@@ -5,6 +5,7 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import type { TipoLead } from "../_shared/types.ts";
 import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
@@ -17,6 +18,7 @@ import { normalizeSGTEvent, sanitizeLeadContact, upsertPessoaFromContact } from 
 import { classificarLead } from "./classification.ts";
 import { decidirCadenciaParaLead, iniciarCadenciaParaLead } from "./cadence.ts";
 
+const log = createLogger('sgt-webhook');
 const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
 
 serve(async (req) => {
@@ -36,7 +38,7 @@ serve(async (req) => {
   try {
     const bodyText = await req.text();
     
-    console.log('[SGT Webhook] Requisição recebida:', {
+    log.info('Requisição recebida', {
       hasWebhookSecret: !!req.headers.get('x-webhook-secret'),
       hasAuth: !!req.headers.get('authorization'),
       bodyLength: bodyText.length,
@@ -44,7 +46,7 @@ serve(async (req) => {
 
     const isValidToken = validateWebhookToken(req);
     if (!isValidToken) {
-      console.error('[SGT Webhook] Token inválido ou ausente');
+      log.error('Token inválido ou ausente');
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -55,7 +57,7 @@ serve(async (req) => {
     const tokenId = simpleHash(req.headers.get('x-webhook-secret') || req.headers.get('authorization') || 'unknown');
     const rateCheck = await checkWebhookRateLimit(supabase, 'sgt-webhook', tokenId, 120);
     if (!rateCheck.allowed) {
-      console.warn('[SGT Webhook] Rate limit exceeded:', rateCheck.currentCount);
+      log.warn('Rate limit exceeded', { currentCount: rateCheck.currentCount });
       return rateLimitResponse(corsHeaders);
     }
 
@@ -64,7 +66,7 @@ serve(async (req) => {
       const rawPayload = JSON.parse(bodyText);
       const validation = validatePayload(rawPayload);
       if (!validation.valid) {
-        console.error('[SGT Webhook] Payload inválido:', validation.error);
+        log.error('Payload inválido', { error: validation.error });
         return new Response(
           JSON.stringify({ error: validation.error }),
           { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -87,7 +89,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (existingEvent) {
-      console.log('[SGT Webhook] Evento duplicado ignorado:', idempotencyKey);
+      log.info('Evento duplicado ignorado', { idempotencyKey });
       return new Response(
         JSON.stringify({ 
           success: true, message: 'Evento já processado',
@@ -108,11 +110,11 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('[SGT Webhook] Erro ao inserir evento:', insertError);
+      log.error('Erro ao inserir evento', { error: insertError.message });
       throw insertError;
     }
 
-    console.log('[SGT Webhook] Evento inserido:', newEvent.id);
+    log.info('Evento inserido', { eventId: newEvent.id });
 
     await supabase.from('sgt_event_logs').insert({
       event_id: newEvent.id, status: 'RECEBIDO',
@@ -120,7 +122,7 @@ serve(async (req) => {
     } as Record<string, unknown>);
 
     const leadNormalizado = normalizeSGTEvent(payload);
-    console.log('[SGT Webhook] Lead normalizado:', leadNormalizado);
+    log.info('Lead normalizado', { leadId: payload.lead_id, nome: leadNormalizado.nome });
 
     // Upsert em lead_contacts
     const primeiroNome = leadNormalizado.nome.split(' ')[0] || leadNormalizado.nome;
@@ -171,14 +173,14 @@ serve(async (req) => {
     }
 
     await supabase.from('lead_contacts').upsert(leadContactUpsert, { onConflict: 'lead_id,empresa' });
-    console.log('[SGT Webhook] Lead contact upserted com dados enriquecidos:', payload.lead_id);
+    log.info('Lead contact upserted com dados enriquecidos', { leadId: payload.lead_id });
 
     // Sanitização
     const sanitization = sanitizeLeadContact({
       telefone: leadNormalizado.telefone, email: leadNormalizado.email, empresa: payload.empresa
     });
-    console.log('[SGT Webhook] Sanitização:', {
-      leadId: payload.lead_id, phoneInfo: sanitization.phoneInfo,
+    log.info('Sanitização', {
+      leadId: payload.lead_id, phoneValid: !!sanitization.phoneInfo,
       emailPlaceholder: sanitization.emailPlaceholder,
       issuesCount: sanitization.issues.length, descartarLead: sanitization.descartarLead
     });
@@ -205,7 +207,7 @@ serve(async (req) => {
     
     if (pessoaId) {
       updateData.pessoa_id = pessoaId;
-      console.log('[SGT Webhook] Lead vinculado à pessoa global:', pessoaId);
+      log.info('Lead vinculado à pessoa global', { pessoaId });
     }
     
     await supabase.from('lead_contacts').update(updateData)
@@ -235,8 +237,8 @@ serve(async (req) => {
             })
             .select('id').single();
 
-          if (contactError) console.error('[SGT Webhook] Erro ao criar contact CRM:', contactError);
-          else console.log('[SGT Webhook] Contact CRM criado:', newContact.id);
+          if (contactError) log.error('Erro ao criar contact CRM', { error: contactError.message });
+          else log.info('Contact CRM criado', { contactId: newContact.id });
         } else {
           const mergeData: Record<string, unknown> = {};
           if (!existingContact.email && leadNormalizado.email) mergeData.email = leadNormalizado.email;
@@ -246,13 +248,13 @@ serve(async (req) => {
           if (Object.keys(mergeData).length > 0) {
             mergeData.updated_at = new Date().toISOString();
             await supabase.from('contacts').update(mergeData).eq('id', existingContact.id);
-            console.log('[SGT Webhook] Contact CRM atualizado (merge):', existingContact.id, Object.keys(mergeData));
+            log.info('Contact CRM atualizado (merge)', { contactId: existingContact.id, fields: Object.keys(mergeData) });
           } else {
-            console.log('[SGT Webhook] Contact CRM já existe, sem campos para merge:', existingContact.id);
+            log.info('Contact CRM já existe, sem campos para merge', { contactId: existingContact.id });
           }
         }
       } catch (contactErr) {
-        console.error('[SGT Webhook] Erro no fluxo de contacts:', contactErr);
+        log.error('Erro no fluxo de contacts', { error: contactErr instanceof Error ? contactErr.message : String(contactErr) });
       }
     }
 
@@ -270,16 +272,16 @@ serve(async (req) => {
             lead_id: payload.lead_id, empresa: payload.empresa,
             issue_tipo: issue.tipo, severidade: issue.severidade, mensagem: issue.mensagem
           });
-          console.log('[SGT Webhook] Issue de contato registrada:', issue.tipo);
+          log.info('Issue de contato registrada', { tipo: issue.tipo });
         } else {
-          console.log('[SGT Webhook] Issue já existe, ignorando duplicata:', issue.tipo);
+          log.info('Issue já existe, ignorando duplicata', { tipo: issue.tipo });
         }
       }
     }
 
     // Se lead deve ser descartado
     if (sanitization.descartarLead) {
-      console.log('[SGT Webhook] Lead descartado - deletando dados:', payload.lead_id);
+      log.info('Lead descartado - deletando dados', { leadId: payload.lead_id });
       
       await supabase.from('lead_message_intents').delete().eq('lead_id', payload.lead_id);
       await supabase.from('lead_messages').delete().eq('lead_id', payload.lead_id);
@@ -313,7 +315,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (convState?.modo === 'MANUAL') {
-      console.log('[SGT Webhook] Lead em modo MANUAL, apenas enriquecendo dados');
+      log.info('Lead em modo MANUAL, apenas enriquecendo dados');
       
       await supabase.from('sgt_event_logs').insert({
         event_id: newEvent.id, status: 'PROCESSADO',
@@ -334,7 +336,7 @@ serve(async (req) => {
 
     // Criar estado conversacional se não existe
     if (!convState) {
-      console.log('[SGT Webhook] Criando conversation_state para lead:', payload.lead_id);
+      log.info('Criando conversation_state para lead', { leadId: payload.lead_id });
       const defaultFramework = payload.empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
       
       await supabase.from('lead_conversation_state').insert({
@@ -376,12 +378,12 @@ serve(async (req) => {
           });
 
           if (duplicateMatch) {
-            console.log('[SGT Webhook] Duplicata detectada:', duplicateMatch);
+            log.info('Duplicata detectada', { match: duplicateMatch });
             const enrichUpdates: Record<string, unknown> = {};
             if (leadNormalizado.email && !contactForDeal.email) enrichUpdates.email = leadNormalizado.email;
             if (Object.keys(enrichUpdates).length > 0) {
               await supabase.from('contacts').update(enrichUpdates).eq('id', duplicateMatch.contactId);
-              console.log('[SGT Webhook] Contact enriquecido:', enrichUpdates);
+              log.info('Contact enriquecido', { updates: enrichUpdates });
             }
             await supabase.from('sgt_event_logs').insert({
               event_id: newEvent.id, status: 'PROCESSADO',
@@ -389,7 +391,7 @@ serve(async (req) => {
             } as Record<string, unknown>);
           } else {
             const routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
-            console.log('[SGT Webhook] Roteamento:', { ...routing, empresa: payload.empresa, tipoLead, temperatura, isPriority });
+            log.info('Roteamento', { ...routing, empresa: payload.empresa, tipoLead, temperatura, isPriority });
 
             const dealTitulo = `${leadNormalizado.nome} — Inbound SGT`;
             const { data: newDeal, error: dealError } = await supabase
@@ -406,9 +408,9 @@ serve(async (req) => {
               .select('id').single();
 
             if (dealError) {
-              console.error('[SGT Webhook] Erro ao criar deal:', dealError);
+              log.error('Erro ao criar deal', { error: dealError.message });
             } else {
-              console.log('[SGT Webhook] Deal criado:', newDeal.id, '| Pipeline:', routing.pipelineId, '| Temp:', temperatura);
+              log.info('Deal criado', { dealId: newDeal.id, pipelineId: routing.pipelineId, temperatura });
 
               await supabase.from('deal_activities').insert({
                 deal_id: newDeal.id, tipo: 'CRIACAO',
@@ -459,7 +461,7 @@ serve(async (req) => {
                       deal_id: newDeal.id, cadence_run_id: warmingRun.id,
                       trigger_stage_id: routing.stageId, trigger_type: 'AUTO_WARMING', status: 'ACTIVE',
                     } as Record<string, unknown>);
-                    console.log('[SGT Webhook] Cadência de aquecimento iniciada:', warmingRun.id);
+                    log.info('Cadência de aquecimento iniciada', { runId: warmingRun.id });
                   }
                 }
               }
@@ -467,7 +469,7 @@ serve(async (req) => {
           }
         }
       } catch (dealErr) {
-        console.error('[SGT Webhook] Erro no fluxo de auto-criação de deal:', dealErr);
+        log.error('Erro no fluxo de auto-criação de deal', { error: dealErr instanceof Error ? dealErr.message : String(dealErr) });
       }
 
       const cadenceCodigo = decidirCadenciaParaLead(classification, payload.evento);
@@ -482,14 +484,14 @@ serve(async (req) => {
         cadenceResult.skipped = result.skipped;
 
         if (!result.success && !result.skipped) {
-          console.warn('[SGT Webhook] Falha ao iniciar cadência:', result.reason);
+          log.warn('Falha ao iniciar cadência', { reason: result.reason });
         }
       }
 
       await supabase.from('sgt_events').update({ processado_em: new Date().toISOString() }).eq('id', newEvent.id);
 
     } catch (pipelineError) {
-      console.error('[SGT Webhook] Erro no pipeline:', pipelineError);
+      log.error('Erro no pipeline', { error: pipelineError instanceof Error ? pipelineError.message : String(pipelineError) });
       
       await supabase.from('sgt_event_logs').insert({
         event_id: newEvent.id, status: 'ERRO',
@@ -516,7 +518,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[SGT Webhook] Erro geral:', error);
+    log.error('Erro geral', { error: error instanceof Error ? error.message : String(error) });
     
     return new Response(
       JSON.stringify({ 
