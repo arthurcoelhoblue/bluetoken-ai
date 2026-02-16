@@ -128,16 +128,16 @@ async function sendEmailViaSMTP(
     
     // Helper para enviar comando
     async function sendCommand(cmd: string): Promise<string> {
-      console.log('[SMTP] >', cmd.includes('AUTH') || cmd.length > 50 ? cmd.substring(0, 20) + '...' : cmd.trim());
+      log.debug('SMTP >', { cmd: cmd.includes('AUTH') || cmd.length > 50 ? cmd.substring(0, 20) + '...' : cmd.trim() });
       await conn.write(encoder.encode(cmd + '\r\n'));
       const response = await readResponse();
-      console.log('[SMTP] <', response.trim().substring(0, 100));
+      log.debug('SMTP <', { response: response.trim().substring(0, 100) });
       return response;
     }
     
     // Ler banner inicial (se conexão TLS direta)
     let response = await readResponse();
-    console.log('[SMTP] Banner:', response.trim().substring(0, 100));
+    log.debug('SMTP Banner', { banner: response.trim().substring(0, 100) });
     
     // EHLO
     response = await sendCommand(`EHLO ${SMTP_HOST}`);
@@ -210,7 +210,7 @@ async function sendEmailViaSMTP(
     
     await conn.write(encoder.encode(emailContent + '\r\n'));
     response = await readResponse();
-    console.log('[SMTP] < (after DATA):', response.trim());
+    log.debug('SMTP after DATA', { response: response.trim() });
     
     if (!response.startsWith('250')) {
       conn.close();

@@ -5,10 +5,13 @@
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
+import { createLogger } from "../_shared/logger.ts";
 import type {
   EmpresaTipo, SGTEventoTipo, CadenceCodigo,
   LeadClassificationResult,
 } from "./types.ts";
+
+const log = createLogger('sgt-webhook/cadence');
 
 // ========================================
 // DECISÃO DE CADÊNCIA
@@ -19,7 +22,7 @@ export function decidirCadenciaParaLead(
 ): CadenceCodigo | null {
   const { empresa, icp, temperatura } = classification;
 
-  console.log('[Cadência] Decidindo cadência:', { empresa, icp, temperatura, evento });
+  log.info('Decidindo cadência', { empresa, icp, temperatura, evento });
 
   if (empresa === 'TOKENIZA') {
     if ((evento === 'MQL' || evento === 'CARRINHO_ABANDONADO') && temperatura === 'QUENTE') {
@@ -40,7 +43,7 @@ export function decidirCadenciaParaLead(
     }
   }
 
-  console.log('[Cadência] Nenhuma cadência aplicável para este evento');
+  log.debug('Nenhuma cadência aplicável para este evento');
   return null;
 }
 
@@ -55,7 +58,7 @@ export async function iniciarCadenciaParaLead(
   classification: LeadClassificationResult,
   fonteEventoId: string
 ): Promise<{ success: boolean; runId?: string; skipped?: boolean; reason?: string }> {
-  console.log('[Cadência] Iniciando cadência:', { leadId, empresa, cadenceCodigo });
+  log.info('Iniciando cadência', { leadId, empresa, cadenceCodigo });
 
   // Validação: verificar canal de contato válido
   const { data: leadContact, error: contactError } = await supabase
@@ -66,7 +69,7 @@ export async function iniciarCadenciaParaLead(
     .maybeSingle();
 
   if (contactError) {
-    console.error('[Cadência] Erro ao buscar lead_contact:', contactError);
+    log.error('Erro ao buscar lead_contact', { error: contactError.message });
   }
 
   if (leadContact) {
@@ -74,7 +77,7 @@ export async function iniciarCadenciaParaLead(
     const temEmailValido = leadContact.email && !leadContact.email_placeholder;
     
     if (!temTelefoneValido && !temEmailValido) {
-      console.log('[Cadência] Lead sem canal de contato válido, não iniciando cadência:', {
+      log.info('Lead sem canal de contato válido, não iniciando cadência', {
         leadId, telefone: leadContact.telefone, telefone_valido: leadContact.telefone_valido,
         email: leadContact.email, email_placeholder: leadContact.email_placeholder
       });
@@ -93,7 +96,7 @@ export async function iniciarCadenciaParaLead(
     .single();
 
   if (cadenceError || !cadence) {
-    console.error('[Cadência] Cadência não encontrada:', cadenceCodigo);
+    log.error('Cadência não encontrada', { cadenceCodigo });
     return { success: false, reason: `Cadência ${cadenceCodigo} não encontrada ou inativa` };
   }
 
@@ -106,7 +109,7 @@ export async function iniciarCadenciaParaLead(
     .maybeSingle();
 
   if (existingRun) {
-    console.log('[Cadência] Lead já possui cadência ativa:', existingRun.id);
+    log.info('Lead já possui cadência ativa', { runId: existingRun.id });
     return { success: true, skipped: true, reason: 'Lead já possui cadência ativa', runId: existingRun.id };
   }
 
@@ -119,7 +122,7 @@ export async function iniciarCadenciaParaLead(
     .single();
 
   if (stepError || !firstStep) {
-    console.error('[Cadência] Nenhum step encontrado para cadência:', cadenceCodigo);
+    log.error('Nenhum step encontrado para cadência', { cadenceCodigo });
     return { success: false, reason: 'Nenhum step configurado para esta cadência' };
   }
 
@@ -131,7 +134,7 @@ export async function iniciarCadenciaParaLead(
     if (proximoHorario.getTime() > nextRunAt.getTime()) {
       nextRunAt = proximoHorario;
     }
-    console.log('[Cadência] Fora de horário comercial, agendando para:', nextRunAt.toISOString());
+    log.info('Fora de horário comercial, agendando para', { nextRunAt: nextRunAt.toISOString() });
   }
 
   const { data: newRun, error: runError } = await supabase
@@ -148,11 +151,11 @@ export async function iniciarCadenciaParaLead(
     .single();
 
   if (runError || !newRun) {
-    console.error('[Cadência] Erro ao criar run:', runError);
+    log.error('Erro ao criar run', { error: runError?.message });
     return { success: false, reason: 'Erro ao criar run de cadência' };
   }
 
-  console.log('[Cadência] Run criado:', newRun.id);
+  log.info('Run criado', { runId: newRun.id });
 
   await supabase.from('lead_cadence_events').insert({
     lead_cadence_run_id: newRun.id,
@@ -166,7 +169,7 @@ export async function iniciarCadenciaParaLead(
     },
   } as Record<string, unknown>);
 
-  console.log('[Cadência] Evento AGENDADO criado para step', firstStep.ordem);
+  log.debug('Evento AGENDADO criado', { step: firstStep.ordem });
 
   return { success: true, runId: newRun.id };
 }

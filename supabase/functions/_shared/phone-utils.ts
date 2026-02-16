@@ -2,6 +2,10 @@
 // _shared/phone-utils.ts — Utilitários de telefone e email para dedup
 // ========================================
 
+import { createLogger } from "./logger.ts";
+
+const log = createLogger('phone-utils');
+
 // DDIs conhecidos para validação
 export const DDI_CONHECIDOS = ['55', '1', '34', '351', '33', '49', '44', '39', '81', '86'];
 
@@ -73,7 +77,7 @@ export function normalizePhoneE164(raw: string | null): PhoneNormalized | null {
   // Detectar sequências lixo (000000, 111111, 98989898, etc.)
   const uniqueDigits = new Set(digits.split(''));
   if (uniqueDigits.size <= 2) {
-    console.log('[Sanitization] Telefone lixo detectado:', raw);
+    log.debug('Telefone lixo detectado', { raw });
     return null;
   }
 
@@ -116,7 +120,7 @@ export function normalizePhoneE164(raw: string | null): PhoneNormalized | null {
 
   // Se ainda tem tamanho razoável, marca como internacional desconhecido
   if (digits.length >= 10) {
-    console.log('[Sanitization] DDI não reconhecido, marcando como suspeito:', raw);
+    log.debug('DDI não reconhecido, marcando como suspeito', { raw });
     return null; // Será marcado como DADO_SUSPEITO
   }
 
