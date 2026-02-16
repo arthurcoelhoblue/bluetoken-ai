@@ -1,58 +1,60 @@
 
-# Fase G — Finalizacao e Testes
+# Ciclo H — Rumo ao 11/10
 
-A Fase G ja foi implementada com sucesso. Este passo final consolida a documentacao e executa a validacao completa.
+## Ordem de Execução
 
----
-
-## O que ja foi feito na Fase G
-
-| Item | Status |
-|------|--------|
-| G1 — Logging padronizado (4 Edge Functions) | Concluido |
-| G2 — Refatoracao useCadences.ts (753 -> ~4 modulos) | Concluido |
-| G3 — ESLint reforçado (no-console, no-any, consistent-type-imports) | Concluido |
-| G4 — Limpeza console.* frontend (16 removidos, 5 mantidos) | Concluido |
-| Security Hardening — 6 RLS fixes + XSS fix | Concluido |
+| Fase | Objetivo | Dependências |
+|------|----------|-------------|
+| **H3** | Zod validation em webhooks inbound | Nenhuma |
+| **H4** | Performance (lazy loading, bundle splitting, Web Vitals) | Nenhuma |
+| **H1** | Sentry error tracking em produção | Secret SENTRY_DSN |
+| **H2** | Testes E2E (Playwright) | Playwright setup |
 
 ---
 
-## Plano de Finalizacao
+## H3 — Zod Validation em Webhooks Inbound
 
-### 1. Atualizar documentacao
+### Escopo
+Adicionar validação rigorosa com Zod nos 3 webhooks inbound:
+1. `bluechat-inbound` — já tem `schemas.ts`, reforçar com Zod
+2. `whatsapp-inbound` — payload sem validação formal
+3. `sgt-webhook` — já tem `validation.ts`, migrar para Zod
 
-Atualizar `docs/CHANGELOG.md` com o registro completo da Fase G:
-- G1: Logging 100% padronizado
-- G2: useCadences.ts refatorado em modulos
-- G3: ESLint reforçado
-- G4: Frontend limpo de console.*
-- Security: 6 RLS hardening + XSS fix no TemplateFormDialog
-
-Atualizar `docs/TEST-RESULTS.md` com os resultados atuais.
-
-### 2. Atualizar Scorecard no Relatorio
-
-Criar `docs/patches/PATCH-FASE-G_engineering-excellence.md` documentando:
-- Todas as mudancas da Fase G
-- Scorecard atualizado (Qualidade 9->10, Manutenibilidade 9->10, Seguranca 9->10)
-- Nota geral projetada: 9.5/10
-
-### 3. Rodar suite completa de testes
-
-- Executar todos os 314+ testes unitarios via Vitest
-- Confirmar 0 regressoes
-- Validar que os modulos refatorados (cadences/) funcionam corretamente
-
-### 4. Validacao de Edge Functions
-
-- Confirmar deploy das 4 Edge Functions atualizadas
-- Verificar logs estruturados nos ultimos deploys
+### Implementação
+- Criar schemas Zod em cada função (ou `_shared/schemas/`)
+- Parse no início do handler com `.safeParse()`
+- Retornar 400 com detalhes do erro em caso de falha
+- Manter `.passthrough()` em objetos de metadados para flexibilidade
 
 ---
 
-## Resultado Esperado
+## H4 — Performance Monitoring
 
-- Documentacao completa e atualizada
-- 314/314 testes passando (0 regressoes)
-- Scorecard final: 9.5/10 (de 9.0)
-- Projeto pronto para a proxima fase do roadmap (Sentry, Testes E2E, Zod em webhooks)
+### Escopo
+- React.lazy + Suspense para code-splitting de rotas
+- Lazy loading de componentes pesados (Recharts, editors)
+- Monitoramento de Web Vitals (LCP, CLS, INP)
+- Bundle analysis e otimização
+
+---
+
+## H1 — Sentry Error Tracking
+
+### Escopo
+- Integrar Sentry SDK no frontend
+- Captura automática de erros não tratados
+- Source maps para stack traces legíveis
+- Breadcrumbs para contexto de navegação
+- Requer: secret SENTRY_DSN
+
+---
+
+## H2 — Testes E2E
+
+### Escopo
+- Setup Playwright com fluxos críticos:
+  - Login/Auth
+  - Pipeline (criar deal, mover entre estágios)
+  - Cadências (criar, executar)
+  - Contatos (CRUD)
+- CI-ready configuration
