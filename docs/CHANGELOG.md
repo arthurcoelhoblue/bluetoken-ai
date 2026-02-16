@@ -6,6 +6,33 @@ O formato é baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.0.
 
 ---
 
+## [7.0.0] - 2026-02-16
+
+### 🎯 FASE G - Engineering Excellence
+
+#### Adicionado
+- Utilitário `_shared/logger.ts` para logging JSON estruturado em Edge Functions
+- Módulos `src/hooks/cadences/` (useCadences, useCadenceRuns, useCadenceEvents, useCadenceMutations)
+- Barrel file retrocompatível em `src/hooks/useCadences.ts`
+- Regras ESLint reforçadas: `no-console`, `no-explicit-any`, `consistent-type-imports`
+
+#### Alterado
+- `useCadences.ts` refatorado de ~753 linhas para 4 módulos de ~200 linhas
+- `TemplateFormDialog`: renderização segura de placeholders (XSS fix)
+- 16 ocorrências de `console.*` removidas do frontend
+
+#### Segurança
+- 6 políticas RLS corrigidas: `deals`, `organizations`, `deal_activities`, `custom_field_values`, `pessoas`, `profiles`
+- XSS fix no `TemplateFormDialog` (removido `dangerouslySetInnerHTML`)
+- Security findings reduzidos de 33 para 28
+
+#### Técnico
+- 314/314 testes passando (0 regressões)
+- Logging 100% padronizado em todas as 46 Edge Functions
+- Scorecard: 9.0 → 9.5/10
+
+---
+
 ## [5.0.0] - 2025-12-08
 
 ### 🎯 PATCH 5A - Infraestrutura de Mensagens
