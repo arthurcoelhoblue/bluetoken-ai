@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useCompany } from '@/contexts/CompanyContext';
 
 export interface OrphanDeal {
   id: string;
@@ -13,18 +14,20 @@ export interface OrphanDeal {
 }
 
 export function useOrphanDeals() {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ['orphan-deals'],
+    queryKey: ['orphan-deals', activeCompany],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deals')
         .select(`
           id, titulo, valor, status, created_at,
           contacts:contact_id(nome),
-          pipelines:pipeline_id(nome)
+          pipelines:pipeline_id!inner(nome, empresa)
         `)
         .is('owner_id', null)
         .eq('status', 'ABERTO')
+        .eq('pipelines.empresa', activeCompany)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []).map((d) => {

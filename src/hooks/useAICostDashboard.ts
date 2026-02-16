@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany } from "@/contexts/CompanyContext";
 
 export interface AICostByFunction {
   function_name: string;
@@ -32,8 +33,9 @@ export interface AICostSummary {
 }
 
 export function useAICostDashboard(days: number = 30) {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ["ai-cost-dashboard", days],
+    queryKey: ["ai-cost-dashboard", days, activeCompany],
     queryFn: async (): Promise<AICostSummary> => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -41,6 +43,7 @@ export function useAICostDashboard(days: number = 30) {
       const { data, error } = await supabase
         .from("ai_usage_log")
         .select("*")
+        .eq("empresa", activeCompany)
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false });
 

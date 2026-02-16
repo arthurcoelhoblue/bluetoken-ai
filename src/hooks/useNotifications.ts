@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useCompany } from '@/contexts/CompanyContext';
 
 export interface AppNotification {
   id: string;
@@ -19,17 +20,19 @@ export interface AppNotification {
 
 export function useNotifications() {
   const { user } = useAuth();
+  const { activeCompany } = useCompany();
   const queryClient = useQueryClient();
   const permissionAsked = useRef(false);
 
   const query = useQuery({
-    queryKey: ['notifications', user?.id],
+    queryKey: ['notifications', user?.id, activeCompany],
     enabled: !!user?.id,
     queryFn: async (): Promise<AppNotification[]> => {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user!.id)
+        .eq('empresa', activeCompany)
         .order('created_at', { ascending: false })
         .limit(30);
 

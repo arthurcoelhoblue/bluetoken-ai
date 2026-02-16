@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany } from "@/contexts/CompanyContext";
 
 export interface AdoptionMetric {
   feature: string;
@@ -9,8 +10,9 @@ export interface AdoptionMetric {
 }
 
 export function useAdoptionMetrics(days = 30) {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ["adoption-metrics", days],
+    queryKey: ["adoption-metrics", days, activeCompany],
     queryFn: async () => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -18,6 +20,7 @@ export function useAdoptionMetrics(days = 30) {
       const { data, error } = await supabase
         .from("analytics_events")
         .select("event_name, user_id, created_at")
+        .eq("empresa", activeCompany)
         .gte("created_at", startDate.toISOString());
 
       if (error) throw error;
