@@ -12,35 +12,26 @@ A auditoria atribuiu nota 9.8/10 ao estado geral, mas identificou falhas critica
 
 ---
 
-## Fase 1 -- RLS: Corrigir 2 tabelas restantes (Risco Medio)
+## Fase 1 -- RLS: Corrigir tabelas restantes ✅ CONCLUÍDO
 
-Corrigir as policies com `USING (true)` em:
-
-| Tabela | Problema | Correcao |
-|--------|----------|----------|
-| `deal_stage_history` | SELECT com `USING (true)` expoe historico de funil entre tenants | Adicionar filtro via join com `deals -> pipelines` para resolver empresa |
-| `seller_badges` | SELECT com `USING (true)` expoe badges entre tenants | Adicionar filtro por empresa (se coluna existir) ou via `profiles -> user_access_assignments` |
-
-Uma unica SQL migration resolve ambos.
+- `deal_stage_history`: Policy corrigida com filtro via `deals -> pipelines -> empresa = get_user_empresa(auth.uid())`
+- `seller_badges`: Tabela de definições globais (sem coluna `empresa`). `USING(true)` é correto. `seller_badge_awards` já filtra por empresa.
 
 ---
 
-## Fase 2 -- Frontend: Corrigir 8 hooks criticos (Risco Alto)
+## Fase 2 -- Frontend: Corrigir hooks criticos ✅ CONCLUÍDO
 
-Cada hook abaixo sera atualizado para importar `useCompany()` e filtrar queries pela `activeCompany`. O padrao ja existe no projeto e sera replicado.
+Hooks corrigidos com `useCompany()` + `activeCompany` na queryKey:
+- `useNotifications` — `.eq('empresa', activeCompany)`
+- `useAICostDashboard` — `.eq('empresa', activeCompany)`
+- `useAdoptionMetrics` — `.eq('empresa', activeCompany)`
+- `useLossPendencies` — filtro via `pipelines:pipeline_id!inner(empresa)` + `.eq('pipelines.empresa', activeCompany)`
+- `useOrphanDeals` — filtro via `pipelines:pipeline_id!inner(nome, empresa)` + `.eq('pipelines.empresa', activeCompany)`
 
-| Hook | Correcao |
-|------|----------|
-| `useDealDetail` | Busca deal por ID via view -- RLS ja protege. Sem acao necessaria se RLS de `deals` esta correto (ja esta). **Risco real: baixo.** |
-| `useLossPendencies` | Adicionar filtro por empresa via join `pipelines:pipeline_id(empresa)` + `.eq()` |
-| `useOrphanDeals` | Adicionar filtro por empresa via join `pipelines:pipeline_id(empresa)` + `.eq()` |
-| `useAICostDashboard` | Adicionar `.eq('empresa', activeCompany)` na query de `ai_usage_log` |
-| `useAdoptionMetrics` | Adicionar `.eq('empresa', activeCompany)` na query de `analytics_events` |
-| `useSystemSettings` | Adicionar `.eq('empresa', activeCompany)` -- **OU** manter sem filtro se settings sao globais por design. Avaliar se `system_settings` tem coluna `empresa`. |
-| `usePromptVersions` | Tabela `prompt_versions` -- verificar se tem coluna `empresa`. Se sim, filtrar. Se nao, e global por design. |
-| `useNotifications` | Adicionar `.eq('empresa', activeCompany)` (tabela ja tem coluna `empresa`) |
-
-Cada hook recebe `useCompany()` e inclui `activeCompany` na queryKey para invalidacao automatica ao trocar empresa.
+Hooks descartados (sem ação necessária):
+- `useDealDetail` — busca por ID, RLS já protege
+- `useSystemSettings` — tabela global sem coluna `empresa`
+- `usePromptVersions` — tabela global sem coluna `empresa`
 
 ---
 

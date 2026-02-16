@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 
 export interface LossPendency {
   id: string;
@@ -14,8 +15,9 @@ export interface LossPendency {
 }
 
 export function useLossPendencies() {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ['loss-pendencies'],
+    queryKey: ['loss-pendencies', activeCompany],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deals')
@@ -23,11 +25,13 @@ export function useLossPendencies() {
           id, titulo, motivo_perda_closer, motivo_perda_ia,
           categoria_perda_closer, categoria_perda_ia, fechado_em,
           contacts:contact_id(id, nome),
-          pipeline_stages:stage_fechamento_id(id, nome)
+          pipeline_stages:stage_fechamento_id(id, nome),
+          pipelines:pipeline_id!inner(empresa)
         `)
         .eq('status', 'PERDIDO')
         .eq('perda_resolvida', false)
         .not('categoria_perda_ia', 'is', null)
+        .eq('pipelines.empresa', activeCompany)
         .order('fechado_em', { ascending: false });
 
       if (error) throw error;
