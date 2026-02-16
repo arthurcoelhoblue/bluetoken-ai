@@ -1,74 +1,63 @@
 
+# Item 1.1 — Versionar 16 CRON jobs em migration SQL
 
-# Roadmap V7 → 11/10 — Blocos por Prioridade
+## Objetivo
 
-## BLOCO 1 — Quick Wins (1 semana)
-Itens de baixo esforco e alto impacto na nota de auditoria.
+Criar uma migration SQL que versiona todos os 16 CRON jobs ativos, garantindo reprodutibilidade em staging e disaster recovery. Atualmente esses jobs existem apenas no banco de producao, sem nenhum registro em codigo.
 
-### 1.1 Versionar 16 CRON jobs em migration SQL
-- Criar uma migration contendo `SELECT cron.schedule(...)` para cada um dos 16 jobs ativos
-- Garante reprodutibilidade em staging e disaster recovery
-- Prioridade do parecer: MEDIA
-- Esforco: 1 dia
-- **Status: PENDENTE**
+## 16 Jobs Mapeados
 
-### 1.2 Reduzir `as any` restantes ~~(51 ocorrencias)~~
-- ✅ **CONCLUÍDO** — Reduzido de 51 para 12 ocorrências
-- 39 `as any` eliminados via tipagem correta (empresa enums, relation types, Record<string,unknown>, as never)
-- 12 restantes são irreducíveis: nomes de tabelas não presentes nos tipos gerados (pipeline_auto_rules ×4, message_templates ×4, integration_company_config ×2, import_jobs_summary ×1, applyEmpresaFilter ×1)
-- 0 `as any` em Edge Functions (Deno)
-- 314/314 testes passando
+| # | Job Name | Schedule | Funcao |
+|---|----------|----------|--------|
+| 1 | cadence-runner | `*/15 * * * *` | Motor de cadencias (a cada 15min) |
+| 2 | cleanup-rate-limits-daily | `0 2 * * *` | Limpa rate limits antigos (2h) |
+| 3 | copilot-proactive-4h | `0 */4 * * *` | Copilot proativo (a cada 4h) |
+| 4 | cs-churn-predictor | `0 7 * * *` | Predicao de churn (7h) |
+| 5 | cs-daily-briefing | `30 8 * * *` | Briefing diario CS (8:30) |
+| 6 | cs-health-calculator | `0 6 * * *` | Calculo health score (6h) |
+| 7 | cs-incident-detector | `0 */2 * * *` | Detector de incidencias (a cada 2h) |
+| 8 | cs-nps-auto | `0 9 * * *` | NPS automatico (9h) |
+| 9 | cs-playbook-runner-30min | `*/30 * * * *` | Playbooks CS (a cada 30min) |
+| 10 | cs-renewal-alerts | `0 8 * * *` | Alertas de renovacao (8h) |
+| 11 | deal-scoring-daily | `0 5 * * *` | Scoring de deals (5h) |
+| 12 | follow-up-scheduler-daily-4h | `0 4 * * *` | Follow-up scheduler (4h) |
+| 13 | icp-learner-sunday-3h | `0 3 * * 0` | ICP learner (domingos 3h) |
+| 14 | integration-health-5min | `*/5 * * * *` | Health check integracoes (5min) |
+| 15 | revenue-forecast-daily | `0 6 * * *` | Previsao de receita (6h) |
+| 16 | weekly-report-sunday | `0 20 * * 0` | Relatorio semanal (domingos 20h) |
 
----
+## Implementacao
 
-## BLOCO 2 — Observabilidade Avancada (2 semanas)
+**Nota importante**: Conforme as instrucoes do sistema, migrations com dados especificos do projeto (URLs e anon key) **nao devem ser criadas como migration file**. Em vez disso, vou:
 
-### 2.1 Dashboard de saude operacional melhorado
-- Tela unica mostrando: Web Vitals (LCP/CLS/INP), erros do Sentry, status dos 16 CRONs, latencia das edge functions (via `ai_usage_log`)
-- Consolida dados que ja existem mas estao espalhados
-- Esforco: 1-2 semanas
+1. **Criar um arquivo de documentacao** `docs/patches/PATCH-CRON-VERSIONING.md` com todos os 16 `SELECT cron.schedule(...)` prontos para execucao
+2. **Executar via SQL direto** no banco para garantir que estejam ativos (ja estao, mas o versionamento fica documentado)
+3. **Atualizar o plan.md** marcando o item 1.1 como concluido
 
-### 2.2 Sentry para Edge Functions (Deno)
-- Capturar erros de edge functions no Sentry com stack traces
-- Complementa o logger estruturado que ja existe em 55 pontos
-- Prioridade do parecer: BAIXA (logger ja ajuda muito)
-- Esforco: 1 semana
+## Detalhes tecnicos
 
----
-
-## BLOCO 3 — Automacao Inteligente (3 semanas)
-
-### 3.1 Atividade auto-criada apos transcricao de chamada
-- `call-transcribe` finaliza → cria automaticamente um registro em `deal_activities` com resumo IA
-- Zero esforco do vendedor para registrar chamadas
-- Esforco: 3-5 dias
-
----
-
-## BLOCO 4 — Arquitetura de Longo Prazo (1-3 meses)
-
-### 4.1 Multi-tenancy com schema separation
-- Separar dados BLUE e TOKENIZA em schemas distintos
-- Elimina risco residual de RLS bypass entre empresas
-- Esforco: 1 mes
-
-### 4.2 Revenue forecast com ML
-- Treinar modelo de regressao com dados historicos de deals
-- Substituir heuristicas atuais por predicao real
-- Esforco: 3 meses
-
----
-
-## Resumo Visual
+O SQL de cada job segue o padrao:
 
 ```text
-BLOCO 1 (Semana 1)        BLOCO 2 (Semanas 2-3)      BLOCO 3 (Semana 4)       BLOCO 4 (Meses 2-4)
-+--------------------+     +---------------------+     +-------------------+     +-------------------+
-| CRON em migration  |     | Dashboard saude ops |     | Auto-atividade    |     | Multi-tenancy     |
-| ✅ Remover as any  |     | Sentry Edge Fn      |     | pos-transcricao   |     | ML Forecast       |
-+--------------------+     +---------------------+     +-------------------+     +-------------------+
+SELECT cron.schedule(
+  'job-name',
+  'cron-expression',
+  $$
+  SELECT net.http_post(
+    url:='https://[project-ref].supabase.co/functions/v1/[function-name]',
+    headers:='{"Content-Type": "application/json", "Authorization": "Bearer [ANON_KEY]"}'::jsonb,
+    body:='{"source": "pg_cron"}'::jsonb
+  ) AS request_id;
+  $$
+);
 ```
 
-## Sugestao de Execucao
+O job `cleanup-rate-limits-daily` e o unico que executa SQL direto (DELETE) em vez de chamar uma edge function.
 
-Recomendo comecar pelo **Bloco 1** inteiro (CRON + as any) por ser de execucao rapida e impacto direto na nota de auditoria. Apos concluido, seguir para o Bloco 2 que consolida a observabilidade.
+A migration usara `SELECT cron.unschedule(name)` antes de cada `cron.schedule()` para ser idempotente (pode rodar multiplas vezes sem duplicar jobs).
+
+## Impacto
+
+- Zero impacto em runtime (jobs ja existem e continuam funcionando)
+- Garante reprodutibilidade: qualquer novo ambiente pode recriar os jobs executando o documento
+- Atende ao requisito do parecer de auditoria (prioridade MEDIA)
