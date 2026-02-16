@@ -1,21 +1,16 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('cs-renewal-alerts');
 const corsHeaders = getWebhookCorsHeaders();
 
 serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
+    const supabase = createServiceClient();
     const now = new Date();
     const milestones = [60, 30, 15];
     let notified = 0;
@@ -25,7 +20,6 @@ serve(async (req) => {
       targetDate.setDate(targetDate.getDate() + days);
       const dateStr = targetDate.toISOString().split('T')[0];
 
-      // Find customers with renewal on this date
       const { data: customers } = await supabase
         .from('cs_customers')
         .select('id, csm_id, empresa, valor_mrr, health_score, health_status, contacts(nome)')
@@ -37,44 +31,25 @@ serve(async (req) => {
 
       for (const customer of customers) {
         if (!customer.csm_id) continue;
-
-        // Check if notification already sent for this milestone
-        const { data: existing } = await supabase
-          .from('notifications')
-          .select('id')
-          .eq('referencia_id', customer.id)
-          .eq('tipo', 'CS_RENEWAL_ALERT')
-          .like('mensagem', `%${days} dias%`)
-          .limit(1);
-
+        const { data: existing } = await supabase.from('notifications').select('id').eq('referencia_id', customer.id).eq('tipo', 'CS_RENEWAL_ALERT').like('mensagem', `%${days} dias%`).limit(1);
         if (existing && existing.length > 0) continue;
 
         const urgente = customer.health_status === 'EM_RISCO' || customer.health_status === 'CRITICO';
-        const contactName = (customer as any).contacts?.nome || 'Cliente';
+        const contactName = (customer as Record<string, unknown>).contacts && typeof (customer as Record<string, unknown>).contacts === 'object' ? ((customer as Record<string, unknown>).contacts as Record<string, unknown>)?.nome as string || 'Cliente' : 'Cliente';
 
         await supabase.from('notifications').insert({
-          user_id: customer.csm_id,
-          empresa: customer.empresa,
+          user_id: customer.csm_id, empresa: customer.empresa,
           titulo: `${urgente ? '🚨' : '📅'} Renovação em ${days} dias: ${contactName}`,
           mensagem: `Renovação em ${days} dias. MRR: R$ ${customer.valor_mrr || 0}. Health: ${customer.health_score || 'N/A'}/100 (${customer.health_status || 'N/A'}).`,
-          tipo: 'CS_RENEWAL_ALERT',
-          referencia_tipo: 'CS_CUSTOMER',
-          referencia_id: customer.id,
+          tipo: 'CS_RENEWAL_ALERT', referencia_tipo: 'CS_CUSTOMER', referencia_id: customer.id,
         });
-
         notified++;
       }
     }
 
-    return new Response(
-      JSON.stringify({ notified, milestones }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    return new Response(JSON.stringify({ notified, milestones }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[CS-Renewal] Erro:', error);
-    return new Response(
-      JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
-      { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    log.error('Erro', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
+    return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

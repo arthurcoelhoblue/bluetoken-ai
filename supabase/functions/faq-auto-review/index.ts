@@ -1,27 +1,21 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('faq-auto-review');
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
   try {
     const { pergunta, resposta, empresa } = await req.json();
-
     if (!pergunta || !resposta || !empresa) {
-      return new Response(
-        JSON.stringify({ error: "pergunta, resposta e empresa são obrigatórios" }),
-        { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ error: "pergunta, resposta e empresa são obrigatórios" }), { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
-    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-    const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createServiceClient();
 
     // Fetch approved FAQs + knowledge sections in parallel
     const [faqsRes, sectionsRes] = await Promise.all([
@@ -70,7 +64,7 @@ ${sectionContext ? `## Base de Conhecimento\n${sectionContext}` : ""}
 Pergunta: ${pergunta}
 Resposta: ${resposta}`;
 
-    let result: any = { auto_approve: false, confianca: 0, justificativa: "Erro na análise" };
+    let result: Record<string, unknown> = { auto_approve: false, confianca: 0, justificativa: "Erro na análise" };
 
     const aiResult = await callAI({
       system: systemPrompt,
@@ -89,23 +83,23 @@ Resposta: ${resposta}`;
           result = JSON.parse(jsonMatch[0]);
         }
       } catch {
-        console.error("Could not parse AI response:", aiResult.content);
+        log.error("Could not parse AI response", { content: aiResult.content });
       }
     }
 
     // Enforce threshold
-    const autoApprove = result.auto_approve === true && (result.confianca ?? 0) >= 85;
+    const autoApprove = result.auto_approve === true && ((result.confianca as number) ?? 0) >= 85;
 
     return new Response(
       JSON.stringify({
         auto_approve: autoApprove,
-        confianca: result.confianca ?? 0,
-        justificativa: result.justificativa ?? "",
+        confianca: (result.confianca as number) ?? 0,
+        justificativa: (result.justificativa as string) ?? "",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("faq-auto-review error:", err);
+    log.error("Error", { error: String(err) });
     return new Response(
       JSON.stringify({ auto_approve: false, confianca: 0, justificativa: "Erro interno" }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }

@@ -1,10 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
-// SDR Response Generator — generates + sanitizes personalized AI response
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('sdr-response-generator');
 const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
@@ -90,7 +90,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
     const body = await req.json();
     const { intent, confidence, temperatura, sentimento, acao_recomendada, framework_updates,
       mensagem_normalizada, empresa, canal, contato, classificacao, conversation_state,
@@ -188,7 +188,7 @@ Responda APENAS com o texto da mensagem, sem prefixos.`;
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('[sdr-response-generator] Error:', error);
+    log.error('Error', { error: String(error) });
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient, envConfig } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('amelia-mass-action');
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -13,7 +15,7 @@ serve(async (req) => {
     const { jobId, action } = body;
     if (!jobId) throw new Error('jobId is required');
 
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     // ========== EXECUTE BRANCH ==========
     if (action === 'execute') {
@@ -32,8 +34,8 @@ serve(async (req) => {
 
       const canal = job.canal || 'WHATSAPP';
       let sent = 0, errors = 0;
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabaseUrl = envConfig.SUPABASE_URL;
+      const serviceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
 
       for (const msg of approved) {
         try {
@@ -44,13 +46,13 @@ serve(async (req) => {
           if (canal === 'WHATSAPP') {
             if (!contact?.telefone) { errors++; continue; }
             const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ to: contact.telefone, message: msg.message, deal_id: msg.deal_id, contact_id: contact?.id }) });
-            if (resp.ok) sent++; else { console.error('whatsapp-send error:', await resp.text()); errors++; }
+            if (resp.ok) sent++; else { log.error('whatsapp-send error', { error: await resp.text() }); errors++; }
           } else if (canal === 'EMAIL') {
             if (!contact?.email) { errors++; continue; }
             const resp = await fetch(`${supabaseUrl}/functions/v1/email-send`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ to: contact.email, subject: job.instrucao ? `Re: ${job.instrucao.substring(0, 50)}` : 'Mensagem importante', body: msg.message, deal_id: msg.deal_id, contact_id: contact?.id }) });
-            if (resp.ok) sent++; else { console.error('email-send error:', await resp.text()); errors++; }
+            if (resp.ok) sent++; else { log.error('email-send error', { error: await resp.text() }); errors++; }
           }
-        } catch (e) { console.error('Send error:', msg.deal_id, e); errors++; }
+        } catch (e) { log.error('Send error', { deal_id: msg.deal_id, error: String(e) }); errors++; }
       }
 
       await supabase.from('mass_action_jobs').update({ status: errors === approved.length ? 'FAILED' : 'DONE', processed: sent }).eq('id', jobId);
@@ -104,7 +106,7 @@ serve(async (req) => {
     await supabase.from('mass_action_jobs').update({ status: 'PREVIEW', messages_preview: messagesPreview, processed: messagesPreview.length }).eq('id', jobId);
     return new Response(JSON.stringify({ ok: true, count: messagesPreview.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (e) {
-    console.error('amelia-mass-action error:', e);
+    log.error('Error', { error: e instanceof Error ? e.message : 'Unknown error' });
     return new Response(JSON.stringify({ error: e instanceof Error ? e.message : 'Unknown error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

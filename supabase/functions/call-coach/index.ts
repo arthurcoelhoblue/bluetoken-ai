@@ -1,7 +1,9 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('call-coach');
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -9,7 +11,7 @@ Deno.serve(async (req) => {
 
   try {
     const { deal_id, transcription_chunk, call_context } = await req.json();
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     let dealContext = '';
     if (deal_id) {
@@ -65,7 +67,7 @@ Retorne APENAS o JSON, sem markdown.`;
 
     return new Response(JSON.stringify(coaching), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
-    console.error('call-coach error:', err);
+    log.error('Error', { error: String(err) });
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

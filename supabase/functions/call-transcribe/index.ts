@@ -1,7 +1,9 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient, getOptionalEnv } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('call-transcribe');
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -11,8 +13,8 @@ Deno.serve(async (req) => {
     const { call_id } = await req.json();
     if (!call_id) throw new Error('call_id required');
 
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
-    const openaiKey = Deno.env.get('OPENAI_API_KEY');
+    const supabase = createServiceClient();
+    const openaiKey = getOptionalEnv('OPENAI_API_KEY');
     if (!openaiKey) throw new Error('OPENAI_API_KEY not configured');
 
     const { data: call, error: callErr } = await supabase.from('calls').select('id, recording_url, deal_id, contact_id, empresa, user_id, direcao, duracao_segundos, cs_customer_id').eq('id', call_id).single();
@@ -83,7 +85,7 @@ Deno.serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true, call_id, transcription_length: transcription.length, sentiment: analysis.sentiment, action_items_count: analysis.action_items?.length || 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (err) {
-    console.error('call-transcribe error:', err);
+    log.error('Error', { error: String(err) });
     return new Response(JSON.stringify({ error: String(err) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

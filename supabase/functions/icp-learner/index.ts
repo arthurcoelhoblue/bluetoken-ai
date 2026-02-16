@@ -1,16 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('icp-learner');
 const corsHeaders = getWebhookCorsHeaders();
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     const { data: wonDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'GANHO').order('fechado_em', { ascending: false }).limit(200);
     const { data: lostDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, motivo_perda, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'PERDIDO').order('fechado_em', { ascending: false }).limit(200);
@@ -41,7 +42,7 @@ serve(async (req) => {
 
     return new Response(JSON.stringify({ success: true, patterns: analysisData, icpNarrative: icpNarrative.slice(0, 500) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('ICP learner error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : 'Erro interno' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro interno' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

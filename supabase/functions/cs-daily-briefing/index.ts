@@ -1,16 +1,17 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('cs-daily-briefing');
 const corsHeaders = getWebhookCorsHeaders();
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     const { data: csmRows } = await supabase.from('cs_customers').select('csm_id').eq('is_active', true).not('csm_id', 'is', null);
     const csmIds = [...new Set((csmRows ?? []).map((r: any) => r.csm_id))];
@@ -58,7 +59,7 @@ Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO'
 
     return new Response(JSON.stringify({ briefings }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[CS-Daily-Briefing] Erro:', error);
+    log.error('Erro', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

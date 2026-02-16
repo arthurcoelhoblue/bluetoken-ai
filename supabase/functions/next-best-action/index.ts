@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
+import { getCorsHeaders } from "../_shared/cors.ts";
 
-import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
+const log = createLogger('next-best-action');
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -16,9 +18,7 @@ serve(async (req) => {
       });
     }
 
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, serviceKey);
+    const supabase = createServiceClient();
 
     // Gather context in parallel
     const [
@@ -121,7 +121,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
         acoes = parsed.acoes || [];
         narrativa_dia = parsed.narrativa_dia || '';
       } catch {
-        console.error('[NBA] Failed to parse AI response');
+        log.error('Failed to parse AI response');
       }
     }
 
@@ -161,7 +161,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('[NBA] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : 'Unknown error' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

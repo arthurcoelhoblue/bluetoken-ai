@@ -1,5 +1,9 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { z } from 'https://esm.sh/zod@3.25.76'
+import { envConfig, createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
+
+const log = createLogger('admin-create-user');
 
 const createUserPayload = z.object({
   email: z.string().trim().email('Email inválido').max(255),
@@ -11,7 +15,7 @@ const createUserPayload = z.object({
   is_vendedor: z.boolean().optional(),
 })
 
-import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
+import { getCorsHeaders } from "../_shared/cors.ts";
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -20,39 +24,27 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!
-    const serviceRoleKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!
-
-    // Verify caller is ADMIN
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) {
       return new Response(JSON.stringify({ error: 'Não autorizado' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    const callerClient = createClient(supabaseUrl, anonKey, {
+    const callerClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     })
     const { data: { user: caller } } = await callerClient.auth.getUser()
     if (!caller) {
       return new Response(JSON.stringify({ error: 'Não autorizado' }), {
-        status: 401,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Check ADMIN role
-    const { data: hasAdmin } = await callerClient.rpc('has_role', {
-      _user_id: caller.id,
-      _role: 'ADMIN',
-    })
+    const { data: hasAdmin } = await callerClient.rpc('has_role', { _user_id: caller.id, _role: 'ADMIN' })
     if (!hasAdmin) {
       return new Response(JSON.stringify({ error: 'Acesso negado. Apenas ADMINs podem criar usuários.' }), {
-        status: 403,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
@@ -60,71 +52,46 @@ Deno.serve(async (req) => {
     const parsed = createUserPayload.safeParse(rawBody)
     if (!parsed.success) {
       return new Response(JSON.stringify({ error: parsed.error.errors[0]?.message || 'Dados inválidos' }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
     const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor } = parsed.data
-    const adminClient = createClient(supabaseUrl, serviceRoleKey)
+    const adminClient = createServiceClient()
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
-      email,
-      password,
-      email_confirm: true,
-      user_metadata: { nome },
+      email, password, email_confirm: true, user_metadata: { nome },
     })
 
     if (createError) {
-      console.error('Error creating user:', createError)
+      log.error('Error creating user', { error: createError.message })
       return new Response(JSON.stringify({ error: createError.message }), {
-        status: 400,
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       })
     }
 
-    // Update profile flags (gestor_id, is_vendedor)
     if (newUser.user && (gestor_id || is_vendedor)) {
       const profileUpdates: Record<string, unknown> = {}
       if (gestor_id) profileUpdates.gestor_id = gestor_id
       if (is_vendedor) profileUpdates.is_vendedor = true
-      const { error: profileError } = await adminClient
-        .from('profiles')
-        .update(profileUpdates)
-        .eq('id', newUser.user.id)
-      if (profileError) {
-        console.error('Error updating profile:', profileError)
-      }
+      const { error: profileError } = await adminClient.from('profiles').update(profileUpdates).eq('id', newUser.user.id)
+      if (profileError) log.error('Error updating profile', { error: profileError.message })
     }
 
-    // Assign access profile if provided
     if (access_profile_id && newUser.user) {
-      const { error: assignError } = await adminClient
-        .from('user_access_assignments')
-        .insert({
-          user_id: newUser.user.id,
-          access_profile_id,
-          empresa: empresa === 'all' ? null : empresa,
-          assigned_by: caller.id,
-        })
-
-      if (assignError) {
-        console.error('Error assigning profile:', assignError)
-        // User was created but assignment failed — not critical
-      }
+      const { error: assignError } = await adminClient.from('user_access_assignments').insert({
+        user_id: newUser.user.id, access_profile_id,
+        empresa: empresa === 'all' ? null : empresa, assigned_by: caller.id,
+      })
+      if (assignError) log.error('Error assigning profile', { error: assignError.message })
     }
 
-    return new Response(JSON.stringify({ 
-      success: true, 
-      user: { id: newUser.user?.id, email: newUser.user?.email } 
-    }), {
-      status: 200,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+    return new Response(JSON.stringify({ success: true, user: { id: newUser.user?.id, email: newUser.user?.email } }), {
+      status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (err) {
-    console.error('Unexpected error:', err)
+    log.error('Unexpected error', { error: err instanceof Error ? err.message : String(err) })
     return new Response(JSON.stringify({ error: 'Erro interno do servidor' }), {
-      status: 500,
-      headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
 })

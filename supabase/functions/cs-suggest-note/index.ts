@@ -1,24 +1,20 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('cs-suggest-note');
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
-
+    const supabase = createServiceClient();
     const { customer_id } = await req.json();
     if (!customer_id) {
-      return new Response(JSON.stringify({ error: 'customer_id obrigatório' }), {
-        status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(JSON.stringify({ error: 'customer_id obrigatório' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Fetch customer + context in parallel
@@ -31,9 +27,7 @@ serve(async (req) => {
 
     const customer = customerRes.data;
     if (!customer) {
-      return new Response(JSON.stringify({ error: 'Cliente não encontrado' }), {
-        status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
+      return new Response(JSON.stringify({ error: 'Cliente não encontrado' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const surveys = surveysRes.data ?? [];
@@ -42,16 +36,16 @@ serve(async (req) => {
 
     // Build context
     const contextParts: string[] = [];
-    contextParts.push(`Cliente: ${(customer.contact as any)?.nome || 'N/A'}, Health: ${customer.health_score} (${customer.health_status}), MRR: R$${customer.valor_mrr}, Churn: ${customer.risco_churn_pct}%`);
+    contextParts.push(`Cliente: ${(customer.contact as Record<string, unknown>)?.nome || 'N/A'}, Health: ${customer.health_score} (${customer.health_status}), MRR: R$${customer.valor_mrr}, Churn: ${customer.risco_churn_pct}%`);
     if (customer.notas_csm) contextParts.push(`Notas atuais do CSM: ${customer.notas_csm}`);
     if (surveys.length > 0) {
-      contextParts.push('Pesquisas recentes: ' + surveys.map((s: any) => `${s.tipo} nota=${s.nota ?? 'pendente'} ${s.feedback_texto ? `"${s.feedback_texto.slice(0, 100)}"` : ''}`).join(' | '));
+      contextParts.push('Pesquisas recentes: ' + surveys.map((s: Record<string, unknown>) => `${s.tipo} nota=${s.nota ?? 'pendente'} ${s.feedback_texto ? `"${(s.feedback_texto as string).slice(0, 100)}"` : ''}`).join(' | '));
     }
     if (incidents.length > 0) {
-      contextParts.push('Incidências recentes: ' + incidents.map((i: any) => `[${i.gravidade}/${i.status}] ${i.titulo}`).join(' | '));
+      contextParts.push('Incidências recentes: ' + incidents.map((i: Record<string, unknown>) => `[${i.gravidade}/${i.status}] ${i.titulo}`).join(' | '));
     }
     if (healthLog.length > 0) {
-      contextParts.push('Health log: ' + healthLog.map((h: any) => `Score ${h.score} (${h.status}) - ${h.motivo_mudanca || 'recalculado'}`).join(' | '));
+      contextParts.push('Health log: ' + healthLog.map((h: Record<string, unknown>) => `Score ${h.score} (${h.status}) - ${h.motivo_mudanca || 'recalculado'}`).join(' | '));
     }
 
     const prompt = `Baseado nos dados do cliente abaixo, sugira uma nota de acompanhamento em 2-3 frases que o CSM pode registrar. A nota deve ser prática, mencionar dados concretos e sugerir próximos passos.
@@ -78,7 +72,7 @@ Responda APENAS com a sugestão de nota, sem prefixos ou explicações.`;
     });
 
   } catch (error) {
-    console.error('[cs-suggest-note] Error:', error);
+    log.error('Error', { error: String(error) });
     return new Response(JSON.stringify({ error: String(error) }), {
       status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });

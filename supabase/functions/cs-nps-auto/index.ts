@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-
+import { createServiceClient, envConfig } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('cs-nps-auto');
 const corsHeaders = getWebhookCorsHeaders();
 
 serve(async (req) => {
@@ -11,10 +12,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabase = createClient(
-      Deno.env.get('SUPABASE_URL')!,
-      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!
-    );
+    const supabase = createServiceClient();
 
     const body = await req.json().catch(() => ({}));
     const tipo = body.tipo ?? 'NPS';
@@ -54,12 +52,12 @@ serve(async (req) => {
 
       if (contact.telefone) {
         try {
-          const whatsappUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-send`;
+          const whatsappUrl = `${envConfig.SUPABASE_URL}/functions/v1/whatsapp-send`;
           await fetch(whatsappUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({
               telefone: contact.telefone,
@@ -68,7 +66,7 @@ serve(async (req) => {
             }),
           });
         } catch (e) {
-          console.warn(`[CS-CSAT] Falha WhatsApp para ${customer.id}:`, e);
+          log.warn(`Falha WhatsApp para ${customer.id}`, { error: String(e) });
         }
       }
 
@@ -126,12 +124,12 @@ serve(async (req) => {
 
       if (contact.telefone) {
         try {
-          const whatsappUrl = `${Deno.env.get('SUPABASE_URL')}/functions/v1/whatsapp-send`;
+          const whatsappUrl = `${envConfig.SUPABASE_URL}/functions/v1/whatsapp-send`;
           await fetch(whatsappUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({
               telefone: contact.telefone,
@@ -140,7 +138,7 @@ serve(async (req) => {
             }),
           });
         } catch (e) {
-          console.warn(`[CS-NPS] Falha ao enviar WhatsApp para ${customer.id}:`, e);
+          log.warn(`Falha ao enviar WhatsApp para ${customer.id}`, { error: String(e) });
         }
       }
 
@@ -152,7 +150,7 @@ serve(async (req) => {
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (error) {
-    console.error('[CS-NPS-Auto] Erro:', error);
+    log.error('Erro', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
