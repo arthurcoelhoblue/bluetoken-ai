@@ -8,7 +8,7 @@
 |-------|-----------|--------|
 | 1A | RLS Batch 1 — tabelas criticas (contacts, deals, leads, pipelines) | ✅ DONE |
 | 1B | RLS Batch 2 — suporte + CS (~24 tabelas) | ✅ DONE |
-| 1C | RLS Batch 3 — config/logs | TODO |
+| 1C | RLS Batch 3 — config/logs | ✅ DONE |
 | 2A | Criar _shared/tenant.ts | TODO |
 | 2B | Refatorar 5 edge functions prioritarias | TODO |
 | 2C | Refatorar 5 edge functions restantes | TODO |
