@@ -66,6 +66,7 @@ const CSPesquisaMassaPage = lazy(() => import("./pages/cs/CSPesquisaMassaPage"))
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
 const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealthPage"));
+const WikiPage = lazy(() => import("./pages/WikiPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -166,6 +167,9 @@ const App = () => (
                 <Route path="/cs/pesquisas/massa" element={<ProtectedRoute><ErrorBoundary><CSPesquisaMassaPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/incidencias" element={<ProtectedRoute><ErrorBoundary><CSIncidenciasPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/playbooks" element={<ProtectedRoute><ErrorBoundary><CSPlaybooksPage /></ErrorBoundary></ProtectedRoute>} />
+
+                {/* Wiki */}
+                <Route path="/wiki" element={<ProtectedRoute><WikiPage /></ProtectedRoute>} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />

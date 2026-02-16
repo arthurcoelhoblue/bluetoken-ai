@@ -48,6 +48,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/cs/pesquisas/massa': 'Pesquisa em Massa',
   '/cs/incidencias': 'Incidências CS',
   '/cs/playbooks': 'Playbooks CS',
+  '/wiki': 'Wiki',
 };
 
 function getTitle(pathname: string): string {
