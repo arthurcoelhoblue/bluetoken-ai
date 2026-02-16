@@ -5,6 +5,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Navigate } from 'react-router-dom';
 import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
+import { CopilotFab } from '@/components/copilot/CopilotFab';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -43,6 +44,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
           </SidebarInset>
         </div>
         <ZadarmaPhoneWidget />
+        <CopilotFab />
       </SidebarProvider>
     </ThemeProvider>
   );
