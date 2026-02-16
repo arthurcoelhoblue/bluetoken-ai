@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { z } from "https://esm.sh/zod@3.25.76";
 
 // ========================================
 // SGT Webhook - Patches 2, 3 e 4
@@ -805,39 +806,72 @@ function normalizePayloadFormat(payload: Record<string, unknown>): Record<string
   return payload;
 }
 
+// ========================================
+// SCHEMA ZOD - Validação estruturada do payload SGT
+// ========================================
+const sgtDadosLeadSchema = z.object({
+  nome: z.string().max(200).optional(),
+  email: z.string().email('email inválido').max(255),
+  telefone: z.string().max(20).optional(),
+  utm_source: z.string().max(500).optional(),
+  utm_medium: z.string().max(500).optional(),
+  utm_campaign: z.string().max(500).optional(),
+  utm_term: z.string().max(500).optional(),
+  utm_content: z.string().max(500).optional(),
+  score: z.number().optional(),
+  stage: z.string().optional(),
+  pipedrive_deal_id: z.string().optional(),
+  url_pipedrive: z.string().optional(),
+  organizacao: z.string().max(300).optional(),
+  origem_tipo: z.enum(['INBOUND', 'OUTBOUND', 'REFERRAL', 'PARTNER']).optional(),
+  lead_pago: z.boolean().optional(),
+  data_criacao: z.string().optional(),
+  data_mql: z.string().optional(),
+  data_levantou_mao: z.string().optional(),
+  data_reuniao: z.string().optional(),
+  data_venda: z.string().optional(),
+  valor_venda: z.number().optional(),
+  tipo_lead: z.enum(['INVESTIDOR', 'CAPTADOR']).optional(),
+}).passthrough();
+
+const sgtPayloadSchema = z.object({
+  lead_id: z.string().min(1, 'lead_id é obrigatório'),
+  evento: z.enum(
+    ['LEAD_NOVO', 'ATUALIZACAO', 'CARRINHO_ABANDONADO', 'MQL', 'SCORE_ATUALIZADO', 'CLIQUE_OFERTA', 'FUNIL_ATUALIZADO'],
+    { errorMap: () => ({ message: `evento inválido. Valores aceitos: ${EVENTOS_VALIDOS.join(', ')}` }) }
+  ),
+  empresa: z.enum(
+    ['TOKENIZA', 'BLUE'],
+    { errorMap: () => ({ message: `empresa inválida. Valores aceitos: ${EMPRESAS_VALIDAS.join(', ')}` }) }
+  ),
+  timestamp: z.string().min(1, 'timestamp é obrigatório'),
+  score_temperatura: z.number().optional(),
+  prioridade: z.enum(['URGENTE', 'QUENTE', 'MORNO', 'FRIO']).optional(),
+  dados_lead: sgtDadosLeadSchema,
+  dados_linkedin: z.record(z.unknown()).optional(),
+  dados_tokeniza: z.record(z.unknown()).optional(),
+  dados_blue: z.record(z.unknown()).optional(),
+  dados_mautic: z.record(z.unknown()).optional(),
+  dados_chatwoot: z.record(z.unknown()).optional(),
+  dados_notion: z.record(z.unknown()).optional(),
+  event_metadata: z.record(z.unknown()).optional(),
+}).passthrough();
+
 function validatePayload(payload: unknown): { valid: boolean; error?: string; normalized?: Record<string, unknown> } {
   if (!payload || typeof payload !== 'object') {
     return { valid: false, error: 'Payload inválido' };
   }
 
-  const p = normalizePayloadFormat(payload as Record<string, unknown>);
+  const normalized = normalizePayloadFormat(payload as Record<string, unknown>);
+  const result = sgtPayloadSchema.safeParse(normalized);
 
-  if (!p.lead_id || typeof p.lead_id !== 'string') {
-    return { valid: false, error: 'lead_id é obrigatório' };
+  if (!result.success) {
+    const firstError = result.error.issues[0];
+    const path = firstError.path.length > 0 ? firstError.path.join('.') + ': ' : '';
+    return { valid: false, error: `${path}${firstError.message}` };
   }
 
-  if (!p.evento || !EVENTOS_VALIDOS.includes(p.evento as SGTEventoTipo)) {
-    return { valid: false, error: `evento inválido. Valores aceitos: ${EVENTOS_VALIDOS.join(', ')}` };
-  }
-
-  if (!p.empresa || !EMPRESAS_VALIDAS.includes(p.empresa as EmpresaTipo)) {
-    return { valid: false, error: `empresa inválida. Valores aceitos: ${EMPRESAS_VALIDAS.join(', ')}` };
-  }
-
-  if (!p.timestamp || typeof p.timestamp !== 'string') {
-    return { valid: false, error: 'timestamp é obrigatório' };
-  }
-
-  if (!p.dados_lead || typeof p.dados_lead !== 'object') {
-    return { valid: false, error: 'dados_lead é obrigatório (ou forneça nome/email/telefone no nível raiz)' };
-  }
-
-  const dadosLead = p.dados_lead as Record<string, unknown>;
-  if (!dadosLead.email || typeof dadosLead.email !== 'string') {
-    return { valid: false, error: 'email é obrigatório (dados_lead.email ou email)' };
-  }
-
-  return { valid: true, normalized: p };
+  return { valid: true, normalized: normalized };
 }
 
 function generateIdempotencyKey(payload: SGTPayload): string {
