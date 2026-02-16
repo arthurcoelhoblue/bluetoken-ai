@@ -44,7 +44,21 @@ export function NextBestActionCard() {
     }
   };
 
-  if (isError) return null;
+  if (isError) {
+    return (
+      <Card className="border-destructive/20">
+        <CardContent className="p-5 flex items-center justify-between">
+          <div className="flex items-center gap-3 text-muted-foreground">
+            <Sparkles className="h-4 w-4" />
+            <p className="text-sm">Não foi possível carregar sugestões</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={refresh}>
+            <RefreshCw className="h-3.5 w-3.5 mr-1" /> Tentar novamente
+          </Button>
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <Card className="border-primary/20 bg-gradient-to-br from-primary/5 to-transparent">
