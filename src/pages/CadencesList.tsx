@@ -366,7 +366,7 @@ function TriggersTab() {
           setSelStage('');
           setSelCadence('');
         },
-        onError: (e: any) => toast.error(e?.message || 'Erro ao criar trigger'),
+        onError: (e: unknown) => toast.error(e instanceof Error ? e.message : 'Erro ao criar trigger'),
       }
     );
   };

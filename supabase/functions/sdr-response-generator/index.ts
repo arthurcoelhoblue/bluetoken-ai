@@ -60,7 +60,6 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
   cleaned = cleaned.replace(/me fala:?\s*/gi, '');
   if (leadNome) {
     cleaned = cleaned.replace(new RegExp(`^${leadNome},?\\s*`, 'i'), '');
-    // Limit name to 1x per message
     const parts = cleaned.split(new RegExp(`(${leadNome})`, 'gi'));
     if (parts.length > 3) {
       let count = 0;
@@ -85,6 +84,24 @@ const CHANNEL_RULES: Record<string, string> = {
   WHATSAPP: 'Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem.',
   EMAIL: 'Mensagens ESTRUTURADAS. Tom consultivo. 3-4 parágrafos. Retomar contexto no início.',
 };
+
+interface HistoricoMsg {
+  direcao: string;
+  conteudo: string;
+}
+
+interface ProductRow {
+  nome: string;
+  descricao_curta: string;
+  preco_texto: string | null;
+  diferenciais: string | null;
+}
+
+interface PromptVersionRow {
+  id: string;
+  content: string;
+  ab_weight: number | null;
+}
 
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -112,19 +129,18 @@ serve(async (req) => {
     }
 
     // Generate response via AI if no pre-generated response
-    // Load product knowledge
     const { data: products } = await supabase.from('product_knowledge').select('nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
 
-    // Load active prompt version with A/B testing
     let systemPrompt = '';
     let selectedPromptId: string | null = promptVersionId || null;
     try {
       const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-response-generator').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
       if (pvList && pvList.length > 0) {
-        const totalWeight = pvList.reduce((sum: number, p: any) => sum + (p.ab_weight || 100), 0);
+        const rows = pvList as PromptVersionRow[];
+        const totalWeight = rows.reduce((sum: number, p) => sum + (p.ab_weight || 100), 0);
         let rand = Math.random() * totalWeight;
-        let selected = pvList[0];
-        for (const pv of pvList) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
+        let selected = rows[0];
+        for (const pv of rows) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
         systemPrompt = selected.content;
         selectedPromptId = selected.id;
       }
@@ -140,8 +156,10 @@ PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".
     }
 
     const contactName = contato?.nome || contato?.primeiro_nome || 'Lead';
-    const historicoText = (historico || []).slice(0, 8).map((m: any) => `[${m.direcao}] ${m.conteudo}`).join('\n');
-    const productsText = products?.map((p: any) => `${p.nome}: ${p.descricao_curta} (${p.preco_texto || 'consultar'})`).join('\n') || '';
+    const typedHistorico = (historico || []) as HistoricoMsg[];
+    const historicoText = typedHistorico.slice(0, 8).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n');
+    const typedProducts = (products || []) as ProductRow[];
+    const productsText = typedProducts.map((p) => `${p.nome}: ${p.descricao_curta} (${p.preco_texto || 'consultar'})`).join('\n') || '';
 
     const prompt = `CONTEXTO:
 Contato: ${contactName}

@@ -7,6 +7,30 @@ import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 const log = createLogger('cs-daily-briefing');
 const corsHeaders = getWebhookCorsHeaders();
 
+interface CSCustomerRow {
+  id: string;
+  health_score: number | null;
+  health_status: string | null;
+  valor_mrr: number | null;
+  empresa: string | null;
+  contacts: { nome: string } | null;
+}
+
+interface IncidentRow {
+  titulo: string;
+  gravidade: string;
+  status: string;
+  customer_id: string;
+}
+
+interface RenewalRow {
+  id: string;
+  proxima_renovacao: string | null;
+  valor_mrr: number | null;
+  health_status: string | null;
+  contacts: { nome: string } | null;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -14,7 +38,7 @@ serve(async (req) => {
     const supabase = createServiceClient();
 
     const { data: csmRows } = await supabase.from('cs_customers').select('csm_id').eq('is_active', true).not('csm_id', 'is', null);
-    const csmIds = [...new Set((csmRows ?? []).map((r: any) => r.csm_id))];
+    const csmIds = [...new Set((csmRows ?? []).map((r) => r.csm_id))];
     if (csmIds.length === 0) return new Response(JSON.stringify({ briefings: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     let briefings = 0;
@@ -26,20 +50,20 @@ serve(async (req) => {
         supabase.from('cs_customers').select('id, proxima_renovacao, valor_mrr, health_status, contacts(nome)').eq('csm_id', csmId).eq('is_active', true).gte('proxima_renovacao', new Date().toISOString()).lte('proxima_renovacao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()),
       ]);
 
-      const customers = customersRes.data ?? [];
-      const incidents = (incidentsRes.data ?? []).filter((i: any) => customers.some((c: any) => c.id === i.customer_id));
-      const renewals = renewalsRes.data ?? [];
+      const customers = (customersRes.data ?? []) as unknown as CSCustomerRow[];
+      const incidents = ((incidentsRes.data ?? []) as unknown as IncidentRow[]).filter((i) => customers.some((c) => c.id === i.customer_id));
+      const renewals = (renewalsRes.data ?? []) as unknown as RenewalRow[];
       if (customers.length === 0) continue;
 
       const healthDist: Record<string, number> = {};
       let totalMrr = 0;
-      customers.forEach((c: any) => { healthDist[c.health_status || 'N/A'] = (healthDist[c.health_status || 'N/A'] || 0) + 1; totalMrr += c.valor_mrr || 0; });
+      customers.forEach((c) => { healthDist[c.health_status || 'N/A'] = (healthDist[c.health_status || 'N/A'] || 0) + 1; totalMrr += c.valor_mrr || 0; });
 
       const contextText = `Portfólio: ${customers.length} clientes, MRR total R$ ${totalMrr.toLocaleString('pt-BR')}
 Distribuição Health: ${Object.entries(healthDist).map(([k, v]) => `${k}=${v}`).join(', ')}
-Incidências abertas: ${incidents.length} (${incidents.filter((i: any) => i.gravidade === 'ALTA' || i.gravidade === 'CRITICA').length} alta/crítica)
-Renovações próximas (30 dias): ${renewals.length} totalizando R$ ${renewals.reduce((s: number, r: any) => s + (r.valor_mrr || 0), 0).toLocaleString('pt-BR')}
-Clientes em risco: ${customers.filter((c: any) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c: any) => (c as any).contacts?.nome || 'N/A').join(', ') || 'Nenhum'}`;
+Incidências abertas: ${incidents.length} (${incidents.filter((i) => i.gravidade === 'ALTA' || i.gravidade === 'CRITICA').length} alta/crítica)
+Renovações próximas (30 dias): ${renewals.length} totalizando R$ ${renewals.reduce((s: number, r) => s + (r.valor_mrr || 0), 0).toLocaleString('pt-BR')}
+Clientes em risco: ${customers.filter((c) => c.health_status === 'EM_RISCO' || c.health_status === 'CRITICO').map((c) => c.contacts?.nome || 'N/A').join(', ') || 'Nenhum'}`;
 
       const aiResult = await callAI({
         system: 'Você é a Amélia, assistente de Customer Success. Gere um briefing diário conciso em português brasileiro com: 1) Resumo do portfólio, 2) Alertas urgentes, 3) Top 3 ações recomendadas para hoje. Use bullets, seja direta e acionável. Máximo 300 palavras.',

@@ -13,6 +13,18 @@ interface DealFeatures {
   icp_score: number | null; temperatura: string | null; canal_principal: string | null;
 }
 
+interface ActivityRow {
+  deal_id: string;
+  created_at: string;
+}
+
+interface ClassificationRow {
+  lead_id: string;
+  score_interno: number | null;
+  temperatura: string | null;
+  icp: string | null;
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -20,9 +32,9 @@ serve(async (req) => {
   try {
     const supabase = createServiceClient();
 
-    let body: any = {};
+    let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* cron */ }
-    const targetEmpresa = body.empresa || null;
+    const targetEmpresa = (body.empresa as string) || null;
 
     const [openDealsRes, csCustomersRes, wonDealsRes, lostDealsRes] = await Promise.all([
       (() => { let q = supabase.from('deals').select('id, titulo, valor, score_probabilidade, pipeline_id, stage_id, created_at, updated_at, contact_id, lead_id, pipeline_empresa').eq('status', 'ABERTO'); if (targetEmpresa) q = q.eq('pipeline_empresa', targetEmpresa); return q.limit(500); })(),
@@ -43,22 +55,22 @@ serve(async (req) => {
       dealIds.length > 0 ? supabase.from('deal_activities').select('deal_id, created_at').in('deal_id', dealIds.slice(0, 100)) : { data: [] },
     ]);
 
-    const activitiesByDeal: Record<string, any[]> = {};
-    for (const act of (activitiesRes.data || [])) {
+    const activitiesByDeal: Record<string, ActivityRow[]> = {};
+    for (const act of ((activitiesRes.data || []) as ActivityRow[])) {
       if (!activitiesByDeal[act.deal_id]) activitiesByDeal[act.deal_id] = [];
       activitiesByDeal[act.deal_id].push(act);
     }
 
-    const classMap: Record<string, any> = {};
+    const classMap: Record<string, ClassificationRow> = {};
     if (leadIds.length > 0) {
       const { data: classifications } = await supabase.from('lead_classifications').select('lead_id, score_interno, temperatura, icp').in('lead_id', leadIds.slice(0, 100));
-      for (const c of (classifications || [])) classMap[c.lead_id] = c;
+      for (const c of ((classifications || []) as ClassificationRow[])) classMap[c.lead_id] = c;
     }
 
     const now = Date.now();
     const dealFeatures: DealFeatures[] = openDeals.map(deal => {
       const activities = activitiesByDeal[deal.id] || [];
-      const lastActivity = activities.sort((a: any, b: any) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
+      const lastActivity = [...activities].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())[0];
       const classification = deal.lead_id ? classMap[deal.lead_id] : null;
       return {
         deal_id: deal.id, titulo: deal.titulo || '', valor: deal.valor || 0,
@@ -76,14 +88,14 @@ serve(async (req) => {
     let mrrTotal = 0, mrrRetained = 0;
     for (const cust of csCustomers) { const mrr = cust.valor_mrr || 0; mrrTotal += mrr; mrrRetained += mrr * (1 - (cust.risco_churn_pct || 5) / 100); }
 
-    const closeTimes = wonDeals.filter((d: any) => d.data_ganho && d.created_at).map((d: any) => (new Date(d.data_ganho).getTime() - new Date(d.created_at).getTime()) / 86400000);
+    const closeTimes = wonDeals.filter((d) => d.data_ganho && d.created_at).map((d) => (new Date(d.data_ganho).getTime() - new Date(d.created_at).getTime()) / 86400000);
     const avgCloseTime = closeTimes.length > 0 ? closeTimes.reduce((a: number, b: number) => a + b, 0) / closeTimes.length : 45;
-    const avgDealValue = wonDeals.length > 0 ? wonDeals.reduce((s: number, d: any) => s + (d.valor || 0), 0) / wonDeals.length : 0;
+    const avgDealValue = wonDeals.length > 0 ? wonDeals.reduce((s: number, d) => s + (d.valor || 0), 0) / wonDeals.length : 0;
     const avgWinRate = wonDeals.length > 0 ? wonDeals.length / (wonDeals.length + lostDeals.length) : 0.2;
     const pipelineVelocity = avgCloseTime > 0 ? (openDeals.length * avgDealValue * avgWinRate) / avgCloseTime : 0;
 
     // AI Narrative
-    let aiNarrative: any = null;
+    let aiNarrative: Record<string, unknown> | null = null;
     if (dealFeatures.length > 0) {
       const topDeals = dealFeatures.sort((a, b) => b.valor - a.valor).slice(0, 15);
       const wonPattern = `${wonDeals.length} deals ganhos nos últimos 180 dias, valor médio R$${Math.round(avgDealValue)}, tempo médio ${Math.round(avgCloseTime)} dias. Win rate: ${Math.round(avgWinRate * 100)}%.`;
@@ -114,8 +126,8 @@ serve(async (req) => {
       forecast_30d: forecast30d, forecast_90d: forecast90d, ai_narrative: aiNarrative,
     };
 
-    await supabase.from('system_settings').upsert({ key: 'revenue_forecast', value: result, updated_at: new Date().toISOString() } as any, { onConflict: 'key' });
-    await supabase.from('revenue_forecast_log').insert({ empresa: targetEmpresa || 'ALL', forecast_date: new Date().toISOString().split('T')[0], horizonte_dias: 90, pessimista: forecast90d.pessimista, realista: forecast90d.realista, otimista: forecast90d.otimista, detalhes: result, features: { deal_features: dealFeatures.slice(0, 20), ai_narrative: aiNarrative } } as any);
+    await supabase.from('system_settings').upsert({ key: 'revenue_forecast', value: result, updated_at: new Date().toISOString() } as Record<string, unknown>, { onConflict: 'key' });
+    await supabase.from('revenue_forecast_log').insert({ empresa: targetEmpresa || 'ALL', forecast_date: new Date().toISOString().split('T')[0], horizonte_dias: 90, pessimista: forecast90d.pessimista, realista: forecast90d.realista, otimista: forecast90d.otimista, detalhes: result, features: { deal_features: dealFeatures.slice(0, 20), ai_narrative: aiNarrative } } as Record<string, unknown>);
 
     return new Response(JSON.stringify({ success: true, ...result }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {

@@ -51,6 +51,35 @@ const statusVariant = (s: MassActionJobStatus) => {
   return 'outline' as const;
 };
 
+interface DealWithRelations {
+  id: string;
+  titulo: string;
+  valor: number | null;
+  temperatura: string | null;
+  status: string;
+  stage_id: string | null;
+  pipeline_id: string | null;
+  owner_id: string | null;
+  contact_id: string | null;
+  score_probabilidade: number | null;
+  origem: string | null;
+  tags: string[] | null;
+  created_at: string;
+  contacts: { id: string; nome: string; email: string | null; telefone: string | null } | null;
+  pipeline_stages: { id: string; nome: string; cor: string | null; is_won: boolean; is_lost: boolean } | null;
+  owner: { id: string; nome: string | null; email: string; avatar_url: string | null } | null;
+}
+
+interface PipelineItem {
+  id: string;
+  nome: string;
+}
+
+interface CadenceItem {
+  id: string;
+  nome: string;
+}
+
 /** Fetch all open deals for a given empresa (across all pipelines) */
 function useAllOpenDeals(empresa: string | undefined) {
   return useQuery({
@@ -62,13 +91,12 @@ function useAllOpenDeals(empresa: string | undefined) {
         .select(`
           *,
           contacts:contact_id(id, nome, email, telefone),
-          pipeline_stages:stage_id(id, nome, cor, is_won, is_lost),
+          pipeline_stages:stage_id!deals_stage_id_fkey(id, nome, cor, is_won, is_lost),
           owner:owner_id(id, nome, email, avatar_url)
         `)
         .eq('status', 'ABERTO');
 
       if (empresa) {
-        // Filter by pipeline's empresa via a sub-query on pipelines
         const { data: pipIds } = await supabase
           .from('pipelines')
           .select('id')
@@ -84,7 +112,7 @@ function useAllOpenDeals(empresa: string | undefined) {
       query = query.order('created_at', { ascending: false });
       const { data, error } = await query;
       if (error) throw error;
-      return (data ?? []) as any[];
+      return (data ?? []) as unknown as DealWithRelations[];
     },
   });
 }
@@ -146,8 +174,8 @@ export default function AmeliaMassActionPage() {
     const filteredStages = filterPipeline === 'ALL'
       ? Array.from(stages.entries())
       : deals
-          .filter((d: any) => d.pipeline_id === filterPipeline)
-          .reduce((acc: Map<string, string>, d: any) => {
+          .filter((d) => d.pipeline_id === filterPipeline)
+          .reduce((acc: Map<string, string>, d) => {
             if (d.pipeline_stages?.id) acc.set(d.pipeline_stages.id, d.pipeline_stages.nome);
             return acc;
           }, new Map<string, string>())
@@ -194,20 +222,20 @@ export default function AmeliaMassActionPage() {
   const filteredDeals = useMemo(() => {
     let d = deals;
 
-    if (filterPipeline !== 'ALL') d = d.filter((deal: any) => deal.pipeline_id === filterPipeline);
-    if (filterStage !== 'ALL') d = d.filter((deal: any) => deal.stage_id === filterStage);
-    if (filterTemperatura !== 'ALL') d = d.filter((deal: any) => deal.temperatura === filterTemperatura);
-    if (filterOwner !== 'ALL') d = d.filter((deal: any) => deal.owner_id === filterOwner);
-    if (filterTag !== 'ALL') d = d.filter((deal: any) => deal.tags && Array.isArray(deal.tags) && deal.tags.includes(filterTag));
-    if (filterOrigem !== 'ALL') d = d.filter((deal: any) => deal.origem === filterOrigem);
+    if (filterPipeline !== 'ALL') d = d.filter((deal) => deal.pipeline_id === filterPipeline);
+    if (filterStage !== 'ALL') d = d.filter((deal) => deal.stage_id === filterStage);
+    if (filterTemperatura !== 'ALL') d = d.filter((deal) => deal.temperatura === filterTemperatura);
+    if (filterOwner !== 'ALL') d = d.filter((deal) => deal.owner_id === filterOwner);
+    if (filterTag !== 'ALL') d = d.filter((deal) => deal.tags && Array.isArray(deal.tags) && deal.tags.includes(filterTag));
+    if (filterOrigem !== 'ALL') d = d.filter((deal) => deal.origem === filterOrigem);
 
     if (filterValorMin) {
       const min = parseFloat(filterValorMin);
-      if (!isNaN(min)) d = d.filter((deal: any) => (deal.valor ?? 0) >= min);
+      if (!isNaN(min)) d = d.filter((deal) => (deal.valor ?? 0) >= min);
     }
     if (filterValorMax) {
       const max = parseFloat(filterValorMax);
-      if (!isNaN(max)) d = d.filter((deal: any) => (deal.valor ?? 0) <= max);
+      if (!isNaN(max)) d = d.filter((deal) => (deal.valor ?? 0) <= max);
     }
 
     if (filterPeriodo !== 'ALL') {
@@ -215,19 +243,19 @@ export default function AmeliaMassActionPage() {
       const days = daysMap[filterPeriodo];
       if (days) {
         const cutoff = subDays(new Date(), days);
-        d = d.filter((deal: any) => isAfter(new Date(deal.created_at), cutoff));
+        d = d.filter((deal) => isAfter(new Date(deal.created_at), cutoff));
       }
     }
 
     if (filterScore !== 'ALL') {
-      if (filterScore === 'HIGH') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) >= 70);
-      else if (filterScore === 'MED') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) >= 40 && (deal.score_probabilidade ?? 0) < 70);
-      else if (filterScore === 'LOW') d = d.filter((deal: any) => (deal.score_probabilidade ?? 0) < 40);
+      if (filterScore === 'HIGH') d = d.filter((deal) => (deal.score_probabilidade ?? 0) >= 70);
+      else if (filterScore === 'MED') d = d.filter((deal) => (deal.score_probabilidade ?? 0) >= 40 && (deal.score_probabilidade ?? 0) < 70);
+      else if (filterScore === 'LOW') d = d.filter((deal) => (deal.score_probabilidade ?? 0) < 40);
     }
 
     if (search) {
       const s = search.toLowerCase();
-      d = d.filter((deal: any) =>
+      d = d.filter((deal) =>
         deal.titulo?.toLowerCase().includes(s) ||
         deal.contacts?.nome?.toLowerCase().includes(s) ||
         deal.contacts?.email?.toLowerCase().includes(s)
@@ -247,10 +275,10 @@ export default function AmeliaMassActionPage() {
 
   const toggleAll = () => {
     if (selected.size === filteredDeals.length) setSelected(new Set());
-    else setSelected(new Set(filteredDeals.map((d: any) => d.id)));
+    else setSelected(new Set(filteredDeals.map((d) => d.id)));
   };
 
-  const selectedValue = filteredDeals.filter((d: any) => selected.has(d.id)).reduce((s: number, d: any) => s + (d.valor || 0), 0);
+  const selectedValue = filteredDeals.filter((d) => selected.has(d.id)).reduce((s: number, d) => s + (d.valor || 0), 0);
 
   const handleCreate = async () => {
     if (!user?.id || !empresa) return;
@@ -422,7 +450,7 @@ export default function AmeliaMassActionPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos Pipelines</SelectItem>
-                  {pipelines.map((p: any) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
+                  {pipelines.map((p: PipelineItem) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filterStage} onValueChange={setFilterStage}>
@@ -591,7 +619,7 @@ export default function AmeliaMassActionPage() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                    filteredDeals.slice(0, 100).map((d: any) => (
+                    filteredDeals.slice(0, 100).map((d) => (
                       <TableRow key={d.id} className={selected.has(d.id) ? 'bg-primary/5' : ''}>
                         <TableCell>
                           <Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleSelect(d.id)} />
@@ -681,7 +709,7 @@ export default function AmeliaMassActionPage() {
                     <SelectValue placeholder="Selecionar cadência..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {cadences.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                    {cadences.map((c: CadenceItem) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </TabsContent>

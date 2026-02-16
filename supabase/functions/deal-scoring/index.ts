@@ -6,6 +6,29 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const log = createLogger('deal-scoring');
 
+interface DealRow {
+  id: string;
+  titulo: string;
+  valor: number | null;
+  temperatura: string | null;
+  status: string;
+  stage_id: string | null;
+  pipeline_id: string;
+  owner_id: string | null;
+  contact_id: string | null;
+  score_probabilidade: number | null;
+  updated_at: string;
+  created_at: string;
+  pipeline_stages: { id: string; nome: string; posicao: number; pipeline_id: string } | null;
+  contacts: { id: string; nome: string; legacy_lead_id: string | null } | null;
+}
+
+interface StageRow {
+  id: string;
+  posicao: number;
+  pipeline_id: string;
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -13,9 +36,9 @@ serve(async (req) => {
   try {
     const supabase = createServiceClient();
 
-    let body: any = {};
+    let body: Record<string, unknown> = {};
     try { body = await req.json(); } catch { /* empty body = batch mode */ }
-    const targetDealId = body?.deal_id;
+    const targetDealId = (body?.deal_id as string) || null;
 
     // Fetch deals to score
     let query = supabase.from('deals').select(`
@@ -34,13 +57,14 @@ serve(async (req) => {
       return new Response(JSON.stringify({ scored: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const pipelineIds = [...new Set(deals.map((d: any) => d.pipeline_id))];
+    const typedDeals = deals as unknown as DealRow[];
+    const pipelineIds = [...new Set(typedDeals.map((d) => d.pipeline_id))];
     const [stagesRes] = await Promise.all([
       supabase.from('pipeline_stages').select('id, posicao, pipeline_id').in('pipeline_id', pipelineIds).order('posicao'),
     ]);
 
-    const stagesByPipeline: Record<string, any[]> = {};
-    for (const s of stagesRes.data ?? []) {
+    const stagesByPipeline: Record<string, StageRow[]> = {};
+    for (const s of (stagesRes.data ?? []) as StageRow[]) {
       if (!stagesByPipeline[s.pipeline_id]) stagesByPipeline[s.pipeline_id] = [];
       stagesByPipeline[s.pipeline_id].push(s);
     }
@@ -68,16 +92,16 @@ serve(async (req) => {
       for (const [sid, times] of Object.entries(groups)) stageAvgTime[sid] = times.reduce((a, b) => a + b, 0) / times.length;
     }
 
-    const results: any[] = [];
+    const results: Array<{ deal_id: string; score?: number; proxima_acao?: string | null; error?: string }> = [];
 
-    for (const deal of deals as any[]) {
+    for (const deal of typedDeals) {
       try {
         const stages = stagesByPipeline[deal.pipeline_id] || [];
         const totalStages = stages.length;
-        const stagePos = (deal.pipeline_stages as any)?.posicao ?? 1;
+        const stagePos = deal.pipeline_stages?.posicao ?? 1;
         const stageProgress = totalStages > 1 ? ((stagePos - 1) / (totalStages - 1)) * 100 : 50;
         const daysInStage = (Date.now() - new Date(deal.updated_at).getTime()) / 86400000;
-        const avgMs = stageAvgTime[deal.stage_id];
+        const avgMs = deal.stage_id ? stageAvgTime[deal.stage_id] : undefined;
         const avgDays = avgMs ? avgMs / 86400000 : 14;
         let tempoScore = 100;
         if (avgDays > 0) tempoScore = daysInStage > avgDays * 2 ? 0 : Math.max(0, 100 - (daysInStage / avgDays) * 50);
@@ -97,7 +121,7 @@ serve(async (req) => {
         else if (temp === 'MORNO') temperaturaScore = 60;
         else if (temp === 'FRIO') temperaturaScore = 20;
 
-        const legacyLeadId = (deal.contacts as any)?.legacy_lead_id;
+        const legacyLeadId = deal.contacts?.legacy_lead_id;
         if (legacyLeadId) {
           const { data: classif } = await supabase.from('lead_classifications').select('icp').eq('lead_id', legacyLeadId).order('created_at', { ascending: false }).limit(1);
           if (classif?.[0]?.icp === 'ICP_A') temperaturaScore = Math.min(100, temperaturaScore + 20);
@@ -137,7 +161,7 @@ serve(async (req) => {
         if (targetDealId || finalScore < 50) {
           const aiResult = await callAI({
             system: 'Você sugere a próxima ação para um vendedor. Responda com UMA frase curta e acionável em português. Sem markdown.',
-            prompt: `Deal "${deal.titulo}" (R$ ${deal.valor || 0}). Stage: ${(deal.pipeline_stages as any)?.nome}. ${Math.round(daysInStage)} dias na stage (média ${Math.round(avgDays)}d). Temperatura: ${temp || 'N/A'}. Engajamento 14d: ${activities?.length || 0} atividades. Score: ${finalScore}/100. Dimensões: ${JSON.stringify(dimensoes)}. Qual a próxima ação mais importante?`,
+            prompt: `Deal "${deal.titulo}" (R$ ${deal.valor || 0}). Stage: ${deal.pipeline_stages?.nome}. ${Math.round(daysInStage)} dias na stage (média ${Math.round(avgDays)}d). Temperatura: ${temp || 'N/A'}. Engajamento 14d: ${activities?.length || 0} atividades. Score: ${finalScore}/100. Dimensões: ${JSON.stringify(dimensoes)}. Qual a próxima ação mais importante?`,
             functionName: 'deal-scoring',
             maxTokens: 100,
             supabase,
@@ -148,7 +172,7 @@ serve(async (req) => {
         await supabase.from('deals').update({
           score_probabilidade: finalScore, scoring_dimensoes: dimensoes,
           proxima_acao_sugerida: proximaAcao, scoring_updated_at: new Date().toISOString(),
-        } as any).eq('id', deal.id);
+        } as Record<string, unknown>).eq('id', deal.id);
 
         results.push({ deal_id: deal.id, score: finalScore, proxima_acao: proximaAcao });
       } catch (dealErr) {

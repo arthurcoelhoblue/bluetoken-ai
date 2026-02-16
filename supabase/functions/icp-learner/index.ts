@@ -7,6 +7,35 @@ import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 const log = createLogger('icp-learner');
 const corsHeaders = getWebhookCorsHeaders();
 
+interface DealWithContact {
+  id: string;
+  valor: number | null;
+  titulo: string;
+  canal_origem: string | null;
+  temperatura: string | null;
+  motivo_perda?: string | null;
+  contact_id: string | null;
+  contacts: {
+    linkedin_cargo: string | null;
+    linkedin_empresa: string | null;
+    linkedin_setor: string | null;
+    canal_origem: string | null;
+    tags: string[] | null;
+    tipo: string | null;
+    organization_id: string | null;
+    organizations: { nome: string; setor: string | null; porte: string | null } | null;
+  };
+}
+
+interface PatternResult {
+  topSectors: Array<{ name: string; count: number }>;
+  topRoles: Array<{ name: string; count: number }>;
+  topChannels: Array<{ name: string; count: number }>;
+  topSizes: Array<{ name: string; count: number }>;
+  topLossReasons: Array<{ name: string; count: number }>;
+  avgValue: number;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
@@ -16,8 +45,8 @@ serve(async (req) => {
     const { data: wonDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'GANHO').order('fechado_em', { ascending: false }).limit(200);
     const { data: lostDeals } = await supabase.from('deals').select(`id, valor, titulo, canal_origem, temperatura, motivo_perda, contact_id, contacts!inner(linkedin_cargo, linkedin_empresa, linkedin_setor, canal_origem, tags, tipo, organization_id, organizations(nome, setor, porte))`).eq('status', 'PERDIDO').order('fechado_em', { ascending: false }).limit(200);
 
-    const won = wonDeals || [];
-    const lost = lostDeals || [];
+    const won = (wonDeals || []) as unknown as DealWithContact[];
+    const lost = (lostDeals || []) as unknown as DealWithContact[];
     const patterns = analyzePatterns(won);
     const patternsLost = analyzePatterns(lost);
     const analysisData = { won: patterns, lost: patternsLost, total_won: won.length, total_lost: lost.length, win_rate: won.length + lost.length > 0 ? (won.length / (won.length + lost.length)) * 100 : 0 };
@@ -47,7 +76,7 @@ serve(async (req) => {
   }
 });
 
-function analyzePatterns(deals: any[]) {
+function analyzePatterns(deals: DealWithContact[]): PatternResult {
   const sectors: Record<string, number> = {};
   const roles: Record<string, number> = {};
   const channels: Record<string, number> = {};
