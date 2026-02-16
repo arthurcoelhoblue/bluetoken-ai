@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 
 // ========================================
@@ -8,15 +8,17 @@ import { callAI } from "../_shared/ai-provider.ts";
 // ========================================
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
+const log = createLogger('sdr-intent-classifier');
 
 // ========================================
 // TYPES
 // ========================================
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
-type ICPTipo = string;
 type LeadIntentTipo = 'INTERESSE_COMPRA' | 'INTERESSE_IR' | 'DUVIDA_PRODUTO' | 'DUVIDA_PRECO' | 'DUVIDA_TECNICA' | 'SOLICITACAO_CONTATO' | 'AGENDAMENTO_REUNIAO' | 'RECLAMACAO' | 'OPT_OUT' | 'OBJECAO_PRECO' | 'OBJECAO_RISCO' | 'SEM_INTERESSE' | 'NAO_ENTENDI' | 'CUMPRIMENTO' | 'AGRADECIMENTO' | 'FORA_CONTEXTO' | 'MANUAL_MODE' | 'OUTRO';
 type SdrAcaoTipo = 'PAUSAR_CADENCIA' | 'CANCELAR_CADENCIA' | 'RETOMAR_CADENCIA' | 'AJUSTAR_TEMPERATURA' | 'CRIAR_TAREFA_CLOSER' | 'MARCAR_OPT_OUT' | 'NENHUMA' | 'ESCALAR_HUMANO' | 'ENVIAR_RESPOSTA_AUTOMATICA' | 'DESQUALIFICAR_LEAD';
 type EstadoFunil = 'SAUDACAO' | 'DIAGNOSTICO' | 'QUALIFICACAO' | 'OBJECOES' | 'FECHAMENTO' | 'POS_VENDA';
@@ -30,6 +32,62 @@ interface FrameworkData {
   gpct?: { g?: string | null; p?: string | null; c?: string | null; t?: string | null };
   bant?: { b?: string | null; a?: string | null; n?: string | null; t?: string | null };
   spin?: { s?: string | null; p?: string | null; i?: string | null; n?: string | null };
+}
+
+interface FrameworkSubKeys {
+  [key: string]: string | null;
+}
+
+interface UrgenciaResult {
+  detectado: boolean;
+  tipo: string;
+  frase_gatilho: string | null;
+  confianca: string;
+}
+
+interface ProximaPerguntaResult {
+  tipo: ProximaPerguntaTipo;
+  instrucao: string;
+  urgencia?: UrgenciaResult;
+}
+
+interface TokenizaOffer {
+  nome: string;
+  empresa: string;
+  rentabilidade: string;
+  duracaoDias: number;
+  diasRestantes: number;
+  contribuicaoMinima: number;
+  status?: string;
+}
+
+interface HistoricoMsg {
+  direcao: string;
+  conteudo: string;
+}
+
+interface ClassifierResponse {
+  intent: string;
+  confidence: number;
+  summary?: string;
+  resumo?: string;
+  acao?: SdrAcaoTipo;
+  acao_recomendada?: SdrAcaoTipo;
+  acao_detalhes?: Record<string, unknown>;
+  deve_responder?: boolean;
+  resposta_sugerida?: string;
+  sentimento?: string;
+  novo_estado_funil?: string;
+  frameworks_atualizados?: Record<string, unknown>;
+  disc_estimado?: string | null;
+  departamento_destino?: string | null;
+  model?: string;
+  provider?: string;
+  classification_upgrade?: Record<string, unknown>;
+  proxima_pergunta?: ProximaPerguntaResult;
+  urgencia_detectada?: UrgenciaResult;
+  perfil_investidor_inferido?: PerfilInvestidor;
+  cross_company?: { detected: boolean; targetCompany: EmpresaTipo | null; reason: string };
 }
 
 // ========================================
@@ -103,19 +161,20 @@ function inferirPerfilInvestidor(disc: PerfilDISC | null | undefined, mensagem?:
 // ========================================
 // FRAMEWORK NORMALIZATION
 // ========================================
-function normalizeSubKeys(obj: any): Record<string, string | null> {
+function normalizeSubKeys(obj: unknown): FrameworkSubKeys {
   if (!obj || typeof obj !== 'object') return {};
-  const result: Record<string, string | null> = {};
-  for (const [key, value] of Object.entries(obj)) result[key.toLowerCase()] = value as string | null;
+  const result: FrameworkSubKeys = {};
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) result[key.toLowerCase()] = value as string | null;
   return result;
 }
 
-function normalizeFrameworkKeys(data: any): FrameworkData {
+function normalizeFrameworkKeys(data: unknown): FrameworkData {
   if (!data || typeof data !== 'object') return {};
+  const d = data as Record<string, unknown>;
   return {
-    spin: normalizeSubKeys(data?.spin || data?.SPIN || data?.Spin),
-    gpct: normalizeSubKeys(data?.gpct || data?.GPCT || data?.Gpct),
-    bant: normalizeSubKeys(data?.bant || data?.BANT || data?.Bant),
+    spin: normalizeSubKeys(d?.spin || d?.SPIN || d?.Spin),
+    gpct: normalizeSubKeys(d?.gpct || d?.GPCT || d?.Gpct),
+    bant: normalizeSubKeys(d?.bant || d?.BANT || d?.Bant),
   };
 }
 
@@ -171,7 +230,7 @@ const URGENCIA_PATTERNS: Record<string, string[]> = {
   PEDIDO_REUNIAO_DIRETO: ['quero uma reunião', 'marcar reunião', 'agendar reunião', 'me liga', 'pode me ligar'],
 };
 
-function detectarLeadQuenteImediato(mensagem: string): { detectado: boolean; tipo: string; frase_gatilho: string | null; confianca: string } {
+function detectarLeadQuenteImediato(mensagem: string): UrgenciaResult {
   const msgLower = mensagem.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   for (const tipo of ['PEDIDO_HUMANO', 'DECISAO_TOMADA', 'URGENCIA_TEMPORAL', 'FRUSTRADO_ALTERNATIVA', 'PEDIDO_REUNIAO_DIRETO']) {
     for (const pattern of URGENCIA_PATTERNS[tipo]) {
@@ -188,7 +247,7 @@ function detectarLeadQuenteImediato(mensagem: string): { detectado: boolean; tip
 // ========================================
 // NEXT QUESTION DECISION
 // ========================================
-function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil, spin: any, gpct: any, bant: any, temperatura: TemperaturaTipo, intentAtual?: LeadIntentTipo, mensagem?: string, historico?: any[], frameworkData?: FrameworkData): { tipo: ProximaPerguntaTipo; instrucao: string; urgencia?: any } {
+function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil, spin: FrameworkSubKeys | undefined, gpct: FrameworkSubKeys | undefined, bant: FrameworkSubKeys | undefined, temperatura: TemperaturaTipo, intentAtual?: LeadIntentTipo, mensagem?: string, _historico?: unknown[], _frameworkData?: FrameworkData): ProximaPerguntaResult {
   const urgencia = mensagem ? detectarLeadQuenteImediato(mensagem) : { detectado: false, tipo: 'NENHUM', frase_gatilho: null, confianca: 'BAIXA' };
   if (urgencia.detectado && (urgencia.confianca === 'ALTA' || urgencia.confianca === 'MEDIA')) {
     return { tipo: 'ESCALAR_IMEDIATO', instrucao: `ESCALAÇÃO IMEDIATA: ${urgencia.tipo} — "${urgencia.frase_gatilho}"`, urgencia };
@@ -254,15 +313,12 @@ function detectCrossCompanyInterest(mensagem: string, empresaAtual: EmpresaTipo)
 // ========================================
 // FETCH ACTIVE TOKENIZA OFFERS
 // ========================================
-async function fetchActiveTokenizaOffers(): Promise<any[]> {
+async function fetchActiveTokenizaOffers(): Promise<TokenizaOffer[]> {
   try {
-    const url = Deno.env.get('SUPABASE_URL');
-    const key = Deno.env.get('SUPABASE_ANON_KEY');
-    if (!url || !key) return [];
-    const resp = await fetch(`${url}/functions/v1/tokeniza-offers`, { headers: { 'Authorization': `Bearer ${key}`, 'Content-Type': 'application/json' } });
+    const resp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/tokeniza-offers`, { headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' } });
     if (!resp.ok) return [];
-    const data = await resp.json();
-    return (data.ofertas || []).filter((o: any) => o.status?.toLowerCase() === 'active' || o.status?.toLowerCase() === 'open');
+    const data = await resp.json() as { ofertas?: TokenizaOffer[] };
+    return (data.ofertas || []).filter((o: TokenizaOffer) => o.status?.toLowerCase() === 'active' || o.status?.toLowerCase() === 'open');
   } catch { return []; }
 }
 
@@ -273,13 +329,17 @@ async function fetchProductKnowledge(supabase: SupabaseClient, empresa: EmpresaT
   try {
     const { data: products } = await supabase.from('product_knowledge').select('id, produto_nome, descricao_curta').eq('empresa', empresa).eq('ativo', true).limit(5);
     if (!products || products.length === 0) return '';
-    const productIds = products.map(p => p.id);
+    const productIds = products.map((p: { id: string }) => p.id);
     const { data: sections } = await supabase.from('knowledge_sections').select('product_knowledge_id, tipo, titulo, conteudo').in('product_knowledge_id', productIds).order('ordem');
     let text = '\n## CONHECIMENTO DOS PRODUTOS\n';
     for (const p of products) {
-      text += `### ${p.produto_nome}\n${p.descricao_curta || ''}\n`;
-      const ps = (sections || []).filter(s => s.product_knowledge_id === p.id);
-      for (const s of ps) text += `**${s.titulo}**: ${s.conteudo}\n`;
+      const prod = p as { id: string; produto_nome: string; descricao_curta: string | null };
+      text += `### ${prod.produto_nome}\n${prod.descricao_curta || ''}\n`;
+      const ps = (sections || []).filter((s: { product_knowledge_id: string }) => s.product_knowledge_id === prod.id);
+      for (const s of ps) {
+        const sec = s as { titulo: string; conteudo: string };
+        text += `**${sec.titulo}**: ${sec.conteudo}\n`;
+      }
     }
     return text;
   } catch { return ''; }
@@ -301,7 +361,7 @@ function formatBluePricingForPrompt(): string {
   return text;
 }
 
-function formatTokenizaOffersForPrompt(ofertas: any[]): string {
+function formatTokenizaOffersForPrompt(ofertas: TokenizaOffer[]): string {
   if (ofertas.length === 0) return '\n## OFERTAS TOKENIZA\nNenhuma oferta ativa.\n';
   let text = '\n## OFERTAS ATIVAS TOKENIZA\n';
   text += `⚠️ Período de captação ≠ prazo de rentabilidade (sempre 12 meses APÓS captação)\n\n`;
@@ -349,7 +409,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
     const context = await req.json();
     const {
       mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato,
@@ -364,7 +424,7 @@ serve(async (req) => {
     try {
       const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-ia-interpret').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
       if (pvList && pvList.length > 0) {
-        const totalWeight = pvList.reduce((s: number, p: any) => s + (p.ab_weight || 100), 0);
+        const totalWeight = pvList.reduce((s: number, p: { ab_weight: number | null }) => s + (p.ab_weight || 100), 0);
         let rand = Math.random() * totalWeight;
         let selected = pvList[0];
         for (const pv of pvList) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
@@ -377,14 +437,14 @@ serve(async (req) => {
 
     // Rule-based shortcuts
     if (leadNome) {
-      const nl = leadNome.toLowerCase();
+      const nl = (leadNome as string).toLowerCase();
       if (nl.includes('renovação') || nl.includes('renovacao') || nl.includes('renov')) {
         return jsonResponse({ intent: 'SOLICITACAO_CONTATO', confidence: 0.95, summary: 'Cliente de renovação', acao: 'ESCALAR_HUMANO', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe que cuida da sua conta. Já já alguém te chama! 👍', novo_estado_funil: 'FECHAMENTO', model: 'rule-based-renovation', provider: 'rules' });
       }
     }
 
     if (pessoaContext?.relacionamentos) {
-      const isClienteIR = pessoaContext.relacionamentos.some((r: any) => r.tipo_relacao === 'CLIENTE_IR' && r.empresa === empresa);
+      const isClienteIR = (pessoaContext.relacionamentos as Array<{ tipo_relacao: string; empresa: string }>).some((r) => r.tipo_relacao === 'CLIENTE_IR' && r.empresa === empresa);
       if (isClienteIR && (conversation_state?.estado_funil === 'SAUDACAO' || !conversation_state)) {
         return jsonResponse({ intent: 'SOLICITACAO_CONTATO', confidence: 0.90, summary: 'Cliente existente', acao: 'ESCALAR_HUMANO', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe. 👍', novo_estado_funil: 'FECHAMENTO', model: 'rule-based-existing-client', provider: 'rules' });
       }
@@ -406,7 +466,7 @@ serve(async (req) => {
       if (triageSummary.clienteNome) userPrompt += `NOME: ${triageSummary.clienteNome}\n`;
       if (triageSummary.resumoTriagem) userPrompt += `RESUMO: ${triageSummary.resumoTriagem}\n`;
       if (triageSummary.historico) userPrompt += `HISTÓRICO: ${triageSummary.historico}\n`;
-      const ameliaOutbound = (historico || []).filter((h: any) => h.direcao === 'OUTBOUND');
+      const ameliaOutbound = ((historico || []) as HistoricoMsg[]).filter((h) => h.direcao === 'OUTBOUND');
       if (ameliaOutbound.length === 0) {
         userPrompt += `⚠️ PRIMEIRA interação após handoff. Apresente-se como Amélia.\n`;
       }
@@ -468,7 +528,10 @@ serve(async (req) => {
       const { data: learnings } = await supabase.from('amelia_learnings').select('titulo, descricao, tipo').eq('empresa', empresa).eq('status', 'VALIDADO').eq('aplicado', true).limit(5);
       if (learnings && learnings.length > 0) {
         userPrompt += `\n## APRENDIZADOS VALIDADOS\n`;
-        for (const l of learnings) userPrompt += `- [${l.tipo}] ${l.titulo}: ${l.descricao}\n`;
+        for (const l of learnings) {
+          const learning = l as { tipo: string; titulo: string; descricao: string };
+          userPrompt += `- [${learning.tipo}] ${learning.titulo}: ${learning.descricao}\n`;
+        }
       }
     } catch { /* ignore */ }
 
@@ -478,7 +541,7 @@ serve(async (req) => {
     userPrompt += `\n${contactInfo}\n${classInfo}\n`;
 
     // History
-    const historicoText = (historico || []).slice(0, 15).map((m: any) => `[${m.direcao}] ${m.conteudo}`).join('\n');
+    const historicoText = ((historico || []) as HistoricoMsg[]).slice(0, 15).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n');
     userPrompt += `\nHISTÓRICO:\n${historicoText}\n\nMENSAGEM ATUAL:\n${mensagem_normalizada}\n`;
 
     // Call AI
@@ -494,18 +557,18 @@ serve(async (req) => {
     });
 
     // Parse result
-    let result: any = null;
+    let result: ClassifierResponse | null = null;
     if (aiResult.content) {
       try {
         const cleaned = aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
         const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
         if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-      } catch { console.warn('[sdr-intent-classifier] JSON parse failed'); }
+      } catch { log.warn('JSON parse failed'); }
     }
 
     // Deterministic fallback
     if (!result) {
-      result = { intent: 'OUTRO', confidence: 0.3, temperatura: classificacao?.temperatura || 'MORNO', sentimento: 'NEUTRO', resumo: 'Classificação determinística', framework_updates: {}, acao_recomendada: 'NENHUMA' };
+      result = { intent: 'OUTRO', confidence: 0.3, sentimento: 'NEUTRO', resumo: 'Classificação determinística', acao: 'NENHUMA' };
     }
 
     // Validate intent
@@ -515,7 +578,7 @@ serve(async (req) => {
 
     // Temperature matrix
     if (classificacao && !result.acao_detalhes?.nova_temperatura) {
-      const novaTemp = computeNewTemperature(result.intent, classificacao.temperatura);
+      const novaTemp = computeNewTemperature(result.intent as LeadIntentTipo, classificacao.temperatura);
       if (novaTemp) {
         result.acao = result.acao || 'AJUSTAR_TEMPERATURA';
         result.acao_detalhes = { ...(result.acao_detalhes || {}), nova_temperatura: novaTemp, intent: result.intent };
@@ -525,8 +588,8 @@ serve(async (req) => {
     // Classification upgrade
     if (classificacao) {
       const upgrade = computeClassificationUpgrade({
-        novaTemperatura: result.acao_detalhes?.nova_temperatura || classificacao.temperatura,
-        intent: result.intent,
+        novaTemperatura: (result.acao_detalhes?.nova_temperatura as TemperaturaTipo) || classificacao.temperatura,
+        intent: result.intent as LeadIntentTipo,
         confianca: result.confidence,
         icpAtual: classificacao.icp || `${empresa}_NAO_CLASSIFICADO`,
         prioridadeAtual: classificacao.prioridade || 3,
@@ -552,11 +615,11 @@ serve(async (req) => {
     });
 
   } catch (error) {
-    console.error('[sdr-intent-classifier] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
 
-function jsonResponse(data: any) {
+function jsonResponse(data: ClassifierResponse) {
   return new Response(JSON.stringify(data), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 }

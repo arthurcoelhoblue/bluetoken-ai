@@ -1,9 +1,11 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
+const log = createLogger('notify-closer');
 
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 
@@ -44,15 +46,13 @@ serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
-  console.log('[NotifyCloser] Recebendo requisição...');
+  log.info('Recebendo requisição...');
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createServiceClient();
 
     const body: NotifyCloserRequest = await req.json();
-    console.log('[NotifyCloser] Request:', body);
+    log.info('Request', { lead_id: body.lead_id, empresa: body.empresa, motivo: body.motivo });
 
     // Validações básicas
     if (!body.lead_id || !body.empresa || !body.motivo) {
@@ -107,7 +107,7 @@ serve(async (req) => {
       .limit(5);
 
     if (messages) {
-      leadInfo.ultimas_mensagens = messages.map(m => 
+      leadInfo.ultimas_mensagens = messages.map((m: { conteudo: string | null; direcao: string }) => 
         `${m.direcao === 'INBOUND' ? '👤' : '🤖'} ${escapeHtml((m.conteudo || '').substring(0, 100))}...`
       );
     }
@@ -124,7 +124,7 @@ serve(async (req) => {
       leadInfo.framework_data = convState.framework_data as Record<string, unknown>;
     }
 
-    // Determinar email do closer - buscar da system_settings por empresa
+    // Determinar email do closer
     let closerEmail = body.closer_email;
     if (!closerEmail) {
       const empresaKey = body.empresa.toLowerCase();
@@ -139,7 +139,7 @@ serve(async (req) => {
       closerEmail = configuredEmail || `closer@${empresaKey === 'tokeniza' ? 'tokeniza.com.br' : 'grupoblue.com.br'}`;
       
       if (!configuredEmail) {
-        console.warn(`[NotifyCloser] Nenhum closer_email configurado em system_settings para empresa ${body.empresa}. Usando fallback: ${closerEmail}. Configure via system_settings(category='${empresaKey}', key='closer_email').`);
+        log.warn(`Nenhum closer_email configurado para empresa ${body.empresa}. Usando fallback: ${closerEmail}`);
       }
     }
 
@@ -157,18 +157,18 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('[NotifyCloser] Erro ao inserir notificação:', insertError);
+      log.error('Erro ao inserir notificação', { error: insertError.message });
       throw insertError;
     }
 
-    console.log('[NotifyCloser] Notificação criada:', notification.id);
+    log.info('Notificação criada', { notification_id: notification.id });
 
     // Enviar email para o closer
     try {
-      const emailResponse = await fetch(`${supabaseUrl}/functions/v1/email-send`, {
+      const emailResponse = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/email-send`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${supabaseKey}`,
+          'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
@@ -208,7 +208,7 @@ serve(async (req) => {
               ` : ''}
               
               <div style="text-align: center; margin-top: 30px;">
-                <a href="${supabaseUrl.replace('.supabase.co', '')}/leads/${body.lead_id}/${body.empresa}" 
+                <a href="${envConfig.SUPABASE_URL.replace('.supabase.co', '')}/leads/${body.lead_id}/${body.empresa}" 
                    style="background: #3b82f6; color: white; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: bold;">
                   Ver Lead Completo
                 </a>
@@ -224,19 +224,17 @@ serve(async (req) => {
 
       const emailResult = await emailResponse.json();
       if (emailResult.success) {
-        // Atualizar notificação com data de envio
         await supabase
           .from('closer_notifications')
           .update({ enviado_em: new Date().toISOString() })
           .eq('id', notification.id);
 
-        console.log('[NotifyCloser] Email enviado com sucesso');
+        log.info('Email enviado com sucesso');
       } else {
-        console.error('[NotifyCloser] Erro ao enviar email:', emailResult.error);
+        log.error('Erro ao enviar email', { error: emailResult.error });
       }
     } catch (emailError) {
-      console.error('[NotifyCloser] Erro ao chamar email-send:', emailError);
-      // Não falha a notificação por erro de email
+      log.error('Erro ao chamar email-send', { error: emailError instanceof Error ? emailError.message : String(emailError) });
     }
 
     return new Response(
@@ -248,7 +246,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[NotifyCloser] Erro:', error);
+    log.error('Erro', { error: error instanceof Error ? error.message : String(error) });
     return new Response(
       JSON.stringify({
         success: false,
