@@ -24,12 +24,23 @@ interface KpiItem {
   sparkline?: number[];
 }
 
+interface WeeklyReportData {
+  narrative?: string;
+  generated_at?: string;
+}
+
+interface CSCustomerRow {
+  valor_mrr: number | null;
+  risco_churn_pct: number | null;
+  ultimo_nps: number | null;
+}
+
 export default function AnalyticsExecutivoPage() {
   const { activeCompany } = useCompany();
   const empresa = activeCompany === 'ALL' ? null : activeCompany;
   const { data: conversion } = useAnalyticsConversion();
   const { data: evolucao } = useAnalyticsEvolucao();
-  const [weeklyReport, setWeeklyReport] = useState<any>(null);
+  const [weeklyReport, setWeeklyReport] = useState<WeeklyReportData | null>(null);
   const [loadingReport, setLoadingReport] = useState(false);
   const [csData, setCsData] = useState<{ mrrTotal: number; churnRiskAvg: number; npsAvg: number | null } | null>(null);
 
@@ -41,7 +52,7 @@ export default function AnalyticsExecutivoPage() {
         .select('value')
         .eq('key', 'weekly_report')
         .maybeSingle();
-      if (data?.value) setWeeklyReport(data.value as any);
+      if (data?.value) setWeeklyReport(data.value as WeeklyReportData);
     }
     loadReport();
   }, [empresa]);
@@ -53,10 +64,11 @@ export default function AnalyticsExecutivoPage() {
       if (empresa) q = q.eq('empresa', empresa);
       const { data } = await q.limit(500);
       if (data) {
-        const mrrTotal = data.reduce((s, c: any) => s + (c.valor_mrr || 0), 0);
-        const risks = data.filter((c: any) => c.risco_churn_pct != null);
-        const churnRiskAvg = risks.length > 0 ? risks.reduce((s, c: any) => s + c.risco_churn_pct, 0) / risks.length : 0;
-        const npsVals = data.filter((c: any) => c.ultimo_nps != null).map((c: any) => c.ultimo_nps);
+        const rows = data as CSCustomerRow[];
+        const mrrTotal = rows.reduce((s, c) => s + (c.valor_mrr || 0), 0);
+        const risks = rows.filter((c) => c.risco_churn_pct != null);
+        const churnRiskAvg = risks.length > 0 ? risks.reduce((s, c) => s + (c.risco_churn_pct ?? 0), 0) / risks.length : 0;
+        const npsVals = rows.filter((c) => c.ultimo_nps != null).map((c) => c.ultimo_nps as number);
         const npsAvg = npsVals.length > 0 ? npsVals.reduce((a, b) => a + b, 0) / npsVals.length : null;
         setCsData({ mrrTotal, churnRiskAvg, npsAvg });
       }
@@ -76,8 +88,8 @@ export default function AnalyticsExecutivoPage() {
         .select('value')
         .eq('key', 'weekly_report')
         .maybeSingle();
-      if (data?.value) setWeeklyReport(data.value as any);
-    } catch (e) {
+      if (data?.value) setWeeklyReport(data.value as WeeklyReportData);
+    } catch {
       toast.error('Erro ao gerar relatório');
     } finally {
       setLoadingReport(false);
@@ -100,7 +112,6 @@ export default function AnalyticsExecutivoPage() {
   const sparkGanho = sortedEvolucao.map(e => e.valor_ganho);
   const sparkWinRate = sortedEvolucao.map(e => e.win_rate);
   const sparkTicket = sortedEvolucao.map(e => e.ticket_medio);
-  const sparkDeals = sortedEvolucao.map(e => e.deals_ganhos);
 
   // Deltas (current vs previous month)
   const curMonth = sortedEvolucao[sortedEvolucao.length - 1];

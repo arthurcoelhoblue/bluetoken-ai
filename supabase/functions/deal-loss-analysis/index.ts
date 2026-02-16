@@ -5,6 +5,44 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const log = createLogger('deal-loss-analysis');
 
+interface DealRow {
+  id: string;
+  titulo: string;
+  valor: number | null;
+  categoria_perda_closer: string | null;
+  categoria_perda_ia: string | null;
+  motivo_perda_closer: string | null;
+  motivo_perda_ia: string | null;
+  owner_id: string | null;
+  stage_id: string | null;
+  created_at: string;
+  fechado_em: string | null;
+  pipeline_id: string | null;
+  profiles: { nome: string | null } | null;
+  pipeline_stages: { nome: string | null } | null;
+  motivo_perda: string | null;
+}
+
+interface VendedorAcc {
+  nome: string;
+  count: number;
+  valor: number;
+}
+
+function buildVendedorRanking(deals: DealRow[]): Array<{ id: string; nome: string; count: number; valor: number }> {
+  const acc: Record<string, VendedorAcc> = {};
+  for (const d of deals) {
+    const k = d.owner_id || 'sem_owner';
+    if (!acc[k]) acc[k] = { nome: d.profiles?.nome || 'N/A', count: 0, valor: 0 };
+    acc[k].count++;
+    acc[k].valor += d.valor || 0;
+  }
+  return Object.entries(acc)
+    .map(([id, v]) => ({ id, ...v }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+}
+
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -24,20 +62,20 @@ Deno.serve(async (req) => {
         supabase.from('deals').select('id, titulo, valor, categoria_perda_closer, categoria_perda_ia, motivo_perda_closer, motivo_perda_ia, owner_id, stage_id, created_at, fechado_em, pipeline_id, profiles:owner_id(nome), pipeline_stages:stage_id(nome)').eq('status', 'PERDIDO').gte('fechado_em', cutoff).order('fechado_em', { ascending: false }).limit(200),
       ]);
 
-      const wons = wonsRes.data ?? [];
-      const losts = lostsRes.data ?? [];
+      const wons = (wonsRes.data ?? []) as unknown as DealRow[];
+      const losts = (lostsRes.data ?? []) as unknown as DealRow[];
 
       const summary = {
         periodo_dias: dias, total_ganhos: wons.length, total_perdidos: losts.length,
         win_rate: wons.length + losts.length > 0 ? ((wons.length / (wons.length + losts.length)) * 100).toFixed(1) + '%' : 'N/A',
-        valor_ganho: wons.reduce((s: number, d: any) => s + (d.valor || 0), 0),
-        valor_perdido: losts.reduce((s: number, d: any) => s + (d.valor || 0), 0),
-        vendedores_ganhos: Object.entries(wons.reduce((acc: Record<string, any>, d: any) => { const k = d.owner_id || 'sem_owner'; if (!acc[k]) acc[k] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }; acc[k].count++; acc[k].valor += d.valor || 0; return acc; }, {})).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
-        vendedores_perdidos: Object.entries(losts.reduce((acc: Record<string, any>, d: any) => { const k = d.owner_id || 'sem_owner'; if (!acc[k]) acc[k] = { nome: (d.profiles as any)?.nome || 'N/A', count: 0, valor: 0 }; acc[k].count++; acc[k].valor += d.valor || 0; return acc; }, {})).map(([id, v]: any) => ({ id, ...v })).sort((a: any, b: any) => b.count - a.count).slice(0, 10),
-        categorias_perda: Object.entries(losts.reduce((acc: Record<string, number>, d: any) => { const cat = d.categoria_perda_ia || d.categoria_perda_closer || 'NAO_INFORMADA'; acc[cat] = (acc[cat] || 0) + 1; return acc; }, {})).map(([cat, count]) => ({ categoria: cat, count })).sort((a: any, b: any) => b.count - a.count),
-        stages_drop_off: Object.entries(losts.reduce((acc: Record<string, number>, d: any) => { const stage = (d.pipeline_stages as any)?.nome || 'N/A'; acc[stage] = (acc[stage] || 0) + 1; return acc; }, {})).map(([stage, count]) => ({ stage, count })).sort((a: any, b: any) => b.count - a.count),
-        ticket_medio_ganho: wons.length > 0 ? Math.round(wons.reduce((s: number, d: any) => s + (d.valor || 0), 0) / wons.length) : 0,
-        ticket_medio_perdido: losts.length > 0 ? Math.round(losts.reduce((s: number, d: any) => s + (d.valor || 0), 0) / losts.length) : 0,
+        valor_ganho: wons.reduce((s: number, d) => s + (d.valor || 0), 0),
+        valor_perdido: losts.reduce((s: number, d) => s + (d.valor || 0), 0),
+        vendedores_ganhos: buildVendedorRanking(wons),
+        vendedores_perdidos: buildVendedorRanking(losts),
+        categorias_perda: Object.entries(losts.reduce((acc: Record<string, number>, d) => { const cat = d.categoria_perda_ia || d.categoria_perda_closer || 'NAO_INFORMADA'; acc[cat] = (acc[cat] || 0) + 1; return acc; }, {})).map(([cat, count]) => ({ categoria: cat, count })).sort((a, b) => b.count - a.count),
+        stages_drop_off: Object.entries(losts.reduce((acc: Record<string, number>, d) => { const stage = d.pipeline_stages?.nome || 'N/A'; acc[stage] = (acc[stage] || 0) + 1; return acc; }, {})).map(([stage, count]) => ({ stage, count })).sort((a, b) => b.count - a.count),
+        ticket_medio_ganho: wons.length > 0 ? Math.round(wons.reduce((s: number, d) => s + (d.valor || 0), 0) / wons.length) : 0,
+        ticket_medio_perdido: losts.length > 0 ? Math.round(losts.reduce((s: number, d) => s + (d.valor || 0), 0) / losts.length) : 0,
       };
 
       const aiResult = await callAI({
@@ -48,7 +86,7 @@ Deno.serve(async (req) => {
         supabase,
       });
 
-      let analysis: any = {};
+      let analysis: Record<string, unknown> = {};
       try { analysis = JSON.parse(aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim()); } catch { analysis = { resumo_executivo: aiResult.content }; }
 
       await supabase.from('system_settings').upsert({ category: 'analytics', key: 'win_loss_analysis', value: { ...analysis, summary, generated_at: new Date().toISOString() }, updated_at: new Date().toISOString() }, { onConflict: 'category,key' });
@@ -63,8 +101,9 @@ Deno.serve(async (req) => {
     const { data: deal, error: dealErr } = await supabase.from('deals').select('*, contacts:contact_id(id, nome, legacy_lead_id)').eq('id', deal_id).single();
     if (dealErr || !deal) return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const leadId = (deal as any).contacts?.legacy_lead_id;
-    let messages: any[] = [];
+    const contacts = deal.contacts as unknown as { legacy_lead_id: string | null } | null;
+    const leadId = contacts?.legacy_lead_id;
+    let messages: Array<{ direcao: string; conteudo: string; created_at: string }> = [];
     if (leadId) {
       const { data: msgs } = await supabase.from('lead_messages').select('direcao, conteudo, created_at').eq('lead_id', leadId).order('created_at', { ascending: true }).limit(50);
       messages = msgs ?? [];
@@ -75,7 +114,7 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: true, auto_resolved: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const transcript = messages.map((m: any) => `[${m.direcao === 'INBOUND' ? 'LEAD' : 'SDR'}]: ${m.conteudo}`).join('\n');
+    const transcript = messages.map((m) => `[${m.direcao === 'INBOUND' ? 'LEAD' : 'SDR'}]: ${m.conteudo}`).join('\n');
 
     const aiResult = await callAI({
       system: 'Você é um analista comercial. Retorne APENAS JSON válido sem markdown.',

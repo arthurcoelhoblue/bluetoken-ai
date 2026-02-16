@@ -6,6 +6,15 @@ import { getCorsHeaders } from "../_shared/cors.ts";
 
 const log = createLogger('next-best-action');
 
+interface NBAAction {
+  titulo: string;
+  motivo: string;
+  deal_id: string | null;
+  lead_id: string | null;
+  prioridade: string;
+  tipo_acao: string;
+}
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -52,30 +61,30 @@ serve(async (req) => {
     ]);
 
     const contextSummary = {
-      tarefas_pendentes: (tarefasRes.data ?? []).map((t: any) => ({
+      tarefas_pendentes: (tarefasRes.data ?? []).map((t: Record<string, unknown>) => ({
         descricao: t.descricao, deal: t.deal_titulo, prazo: t.tarefa_prazo, valor: t.deal_valor, pipeline: t.pipeline_nome,
       })),
-      sla_alerts: (slaRes.data ?? []).map((a: any) => ({
+      sla_alerts: (slaRes.data ?? []).map((a: Record<string, unknown>) => ({
         deal: a.deal_titulo, stage: a.stage_nome, contato: a.contact_nome, percentual: a.sla_percentual, estourado: a.sla_estourado, valor: a.deal_valor,
       })),
-      deals_parados: (dealsParadosRes.data ?? []).map((d: any) => ({
+      deals_parados: (dealsParadosRes.data ?? []).map((d: Record<string, unknown>) => ({
         id: d.id, titulo: d.titulo, valor: d.valor, temperatura: d.temperatura,
-        dias_parado: Math.floor((Date.now() - new Date(d.updated_at).getTime()) / 86400000),
-        contato: d.contacts?.nome, stage: d.pipeline_stages?.nome,
+        dias_parado: Math.floor((Date.now() - new Date(d.updated_at as string).getTime()) / 86400000),
+        contato: (d.contacts as Record<string, unknown> | null)?.nome, stage: (d.pipeline_stages as Record<string, unknown> | null)?.nome,
       })),
-      leads_quentes: (leadsQuentesRes.data ?? []).map((l: any) => ({
+      leads_quentes: (leadsQuentesRes.data ?? []).map((l: Record<string, unknown>) => ({
         lead_id: l.lead_id, intent: l.intent, resumo: l.intent_summary, quando: l.created_at,
       })),
-      deal_scores_top10: (dealScoresRes.data ?? []).map((d: any) => ({
+      deal_scores_top10: (dealScoresRes.data ?? []).map((d: Record<string, unknown>) => ({
         id: d.id, titulo: d.titulo, valor: d.valor, probabilidade: d.score_probabilidade,
-        proxima_acao: d.proxima_acao_sugerida, stage: d.pipeline_stages?.nome,
+        proxima_acao: d.proxima_acao_sugerida, stage: (d.pipeline_stages as Record<string, unknown> | null)?.nome,
       })),
-      cs_alerts: (csAlertsRes.data ?? []).map((c: any) => ({
-        cliente: c.contacts?.nome, health: c.health_score, status: c.health_status,
+      cs_alerts: (csAlertsRes.data ?? []).map((c: Record<string, unknown>) => ({
+        cliente: (c.contacts as Record<string, unknown> | null)?.nome, health: c.health_score, status: c.health_status,
         renovacao: c.proxima_renovacao,
       })),
       cadence_active_count: cadenceActiveRes.data?.length ?? 0,
-      sentiment_recent: (sentimentRecentRes.data ?? []).map((s: any) => ({
+      sentiment_recent: (sentimentRecentRes.data ?? []).map((s: Record<string, unknown>) => ({
         lead_id: s.lead_id, sentimento: s.sentimento, intent: s.intent,
       })),
     };
@@ -110,7 +119,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
       supabase,
     });
 
-    let acoes: any[] = [];
+    let acoes: NBAAction[] = [];
     let narrativa_dia = '';
 
     // Parse AI content
@@ -127,7 +136,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
 
     // Fallback: Rule-based if no AI content parsed
     if (acoes.length === 0) {
-      const fallbackAcoes: any[] = [];
+      const fallbackAcoes: NBAAction[] = [];
 
       for (const sla of contextSummary.sla_alerts.slice(0, 2)) {
         fallbackAcoes.push({
@@ -147,7 +156,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
         fallbackAcoes.push({
           titulo: `Deal parado há ${d.dias_parado}d: ${d.titulo}`,
           motivo: `${d.contato} — ${d.stage}`,
-          deal_id: d.id, lead_id: null, prioridade: 'MEDIA', tipo_acao: 'DEAL_PARADO',
+          deal_id: d.id as string, lead_id: null, prioridade: 'MEDIA', tipo_acao: 'DEAL_PARADO',
         });
       }
 
