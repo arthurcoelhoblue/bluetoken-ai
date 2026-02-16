@@ -1,46 +1,72 @@
 
 
-# Corrigir erro CORS que impede as sugestoes de carregar
+# Roadmap V7 → 11/10 — Blocos por Prioridade
 
-## Diagnostico
+## BLOCO 1 — Quick Wins (1 semana)
+Itens de baixo esforco e alto impacto na nota de auditoria.
 
-A edge function `next-best-action` funciona perfeitamente (testei e retornou acoes e narrativa com sucesso). O problema e que o **navegador bloqueia a resposta por CORS**.
+### 1.1 Versionar 16 CRON jobs em migration SQL
+- Criar uma migration contendo `SELECT cron.schedule(...)` para cada um dos 16 jobs ativos
+- Garante reprodutibilidade em staging e disaster recovery
+- Prioridade do parecer: MEDIA
+- Esforco: 1 dia
 
-O arquivo `supabase/functions/_shared/cors.ts` tem uma whitelist de origens permitidas:
-- `https://sdrgrupobue.lovable.app` (dominio publicado)
-- `https://id-preview--2e625147-f0fa-49c2-9624-dcb7484793c1.lovable.app` (preview antigo)
+### 1.2 Reduzir `as any` restantes (51 ocorrencias)
+- Mapear os 51 `as any` e substituir por tipagens corretas
+- Maioria em integrações com tipos do banco de dados
+- Prioridade do parecer: BAIXA (mas facil de resolver)
+- Esforco: 2-3 dias
 
-Porem o preview atual roda em `https://2e625147-f0fa-49c2-9624-dcb7484793c1.lovableproject.com`, que **nao esta na lista**. Quando o origin nao bate, a funcao retorna o primeiro dominio como fallback, e o navegador rejeita a resposta.
+---
 
-Isso afeta **todas as funcoes do frontend** que usam `getCorsHeaders()`, nao apenas o Next Best Action.
+## BLOCO 2 — Observabilidade Avancada (2 semanas)
 
-## Solucao
+### 2.1 Dashboard de saude operacional melhorado
+- Tela unica mostrando: Web Vitals (LCP/CLS/INP), erros do Sentry, status dos 16 CRONs, latencia das edge functions (via `ai_usage_log`)
+- Consolida dados que ja existem mas estao espalhados
+- Esforco: 1-2 semanas
 
-Adicionar o dominio `.lovableproject.com` na whitelist de CORS. Em vez de listar cada dominio exato, vou usar uma verificacao mais flexivel que aceita qualquer subdominio do Lovable.
+### 2.2 Sentry para Edge Functions (Deno)
+- Capturar erros de edge functions no Sentry com stack traces
+- Complementa o logger estruturado que ja existe em 55 pontos
+- Prioridade do parecer: BAIXA (logger ja ajuda muito)
+- Esforco: 1 semana
 
-### Arquivo modificado: `supabase/functions/_shared/cors.ts`
+---
 
-Atualizar a logica de `getCorsHeaders` para aceitar origens que terminem com `.lovable.app` ou `.lovableproject.com`, mantendo a seguranca (apenas dominios Lovable sao aceitos).
+## BLOCO 3 — Automacao Inteligente (3 semanas)
+
+### 3.1 Atividade auto-criada apos transcricao de chamada
+- `call-transcribe` finaliza → cria automaticamente um registro em `deal_activities` com resumo IA
+- Zero esforco do vendedor para registrar chamadas
+- Esforco: 3-5 dias
+
+---
+
+## BLOCO 4 — Arquitetura de Longo Prazo (1-3 meses)
+
+### 4.1 Multi-tenancy com schema separation
+- Separar dados BLUE e TOKENIZA em schemas distintos
+- Elimina risco residual de RLS bypass entre empresas
+- Esforco: 1 mes
+
+### 4.2 Revenue forecast com ML
+- Treinar modelo de regressao com dados historicos de deals
+- Substituir heuristicas atuais por predicao real
+- Esforco: 3 meses
+
+---
+
+## Resumo Visual
 
 ```text
-Antes:
-  const ALLOWED_ORIGINS = [
-    "https://sdrgrupobue.lovable.app",
-    "https://id-preview--2e625147-...lovable.app",
-  ];
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-
-Depois:
-  function isAllowedOrigin(origin: string): boolean {
-    return origin.endsWith('.lovable.app')
-        || origin.endsWith('.lovableproject.com');
-  }
-  const allowed = isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0];
+BLOCO 1 (Semana 1)        BLOCO 2 (Semanas 2-3)      BLOCO 3 (Semana 4)       BLOCO 4 (Meses 2-4)
++--------------------+     +---------------------+     +-------------------+     +-------------------+
+| CRON em migration  |     | Dashboard saude ops |     | Auto-atividade    |     | Multi-tenancy     |
+| Remover as any     |     | Sentry Edge Fn      |     | pos-transcricao   |     | ML Forecast       |
++--------------------+     +---------------------+     +-------------------+     +-------------------+
 ```
 
-## Impacto
+## Sugestao de Execucao
 
-- Corrige o card "Proximo Passo" e qualquer outra funcao que esteja falhando por CORS no preview
-- Previne o problema de acontecer novamente caso o dominio de preview mude
-- Mantém segurança: apenas domínios Lovable sao aceitos
-
+Recomendo comecar pelo **Bloco 1** inteiro (CRON + as any) por ser de execucao rapida e impacto direto na nota de auditoria. Apos concluido, seguir para o Bloco 2 que consolida a observabilidade.
