@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { WikiSidebar } from '@/components/wiki/WikiSidebar';
@@ -8,6 +8,20 @@ import { Button } from '@/components/ui/button';
 import { Menu } from 'lucide-react';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { AppLayout } from '@/components/layout/AppLayout';
+
+function resolveRelativeLink(href: string, currentSlug: string): string | null {
+  if (!href || href.startsWith('http') || href.startsWith('#') || href.startsWith('mailto:')) return null;
+  const parts = currentSlug.split('/');
+  const base = parts.length > 1 ? parts.slice(0, -1) : parts;
+  const clean = href.replace(/\.md$/, '').replace(/^\.\//, '');
+  
+  if (clean.startsWith('../')) {
+    const up = clean.replace(/^\.\.\//, '');
+    return up;
+  }
+  
+  return [...base, clean].join('/');
+}
 
 export default function WikiPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -19,16 +33,33 @@ export default function WikiPage() {
     [activeSlug]
   );
 
-  const handleSelect = (slug: string) => {
+  const handleSelect = useCallback((slug: string) => {
     setSearchParams({ page: slug });
     setMobileOpen(false);
-  };
+  }, [setSearchParams]);
+
+  const linkComponent = useCallback(({ href, children, ...props }: any) => {
+    const resolved = href ? resolveRelativeLink(href, activeSlug) : null;
+    if (resolved && WIKI_PAGES.some(p => p.slug === resolved)) {
+      return (
+        <a
+          href="#"
+          onClick={(e) => { e.preventDefault(); handleSelect(resolved); }}
+          className="text-primary underline underline-offset-2 hover:text-primary/80 cursor-pointer"
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    }
+    return <a href={href} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
+  }, [activeSlug, handleSelect]);
 
   const sidebar = <WikiSidebar activeSlug={activeSlug} onSelect={handleSelect} />;
 
   return (
     <AppLayout>
-      <div className="flex h-[calc(100vh-3.5rem)] overflow-hidden">
+      <div className="flex h-full overflow-hidden">
         {/* Desktop sidebar */}
         <div className="hidden md:block w-64 shrink-0">
           {sidebar}
@@ -51,8 +82,8 @@ export default function WikiPage() {
         {/* Content */}
         <ScrollArea className="flex-1">
           <article className="max-w-3xl mx-auto px-6 py-8">
-            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-primary prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-pre:bg-muted prose-pre:border prose-pre:rounded-lg">
-              <ReactMarkdown>{activePage.content}</ReactMarkdown>
+            <div className="prose prose-sm dark:prose-invert max-w-none prose-headings:scroll-mt-20 prose-h1:text-2xl prose-h2:text-xl prose-h3:text-lg prose-a:text-primary prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:rounded prose-code:text-sm prose-pre:bg-muted prose-pre:border prose-pre:rounded-lg prose-blockquote:border-l-primary/50 prose-blockquote:bg-muted/50 prose-blockquote:py-1 prose-blockquote:px-4 prose-blockquote:rounded-r-md">
+              <ReactMarkdown components={{ a: linkComponent }}>{activePage.content}</ReactMarkdown>
             </div>
           </article>
         </ScrollArea>
