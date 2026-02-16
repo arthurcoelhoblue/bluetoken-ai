@@ -129,6 +129,7 @@ const navGroups: NavGroup[] = [
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
       { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
       { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
+      { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },
