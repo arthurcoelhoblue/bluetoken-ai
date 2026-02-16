@@ -46,10 +46,11 @@ export function InsightsTab({ deal, dealId }: InsightsTabProps) {
   }, [trackFeatureUse, dealId]);
 
   const prob = deal.score_probabilidade ?? 0;
-  const dimensoes = (deal as any).scoring_dimensoes as Record<string, number> | null;
-  const proximaAcao = (deal as any).proxima_acao_sugerida as string | null;
-  const scoringAt = (deal as any).scoring_updated_at as string | null;
-  const contextoSdr = (deal as any).contexto_sdr as Record<string, any> | null;
+  const extDeal = deal as unknown as Record<string, unknown>;
+  const dimensoes = extDeal.scoring_dimensoes as Record<string, number> | null;
+  const proximaAcao = extDeal.proxima_acao_sugerida as string | null;
+  const scoringAt = extDeal.scoring_updated_at as string | null;
+  const contextoSdr = extDeal.contexto_sdr as Record<string, unknown> | null;
 
   const handleRefreshScoring = async () => {
     setRefreshing(true);
@@ -204,7 +205,7 @@ export function InsightsTab({ deal, dealId }: InsightsTabProps) {
                 <AccordionItem value="resumo">
                   <AccordionTrigger className="text-xs py-2">Resumo da Conversa</AccordionTrigger>
                   <AccordionContent>
-                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{contextoSdr.resumo_conversa}</p>
+                    <p className="text-sm text-muted-foreground whitespace-pre-wrap">{String(contextoSdr.resumo_conversa)}</p>
                   </AccordionContent>
                 </AccordionItem>
               )}
@@ -212,7 +213,7 @@ export function InsightsTab({ deal, dealId }: InsightsTabProps) {
                 <AccordionItem value="disc">
                   <AccordionTrigger className="text-xs py-2">Perfil DISC</AccordionTrigger>
                   <AccordionContent>
-                    <p className="text-sm text-muted-foreground">{contextoSdr.perfil_disc}</p>
+                    <p className="text-sm text-muted-foreground">{String(contextoSdr.perfil_disc)}</p>
                   </AccordionContent>
                 </AccordionItem>
               )}
@@ -238,27 +239,27 @@ export function InsightsTab({ deal, dealId }: InsightsTabProps) {
                   <AccordionTrigger className="text-xs py-2">Frameworks de Vendas</AccordionTrigger>
                   <AccordionContent>
                     <div className="space-y-2 text-sm text-muted-foreground">
-                      <p><strong>Framework:</strong> {(contextoSdr.frameworks as any).framework_ativo || 'N/A'}</p>
-                      {(contextoSdr.frameworks as any).perguntas_respondidas?.length > 0 && (
+                      <p><strong>Framework:</strong> {(contextoSdr.frameworks as Record<string, unknown>).framework_ativo as string || 'N/A'}</p>
+                      {((contextoSdr.frameworks as Record<string, unknown>).perguntas_respondidas as string[] | undefined)?.length ? (
                         <div>
                           <p className="font-medium text-foreground text-xs mb-1">Respondidas:</p>
                           <ul className="space-y-0.5">
-                            {((contextoSdr.frameworks as any).perguntas_respondidas as string[]).map((p: string, i: number) => (
+                            {((contextoSdr.frameworks as Record<string, unknown>).perguntas_respondidas as string[]).map((p: string, i: number) => (
                               <li key={i} className="flex items-start gap-1"><span className="text-success">✓</span> {p}</li>
                             ))}
                           </ul>
                         </div>
-                      )}
-                      {(contextoSdr.frameworks as any).perguntas_pendentes?.length > 0 && (
+                      ) : null}
+                      {((contextoSdr.frameworks as Record<string, unknown>).perguntas_pendentes as string[] | undefined)?.length ? (
                         <div>
                           <p className="font-medium text-foreground text-xs mb-1">Pendentes:</p>
                           <ul className="space-y-0.5">
-                            {((contextoSdr.frameworks as any).perguntas_pendentes as string[]).map((p: string, i: number) => (
+                            {((contextoSdr.frameworks as Record<string, unknown>).perguntas_pendentes as string[]).map((p: string, i: number) => (
                               <li key={i} className="flex items-start gap-1"><span className="text-warning">○</span> {p}</li>
                             ))}
                           </ul>
                         </div>
-                      )}
+                      ) : null}
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -267,7 +268,7 @@ export function InsightsTab({ deal, dealId }: InsightsTabProps) {
                 <AccordionItem value="sugestao">
                   <AccordionTrigger className="text-xs py-2">Sugestão para Closer</AccordionTrigger>
                   <AccordionContent>
-                    <p className="text-sm text-muted-foreground">{contextoSdr.sugestao_closer}</p>
+                    <p className="text-sm text-muted-foreground">{String(contextoSdr.sugestao_closer)}</p>
                   </AccordionContent>
                 </AccordionItem>
               )}

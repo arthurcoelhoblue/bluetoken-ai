@@ -32,7 +32,7 @@ serve(async (req) => {
         });
       }
 
-      const contact = (customer as any).contacts;
+      const contact = (customer as { contacts?: { nome?: string; primeiro_nome?: string; telefone?: string; email?: string } }).contacts;
       if (!contact) {
         return new Response(JSON.stringify({ sent: 0, message: 'No contact' }), {
           headers: { ...corsHeaders, 'Content-Type': 'application/json' },
@@ -108,7 +108,7 @@ serve(async (req) => {
     let sent = 0;
 
     for (const customer of eligibleCustomers) {
-      const contact = (customer as any).contacts;
+      const contact = (customer as { contacts?: { nome?: string; primeiro_nome?: string; telefone?: string; email?: string } }).contacts;
       if (!contact) continue;
 
       const pergunta = `Olá ${contact.primeiro_nome || contact.nome || 'Cliente'}! Em uma escala de 0 a 10, o quanto você recomendaria nossos serviços para um amigo ou colega? Responda apenas com o número.`;

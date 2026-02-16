@@ -49,7 +49,7 @@ export function useCreateFieldDefinition() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (data: CustomFieldFormData) => {
-      const { error } = await supabase.from('custom_field_definitions').insert(data as any);
+      const { error } = await supabase.from('custom_field_definitions').insert(data as never);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['custom_field_definitions'] }),
@@ -60,7 +60,7 @@ export function useUpdateFieldDefinition() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ id, ...data }: Partial<CustomFieldFormData> & { id: string }) => {
-      const { error } = await supabase.from('custom_field_definitions').update(data as any).eq('id', id);
+      const { error } = await supabase.from('custom_field_definitions').update(data as never).eq('id', id);
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['custom_field_definitions'] }),
@@ -110,7 +110,7 @@ export function useUpsertFieldValue() {
     }) => {
       const { error } = await supabase
         .from('custom_field_values')
-        .upsert(data as any, { onConflict: 'field_id,entity_id' });
+        .upsert(data as never, { onConflict: 'field_id,entity_id' });
       if (error) throw error;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['custom_field_values'] }),

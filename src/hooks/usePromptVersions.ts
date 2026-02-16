@@ -47,7 +47,7 @@ export function usePromptVersions(functionName?: string) {
         .order("version", { ascending: false })
         .limit(1);
 
-      const nextVersion = ((existing?.[0] as any)?.version || 0) + 1;
+      const nextVersion = ((existing?.[0] as { version?: number } | undefined)?.version || 0) + 1;
 
       // Deactivate old
       await supabase

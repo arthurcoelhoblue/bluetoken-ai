@@ -16,7 +16,7 @@ export function useCSSurveys(customerId?: string) {
         .limit(200);
 
       if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as any);
+        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
       if (customerId) query = query.eq('customer_id', customerId);
 
@@ -40,7 +40,7 @@ export function useCreateSurvey() {
     }) => {
       const { data, error } = await supabase
         .from('cs_surveys')
-        .insert(survey as any)
+        .insert(survey as never)
         .select()
         .single();
       if (error) throw error;
@@ -59,7 +59,7 @@ export function useRespondSurvey() {
     mutationFn: async ({ id, nota, texto_resposta }: { id: string; nota: number; texto_resposta?: string }) => {
       const { data, error } = await supabase
         .from('cs_surveys')
-        .update({ nota, texto_resposta, respondido_em: new Date().toISOString() } as any)
+        .update({ nota, texto_resposta, respondido_em: new Date().toISOString() } as never)
         .eq('id', id)
         .select()
         .single();

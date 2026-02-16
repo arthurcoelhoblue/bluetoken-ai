@@ -21,6 +21,7 @@ export interface LeadQuente {
   acao_recomendada?: string;
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 function applyEmpresaFilter<T>(query: T, activeCompany: ActiveCompany): T {
   if (activeCompany !== "ALL") {
     return (query as any).eq("empresa", activeCompany);

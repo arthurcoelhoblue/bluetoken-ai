@@ -74,7 +74,7 @@ export function useConversationMessages({
             lido_em: msg.lido_em,
             created_at: msg.created_at,
             updated_at: msg.updated_at,
-            cadencia_nome: (msg.lead_cadence_runs as any)?.cadences?.nome,
+            cadencia_nome: (msg.lead_cadence_runs as { cadences?: { nome?: string } } | null)?.cadences?.nome,
           });
         }
       }

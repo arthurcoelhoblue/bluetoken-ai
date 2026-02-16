@@ -26,7 +26,7 @@ export function useCSPlaybooks() {
     mutationFn: async (playbook: Omit<CSPlaybook, 'id' | 'created_at' | 'updated_at'>) => {
       const { data, error } = await supabase
         .from('cs_playbooks')
-        .insert(playbook as any)
+        .insert(playbook as never)
         .select()
         .single();
       if (error) throw error;
@@ -39,7 +39,7 @@ export function useCSPlaybooks() {
     mutationFn: async ({ id, ...updates }: Partial<CSPlaybook> & { id: string }) => {
       const { error } = await supabase
         .from('cs_playbooks')
-        .update(updates as any)
+        .update(updates as never)
         .eq('id', id);
       if (error) throw error;
     },

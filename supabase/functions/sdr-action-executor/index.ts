@@ -78,7 +78,7 @@ async function applyAction(
           await fetch(`${supabaseUrl}/functions/v1/notify-closer`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${serviceKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lead_id: leadId, empresa, motivo: (detalhes as any)?.motivo || 'Lead qualificado pelo SDR IA' }),
+            body: JSON.stringify({ lead_id: leadId, empresa, motivo: (detalhes as Record<string, unknown> | undefined)?.motivo || 'Lead qualificado pelo SDR IA' }),
           });
         } catch { /* ignore */ }
 

@@ -59,7 +59,7 @@ export function useCreateTemplate() {
     mutationFn: async (template: TemplateInsert) => {
       const { data, error } = await supabase
         .from('message_templates' as any)
-        .insert(template as any)
+        .insert(template as never)
         .select()
         .single();
       if (error) throw error;
@@ -81,7 +81,7 @@ export function useUpdateTemplate() {
     mutationFn: async ({ id, ...updates }: TemplateUpdate) => {
       const { data, error } = await supabase
         .from('message_templates' as any)
-        .update(updates as any)
+        .update(updates as never)
         .eq('id', id)
         .select()
         .single();

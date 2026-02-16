@@ -31,7 +31,7 @@ export function DealTagsEditor({ dealId, tags }: Props) {
   const updateTags = async (newTags: string[]) => {
     const { error } = await supabase
       .from('deals')
-      .update({ tags: newTags } as any)
+      .update({ tags: newTags } as never)
       .eq('id', dealId);
     if (error) {
       toast.error('Erro ao atualizar tags');

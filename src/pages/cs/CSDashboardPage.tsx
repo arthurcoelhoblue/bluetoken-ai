@@ -141,7 +141,7 @@ export default function CSDashboardPage() {
                 <div key={inc.id} className="flex items-center justify-between p-3 rounded-lg border">
                   <div>
                     <p className="font-medium text-sm">{inc.titulo}</p>
-                    <p className="text-xs text-muted-foreground">{(inc.customer as any)?.contact?.nome || 'Cliente'}</p>
+                    <p className="text-xs text-muted-foreground">{(inc.customer as { contact?: { nome?: string } } | null)?.contact?.nome || 'Cliente'}</p>
                   </div>
                   <Badge variant="outline" className="capitalize">{inc.gravidade.toLowerCase()}</Badge>
                 </div>

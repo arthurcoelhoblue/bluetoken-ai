@@ -52,7 +52,7 @@ export default function CSIncidenciasPage() {
                   <TableRow><TableCell colSpan={6} className="text-center py-6 text-muted-foreground">Nenhuma incidência</TableCell></TableRow>
                 ) : incidents?.map(inc => (
                   <TableRow key={inc.id}>
-                    <TableCell className="font-medium text-sm">{(inc.customer as any)?.contact?.nome || '—'}</TableCell>
+                    <TableCell className="font-medium text-sm">{(inc.customer as { contact?: { nome?: string } } | null)?.contact?.nome || '—'}</TableCell>
                     <TableCell className="text-sm">{inc.titulo}</TableCell>
                     <TableCell><Badge variant="outline" className="capitalize">{inc.tipo.toLowerCase().replace('_', ' ')}</Badge></TableCell>
                     <TableCell><Badge className={gravidadeConfig[inc.gravidade]?.bgClass}>{gravidadeConfig[inc.gravidade]?.label}</Badge></TableCell>

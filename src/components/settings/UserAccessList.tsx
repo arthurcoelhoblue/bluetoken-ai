@@ -170,8 +170,8 @@ export function UserAccessList() {
           userId={overrideTarget.id}
           userName={overrideTarget.nome || overrideTarget.email}
           currentOverride={
-            (overrideTarget as any).assignment?.permissions_override
-              ? ((overrideTarget as any).assignment.permissions_override as PermissionsMap)
+            (overrideTarget.assignment as { permissions_override?: PermissionsMap } | undefined)?.permissions_override
+              ? (overrideTarget.assignment as { permissions_override?: PermissionsMap }).permissions_override!
               : null
           }
           profilePermissions={

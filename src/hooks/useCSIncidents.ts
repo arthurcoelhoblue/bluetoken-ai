@@ -20,7 +20,7 @@ export function useCSIncidents(customerId?: string, statusFilter?: CSIncidentSta
         .limit(200);
 
       if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as any);
+        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
       }
       if (customerId) query = query.eq('customer_id', customerId);
       if (statusFilter) query = query.eq('status', statusFilter);
@@ -46,7 +46,7 @@ export function useCreateIncident() {
     }) => {
       const { data, error } = await supabase
         .from('cs_incidents')
-        .insert(incident as any)
+        .insert(incident as never)
         .select()
         .single();
       if (error) throw error;
@@ -65,7 +65,7 @@ export function useUpdateIncident() {
     mutationFn: async ({ id, ...updates }: { id: string; status?: CSIncidentStatus; resolucao?: string; resolved_at?: string }) => {
       const { data, error } = await supabase
         .from('cs_incidents')
-        .update(updates as any)
+        .update(updates as never)
         .eq('id', id)
         .select()
         .single();
