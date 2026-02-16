@@ -42,6 +42,7 @@ PRIORIZE:
 3. Follow-ups urgentes (lead respondeu mas vendedor não retornou)
 4. Riscos de meta (projeção vs meta)
 5. Inclua SEMPRE um feedback positivo quando houver melhoria
+6. Observe o que o usuário tem feito nos últimos minutos (navegação e ações) e adapte seus insights ao contexto de uso atual
 
 FORMATO DE RESPOSTA: JSON array puro (sem markdown), cada item com:
 {
@@ -100,7 +101,7 @@ serve(async (req) => {
     // === COLLECT VENDOR SNAPSHOT ===
     const contextParts: string[] = [];
 
-    const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes] = await Promise.all([
+    const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes, activityLogRes] = await Promise.all([
       supabase.from('deals')
         .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id')
         .eq('owner_id', userId).eq('status', 'ABERTO').limit(50),
@@ -125,6 +126,10 @@ serve(async (req) => {
       supabase.from('lead_cadence_runs')
         .select('id, lead_id, status, next_run_at')
         .eq('empresa', empresa).eq('status', 'ATIVA').limit(20),
+      supabase.from('user_activity_log')
+        .select('action_type, action_detail, created_at')
+        .eq('user_id', userId).eq('empresa', empresa)
+        .order('created_at', { ascending: false }).limit(20),
     ]);
 
     if (dealsRes.data && dealsRes.data.length > 0) {
@@ -173,6 +178,14 @@ serve(async (req) => {
 
     if (cadencesRes.data && cadencesRes.data.length > 0) {
       contextParts.push(`**Cadências Ativas**: ${cadencesRes.data.length} leads em cadência`);
+    }
+
+    if (activityLogRes.data && activityLogRes.data.length > 0) {
+      const activities = activityLogRes.data.map((a: { action_type: string; action_detail: Record<string, unknown>; created_at: string }) => {
+        const detail = a.action_detail ? JSON.stringify(a.action_detail) : '';
+        return `- [${a.action_type}] ${detail} (${new Date(a.created_at).toLocaleString('pt-BR')})`;
+      }).join('\n');
+      contextParts.push(`**Navegação/Ações Recentes do Usuário**:\n${activities}`);
     }
 
     const fullContext = contextParts.join('\n\n');

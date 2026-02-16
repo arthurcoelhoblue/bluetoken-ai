@@ -4,6 +4,7 @@ import { Bot, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useCopilotInsights } from '@/hooks/useCopilotInsights';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useUserActivityTracker } from '@/hooks/useUserActivityTracker';
 import { CopilotPanel } from './CopilotPanel';
 import type { CopilotContextType } from '@/types/conversas';
 
@@ -43,7 +44,17 @@ export function CopilotFab() {
   const { activeCompany } = useCompany();
   const context = getCopilotContext(location.pathname, activeCompany);
 
-  const { insights, pendingCount } = useCopilotInsights(context.empresa);
+  const { insights, pendingCount, generateInsights } = useCopilotInsights(context.empresa);
+
+  // Activate user activity tracking (auto PAGE_VIEW on route change)
+  useUserActivityTracker();
+
+  // Auto-generate insights on mount + every 30 min
+  useEffect(() => {
+    generateInsights();
+    const interval = setInterval(() => generateInsights(), 30 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [generateInsights]);
 
   const [open, setOpen] = useState(false);
   const [bubbleText, setBubbleText] = useState<string | null>(null);

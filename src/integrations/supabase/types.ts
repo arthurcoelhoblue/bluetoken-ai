@@ -5317,6 +5317,33 @@ export type Database = {
           },
         ]
       }
+      user_activity_log: {
+        Row: {
+          action_detail: Json | null
+          action_type: string
+          created_at: string
+          empresa: string
+          id: string
+          user_id: string
+        }
+        Insert: {
+          action_detail?: Json | null
+          action_type: string
+          created_at?: string
+          empresa: string
+          id?: string
+          user_id: string
+        }
+        Update: {
+          action_detail?: Json | null
+          action_type?: string
+          created_at?: string
+          empresa?: string
+          id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
