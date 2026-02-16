@@ -87,12 +87,39 @@ function stripFrontmatter(content: string): string {
   return content.replace(/^---[\s\S]*?---\n*/, '');
 }
 
+const ADMONITION_STYLES: Record<string, { emoji: string; label: string }> = {
+  info: { emoji: 'ℹ️', label: 'Info' },
+  tip: { emoji: '💡', label: 'Dica' },
+  warning: { emoji: '⚠️', label: 'Atenção' },
+  danger: { emoji: '🚨', label: 'Perigo' },
+  note: { emoji: '📝', label: 'Nota' },
+  caution: { emoji: '⚠️', label: 'Cuidado' },
+};
+
+function processAdmonitions(content: string): string {
+  return content.replace(
+    /^:::(\w+)(?:\[([^\]]*)\])?\s*(?:(.+))?\n([\s\S]*?)^:::/gm,
+    (_match, type: string, bracketTitle: string | undefined, inlineTitle: string | undefined, body: string) => {
+      const t = type.toLowerCase();
+      const style = ADMONITION_STYLES[t] || ADMONITION_STYLES.note;
+      const title = bracketTitle || inlineTitle || style.label;
+      return `> **${style.emoji} ${title}**\n>\n${body.split('\n').map(l => `> ${l}`).join('\n')}\n`;
+    }
+  );
+}
+
+export function processContent(content: string): string {
+  let processed = stripFrontmatter(content);
+  processed = processAdmonitions(processed);
+  return processed;
+}
+
 function page(slug: string, group: string, content: string, fallbackTitle: string): WikiPage {
   return {
     slug,
     title: extractTitle(content, fallbackTitle),
     group,
-    content: stripFrontmatter(content),
+    content: processContent(content),
   };
 }
 
