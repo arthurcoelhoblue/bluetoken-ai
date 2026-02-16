@@ -1,8 +1,11 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('amelia-learn');
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -12,7 +15,7 @@ serve(async (req) => {
     const { empresa, periodo_horas = 72 } = await req.json();
     if (!empresa) return new Response(JSON.stringify({ error: 'empresa is required' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
     const since = new Date(Date.now() - periodo_horas * 3600_000).toISOString();
     const learnings: any[] = [];
 
@@ -121,7 +124,7 @@ serve(async (req) => {
               }
             }
           }
-        } catch (aiErr) { console.error('[amelia-learn] AI sequence analysis error:', aiErr); }
+        } catch (aiErr) { log.error('AI sequence analysis error', { error: String(aiErr) }); }
       }
     }
 
@@ -155,24 +158,24 @@ serve(async (req) => {
               }
             }
           }
-        } catch (aiErr) { console.error('[amelia-learn] AI churn sequence error:', aiErr); }
+        } catch (aiErr) { log.error('AI churn sequence error', { error: String(aiErr) }); }
       }
     }
 
     // SAVE LEARNINGS
     if (learnings.length > 0) {
       const { error: insertError } = await supabase.from('amelia_learnings').insert(learnings.slice(0, 10));
-      if (insertError) console.error('[amelia-learn] Insert error:', insertError);
+      if (insertError) log.error('Insert error', { error: insertError.message });
     }
 
     return new Response(JSON.stringify({ success: true, empresa, learnings_count: learnings.length, types: learnings.map(l => l.tipo) }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[amelia-learn] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : 'Unknown error' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Unknown error' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
 
-async function checkDuplicate(supabase: any, hash: string): Promise<boolean> {
+async function checkDuplicate(supabase: SupabaseClient, hash: string): Promise<boolean> {
   const { data } = await supabase.from('amelia_learnings').select('id').eq('hash_titulo', hash).limit(1).maybeSingle();
   return !!data;
 }

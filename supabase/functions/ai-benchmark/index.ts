@@ -1,8 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('ai-benchmark');
 
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -11,7 +13,7 @@ serve(async (req) => {
 
   try {
     const { limit = 20, modelo = 'gemini-3-pro-preview' } = await req.json();
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     const { data: intents, error: intentsError } = await supabase
       .from('lead_message_intents')
@@ -37,56 +39,24 @@ serve(async (req) => {
     }
 
     const benchmarkSystemPrompt = `Você é Amélia, consultora do Grupo Blue. Analise a mensagem do lead e retorne JSON com: intent, confidence (0-1), summary, acao, deve_responder, resposta_sugerida. Retorne APENAS JSON.`;
-
-    const results: any[] = [];
+    const results: Record<string, unknown>[] = [];
 
     for (const intent of toProcess) {
       const msg = messageMap.get(intent.message_id);
       if (!msg) continue;
-
       const userPrompt = `EMPRESA: ${msg.empresa}\nMENSAGEM DO LEAD: ${msg.conteudo}`;
-
       try {
-        const aiResult = await callAI({
-          system: benchmarkSystemPrompt,
-          prompt: userPrompt,
-          functionName: 'ai-benchmark',
-          empresa: msg.empresa,
-          temperature: 0.3,
-          maxTokens: 1500,
-          supabase,
-        });
-
+        const aiResult = await callAI({ system: benchmarkSystemPrompt, prompt: userPrompt, functionName: 'ai-benchmark', empresa: msg.empresa, temperature: 0.3, maxTokens: 1500, supabase });
         if (aiResult.content) {
           const cleaned = aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
           const parsed = JSON.parse(cleaned);
-
-          await supabase.from('ai_model_benchmarks').insert({
-            original_intent_id: intent.id,
-            message_id: intent.message_id,
-            modelo_ia: modelo,
-            intent: parsed.intent || 'OUTRO',
-            intent_confidence: Math.min(1, Math.max(0, parsed.confidence || 0)),
-            acao_recomendada: parsed.acao || 'NENHUMA',
-            resposta_automatica_texto: parsed.resposta_sugerida || null,
-            tokens_usados: aiResult.tokensInput + aiResult.tokensOutput,
-            tempo_processamento_ms: aiResult.latencyMs,
-          });
-
-          results.push({
-            message_id: intent.message_id,
-            mensagem: msg.conteudo.substring(0, 100),
-            original: { intent: intent.intent, confidence: intent.intent_confidence, acao: intent.acao_recomendada, modelo: intent.modelo_ia },
-            benchmark: { intent: parsed.intent, confidence: parsed.confidence, acao: parsed.acao, modelo, tokens: aiResult.tokensInput + aiResult.tokensOutput, tempo_ms: aiResult.latencyMs },
-            concordam_intent: intent.intent === parsed.intent,
-            concordam_acao: intent.acao_recomendada === parsed.acao,
-          });
+          await supabase.from('ai_model_benchmarks').insert({ original_intent_id: intent.id, message_id: intent.message_id, modelo_ia: modelo, intent: parsed.intent || 'OUTRO', intent_confidence: Math.min(1, Math.max(0, parsed.confidence || 0)), acao_recomendada: parsed.acao || 'NENHUMA', resposta_automatica_texto: parsed.resposta_sugerida || null, tokens_usados: aiResult.tokensInput + aiResult.tokensOutput, tempo_processamento_ms: aiResult.latencyMs });
+          results.push({ message_id: intent.message_id, mensagem: msg.conteudo.substring(0, 100), original: { intent: intent.intent, confidence: intent.intent_confidence, acao: intent.acao_recomendada, modelo: intent.modelo_ia }, benchmark: { intent: parsed.intent, confidence: parsed.confidence, acao: parsed.acao, modelo, tokens: aiResult.tokensInput + aiResult.tokensOutput, tempo_ms: aiResult.latencyMs }, concordam_intent: intent.intent === parsed.intent, concordam_acao: intent.acao_recomendada === parsed.acao });
         }
       } catch (err) {
-        console.error(`[Benchmark] Erro processando ${intent.message_id}:`, err);
+        log.error(`Erro processando ${intent.message_id}`, { error: String(err) });
         results.push({ message_id: intent.message_id, error: String(err) });
       }
-
       await new Promise(r => setTimeout(r, 500));
     }
 
@@ -95,17 +65,11 @@ serve(async (req) => {
     const acaoMatch = successResults.filter(r => r.concordam_acao).length;
 
     return new Response(JSON.stringify({
-      summary: {
-        total_processadas: successResults.length,
-        erros: results.filter(r => r.error).length,
-        taxa_concordancia_intent: successResults.length > 0 ? (intentMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A',
-        taxa_concordancia_acao: successResults.length > 0 ? (acaoMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A',
-        modelo_benchmark: modelo,
-      },
+      summary: { total_processadas: successResults.length, erros: results.filter(r => r.error).length, taxa_concordancia_intent: successResults.length > 0 ? (intentMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A', taxa_concordancia_acao: successResults.length > 0 ? (acaoMatch / successResults.length * 100).toFixed(1) + '%' : 'N/A', modelo_benchmark: modelo },
       results,
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[Benchmark] Erro geral:', error);
+    log.error('Erro geral', { error: String(error) });
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

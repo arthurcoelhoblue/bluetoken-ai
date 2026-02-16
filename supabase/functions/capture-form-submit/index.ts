@@ -1,13 +1,15 @@
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://esm.sh/zod@3.25.76";
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+
+const log = createLogger('capture-form-submit');
 
 const submitPayload = z.object({
   slug: z.string().trim().min(1, "slug is required").max(200),
   answers: z.record(z.unknown()),
   metadata: z.record(z.unknown()).optional().default({}),
 });
-
-import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 
@@ -28,10 +30,7 @@ Deno.serve(async (req) => {
 
     const { slug, answers, metadata } = parsed.data;
 
-    const supabase = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-    );
+    const supabase = createServiceClient();
 
     // Fetch form
     const { data: form, error: formError } = await supabase
@@ -112,7 +111,7 @@ Deno.serve(async (req) => {
         .single();
 
       if (contactErr) {
-        console.error("Contact creation error:", contactErr);
+        log.error("Contact creation error", { error: contactErr.message });
         return new Response(JSON.stringify({ error: "Failed to create contact" }), {
           status: 500,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -165,7 +164,7 @@ Deno.serve(async (req) => {
 
       if (existingDeal) {
         dealId = existingDeal.id;
-        console.log("Existing open deal found, skipping creation:", dealId);
+        log.info("Existing open deal found, skipping creation", { dealId });
       } else {
         const dealInsert: Record<string, unknown> = {
           contact_id: contactId,
@@ -195,7 +194,7 @@ Deno.serve(async (req) => {
           .single();
 
         if (dealErr) {
-          console.error("Deal creation error:", dealErr);
+          log.error("Deal creation error", { error: dealErr.message });
         } else {
           dealId = deal.id;
         }
@@ -220,7 +219,7 @@ Deno.serve(async (req) => {
               },
             });
           } catch (e) {
-            console.error("Notification error:", e);
+            log.error("Notification error", { error: String(e) });
           }
         }
 
@@ -271,7 +270,7 @@ Deno.serve(async (req) => {
               }
             }
           } catch (e) {
-            console.error("Cadence start error:", e);
+            log.error("Cadence start error", { error: String(e) });
           }
         }
       }
@@ -290,7 +289,7 @@ Deno.serve(async (req) => {
       });
 
     if (subErr) {
-      console.error("Submission error:", subErr);
+      log.error("Submission error", { error: subErr.message });
       return new Response(JSON.stringify({ error: "Failed to save submission" }), {
         status: 500,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -302,7 +301,7 @@ Deno.serve(async (req) => {
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
   } catch (err) {
-    console.error("Unexpected error:", err);
+    log.error("Unexpected error", { error: String(err) });
     return new Response(JSON.stringify({ error: "Internal server error" }), {
       status: 500,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
-
+import { createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('cs-health-calculator');
 const corsHeaders = getWebhookCorsHeaders();
 
 type HealthStatus = 'SAUDAVEL' | 'ATENCAO' | 'EM_RISCO' | 'CRITICO';
@@ -24,7 +25,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
 
     let customerIds: string[] = [];
     const body = req.method === 'POST' ? await req.json() : {};
@@ -101,14 +102,14 @@ serve(async (req) => {
         }
         processed++;
       } catch (e) {
-        console.error(`[CS-Health] Erro no cliente ${customerId}:`, e);
+        log.error(`Erro no cliente ${customerId}`, { error: String(e) });
         errors++;
       }
     }
 
     return new Response(JSON.stringify({ processed, errors, total: customerIds.length }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   } catch (error) {
-    console.error('[CS-Health] Erro geral:', error);
+    log.error('Erro geral', { error: error instanceof Error ? error.message : 'Erro desconhecido' });
     return new Response(JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
