@@ -1,95 +1,109 @@
-#  Fase F — Polimento Final (Auditoria V1.0 Estavel)
+# Fase G — Rumo ao 11/10 (Excelencia de Engenharia)
 
-O relatório da Manus AI de 16/02/2026 atribui nota 8.5/10 de maturidade e aponta itens de polimento organizados em 3 prioridades. Este plano resolve todos.
-
----
-
-## Prioridade 0: Bloqueadores
-
-### P0.1 — Corrigir teste CompanyContext.test.tsx
-
-O teste esta funcional e o codigo do CompanyContext tambem. A falha provavelmente e causada por falta do ambiente `localStorage` no setup do vitest. Preciso investigar se o `jsdom` esta configurado corretamente no `vitest.config.ts` e se ha algum import faltando. Se o teste realmente falhar no runner, a correcao sera ajustar o setup ou o teste.
-
-**Arquivo**: `src/contexts/CompanyContext.test.tsx` e possivelmente `vitest.config.ts`
-
-### P0.2 — Vulnerabilidades de dependencias
-
-O relatorio menciona 8 vulnerabilidades (4 altas, 4 moderadas) em `react-router` e `esbuild`. O Lovable nao permite rodar `npm audit fix` diretamente, mas posso atualizar as versoes no `package.json` para resolver as vulnerabilidades conhecidas.
-
-**Arquivo**: `package.json` (atualizar versoes de react-router-dom e esbuild se aplicavel)
+O relatorio de conclusao da Fase F confirma nota 9.0/10 e define 5 pilares para atingir "Referencia de Industria". Este plano implementa os 3 de maior impacto imediato, conforme recomendacao do proprio relatorio.
 
 ---
 
-## Prioridade 1: Consistencia e Boas Praticas
+## Escopo da Fase G
 
-### P1.1 — Padronizar Logging no sgt-webhook (31 console.log -> createLogger)
+Baseado nas 3 prioridades recomendadas pelo relatorio:
 
-O `sgt-webhook` e seus modulos (`index.ts`, `normalization.ts`, `validation.ts`) usam ~31 `console.log/error/warn` diretos enquanto todas as outras funcoes usam o `createLogger`. A correcao e mecanica:
+1. Padronizacao total de logging (eliminar os ~60 console.* restantes em 4 Edge Functions)
+2. Refatoracao do useCadences.ts (753 linhas -> modulos menores)
+3. ESLint reforçado (prevenir regressoes de qualidade)
+
+---
+
+## G1 — Logging 100% Padronizado (4 Edge Functions restantes)
+
+A Fase F padronizou o sgt-webhook. Restam 4 funcoes com console.* direto:
 
 
-| Arquivo                        | console.* | Acao                                                                                                                                                                                                              |
-| ------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sgt-webhook/index.ts`         | ~20       | Adicionar `import { createLogger }` e `const log = createLogger('sgt-webhook')`. Substituir `console.log('[SGT Webhook]...')` por `log.info(...)`, `console.error` por `log.error`, `console.warn` por `log.warn` |
-| `sgt-webhook/normalization.ts` | ~8        | Criar `const log = createLogger('sgt-webhook/normalization')` e substituir                                                                                                                                        |
-| `sgt-webhook/validation.ts`    | ~1        | Criar `const log = createLogger('sgt-webhook/validation')` e substituir                                                                                                                                           |
+| Funcao                        | console.* | Acao                                                |
+| ----------------------------- | --------- | --------------------------------------------------- |
+| `whatsapp-inbound/index.ts`   | ~25       | Substituir por `createLogger('whatsapp-inbound')`   |
+| `cadence-runner/index.ts`     | ~25       | Substituir por `createLogger('cadence-runner')`     |
+| `copilot-chat/index.ts`       | ~5        | Substituir por `createLogger('copilot-chat')`       |
+| `cs-playbook-runner/index.ts` | ~6        | Substituir por `createLogger('cs-playbook-runner')` |
 
 
-### P1.2 — Padronizar tokeniza-offers com _shared/config.ts
+Cada `console.log('[Tag] msg')` vira `log.info('msg', { dados })` — transformacao mecanica, sem mudanca de logica.
 
-O relatorio menciona que `tokeniza-offers` nao usa `config.ts`. Verificando o codigo, a funcao ja usa `createLogger` mas nao usa `createServiceClient` porque nao precisa do Supabase — ela apenas faz fetch para uma API externa. Portanto, esta "inconsistencia" e benigna. Nenhuma acao necessaria.
+**Resultado**: 0 console.* diretos em Edge Functions. 100% usando createLogger.
 
-### P1.3 — Completar .env.example
+---
 
-O arquivo atual tem apenas 3 variaveis. Precisa incluir as variaveis de backend tambem:
+## G2 — Refatorar useCadences.ts (753 linhas -> ~4 modulos)
 
-```text
-VITE_SUPABASE_URL=https://your-project.supabase.co
-VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
-VITE_SUPABASE_PROJECT_ID=your-project-id
+O arquivo mais longo do projeto. Sera dividido preservando a API publica (zero breaking changes):
 
-# Backend (Edge Functions) — configurar no painel de secrets
-SGT_WEBHOOK_SECRET=your-sgt-webhook-secret
-ANTHROPIC_API_KEY=your-anthropic-key
-OPENAI_API_KEY=your-openai-key
-GOOGLE_API_KEY=your-google-key
-CRON_SECRET=your-cron-secret
-SMTP_HOST=smtp.example.com
-SMTP_PORT=587
-SMTP_USER=user@example.com
-SMTP_PASS=your-smtp-password
-SMTP_FROM=noreply@example.com
-WHATSAPP_API_KEY=your-whatsapp-key
-WHATSAPP_INBOUND_SECRET=your-whatsapp-inbound-secret
-BLUECHAT_API_KEY=your-bluechat-key
-BLUECHAT_API_KEY_BLUE=your-bluechat-blue-key
-MENSAGERIA_API_KEY=your-mensageria-key
-PIPEDRIVE_API_TOKEN=your-pipedrive-token
+
+| Novo Arquivo                                | Conteudo                                                | ~Linhas |
+| ------------------------------------------- | ------------------------------------------------------- | ------- |
+| `src/hooks/cadences/useCadences.ts`         | `useCadences()`, `useCadence()`                         | ~140    |
+| `src/hooks/cadences/useCadenceRuns.ts`      | `useCadenceRuns()`, `useCadenceRunDetail()`             | ~200    |
+| `src/hooks/cadences/useCadenceEvents.ts`    | `useCadenceEvents()`, `useCadenceNextActions()`         | ~200    |
+| `src/hooks/cadences/useCadenceMutations.ts` | `useUpdateCadenceRunStatus()`, stage triggers, CRM view | ~120    |
+| `src/hooks/cadences/index.ts`               | Re-exporta tudo (barrel file)                           | ~10     |
+| `src/hooks/useCadences.ts`                  | Re-exporta de `./cadences` (backward compat)            | ~3      |
+
+
+Nenhuma pagina ou componente precisa mudar seus imports.
+
+---
+
+## G3 — ESLint Reforçado
+
+Adicionar regras que previnem regressao de qualidade:
+
+```javascript
+// Regras a adicionar ao eslint.config.js
+"no-console": ["warn", { allow: ["warn", "error"] }], // Frontend only
+"@typescript-eslint/no-explicit-any": "error",
+"@typescript-eslint/consistent-type-imports": "warn",
 ```
 
+A regra `no-console` so se aplica a arquivos `src/` (frontend). Os arquivos de Edge Functions usam createLogger que internamente chama console.*, entao nao sao afetados.
+
 ---
 
-## Prioridade 2: Melhoria Continua (parcial)
+## G4 — Limpeza de console.* no Frontend (11 arquivos)
 
-### P2.1 — Resolver comentarios TODO/FIXME
+Substituir os ~16 `console.error/warn` restantes no frontend por tratamento adequado:
 
-A busca revelou que nao existem comentarios `// TODO` ou `// FIXME` no codigo. Os 8 mencionados no relatorio provavelmente foram contados em uma versao anterior ou sao falsos positivos da palavra "Todos" (texto de UI em portugues). Nenhuma acao necessaria.
 
-### P2.2 — Nota sobre Record<string, unknown> e as unknown as
+| Arquivo                   | Instancias | Acao                                     |
+| ------------------------- | ---------- | ---------------------------------------- |
+| `ErrorBoundary.tsx`       | 1          | Manter (padrao React)                    |
+| `AuthContext.tsx`         | 3          | Manter (debug critico de auth)           |
+| `NotFound.tsx`            | 1          | Manter (debug de rotas 404)              |
+| `CoachingSidebar.tsx`     | 1          | Remover (erro ja tratado com setState)   |
+| `EmailFromDealDialog.tsx` | 1          | Remover (toast ja exibe erro)            |
+| `DealCard.tsx`            | 1          | Remover (catch silencioso)               |
+| `useCopilotInsights.ts`   | 3          | Remover (erros ja tratados com setState) |
+| `useCopilotMessages.ts`   | 3          | Remover (erros ja tratados com setState) |
+| `useKnowledgeFaq.ts`      | 1          | Remover (fallback ja retorna valor)      |
+| `CopilotPanel.tsx`        | 1          | Remover (toast ja exibe erro)            |
+| `CSPesquisasPage.tsx`     | 1          | Remover (toast ja exibe erro)            |
 
-O relatorio menciona 135 `Record<string, unknown>` e 15 `as unknown as` como "proxima fronteira". Estes sao padroes seguros e corretos para dados dinamicos do Supabase (joins, payloads JSON). Substituir por tipos Zod seria um esforco grande com retorno marginal neste momento. Recomendo manter como item de backlog.
+
+**Resultado**: Apenas 5 console.* intencionais permanecem (ErrorBoundary, AuthContext, NotFound) — todos justificados.
 
 ---
 
 ## Sequencia de Execucao
 
-1. Investigar e corrigir `CompanyContext.test.tsx`
-2. Completar `.env.example` com todas as variaveis
-3. Substituir 31 `console.*` no `sgt-webhook` por `createLogger`
-4. Verificar build e testes
+1. G1 — Padronizar logging nas 4 Edge Functions restantes
+2. G2 — Refatorar useCadences.ts em modulos
+3. G3 — Reforcar ESLint com regras de qualidade
+4. G4 — Limpar console.* desnecessarios no frontend
+5. Redeploy das 4 Edge Functions modificadas
+6. Rodar testes para garantir 314/314 passando
 
 ## Resultado Esperado
 
-- 0 testes falhando
-- Logging 100% padronizado (createLogger em todas as funcoes)
-- `.env.example` completo com todas as 17 secrets
-- Scorecard: Testes 7->8, Maturidade 8.5->9.0
+- Logging: 100% padronizado (createLogger) em TODAS Edge Functions
+- Maior arquivo: reduzido de 753 para ~200 linhas max
+- ESLint: previne regressoes de any, console.log e imports
+- Frontend: apenas 5 console.* intencionais e documentados
+- Scorecard projetado: Qualidade 9->10, Manutenibilidade 9->10
