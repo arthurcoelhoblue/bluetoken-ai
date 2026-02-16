@@ -593,7 +593,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!mensagemResolvida.success) {
-    log.error('Erro ao resolver mensagem', { error: mensagemResolvida.error });
+    log.warn('Mensagem não resolvida (dados incompletos)', { error: mensagemResolvida.error });
     
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
