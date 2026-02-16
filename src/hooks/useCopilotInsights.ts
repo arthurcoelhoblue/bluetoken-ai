@@ -56,7 +56,8 @@ export function useCopilotInsights(empresa: string) {
       });
 
       if (error) {
-        const status = (error as any)?.status ?? (error as any)?.context?.status;
+        const errObj = error as { status?: number; context?: { status?: number } };
+        const status = errObj.status ?? errObj.context?.status;
         if (status === 429 || status === 402) return;
         throw error;
       }

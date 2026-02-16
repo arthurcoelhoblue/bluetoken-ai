@@ -49,6 +49,10 @@ export interface Call {
   created_at: string;
   contact_nome?: string;
   user_nome?: string;
+  summary_ia?: string | null;
+  transcription?: string | null;
+  action_items?: string[] | null;
+  sentiment?: string | null;
 }
 
 export interface CallEvent {

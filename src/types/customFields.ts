@@ -92,6 +92,7 @@ export interface PipelineFormData {
   empresa: 'BLUE' | 'TOKENIZA';
   descricao?: string;
   is_default?: boolean;
+  tipo?: string;
 }
 
 export interface StageFormData {
