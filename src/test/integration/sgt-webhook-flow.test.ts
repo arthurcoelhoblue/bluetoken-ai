@@ -151,14 +151,14 @@ describe('SGT Webhook - Fluxo Completo', () => {
     });
 
     it('deve atribuir prioridade 2 para leads MORNOS', () => {
-      const temperatura = 'MORNO';
+      const temperatura: string = 'MORNO';
       const prioridade = temperatura === 'QUENTE' ? 1 : temperatura === 'MORNO' ? 2 : 3;
 
       expect(prioridade).toBe(2);
     });
 
     it('deve atribuir prioridade 3 para leads FRIOS', () => {
-      const temperatura = 'FRIO';
+      const temperatura: string = 'FRIO';
       const prioridade = temperatura === 'QUENTE' ? 1 : temperatura === 'MORNO' ? 2 : 3;
 
       expect(prioridade).toBe(3);

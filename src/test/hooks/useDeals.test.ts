@@ -2,6 +2,7 @@
  * Testes para hooks de Deals
  * 
  * Testa a lógica de busca, filtragem e cálculos de deals
+ * Alinhado com o schema real (sem `empresa`, sem `probabilidade`)
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
@@ -22,7 +23,6 @@ describe('useDeals Hook Logic', () => {
     it('deve criar deal com todos os campos obrigatórios', () => {
       const deal = createMockDeal();
 
-      expect(deal.empresa).toMatch(/^(TOKENIZA|BLUE)$/);
       expect(deal.titulo).toBeDefined();
       expect(deal.valor).toBeGreaterThan(0);
       expect(deal.pipeline_id).toBeDefined();
@@ -54,19 +54,6 @@ describe('useDeals Hook Logic', () => {
   });
 
   describe('Filtragem de Deals', () => {
-    it('deve filtrar deals por empresa', () => {
-      const deals = [
-        createMockDeal({ empresa: 'TOKENIZA' }),
-        createMockDeal({ empresa: 'BLUE' }),
-        createMockDeal({ empresa: 'TOKENIZA' }),
-      ];
-
-      const filtered = deals.filter(d => d.empresa === 'TOKENIZA');
-
-      expect(filtered).toHaveLength(2);
-      expect(filtered.every(d => d.empresa === 'TOKENIZA')).toBe(true);
-    });
-
     it('deve filtrar deals por temperatura', () => {
       const deals = [
         mockDealQuente,
@@ -88,14 +75,14 @@ describe('useDeals Hook Logic', () => {
       expect(highValue.every(d => (d.valor || 0) >= 100000)).toBe(true);
     });
 
-    it('deve filtrar deals por probabilidade mínima', () => {
+    it('deve filtrar deals por score_probabilidade mínimo', () => {
       const deals = [
-        createMockDeal({ probabilidade: 20 }),
-        createMockDeal({ probabilidade: 50 }),
-        createMockDeal({ probabilidade: 80 }),
+        createMockDeal({ score_probabilidade: 20 }),
+        createMockDeal({ score_probabilidade: 50 }),
+        createMockDeal({ score_probabilidade: 80 }),
       ];
 
-      const highProbability = deals.filter(d => (d.probabilidade || 0) >= 50);
+      const highProbability = deals.filter(d => (d.score_probabilidade || 0) >= 50);
 
       expect(highProbability).toHaveLength(2);
     });
@@ -126,15 +113,15 @@ describe('useDeals Hook Logic', () => {
       expect(average).toBe(100000);
     });
 
-    it('deve calcular valor ponderado por probabilidade', () => {
+    it('deve calcular valor ponderado por score_probabilidade', () => {
       const deals = [
-        createMockDeal({ valor: 100000, probabilidade: 50 }), // 50k esperado
-        createMockDeal({ valor: 200000, probabilidade: 25 }), // 50k esperado
-        createMockDeal({ valor: 50000, probabilidade: 100 }), // 50k esperado
+        createMockDeal({ valor: 100000, score_probabilidade: 50 }), // 50k esperado
+        createMockDeal({ valor: 200000, score_probabilidade: 25 }), // 50k esperado
+        createMockDeal({ valor: 50000, score_probabilidade: 100 }), // 50k esperado
       ];
 
       const expectedValue = deals.reduce((sum, d) => {
-        return sum + ((d.valor || 0) * (d.probabilidade || 0) / 100);
+        return sum + ((d.valor || 0) * (d.score_probabilidade || 0) / 100);
       }, 0);
 
       expect(expectedValue).toBe(150000); // 50k + 50k + 50k
@@ -165,45 +152,45 @@ describe('useDeals Hook Logic', () => {
       expect(sorted[2].valor).toBe(50000);
     });
 
-    it('deve ordenar deals por probabilidade (decrescente)', () => {
+    it('deve ordenar deals por score_probabilidade (decrescente)', () => {
       const deals = [
-        createMockDeal({ probabilidade: 30 }),
-        createMockDeal({ probabilidade: 80 }),
-        createMockDeal({ probabilidade: 50 }),
+        createMockDeal({ score_probabilidade: 30 }),
+        createMockDeal({ score_probabilidade: 80 }),
+        createMockDeal({ score_probabilidade: 50 }),
       ];
 
-      const sorted = [...deals].sort((a, b) => (b.probabilidade || 0) - (a.probabilidade || 0));
+      const sorted = [...deals].sort((a, b) => (b.score_probabilidade || 0) - (a.score_probabilidade || 0));
 
-      expect(sorted[0].probabilidade).toBe(80);
-      expect(sorted[1].probabilidade).toBe(50);
-      expect(sorted[2].probabilidade).toBe(30);
+      expect(sorted[0].score_probabilidade).toBe(80);
+      expect(sorted[1].score_probabilidade).toBe(50);
+      expect(sorted[2].score_probabilidade).toBe(30);
     });
   });
 
-  describe('Validação de Temperatura e Probabilidade', () => {
-    it('deve validar que temperatura QUENTE tem probabilidade alta', () => {
+  describe('Validação de Temperatura e Score', () => {
+    it('deve validar que temperatura QUENTE tem score alto', () => {
       const deal = mockDealQuente;
 
       expect(deal.temperatura).toBe('QUENTE');
-      expect(deal.probabilidade).toBeGreaterThanOrEqual(70);
+      expect(deal.score_probabilidade).toBeGreaterThanOrEqual(70);
     });
 
-    it('deve validar que temperatura FRIO tem probabilidade baixa', () => {
+    it('deve validar que temperatura FRIO tem score baixo', () => {
       const deal = mockDealFrio;
 
       expect(deal.temperatura).toBe('FRIO');
-      expect(deal.probabilidade).toBeLessThanOrEqual(30);
+      expect(deal.score_probabilidade).toBeLessThanOrEqual(30);
     });
 
-    it('deve sugerir temperatura baseada na probabilidade', () => {
-      const probabilidades = [
-        { prob: 85, expected: 'QUENTE' },
-        { prob: 55, expected: 'MORNO' },
-        { prob: 20, expected: 'FRIO' },
+    it('deve sugerir temperatura baseada no score_probabilidade', () => {
+      const scores = [
+        { score: 85, expected: 'QUENTE' },
+        { score: 55, expected: 'MORNO' },
+        { score: 20, expected: 'FRIO' },
       ];
 
-      probabilidades.forEach(({ prob, expected }) => {
-        const temperatura = prob >= 70 ? 'QUENTE' : prob >= 40 ? 'MORNO' : 'FRIO';
+      scores.forEach(({ score, expected }) => {
+        const temperatura = score >= 70 ? 'QUENTE' : score >= 40 ? 'MORNO' : 'FRIO';
         expect(temperatura).toBe(expected);
       });
     });
@@ -228,23 +215,6 @@ describe('useDeals Hook Logic', () => {
       expect(grouped['QUENTE']).toHaveLength(2);
       expect(grouped['MORNO']).toHaveLength(1);
       expect(grouped['FRIO']).toHaveLength(1);
-    });
-
-    it('deve agrupar deals por empresa', () => {
-      const deals = [
-        createMockDeal({ empresa: 'TOKENIZA' }),
-        createMockDeal({ empresa: 'BLUE' }),
-        createMockDeal({ empresa: 'TOKENIZA' }),
-      ];
-
-      const grouped = deals.reduce((acc, deal) => {
-        if (!acc[deal.empresa]) acc[deal.empresa] = [];
-        acc[deal.empresa].push(deal);
-        return acc;
-      }, {} as Record<string, typeof deals>);
-
-      expect(grouped['TOKENIZA']).toHaveLength(2);
-      expect(grouped['BLUE']).toHaveLength(1);
     });
   });
 });
