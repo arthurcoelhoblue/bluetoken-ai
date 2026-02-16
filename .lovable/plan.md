@@ -1,147 +1,191 @@
 
 
-# Fase 3 — Auditoria e Correcao de Triggers Cross-Tenant
+# Plano de Remediacao Multi-Tenancy 11/10
 
-## Resumo da Auditoria
-
-Analisei todas as trigger functions do banco. O resultado:
-
-### Triggers JA SEGUROS (nenhuma acao necessaria)
-
-| Trigger | Motivo |
-|---------|--------|
-| `log_deal_stage_change` | Opera apenas no deal sendo atualizado (mesmo ID). Sem queries cross-tenant. |
-| `log_deal_activity` | Insere atividade referenciando o deal atualizado. Sem leak. |
-| `validate_deal_scores` | Apenas validacao de range numerica. Sem queries. |
-| `validate_deal_owner` | Apenas validacao de NOT NULL. Sem queries. |
-| `update_updated_at_column` | Apenas atualiza timestamp. |
-| `cleanup_old_activity_logs` | Deleta por timestamp, sem filtro de empresa (tabela de auditoria). |
-| `fn_update_deal_score` | Chama `fn_calc_deal_score` que opera apenas no deal especifico. |
-| `fn_sync_lead_to_contact` | Copia dados do lead para contact. Preserva `empresa` do lead original. |
-| `fn_call_to_deal_activity` | Insere atividade referenciando a call especifica. |
-| `fn_cs_auto_csat_on_resolve` | Chama edge function com `customer_id` especifico. |
-| `fn_cs_incident_recalc_health` | Chama edge function com `customer_id` especifico. |
-| `fn_cs_survey_recalc_health` | Opera no customer especifico da survey. |
-| `enforce_channel_exclusivity` | Filtra por `empresa = NEW.empresa`. Ja seguro. |
-
-### Triggers COM RISCO — Precisam de correcao
-
-#### 1. `fn_gamify_deal_ganho` — RISCO MEDIO
-**Problema**: Faz `SELECT COUNT(*) FROM deals WHERE owner_id = NEW.owner_id AND status = 'GANHO'` SEM filtrar por empresa. Isso significa que a contagem de deals ganhos de um vendedor inclui deals de OUTROS tenants, potencialmente concedendo badges incorretamente.
-**Correcao**: Filtrar a contagem por empresa: `WHERE owner_id = NEW.owner_id AND status = 'GANHO' AND pipeline_id IN (SELECT id FROM pipelines WHERE empresa = v_empresa)`.
-
-#### 2. `fn_gamify_activity_done` — RISCO MEDIO
-**Problema**: Faz `SELECT COUNT(*) FROM deal_activities WHERE user_id = NEW.user_id AND tarefa_concluida = true AND created_at >= date_trunc('week', now())` SEM filtrar por empresa. Um vendedor que atua em dois tenants teria contagens infladas.
-**Correcao**: Adicionar JOIN com `deals -> pipelines` para filtrar por empresa.
-
-#### 3. `calc_comissao_deal` — RISCO ALTO
-**Problema**: No modo ESCALONADO, calcula o acumulado mensal com `SELECT SUM(d.valor) FROM deals d JOIN pipelines pip ... WHERE d.owner_id = NEW.owner_id AND pip.empresa = v_empresa`. Este JA filtra por empresa — **sem risco**.
-**Revisao**: Analisando com mais cuidado, esta funcao JA resolve empresa via `SELECT p.empresa FROM pipelines p WHERE p.id = NEW.pipeline_id` e filtra corretamente no modo escalonado. **Seguro**.
-
-#### 4. `fn_deal_auto_advance` — RISCO BAIXO
-**Problema**: Busca `pipeline_auto_rules` pelo `pipeline_id` do deal, que ja e especifico de uma empresa. A notificacao insere em `notifications` usando `empresa` do pipeline. **Seguro**.
-
-#### 5. `check_cadence_stage_trigger` — RISCO BAIXO
-**Problema**: Busca `cadence_stage_triggers` pelo `stage_id` e `pipeline_id`, que sao especificos de uma empresa. Resolve empresa via pipeline. **Seguro**.
-
-#### 6. `fn_cs_gamify_health_improve` — RISCO BAIXO
-Opera sobre customer especifico. Resolve `empresa` do customer. Sem queries cross-tenant. **Seguro**.
-
-#### 7. `fn_cs_gamify_incident_resolved` — RISCO BAIXO
-Opera sobre incidente especifico. Faz `SELECT COUNT(*) FROM cs_incidents WHERE responsavel_id = ... AND status = 'RESOLVIDA'` sem filtro de empresa. **Risco menor** pois badges de CS nao expoe dados, mas contagem inflada e possivel.
-**Correcao**: Adicionar `.empresa = NEW.empresa` na contagem.
-
-### Resumo das correcoes necessarias
-
-| Trigger | Acao | Risco |
-|---------|------|-------|
-| `fn_gamify_deal_ganho` | Filtrar contagem de deals por empresa via pipelines | MEDIO |
-| `fn_gamify_activity_done` | Filtrar contagem de atividades por empresa via deals/pipelines | MEDIO |
-| `fn_cs_gamify_incident_resolved` | Filtrar contagem de incidentes por empresa | BAIXO |
-
-## Detalhes Tecnicos — SQL Migration
-
-### `fn_gamify_deal_ganho`
-```text
--- Antes:
-SELECT COUNT(*) INTO v_total_ganhos FROM deals WHERE owner_id = NEW.owner_id AND status = 'GANHO';
-
--- Depois:
-SELECT COUNT(*) INTO v_total_ganhos
-FROM deals d
-JOIN pipelines p ON p.id = d.pipeline_id
-WHERE d.owner_id = NEW.owner_id
-  AND d.status = 'GANHO'
-  AND p.empresa::text = v_empresa;
-```
-
-### `fn_gamify_activity_done`
-```text
--- Antes:
-SELECT COUNT(*) INTO v_week_count FROM deal_activities
-WHERE user_id = NEW.user_id AND tarefa_concluida = true
-  AND created_at >= date_trunc('week', now());
-
--- Depois:
-SELECT COUNT(*) INTO v_week_count
-FROM deal_activities da
-JOIN deals d ON d.id = da.deal_id
-JOIN pipelines p ON p.id = d.pipeline_id
-WHERE da.user_id = NEW.user_id
-  AND da.tarefa_concluida = true
-  AND da.created_at >= date_trunc('week', now())
-  AND p.empresa::text = v_empresa;
-```
-
-### `fn_cs_gamify_incident_resolved`
-```text
--- Antes:
-SELECT COUNT(*) INTO v_resolved_count FROM cs_incidents
-WHERE responsavel_id = NEW.responsavel_id AND status = 'RESOLVIDA';
-
--- Depois:
-SELECT COUNT(*) INTO v_resolved_count FROM cs_incidents
-WHERE responsavel_id = NEW.responsavel_id
-  AND status = 'RESOLVIDA'
-  AND empresa = NEW.empresa;
-```
+Baseado na auditoria pos-implementacao, este plano aborda todos os gaps identificados em 4 camadas, organizados por prioridade e risco.
 
 ---
 
-# Fase 4 — Testes de Isolamento
+## Contexto
 
-Criar testes automatizados para as edge functions refatoradas, validando que queries com `empresa = 'BLUE'` nunca retornam dados de `empresa = 'TOKENIZA'` e vice-versa.
-
-### Testes planejados (Deno edge function tests)
-
-1. **`_shared/tenant.ts`**: Testar `assertEmpresa` com valores validos, invalidos e nulos.
-2. **`deal-loss-analysis`**: Testar que modo portfolio sem empresa retorna erro.
-3. **`icp-learner`**: Testar que chamada sem empresa retorna erro.
-4. **`follow-up-scheduler`**: Testar que chamada sem empresa retorna erro.
-
-### Arquivos
-
-- `supabase/functions/_shared/tenant_test.ts` (novo)
+A auditoria atribuiu nota 9.8/10 ao estado geral, mas identificou falhas criticas no backend (nota 3/10) e lacunas em frontend e defesa em profundidade. O trabalho sera dividido em 6 fases sequenciais.
 
 ---
 
-## Resumo de mudancas
+## Fase 1 -- RLS: Corrigir 2 tabelas restantes (Risco Medio)
 
-| Tipo | Arquivo/Recurso | Acao | Status |
-|------|-----------------|------|--------|
-| SQL Migration | 3 trigger functions | Corrigir filtros cross-tenant | ✅ CONCLUIDO |
-| Plan | `.lovable/plan.md` | Atualizar status Fases 3 e 4 | ✅ CONCLUIDO |
-| Test | `supabase/functions/_shared/tenant_test.ts` | Criar testes unitarios | ✅ CONCLUIDO |
+Corrigir as policies com `USING (true)` em:
+
+| Tabela | Problema | Correcao |
+|--------|----------|----------|
+| `deal_stage_history` | SELECT com `USING (true)` expoe historico de funil entre tenants | Adicionar filtro via join com `deals -> pipelines` para resolver empresa |
+| `seller_badges` | SELECT com `USING (true)` expoe badges entre tenants | Adicionar filtro por empresa (se coluna existir) ou via `profiles -> user_access_assignments` |
+
+Uma unica SQL migration resolve ambos.
 
 ---
 
-## Status Geral do Hardening Multi-Tenant
+## Fase 2 -- Frontend: Corrigir 8 hooks criticos (Risco Alto)
 
-| Fase | Descricao | Status |
-|------|-----------|--------|
-| 1 | RLS Hardening (80+ tabelas) | ✅ CONCLUIDO |
-| 2A | Criar `_shared/tenant.ts` | ✅ CONCLUIDO |
-| 2B | Refatorar 5 Edge Functions prioritarias | ✅ CONCLUIDO |
-| 3 | Auditoria e correcao de triggers cross-tenant | ✅ CONCLUIDO |
-| 4 | Testes de isolamento | ✅ CONCLUIDO |
+Cada hook abaixo sera atualizado para importar `useCompany()` e filtrar queries pela `activeCompany`. O padrao ja existe no projeto e sera replicado.
+
+| Hook | Correcao |
+|------|----------|
+| `useDealDetail` | Busca deal por ID via view -- RLS ja protege. Sem acao necessaria se RLS de `deals` esta correto (ja esta). **Risco real: baixo.** |
+| `useLossPendencies` | Adicionar filtro por empresa via join `pipelines:pipeline_id(empresa)` + `.eq()` |
+| `useOrphanDeals` | Adicionar filtro por empresa via join `pipelines:pipeline_id(empresa)` + `.eq()` |
+| `useAICostDashboard` | Adicionar `.eq('empresa', activeCompany)` na query de `ai_usage_log` |
+| `useAdoptionMetrics` | Adicionar `.eq('empresa', activeCompany)` na query de `analytics_events` |
+| `useSystemSettings` | Adicionar `.eq('empresa', activeCompany)` -- **OU** manter sem filtro se settings sao globais por design. Avaliar se `system_settings` tem coluna `empresa`. |
+| `usePromptVersions` | Tabela `prompt_versions` -- verificar se tem coluna `empresa`. Se sim, filtrar. Se nao, e global por design. |
+| `useNotifications` | Adicionar `.eq('empresa', activeCompany)` (tabela ja tem coluna `empresa`) |
+
+Cada hook recebe `useCompany()` e inclui `activeCompany` na queryKey para invalidacao automatica ao trocar empresa.
+
+---
+
+## Fase 3 -- Backend: Refatorar Edge Functions restantes (Risco Critico)
+
+Esta e a fase mais extensa. Das 42 funcoes que usam `createServiceClient`, 5 ja foram corrigidas. Das 37 restantes, muitas sao CRON jobs que operam intencionalmente em todos os tenants ou funcoes que operam por ID especifico (seguras por natureza).
+
+### Classificacao das funcoes restantes
+
+**Grupo A -- Precisam de filtro `empresa` obrigatorio (chamadas por usuario/frontend):**
+
+| Funcao | Correcao |
+|--------|----------|
+| `next-best-action` | Recebe `empresa` no body, filtrar todas as 8 queries por empresa |
+| `amelia-mass-action` | Resolver empresa do job e filtrar queries |
+| `deal-context-summary` | Opera por deal_id -- seguro via RLS se `deals` tem RLS. Mas usar service_role requer validacao. Adicionar filtro empresa |
+| `call-coach` | Opera por deal_id -- similar, adicionar validacao |
+| `amelia-learn` | Ja recebe `empresa` e filtra. **Verificar completude.** |
+| `cs-suggest-note` | Opera por customer_id, resolver empresa do customer |
+
+**Grupo B -- CRON jobs que devem processar todos os tenants mas precisam isolar resultados:**
+
+| Funcao | Correcao |
+|--------|----------|
+| `revenue-forecast` | Queries de `wonDeals` e `lostDeals` nao filtram por empresa. Corrigir para filtrar quando `targetEmpresa` e fornecido |
+| `cs-daily-briefing` | Query de `cs_incidents` nao filtra por empresa. Adicionar filtro |
+| `cs-trending-topics` | Query de `cs_surveys` nao filtra por empresa. Adicionar filtro e salvar resultado por empresa |
+| `cs-churn-predictor` | CRON -- opera em todos. Resultados ja isolados por customer. **Baixa prioridade** |
+| `cs-health-calculator` | CRON -- seguro, opera por customer_id. **Sem acao** |
+| `cs-incident-detector` | CRON -- opera em todos. **Verificar se isola resultados** |
+| `cs-renewal-alerts` | CRON -- opera em todos. **Verificar** |
+| `weekly-report` | CRON -- ja itera por empresa. **Verificar completude** |
+
+**Grupo C -- Funcoes de webhook/integracao (operam por evento especifico, risco baixo):**
+
+`bluechat-inbound`, `whatsapp-inbound`, `whatsapp-send`, `zadarma-webhook`, `zadarma-proxy`, `sgt-webhook`, `sgt-buscar-lead`, `sgt-sync-clientes`, `capture-form-submit`, `email-send`, `notify-closer`, `pipedrive-sync`, `call-transcribe`
+
+Estas recebem dados de um evento especifico (uma mensagem, um webhook) e operam apenas naquele contexto. **Risco baixo, sem acao imediata.**
+
+**Grupo D -- Funcoes SDR (operam por lead/mensagem especifica):**
+
+`sdr-ia-interpret`, `sdr-intent-classifier`, `sdr-message-parser`, `sdr-response-generator`, `sdr-action-executor`, `reclassify-leads`, `faq-auto-review`, `tokeniza-offers`
+
+Operam sobre um lead ou mensagem especifica. **Risco baixo se RLS esta correto nas tabelas base.**
+
+### Abordagem
+
+Para cada funcao do Grupo A e B:
+1. Importar `assertEmpresa` e `extractEmpresa` de `_shared/tenant.ts`
+2. Extrair empresa do body ou do contexto da entidade
+3. Adicionar `.eq('empresa', empresa)` ou filtro via join em cada query
+
+**Nota sobre `createTenantClient`**: A auditoria sugere um wrapper automatico. Porem, criar um proxy Supabase client que injeta filtros automaticamente e complexo e fragil (nem toda tabela tem coluna `empresa` direta; muitas precisam de joins). A abordagem manual com `assertEmpresa` + filtros explicitos e mais segura e previsivel. O importante e cobrir todas as funcoes.
+
+---
+
+## Fase 4 -- Triggers de validacao no banco (Defesa em Profundidade)
+
+Criar triggers que previnam inconsistencias de tenant em writes criticos:
+
+| Trigger | Tabela | Regra |
+|---------|--------|-------|
+| `validate_deal_pipeline_tenant` | `deals` | Em INSERT/UPDATE, verificar que `pipeline_id` pertence a mesma empresa do `contact_id` |
+| `validate_activity_tenant` | `deal_activities` | Em INSERT, verificar que o deal pertence a empresa do usuario |
+
+Estes sao redes de seguranca -- se todas as outras camadas falharem, estes triggers impedem a corrupcao de dados.
+
+---
+
+## Fase 5 -- Testes de isolamento expandidos
+
+Expandir `tenant_test.ts` com testes HTTP para as funcoes refatoradas:
+- Testar que cada funcao do Grupo A retorna erro sem `empresa`
+- Testar que funcoes do Grupo A com empresa invalida retornam erro
+
+---
+
+## Fase 6 -- Documentacao e ADR
+
+Atualizar `.lovable/plan.md` e `docs-site/docs/desenvolvedor/multi-tenancy.md` com:
+- Status final de todas as fases
+- ADR sobre decisao de pausar "schema per tenant"
+- Lista completa de funcoes e seu status de isolamento
+
+---
+
+## Sequencia de Execucao
+
+| Ordem | Fase | Estimativa |
+|-------|------|-----------|
+| 1 | Fase 1 (RLS) | 1 migracao SQL |
+| 2 | Fase 2 (Frontend hooks) | 6-8 arquivos editados |
+| 3 | Fase 3A (Backend Grupo A) | 6 edge functions |
+| 4 | Fase 3B (Backend Grupo B) | 5 edge functions |
+| 5 | Fase 4 (Triggers validacao) | 1 migracao SQL |
+| 6 | Fase 5 (Testes) | 1 arquivo de testes |
+| 7 | Fase 6 (Docs) | 2-3 arquivos |
+
+Devido ao volume, recomendo executar em 2-3 rodadas de implementacao.
+
+---
+
+## Detalhes Tecnicos
+
+### Padrao de correcao nos hooks (exemplo `useNotifications`)
+
+```text
+// Antes:
+.eq('user_id', user!.id)
+
+// Depois:
+.eq('user_id', user!.id)
+.eq('empresa', activeCompany)
+```
+
+Com `activeCompany` vindo de `useCompany()` e adicionado a `queryKey`.
+
+### Padrao de correcao nas Edge Functions (exemplo `next-best-action`)
+
+```text
+// Antes:
+const { user_id, empresa } = await req.json();
+// empresa recebido mas nunca usado nas queries
+
+// Depois:
+const { user_id, empresa } = await req.json();
+assertEmpresa(empresa);
+// Todas as queries recebem filtro .eq('empresa', empresa) ou via join
+```
+
+### Trigger de validacao (exemplo)
+
+```text
+CREATE OR REPLACE FUNCTION validate_deal_pipeline_tenant()
+RETURNS trigger AS $$
+DECLARE v_pipeline_empresa text; v_contact_empresa text;
+BEGIN
+  SELECT empresa INTO v_pipeline_empresa FROM pipelines WHERE id = NEW.pipeline_id;
+  SELECT empresa INTO v_contact_empresa FROM contacts WHERE id = NEW.contact_id;
+  IF v_pipeline_empresa IS DISTINCT FROM v_contact_empresa THEN
+    RAISE EXCEPTION 'Cross-tenant violation: pipeline empresa (%) != contact empresa (%)',
+      v_pipeline_empresa, v_contact_empresa;
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
 
