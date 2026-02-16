@@ -1,108 +1,95 @@
+#  Fase F — Polimento Final (Auditoria V1.0 Estavel)
 
-# Fase E — Eliminacao de `any` + Correcao de Testes + .env.example
-
-## Contexto
-
-O relatorio de validacao final do PO (Manus AI, 16/02/2026) aponta 3 itens pendentes:
-1. 4 testes de schema falhando (`schemas.test.ts`)
-2. 150 `any` explicitos no codigo
-3. Arquivo `.env.example` inexistente
-
-Este plano resolve os 3 itens de uma vez.
+O relatório da Manus AI de 16/02/2026 atribui nota 8.5/10 de maturidade e aponta itens de polimento organizados em 3 prioridades. Este plano resolve todos.
 
 ---
 
-## Item 1: Correcao dos 4 Testes de Schema
+## Prioridade 0: Bloqueadores
 
-O `createDealSchema` exige `owner_id` (campo obrigatorio), mas os testes nao passam esse campo. Os 4 testes que falham sao todos do bloco `createDealSchema`:
+### P0.1 — Corrigir teste CompanyContext.test.tsx
 
-- "accepts valid titulo + valor" — falta `owner_id`
-- "rejects titulo < 2" — falta `owner_id`
-- "rejects negative valor" — falta `owner_id`
-- "defaults temperatura to FRIO" — falta `owner_id`
+O teste esta funcional e o codigo do CompanyContext tambem. A falha provavelmente e causada por falta do ambiente `localStorage` no setup do vitest. Preciso investigar se o `jsdom` esta configurado corretamente no `vitest.config.ts` e se ha algum import faltando. Se o teste realmente falhar no runner, a correcao sera ajustar o setup ou o teste.
 
-**Acao**: Adicionar `owner_id: 'test-user-id'` nos testes que precisam passar e validar que o campo e exigido com um teste adicional.
+**Arquivo**: `src/contexts/CompanyContext.test.tsx` e possivelmente `vitest.config.ts`
 
-**Arquivo**: `src/schemas/__tests__/schemas.test.ts`
+### P0.2 — Vulnerabilidades de dependencias
 
----
+O relatorio menciona 8 vulnerabilidades (4 altas, 4 moderadas) em `react-router` e `esbuild`. O Lovable nao permite rodar `npm audit fix` diretamente, mas posso atualizar as versoes no `package.json` para resolver as vulnerabilidades conhecidas.
 
-## Item 2: Eliminacao de `any` Explicitos
-
-Inventario completo por arquivo (apenas os que tem `any` para corrigir):
-
-### Backend (Edge Functions) — ~90 ocorrencias
-
-| Arquivo | Qtd `any` | Estrategia |
-|---|---|---|
-| `copilot-chat/index.ts` | ~25 | Criar interfaces para params das funcoes `enrichLeadContext`, `enrichDealContext`, `enrichPipelineContext`, `enrichGeralContext`, `enrichCustomerContext` (trocar `supabase: any` por `SupabaseClient`). Trocar `(f: any)`, `(r: any)`, `(m: any)` por `Record<string, unknown>`. |
-| `copilot-proactive/index.ts` | ~12 | Trocar `(d: any)`, `(a: any)`, `(s: any)` por `Record<string, unknown>`. Trocar `parsedInsights: any[]` por interface `CopilotInsight`. |
-| `cs-playbook-runner/index.ts` | ~18 | Trocar `supabase: any` por `SupabaseClient`. Trocar `step: any` por interface `PlaybookStep`. Trocar `as any` nos `.update()` por tipagem correta. |
-| `sdr-message-parser/index.ts` | ~12 | Trocar `historico: any[]` por interface `MessageRecord[]`. Trocar `(h: any)` por `Record<string, unknown>`. |
-| `amelia-learn/index.ts` | ~10 | Trocar `learnings: any[]` por interface `AmeliaLearning[]`. Trocar `args: any` por interface. Trocar `(p.metadata as any)` por `Record<string, unknown>`. |
-| `amelia-mass-action/index.ts` | ~5 | Trocar `(d: any)` por `Record<string, unknown>`. |
-| Outros (6-8 funcoes menores) | ~8 | Trocar `catch (e: any)` por `catch (e: unknown)` e usar type guard. |
-
-### Frontend (src/) — ~60 ocorrencias
-
-| Arquivo | Qtd `any` | Estrategia |
-|---|---|---|
-| `pages/AmeliaMassActionPage.tsx` | ~25 | Criar tipo `DealWithRelations` baseado nos campos usados. Substituir todos os `(d: any)` por esse tipo. |
-| `pages/ImportacaoPage.tsx` | ~6 | Trocar `(s: any)` por interface `StageWithPipeline`. Trocar `catch (e: any)` por `catch (e: unknown)`. |
-| `pages/admin/ProductKnowledgeEditor.tsx` | ~4 | Trocar `onSave: (section: any) => Promise<any>` por tipo correto. |
-| `hooks/useZadarma.ts` | ~3 | Trocar `(e: any)`, `(c: any)` por `Record<string, unknown>`. |
-| `hooks/useLeadIntents.ts` | ~1 | Trocar `row: any` por interface `LeadIntentRow`. |
-| `hooks/useDealDetail.ts` | ~1 | Trocar `(a: any)` por `Record<string, unknown>`. |
-| `components/templates/TemplateFormDialog.tsx` | ~1 | Trocar `payload: any` por tipo inferido. |
-| `components/contacts/CustomFieldsRenderer.tsx` | ~1 | Trocar `payload: any` por tipo especifico. |
-| `components/contacts/ContactDetailSheet.tsx` | ~1 | Trocar `(d: any)` por tipo correto. |
-| `components/organizations/OrgDetailSheet.tsx` | ~1 | Trocar `(c: any)` por tipo correto. |
-| `components/settings/UserPermissionOverrideDialog.tsx` | ~1 | Trocar `catch (e: any)` por `catch (e: unknown)`. |
-| `types/importacao.ts` | ~4 | Trocar `error_log: any[]` e `[key: string]: any` por tipos especificos. |
-| `test/hooks/useCadences.test.ts` | ~5 | Trocar `any[]` e `Record<string, any>` por tipos concretos. |
-
-### Padrao de substituicao
-
-Para cada caso, a abordagem sera:
-
-1. **`supabase: any`** -> `SupabaseClient` (import de `@supabase/supabase-js`)
-2. **`(item: any)` em `.map()`/`.filter()`** -> `Record<string, unknown>` ou interface especifica quando os campos sao conhecidos
-3. **`catch (e: any)`** -> `catch (e: unknown)` + `e instanceof Error ? e.message : String(e)`
-4. **`as any` em `.insert()`/`.update()`** -> `as Record<string, unknown>` ou remover cast quando possivel
-5. **`let x: any = {}`** -> interface especifica ou `Record<string, unknown>`
-6. **`[key: string]: any`** -> `[key: string]: string | number | undefined`
+**Arquivo**: `package.json` (atualizar versoes de react-router-dom e esbuild se aplicavel)
 
 ---
 
-## Item 3: Criar `.env.example`
+## Prioridade 1: Consistencia e Boas Praticas
 
-Criar arquivo `.env.example` na raiz com as variaveis necessarias (sem valores reais):
+### P1.1 — Padronizar Logging no sgt-webhook (31 console.log -> createLogger)
+
+O `sgt-webhook` e seus modulos (`index.ts`, `normalization.ts`, `validation.ts`) usam ~31 `console.log/error/warn` diretos enquanto todas as outras funcoes usam o `createLogger`. A correcao e mecanica:
+
+
+| Arquivo                        | console.* | Acao                                                                                                                                                                                                              |
+| ------------------------------ | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sgt-webhook/index.ts`         | ~20       | Adicionar `import { createLogger }` e `const log = createLogger('sgt-webhook')`. Substituir `console.log('[SGT Webhook]...')` por `log.info(...)`, `console.error` por `log.error`, `console.warn` por `log.warn` |
+| `sgt-webhook/normalization.ts` | ~8        | Criar `const log = createLogger('sgt-webhook/normalization')` e substituir                                                                                                                                        |
+| `sgt-webhook/validation.ts`    | ~1        | Criar `const log = createLogger('sgt-webhook/validation')` e substituir                                                                                                                                           |
+
+
+### P1.2 — Padronizar tokeniza-offers com _shared/config.ts
+
+O relatorio menciona que `tokeniza-offers` nao usa `config.ts`. Verificando o codigo, a funcao ja usa `createLogger` mas nao usa `createServiceClient` porque nao precisa do Supabase — ela apenas faz fetch para uma API externa. Portanto, esta "inconsistencia" e benigna. Nenhuma acao necessaria.
+
+### P1.3 — Completar .env.example
+
+O arquivo atual tem apenas 3 variaveis. Precisa incluir as variaveis de backend tambem:
 
 ```text
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_PUBLISHABLE_KEY=your-anon-key
 VITE_SUPABASE_PROJECT_ID=your-project-id
+
+# Backend (Edge Functions) — configurar no painel de secrets
+SGT_WEBHOOK_SECRET=your-sgt-webhook-secret
+ANTHROPIC_API_KEY=your-anthropic-key
+OPENAI_API_KEY=your-openai-key
+GOOGLE_API_KEY=your-google-key
+CRON_SECRET=your-cron-secret
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=user@example.com
+SMTP_PASS=your-smtp-password
+SMTP_FROM=noreply@example.com
+WHATSAPP_API_KEY=your-whatsapp-key
+WHATSAPP_INBOUND_SECRET=your-whatsapp-inbound-secret
+BLUECHAT_API_KEY=your-bluechat-key
+BLUECHAT_API_KEY_BLUE=your-bluechat-blue-key
+MENSAGERIA_API_KEY=your-mensageria-key
+PIPEDRIVE_API_TOKEN=your-pipedrive-token
 ```
+
+---
+
+## Prioridade 2: Melhoria Continua (parcial)
+
+### P2.1 — Resolver comentarios TODO/FIXME
+
+A busca revelou que nao existem comentarios `// TODO` ou `// FIXME` no codigo. Os 8 mencionados no relatorio provavelmente foram contados em uma versao anterior ou sao falsos positivos da palavra "Todos" (texto de UI em portugues). Nenhuma acao necessaria.
+
+### P2.2 — Nota sobre Record<string, unknown> e as unknown as
+
+O relatorio menciona 135 `Record<string, unknown>` e 15 `as unknown as` como "proxima fronteira". Estes sao padroes seguros e corretos para dados dinamicos do Supabase (joins, payloads JSON). Substituir por tipos Zod seria um esforco grande com retorno marginal neste momento. Recomendo manter como item de backlog.
 
 ---
 
 ## Sequencia de Execucao
 
-1. Corrigir `schemas.test.ts` (Item 1)
-2. Criar `.env.example` (Item 3)
-3. Eliminar `any` no backend — funcoes maiores primeiro (copilot-chat, cs-playbook-runner, copilot-proactive)
-4. Eliminar `any` no backend — funcoes menores (sdr-message-parser, amelia-learn, etc.)
-5. Eliminar `any` no frontend — paginas (AmeliaMassActionPage, ImportacaoPage)
-6. Eliminar `any` no frontend — hooks e componentes
-7. Eliminar `any` nos tipos (importacao.ts) e testes
-
-## Risco
-
-Baixo. Todas as substituicoes sao mecanicas — trocam anotacoes de tipo sem alterar logica. O `noImplicitAny` ja esta ativo no tsconfig, entao erros de compilacao serao detectados imediatamente.
+1. Investigar e corrigir `CompanyContext.test.tsx`
+2. Completar `.env.example` com todas as variaveis
+3. Substituir 31 `console.*` no `sgt-webhook` por `createLogger`
+4. Verificar build e testes
 
 ## Resultado Esperado
 
-- 0 testes falhando (vs. 4 hoje)
-- ~0 `any` explicitos (vs. 150 hoje) — exceto `eslint-disable` justificados em mocks de teste
-- `.env.example` presente na raiz
-- Score de maturidade: Testes 6->8, Qualidade de Codigo 8->9
+- 0 testes falhando
+- Logging 100% padronizado (createLogger em todas as funcoes)
+- `.env.example` completo com todas as 17 secrets
+- Scorecard: Testes 7->8, Maturidade 8.5->9.0
