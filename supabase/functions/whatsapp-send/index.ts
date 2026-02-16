@@ -1,13 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-// ========================================
-// PATCH 5G-D - WhatsApp Send com Roteamento por Canal
-// Suporta Blue Chat e Mensageria conforme integration_company_config
-// ========================================
-
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { envConfig, getOptionalEnv, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('whatsapp-send');
 const corsHeaders = getWebhookCorsHeaders();
 
 // API Mensageria
@@ -81,8 +78,8 @@ async function sendViaBluechat(
 
   // 2. Buscar API key correta por empresa
   const bluechatApiKey = empresa === 'BLUE'
-    ? Deno.env.get('BLUECHAT_API_KEY_BLUE')
-    : Deno.env.get('BLUECHAT_API_KEY');
+    ? getOptionalEnv('BLUECHAT_API_KEY_BLUE')
+    : getOptionalEnv('BLUECHAT_API_KEY');
 
   if (!bluechatApiKey) {
     return { success: false, error: `BLUECHAT_API_KEY não configurada para ${empresa}` };
@@ -106,7 +103,7 @@ async function sendViaBluechat(
     };
   }
 
-  console.log(`[BlueChatSend] Enviando via Blue Chat para lead ${leadId}, conversation: ${conversationId}`);
+  log.info('Enviando via Blue Chat', { leadId, conversationId });
 
   // 4. Enviar mensagem via API Blue Chat
   const baseUrl = apiUrl.replace(/\/$/, '');
@@ -126,7 +123,7 @@ async function sendViaBluechat(
   });
 
   const responseText = await response.text();
-  console.log(`[BlueChatSend] Status: ${response.status}, Resposta: ${responseText.substring(0, 500)}`);
+  log.info('BlueChatSend response', { status: response.status });
 
   if (!response.ok) {
     // Atualizar estado para ERRO
@@ -151,7 +148,7 @@ async function sendViaBluechat(
     })
     .eq('id', messageId);
 
-  console.log(`[BlueChatSend] Mensagem enviada com sucesso via Blue Chat: ${messageId}`);
+  log.info('Mensagem enviada via Blue Chat', { messageId });
   return { success: true };
 }
 
@@ -169,7 +166,7 @@ async function sendViaMensageria(
 ): Promise<{ success: boolean; error?: string; whatsappMessageId?: string }> {
   const { phoneToSend, mensagem, messageId } = opts;
 
-  const apiKey = Deno.env.get('MENSAGERIA_API_KEY');
+  const apiKey = getOptionalEnv('MENSAGERIA_API_KEY');
   if (!apiKey) {
     return { success: false, error: 'MENSAGERIA_API_KEY não configurada' };
   }
@@ -180,8 +177,8 @@ async function sendViaMensageria(
     message: mensagem,
   };
 
-  console.log('[MensageriaSend] Chamando API:', WHATSAPP_API_URL);
-  console.log('[MensageriaSend] Payload:', JSON.stringify(payloadToSend));
+  log.info('Chamando API Mensageria', { url: WHATSAPP_API_URL });
+  log.debug('Mensageria payload', { to: payloadToSend.to });
 
   const whatsappResponse = await fetch(WHATSAPP_API_URL, {
     method: 'POST',
@@ -193,8 +190,7 @@ async function sendViaMensageria(
   });
 
   const responseText = await whatsappResponse.text();
-  console.log('[MensageriaSend] Status:', whatsappResponse.status);
-  console.log('[MensageriaSend] Resposta:', responseText.substring(0, 500));
+  log.info('Mensageria response', { status: whatsappResponse.status });
 
   let whatsappData;
   try {
@@ -243,9 +239,7 @@ serve(async (req) => {
   }
 
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createServiceClient();
 
     const body: WhatsAppSendRequest = await req.json();
 
@@ -276,7 +270,7 @@ serve(async (req) => {
     const hasActiveChannel = channelConfigs && channelConfigs.length > 0;
 
     if (!hasActiveChannel) {
-      console.log(`[whatsapp-send] Nenhum canal habilitado para empresa ${empresa}`);
+      log.warn('Nenhum canal habilitado', { empresa });
       return new Response(
         JSON.stringify({
           success: false,
@@ -287,7 +281,7 @@ serve(async (req) => {
     }
 
     const activeChannel = channelConfigs[0].channel;
-    console.log(`[whatsapp-send] Canal ativo para ${empresa}: ${activeChannel}`);
+    log.info('Canal ativo', { empresa, canal: activeChannel });
 
     // Buscar configuração de modo teste
     const { data: testConfig } = await supabase
@@ -302,14 +296,14 @@ serve(async (req) => {
 
     // Se modo teste ativo mas sem número configurado, falhar explicitamente
     if (TEST_MODE && !TEST_PHONE) {
-      console.error('[whatsapp-send] Modo teste ativo mas nenhum numero_teste configurado em system_settings');
+      log.error('Modo teste ativo sem numero_teste configurado');
       return new Response(
         JSON.stringify({ success: false, error: 'Modo teste ativo mas nenhum número de teste configurado. Configure em system_settings(category=whatsapp, key=modo_teste).' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    console.log(`[whatsapp-send] Modo teste: ${TEST_MODE}, Canal: ${activeChannel}`);
+    log.info('Configuração', { testMode: TEST_MODE, canal: activeChannel });
 
     // Verificar opt-out
     const { data: contact } = await supabase
@@ -321,7 +315,7 @@ serve(async (req) => {
       .maybeSingle();
 
     if (contact?.opt_out === true) {
-      console.log(`[whatsapp-send] BLOQUEADO - Lead ${leadId} em opt-out`);
+      log.warn('Bloqueado - opt-out', { leadId });
 
       await supabase.from('lead_messages').insert({
         lead_id: leadId,
@@ -348,7 +342,7 @@ serve(async (req) => {
     const testPhoneE164 = TEST_PHONE ? (TEST_PHONE.startsWith('+') ? TEST_PHONE : `+${TEST_PHONE}`) : '';
     const phoneToSend = TEST_MODE ? testPhoneE164 : phoneE164;
 
-    console.log(`[whatsapp-send] Lead ${leadId}, telefone: ${phoneClean} → ${phoneToSend}`);
+    log.info('Enviando', { leadId, phone: phoneClean, phoneToSend });
 
     // Typing delay
     const typingDelayMs = Math.min(Math.max(mensagem.length * 15, 300), 1500);
@@ -372,12 +366,12 @@ serve(async (req) => {
       .single();
 
     if (insertError) {
-      console.error('[whatsapp-send] Erro ao inserir mensagem:', insertError);
+      log.error('Erro ao inserir mensagem', { error: insertError.message });
       throw new Error(`Erro ao registrar mensagem: ${insertError.message}`);
     }
 
     const messageId = messageRecord.id;
-    console.log(`[whatsapp-send] Mensagem registrada: ${messageId}`);
+    log.info('Mensagem registrada', { messageId });
 
     // ========================================
     // ROTEAMENTO POR CANAL
@@ -386,8 +380,7 @@ serve(async (req) => {
     let sendResult: { success: boolean; error?: string };
 
     if (activeChannel === 'bluechat') {
-      // Enviar via Blue Chat API
-      console.log(`[whatsapp-send] Roteando via BLUE CHAT para ${empresa}`);
+      log.info('Roteando via BLUE CHAT', { empresa });
       sendResult = await sendViaBluechat(supabase, {
         leadId,
         empresa,
@@ -395,8 +388,7 @@ serve(async (req) => {
         messageId,
       });
     } else {
-      // Enviar via Mensageria (fluxo original)
-      console.log(`[whatsapp-send] Roteando via MENSAGERIA para ${empresa}`);
+      log.info('Roteando via MENSAGERIA', { empresa });
       sendResult = await sendViaMensageria(supabase, {
         phoneToSend,
         mensagem,
@@ -430,7 +422,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[whatsapp-send] Erro:', error);
+    log.error('Erro', { error: error instanceof Error ? error.message : String(error) });
     return new Response(
       JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

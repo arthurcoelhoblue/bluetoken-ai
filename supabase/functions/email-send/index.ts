@@ -1,6 +1,9 @@
 import { serve } from 'https://deno.land/std@0.190.0/http/server.ts';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.49.1';
 import { z } from 'https://esm.sh/zod@3.25.76';
+import { envConfig, getOptionalEnvWithDefault, createServiceClient } from '../_shared/config.ts';
+import { createLogger } from '../_shared/logger.ts';
+
+const log = createLogger('email-send');
 
 const emailSendPayload = z.object({
   to: z.string().trim().email('E-mail inválido').max(255),
@@ -17,7 +20,7 @@ const emailSendPayload = z.object({
 // ========================================
 // CORS Headers
 // ========================================
-import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
+import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 
@@ -31,7 +34,6 @@ interface EmailSendRequest {
   subject: string;
   html: string;
   text?: string;
-  // Contexto para logging
   lead_id?: string;
   empresa?: EmpresaTipo;
   run_id?: string;
@@ -48,11 +50,11 @@ interface EmailSendResponse {
 // ========================================
 // Configurações SMTP (via API HTTP)
 // ========================================
-const SMTP_HOST = Deno.env.get('SMTP_HOST') || '';
-const SMTP_PORT = parseInt(Deno.env.get('SMTP_PORT') || '587');
-const SMTP_USER = Deno.env.get('SMTP_USER') || '';
-const SMTP_PASS = Deno.env.get('SMTP_PASS') || '';
-const SMTP_FROM = Deno.env.get('SMTP_FROM') || '';
+const SMTP_HOST = getOptionalEnvWithDefault('SMTP_HOST', '');
+const SMTP_PORT = parseInt(getOptionalEnvWithDefault('SMTP_PORT', '587'));
+const SMTP_USER = getOptionalEnvWithDefault('SMTP_USER', '');
+const SMTP_PASS = getOptionalEnvWithDefault('SMTP_PASS', '');
+const SMTP_FROM = getOptionalEnvWithDefault('SMTP_FROM', '');
 
 // Modo de teste agora é lido do banco de dados
 // const TEST_MODE = true; // REMOVIDO - buscar do banco
@@ -70,7 +72,7 @@ async function sendEmailViaSMTP(
   const decoder = new TextDecoder();
   
   try {
-    console.log('[EmailSend] Conectando a', SMTP_HOST, ':', SMTP_PORT);
+    log.info('Conectando SMTP', { host: SMTP_HOST, port: SMTP_PORT });
     
     // Para Deno Edge Functions, precisamos usar TLS direto
     // Porta 587 com STARTTLS não é bem suportada em edge functions
@@ -83,9 +85,9 @@ async function sendEmailViaSMTP(
         hostname: SMTP_HOST,
         port: SMTP_PORT,
       });
-      console.log('[EmailSend] Conexão TLS estabelecida');
+      log.info('Conexão TLS estabelecida');
     } catch (tlsError) {
-      console.log('[EmailSend] TLS direto falhou, tentando conexão normal...');
+      log.warn('TLS direto falhou, tentando conexão normal');
       // Se TLS falhar, usar conexão normal (menos segura, mas funciona)
       const tcpConn = await Deno.connect({
         hostname: SMTP_HOST,
@@ -109,7 +111,7 @@ async function sendEmailViaSMTP(
       
       if (starttlsResp.startsWith('220')) {
         conn = await Deno.startTls(tcpConn, { hostname: SMTP_HOST });
-        console.log('[EmailSend] STARTTLS upgrade completo');
+        log.info('STARTTLS upgrade completo');
       } else {
         tcpConn.close();
         return { success: false, error: `STARTTLS não suportado: ${starttlsResp}` };
@@ -222,7 +224,7 @@ async function sendEmailViaSMTP(
     return { success: true, messageId };
     
   } catch (error) {
-    console.error('[EmailSend] Erro SMTP:', error);
+    log.error('Erro SMTP', { error: error instanceof Error ? error.message : String(error) });
     return { 
       success: false, 
       error: error instanceof Error ? error.message : 'Erro SMTP desconhecido' 
@@ -240,12 +242,12 @@ serve(async (req) => {
   }
 
   const startTime = Date.now();
-  console.log('[EmailSend] Recebendo requisição...');
+  log.info('Recebendo requisição');
 
   try {
     // Validar configurações SMTP
     if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
-      console.error('[EmailSend] Configurações SMTP incompletas');
+      log.error('Configurações SMTP incompletas');
       return new Response(
         JSON.stringify({
           success: false,
@@ -259,7 +261,7 @@ serve(async (req) => {
     const rawBody = await req.json();
     const parsed = emailSendPayload.safeParse(rawBody);
     if (!parsed.success) {
-      console.error('[EmailSend] Validação falhou:', parsed.error.errors);
+      log.warn('Validação falhou', { errors: parsed.error.errors });
       return new Response(
         JSON.stringify({
           success: false,
@@ -270,17 +272,10 @@ serve(async (req) => {
     }
 
     const body = parsed.data;
-    console.log('[EmailSend] Request:', {
-      to: body.to,
-      subject: body.subject,
-      lead_id: body.lead_id,
-      empresa: body.empresa,
-    });
+    log.info('Request', { to: body.to, subject: body.subject, lead_id: body.lead_id, empresa: body.empresa });
 
     // Inicializar Supabase para logging
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createServiceClient();
 
     // Buscar configuração de modo teste do banco
     const { data: testConfig } = await supabase
@@ -293,7 +288,7 @@ serve(async (req) => {
     const TEST_MODE = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.ativo ?? true;
     const TEST_EMAIL = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.email_teste || 'admin@grupoblue.com.br';
 
-    console.log('[EmailSend] Modo teste:', TEST_MODE ? `ativo (${TEST_EMAIL})` : 'desligado');
+    log.info('Modo teste', { ativo: TEST_MODE, email: TEST_MODE ? TEST_EMAIL : undefined });
 
     // Se modo teste, redirecionar email
     const finalTo = TEST_MODE ? TEST_EMAIL : body.to;
@@ -318,16 +313,16 @@ serve(async (req) => {
         .single();
 
       if (msgError) {
-        console.error('[EmailSend] Erro ao registrar mensagem:', msgError);
+        log.error('Erro ao registrar mensagem', { error: msgError.message });
       } else {
         messageId = msgData?.id;
-        console.log('[EmailSend] Mensagem registrada:', messageId);
+        log.info('Mensagem registrada', { messageId });
       }
     }
 
     // Modo de teste - simula envio
     if (TEST_MODE) {
-      console.log('[EmailSend] [TEST_MODE] Simulando envio de e-mail...');
+      log.info('[TEST_MODE] Simulando envio de e-mail');
       const fakeMessageId = `test-${Date.now()}`;
 
       // Atualizar status para ENVIADO
@@ -343,7 +338,7 @@ serve(async (req) => {
       }
 
       const duration = Date.now() - startTime;
-      console.log(`[EmailSend] [TEST_MODE] Concluído em ${duration}ms`);
+      log.info('[TEST_MODE] Concluído', { durationMs: duration });
 
       return new Response(
         JSON.stringify({
@@ -355,7 +350,7 @@ serve(async (req) => {
     }
 
     // Enviar e-mail via SMTP
-    console.log('[EmailSend] Enviando via SMTP nativo...');
+    log.info('Enviando via SMTP nativo');
     const result = await sendEmailViaSMTP(body.to, body.subject, body.html, body.text);
     
     if (result.success) {
@@ -372,7 +367,7 @@ serve(async (req) => {
       }
 
       const duration = Date.now() - startTime;
-      console.log(`[EmailSend] Concluído em ${duration}ms`);
+      log.info('Concluído', { durationMs: duration });
 
       return new Response(
         JSON.stringify({
@@ -402,7 +397,7 @@ serve(async (req) => {
       );
     }
   } catch (error) {
-    console.error('[EmailSend] Erro geral:', error);
+    log.error('Erro geral', { error: error instanceof Error ? error.message : String(error) });
     return new Response(
       JSON.stringify({
         success: false,

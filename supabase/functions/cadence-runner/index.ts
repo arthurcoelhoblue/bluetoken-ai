@@ -1,15 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-// ========================================
-// PATCH 5A + 5E - Cadence Runner
-// Motor de execução automática de cadências
-// ========================================
-
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from "../_shared/types.ts";
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 
+const log = createLogger('cadence-runner');
 const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
@@ -75,27 +72,27 @@ function validateAuth(req: Request, body?: Record<string, unknown>): boolean {
   // pg_cron calls with source marker: safe because verify_jwt=false
   // and the function uses service_role internally for all DB ops
   if (body?.source === 'pg_cron' || body?.trigger === 'CRON') {
-    console.log('[Auth] pg_cron/CRON source accepted');
+    log.info('pg_cron/CRON source accepted');
     return true;
   }
 
   const authHeader = req.headers.get("Authorization");
   if (!authHeader) {
-    console.warn('[Auth] Missing Authorization header');
+    log.warn('Missing Authorization header');
     return false;
   }
 
   const token = authHeader.replace("Bearer ", "");
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceRoleKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
   const cronSecret = Deno.env.get("CRON_SECRET");
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY");
+  const anonKey = envConfig.SUPABASE_ANON_KEY;
   
   if (token === serviceRoleKey || token === cronSecret || token === anonKey) {
-    console.log('[Auth] Token válido');
+    log.info('Token válido');
     return true;
   }
   
-  console.warn('[Auth] Invalid token provided');
+  log.warn('Invalid token provided');
   return false;
 }
 
@@ -124,8 +121,8 @@ interface TokenizaOferta {
 // ========================================
 async function buscarOfertaAtiva(): Promise<TokenizaOferta | null> {
   try {
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = envConfig.SUPABASE_URL;
+    const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     
     const response = await fetch(`${supabaseUrl}/functions/v1/tokeniza-offers`, {
       method: 'GET',
@@ -296,8 +293,8 @@ async function dispararMensagem(
 
   if (canal === 'WHATSAPP') {
     // Chamar edge function whatsapp-send
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+    const supabaseUrl = envConfig.SUPABASE_URL;
+    const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     
     try {
       const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
@@ -332,9 +329,9 @@ async function dispararMensagem(
   } else if (canal === 'EMAIL') {
     // PATCH 5D: Integração com SMTP via edge function email-send
     // Verificar se integração de email está habilitada
-    const supabaseUrlCheck = Deno.env.get('SUPABASE_URL')!;
-    const supabaseKeyCheck = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabaseCheck = createClient(supabaseUrlCheck, supabaseKeyCheck);
+    const supabaseUrlCheck = envConfig.SUPABASE_URL;
+    const supabaseKeyCheck = envConfig.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseCheck = createServiceClient();
     
     const { data: emailSetting } = await supabaseCheck
       .from('system_settings')
@@ -352,8 +349,8 @@ async function dispararMensagem(
     console.log('[Disparo] Enviando email para:', to);
 
     try {
-      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-      const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabaseUrl = envConfig.SUPABASE_URL;
+      const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
 
       // Extrair assunto do template (primeira linha com "Assunto:" ou fallback)
       const lines = body.split('\n');
@@ -845,16 +842,14 @@ serve(async (req) => {
   }
 
   if (!validateAuth(req, parsedBody)) {
-    console.error('[Runner] Acesso não autorizado');
+    log.error('Acesso não autorizado');
     return new Response(
       JSON.stringify({ error: 'Unauthorized' }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
 
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  const supabase = createServiceClient();
 
   // Determinar fonte do trigger
   let triggerSource: TriggerSource = 'CRON';
@@ -864,7 +859,7 @@ serve(async (req) => {
   const startedAt = new Date().toISOString();
 
   try {
-    console.log(`[Cadence Runner] Iniciando processamento (${triggerSource})...`);
+    log.info('Iniciando processamento', { trigger: triggerSource });
     
     const startTime = Date.now();
     const results = await processarCadenciasVencidas(supabase);
