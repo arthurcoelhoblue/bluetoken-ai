@@ -69,7 +69,6 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
       }
     } catch (e) {
       toast.error('Não foi possível gerar o rascunho');
-      console.error(e);
     } finally {
       setIsGenerating(false);
     }

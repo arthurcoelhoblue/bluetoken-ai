@@ -69,8 +69,6 @@ interface RunnerExecutionLog {
 // AUTENTICAÇÃO
 // ========================================
 function validateAuth(req: Request, body?: Record<string, unknown>): boolean {
-  // pg_cron calls with source marker: safe because verify_jwt=false
-  // and the function uses service_role internally for all DB ops
   if (body?.source === 'pg_cron' || body?.trigger === 'CRON') {
     log.info('pg_cron/CRON source accepted');
     return true;
@@ -133,7 +131,7 @@ async function buscarOfertaAtiva(): Promise<TokenizaOferta | null> {
     });
 
     if (!response.ok) {
-      console.warn('[Oferta] Erro ao buscar ofertas:', response.status);
+      log.warn('Erro ao buscar ofertas', { status: response.status });
       return null;
     }
 
@@ -141,16 +139,15 @@ async function buscarOfertaAtiva(): Promise<TokenizaOferta | null> {
     const ofertasAbertas = data.ofertas?.filter((o: TokenizaOferta) => o.status === 'open') || [];
     
     if (ofertasAbertas.length === 0) {
-      console.log('[Oferta] Nenhuma oferta aberta encontrada');
+      log.info('Nenhuma oferta aberta encontrada');
       return null;
     }
 
-    // Retorna a primeira oferta aberta (pode ser ordenada por prioridade futuramente)
     const oferta = ofertasAbertas[0];
-    console.log('[Oferta] Oferta ativa encontrada:', oferta.nome);
+    log.info('Oferta ativa encontrada', { nome: oferta.nome });
     return oferta;
   } catch (error) {
-    console.error('[Oferta] Erro ao buscar oferta:', error);
+    log.error('Erro ao buscar oferta', { error: String(error) });
     return null;
   }
 }
@@ -159,19 +156,16 @@ async function buscarOfertaAtiva(): Promise<TokenizaOferta | null> {
 // RESOLUÇÃO DE TEMPLATE COM PLACEHOLDERS INTELIGENTES
 // ========================================
 interface PlaceholderContext {
-  // Lead
   nome: string;
   primeiro_nome: string;
   email: string;
   empresa: string;
-  // Oferta (opcional)
   oferta?: TokenizaOferta | null;
 }
 
 function resolverPlaceholders(template: string, context: PlaceholderContext): string {
   let resultado = template;
   
-  // === Placeholders de Lead ===
   resultado = resultado.replace(/\{\{nome\}\}/g, context.nome || 'você');
   resultado = resultado.replace(/\{\{primeiro_nome\}\}/g, context.primeiro_nome || 'você');
   resultado = resultado.replace(/\{\{lead_nome\}\}/g, context.nome || 'você');
@@ -180,7 +174,6 @@ function resolverPlaceholders(template: string, context: PlaceholderContext): st
     context.empresa === 'TOKENIZA' ? 'Tokeniza' : 'Blue Consult'
   );
   
-  // === Placeholders de Oferta (TOKENIZA) ===
   if (context.oferta) {
     const oferta = context.oferta;
     resultado = resultado.replace(/\{\{oferta_nome\}\}/g, oferta.nome || '');
@@ -195,7 +188,6 @@ function resolverPlaceholders(template: string, context: PlaceholderContext): st
     resultado = resultado.replace(/\{\{oferta_captado\}\}/g, `${oferta.percentualCaptado}%`);
     resultado = resultado.replace(/\{\{oferta_dias_restantes\}\}/g, `${oferta.diasRestantes}`);
   } else {
-    // Remove placeholders de oferta se não houver oferta
     resultado = resultado.replace(/\{\{oferta_nome\}\}/g, '');
     resultado = resultado.replace(/\{\{oferta_rentabilidade\}\}/g, '');
     resultado = resultado.replace(/\{\{oferta_prazo\}\}/g, '');
@@ -217,9 +209,8 @@ async function resolverMensagem(
   canal: CanalTipo,
   contact: LeadContact
 ): Promise<{ success: boolean; body?: string; to?: string; error?: string; ofertaUsada?: string }> {
-  console.log('[Template] Resolvendo:', { empresa, templateCodigo, canal });
+  log.info('Resolvendo template', { empresa, templateCodigo, canal });
 
-  // Buscar template
   const { data: template, error: templateError } = await supabase
     .from('message_templates')
     .select('*')
@@ -229,16 +220,14 @@ async function resolverMensagem(
     .maybeSingle();
 
   if (templateError || !template) {
-    console.error('[Template] Não encontrado:', templateCodigo);
+    log.error('Template não encontrado', { templateCodigo });
     return { success: false, error: `Template ${templateCodigo} não encontrado ou inativo` };
   }
 
-  // Validar canal
   if (template.canal !== canal) {
-    console.warn('[Template] Canal diferente:', { templateCanal: template.canal, stepCanal: canal });
+    log.warn('Canal diferente', { templateCanal: template.canal, stepCanal: canal });
   }
 
-  // Definir destinatário
   let to: string | null = null;
   if (canal === 'WHATSAPP' || canal === 'SMS') {
     to = contact.telefone;
@@ -250,16 +239,14 @@ async function resolverMensagem(
     return { success: false, error: `Contato sem ${canal === 'EMAIL' ? 'email' : 'telefone'}` };
   }
 
-  // Buscar oferta ativa (apenas para TOKENIZA e se template usa placeholders de oferta)
   let oferta: TokenizaOferta | null = null;
   const usaPlaceholdersOferta = template.conteudo.includes('{{oferta_');
   
   if (empresa === 'TOKENIZA' && usaPlaceholdersOferta) {
-    console.log('[Template] Template usa placeholders de oferta, buscando oferta ativa...');
+    log.info('Template usa placeholders de oferta, buscando oferta ativa...');
     oferta = await buscarOfertaAtiva();
   }
 
-  // Resolver placeholders com contexto completo
   const body = resolverPlaceholders(template.conteudo, {
     nome: contact.nome || 'você',
     primeiro_nome: contact.primeiro_nome || contact.nome?.split(' ')[0] || 'você',
@@ -269,7 +256,7 @@ async function resolverMensagem(
   });
 
   if (oferta) {
-    console.log('[Template] Placeholders resolvidos com oferta:', oferta.nome);
+    log.info('Placeholders resolvidos com oferta', { oferta: oferta.nome });
   }
 
   return { success: true, body, to, ofertaUsada: oferta?.nome };
@@ -289,10 +276,9 @@ async function dispararMensagem(
   stepOrdem: number,
   templateCodigo: string
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
-  console.log('[Disparo] Enviando mensagem:', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
+  log.info('Enviando mensagem', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
 
   if (canal === 'WHATSAPP') {
-    // Chamar edge function whatsapp-send
     const supabaseUrl = envConfig.SUPABASE_URL;
     const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     
@@ -315,7 +301,7 @@ async function dispararMensagem(
       });
 
       const data = await response.json();
-      console.log('[Disparo] Resposta WhatsApp:', data);
+      log.info('Resposta WhatsApp', data);
 
       if (!data.success) {
         return { success: false, error: data.error || 'Erro no envio WhatsApp' };
@@ -323,14 +309,10 @@ async function dispararMensagem(
 
       return { success: true, messageId: data.messageId };
     } catch (error) {
-      console.error('[Disparo] Erro ao chamar whatsapp-send:', error);
+      log.error('Erro ao chamar whatsapp-send', { error: String(error) });
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else if (canal === 'EMAIL') {
-    // PATCH 5D: Integração com SMTP via edge function email-send
-    // Verificar se integração de email está habilitada
-    const supabaseUrlCheck = envConfig.SUPABASE_URL;
-    const supabaseKeyCheck = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseCheck = createServiceClient();
     
     const { data: emailSetting } = await supabaseCheck
@@ -342,17 +324,16 @@ async function dispararMensagem(
     
     const emailEnabled = (emailSetting?.value as Record<string, unknown>)?.enabled;
     if (!emailEnabled) {
-      console.warn('[Disparo] Integração de email desabilitada em system_settings');
+      log.warn('Integração de email desabilitada em system_settings');
       return { success: false, error: 'Integração de email desabilitada. Ative em Configurações > Integrações.' };
     }
 
-    console.log('[Disparo] Enviando email para:', to);
+    log.info('Enviando email', { to });
 
     try {
       const supabaseUrl = envConfig.SUPABASE_URL;
       const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
 
-      // Extrair assunto do template (primeira linha com "Assunto:" ou fallback)
       const lines = body.split('\n');
       const subject = lines[0]?.startsWith('Assunto:') 
         ? lines[0].replace('Assunto:', '').trim()
@@ -379,7 +360,7 @@ async function dispararMensagem(
       });
 
       const data = await response.json();
-      console.log('[Disparo] Resposta Email:', data);
+      log.info('Resposta Email', data);
 
       if (!data.success) {
         return { success: false, error: data.error || 'Erro no envio de email' };
@@ -387,19 +368,14 @@ async function dispararMensagem(
 
       return { success: true, messageId: data.messageId };
     } catch (error) {
-      console.error('[Disparo] Erro ao chamar email-send:', error);
+      log.error('Erro ao chamar email-send', { error: String(error) });
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else {
-    // SMS não é suportado - canal não implementado
-    console.warn('[Disparo] Canal SMS não implementado, marcando como erro');
+    log.warn('Canal SMS não implementado, marcando como erro');
     return { success: false, error: 'Canal SMS não suportado. Altere o step da cadência para WHATSAPP ou EMAIL.' };
   }
 }
-
-// ========================================
-// HORÁRIO COMERCIAL — importado de _shared/business-hours.ts
-// ========================================
 
 // ========================================
 // PROCESSAMENTO DE CADÊNCIAS VENCIDAS
@@ -408,10 +384,8 @@ async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<Pro
   const results: ProcessResult[] = [];
   const now = new Date().toISOString();
 
-  console.log('[Runner] Buscando runs vencidas...');
+  log.info('Buscando runs vencidas...');
 
-  // 1. Buscar runs ativas com next_run_at vencido
-  // Usando lock otimista: atualizamos next_run_at antes de processar
   const { data: runs, error: runsError } = await supabase
     .from('lead_cadence_runs')
     .select('*')
@@ -419,27 +393,26 @@ async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<Pro
     .not('next_run_at', 'is', null)
     .lte('next_run_at', now)
     .order('next_run_at', { ascending: true })
-    .limit(100); // Processa em lotes maiores para CRON
+    .limit(100);
 
   if (runsError) {
-    console.error('[Runner] Erro ao buscar runs:', runsError);
+    log.error('Erro ao buscar runs', { error: runsError.message });
     throw runsError;
   }
 
   if (!runs || runs.length === 0) {
-    console.log('[Runner] Nenhuma run vencida encontrada');
+    log.info('Nenhuma run vencida encontrada');
     return results;
   }
 
-  console.log('[Runner] Runs encontradas:', runs.length);
+  log.info('Runs encontradas', { count: runs.length });
 
-  // 2. Processar cada run
   for (const run of runs as LeadCadenceRun[]) {
     try {
       const result = await processarRun(supabase, run);
       results.push(result);
     } catch (error) {
-      console.error('[Runner] Erro ao processar run:', run.id, error);
+      log.error('Erro ao processar run', { runId: run.id, error: String(error) });
       results.push({
         runId: run.id,
         leadId: run.lead_id,
@@ -455,21 +428,19 @@ async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<Pro
 }
 
 async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Promise<ProcessResult> {
-  console.log('[Runner] Processando run:', { runId: run.id, leadId: run.lead_id, step: run.next_step_ordem });
+  log.info('Processando run', { runId: run.id, leadId: run.lead_id, step: run.next_step_ordem });
 
-  // 1. Lock otimista: tentar marcar como "em processamento"
-  // Atualizamos next_run_at para um valor futuro temporário
-  const lockTime = new Date(Date.now() + 5 * 60 * 1000).toISOString(); // +5min
+  const lockTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const { data: locked, error: lockError } = await supabase
     .from('lead_cadence_runs')
     .update({ next_run_at: lockTime, updated_at: new Date().toISOString() })
     .eq('id', run.id)
-    .eq('next_run_at', run.next_run_at) // Lock otimista - só atualiza se next_run_at não mudou
+    .eq('next_run_at', run.next_run_at)
     .select()
     .maybeSingle();
 
   if (lockError || !locked) {
-    console.log('[Runner] Run já sendo processada por outra instância:', run.id);
+    log.info('Run já sendo processada por outra instância', { runId: run.id });
     return {
       runId: run.id,
       leadId: run.lead_id,
@@ -480,7 +451,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 2. Buscar step atual
   const { data: step, error: stepError } = await supabase
     .from('cadence_steps')
     .select('*')
@@ -489,8 +459,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     .single();
 
   if (stepError || !step) {
-    console.error('[Runner] Step não encontrado:', run.next_step_ordem);
-    // Marca como concluída se não tem mais steps
+    log.error('Step não encontrado', { ordem: run.next_step_ordem });
     await supabase
       .from('lead_cadence_runs')
       .update({
@@ -513,10 +482,9 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
 
   const currentStep = step as CadenceStep;
 
-  // 2.5 Verificar horário comercial
   if (!isHorarioComercial()) {
     const proximoHorario = proximoHorarioComercial();
-    console.log('[Runner] Fora de horário comercial, reagendando para:', proximoHorario.toISOString());
+    log.info('Fora de horário comercial, reagendando', { nextRun: proximoHorario.toISOString() });
     
     await supabase
       .from('lead_cadence_runs')
@@ -544,7 +512,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 2.6 Verificar modo de atendimento
   const { data: convState } = await supabase
     .from('lead_conversation_state')
     .select('modo')
@@ -553,7 +520,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     .maybeSingle();
 
   if (convState?.modo === 'MANUAL') {
-    console.log('[Runner] Lead em modo MANUAL, pausando cadência:', run.id);
+    log.info('Lead em modo MANUAL, pausando cadência', { runId: run.id });
     
     await supabase
       .from('lead_cadence_runs')
@@ -581,7 +548,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 3. Buscar contato do lead
   const { data: contact, error: contactError } = await supabase
     .from('lead_contacts')
     .select('*')
@@ -590,9 +556,8 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     .maybeSingle();
 
   if (contactError || !contact) {
-    console.error('[Runner] Contato não encontrado para lead:', run.lead_id);
+    log.error('Contato não encontrado para lead', { leadId: run.lead_id });
     
-    // Registra erro
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
       step_ordem: currentStep.ordem,
@@ -601,7 +566,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       detalhes: { error: 'Contato do lead não encontrado' },
     });
 
-    // Restaura next_run_at para retry futuro
     await supabase
       .from('lead_cadence_runs')
       .update({ 
@@ -620,7 +584,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 4. Resolver mensagem
   const mensagemResolvida = await resolverMensagem(
     supabase,
     run.empresa,
@@ -630,7 +593,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!mensagemResolvida.success) {
-    console.error('[Runner] Erro ao resolver mensagem:', mensagemResolvida.error);
+    log.error('Erro ao resolver mensagem', { error: mensagemResolvida.error });
     
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
@@ -640,7 +603,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       detalhes: { error: mensagemResolvida.error },
     });
 
-    // Restaura para retry
     await supabase
       .from('lead_cadence_runs')
       .update({ 
@@ -659,7 +621,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 5. Disparar mensagem
   const disparo = await dispararMensagem(
     supabase,
     currentStep.canal,
@@ -673,7 +634,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!disparo.success) {
-    console.error('[Runner] Erro no disparo:', disparo.error);
+    log.error('Erro no disparo', { error: disparo.error });
     
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
@@ -683,7 +644,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       detalhes: { error: disparo.error, to: mensagemResolvida.to },
     });
 
-    // Restaura para retry
     await supabase
       .from('lead_cadence_runs')
       .update({ 
@@ -702,7 +662,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  // 6. Registrar evento de disparo
   await supabase.from('lead_cadence_events').insert({
     lead_cadence_run_id: run.id,
     step_ordem: currentStep.ordem,
@@ -716,13 +675,12 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     },
   });
 
-  console.log('[Runner] Mensagem disparada com sucesso:', {
+  log.info('Mensagem disparada com sucesso', {
     runId: run.id,
     step: currentStep.ordem,
     template: currentStep.template_codigo,
   });
 
-  // 7. Avançar para próximo step ou concluir
   const { data: nextStep } = await supabase
     .from('cadence_steps')
     .select('ordem, offset_minutos')
@@ -733,7 +691,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     .maybeSingle();
 
   if (nextStep) {
-    // Há próximo step
     const nextRunAt = new Date(Date.now() + nextStep.offset_minutos * 60 * 1000).toISOString();
     
     await supabase
@@ -746,16 +703,15 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       })
       .eq('id', run.id);
 
-    // Agendar próximo step
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
       step_ordem: nextStep.ordem,
-      template_codigo: '', // Será preenchido quando executar
+      template_codigo: '',
       tipo_evento: 'AGENDADO',
       detalhes: { next_run_at: nextRunAt },
     });
 
-    console.log('[Runner] Próximo step agendado:', { step: nextStep.ordem, at: nextRunAt });
+    log.info('Próximo step agendado', { step: nextStep.ordem, at: nextRunAt });
 
     return {
       runId: run.id,
@@ -766,7 +722,6 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       mensagem: `Step ${currentStep.ordem} disparado, próximo: ${nextStep.ordem}`,
     };
   } else {
-    // Cadência concluída
     await supabase
       .from('lead_cadence_runs')
       .update({
@@ -778,7 +733,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
       })
       .eq('id', run.id);
 
-    console.log('[Runner] Cadência concluída:', run.id);
+    log.info('Cadência concluída', { runId: run.id });
 
     return {
       runId: run.id,
@@ -796,21 +751,21 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
 // ========================================
 async function registrarLogExecucao(
   supabase: SupabaseClient,
-  log: RunnerExecutionLog
+  execLog: RunnerExecutionLog
 ): Promise<void> {
   try {
     await supabase.from('cadence_runner_logs').insert({
       executed_at: new Date().toISOString(),
-      steps_executed: log.steps_executed,
-      errors: log.errors,
-      runs_touched: log.runs_touched,
-      duration_ms: log.duration_ms,
-      trigger_source: log.trigger_source,
-      details: log.details,
+      steps_executed: execLog.steps_executed,
+      errors: execLog.errors,
+      runs_touched: execLog.runs_touched,
+      duration_ms: execLog.duration_ms,
+      trigger_source: execLog.trigger_source,
+      details: execLog.details,
     });
-    console.log('[Runner] Log de execução registrado');
+    log.info('Log de execução registrado');
   } catch (error) {
-    console.error('[Runner] Erro ao registrar log:', error);
+    log.error('Erro ao registrar log', { error: String(error) });
   }
 }
 
@@ -818,12 +773,10 @@ async function registrarLogExecucao(
 // Handler Principal
 // ========================================
 serve(async (req) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Apenas POST
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Método não permitido' }),
@@ -831,9 +784,6 @@ serve(async (req) => {
     );
   }
 
-  // ========================================
-  // PARSE BODY + AUTENTICAÇÃO
-  // ========================================
   let parsedBody: Record<string, unknown> = {};
   try {
     parsedBody = await req.json().catch(() => ({}));
@@ -851,7 +801,6 @@ serve(async (req) => {
 
   const supabase = createServiceClient();
 
-  // Determinar fonte do trigger
   let triggerSource: TriggerSource = 'CRON';
   if (parsedBody.trigger === 'MANUAL') triggerSource = 'MANUAL';
   if (parsedBody.trigger === 'TEST') triggerSource = 'TEST';
@@ -875,9 +824,8 @@ serve(async (req) => {
       trigger_source: triggerSource,
     };
 
-    console.log('[Cadence Runner] Processamento concluído:', summary);
+    log.info('Processamento concluído', summary);
 
-    // Registrar log de execução no banco
     await registrarLogExecucao(supabase, {
       steps_executed: summary.success,
       errors: summary.errors,
@@ -901,9 +849,8 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[Cadence Runner] Erro geral:', error);
+    log.error('Erro geral', { error: String(error) });
     
-    // Registrar erro no log
     const duration = Date.now() - new Date(startedAt).getTime();
     await registrarLogExecucao(supabase, {
       steps_executed: 0,

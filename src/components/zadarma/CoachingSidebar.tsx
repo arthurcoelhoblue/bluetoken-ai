@@ -43,8 +43,7 @@ export function CoachingSidebar({ dealId, isActive }: Props) {
 
       if (fnErr) throw fnErr;
       setCoaching(data as CoachingData);
-    } catch (e) {
-      console.error('Coaching fetch error:', e);
+    } catch (_e) {
       setError('Erro ao carregar coaching');
     } finally {
       setLoading(false);

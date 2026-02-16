@@ -61,7 +61,7 @@ serve(async (req) => {
       });
     }
 
-    console.log('[PlaybookRunner] CRON mode — detecting triggers + executing pending steps');
+    log.info('CRON mode — detecting triggers + executing pending steps');
 
     const phase1 = await autoDetectTriggers(supabase);
     const phase2 = await executePendingSteps(supabase);
@@ -130,7 +130,7 @@ async function autoDetectTriggers(supabase: SupabaseClient) {
     created += await createRunIfNew(supabase, 'INCIDENT_CRITICAL', inc.customer_id, inc.empresa);
   }
 
-  console.log(`[PlaybookRunner] Phase 1: ${created} new runs created`);
+  log.info('Phase 1 complete', { runsCreated: created });
   return { created };
 }
 
@@ -220,7 +220,7 @@ async function executePendingSteps(supabase: SupabaseClient) {
       stepResults.push({ step: currentIdx, type: step.type, status: 'ok', at: now });
       executed++;
     } catch (err) {
-      console.error(`[PlaybookRunner] Step error run=${run.id}:`, err);
+      log.error('Step error', { runId: run.id, error: String(err) });
       stepResults.push({ step: currentIdx, type: step.type, status: 'error', error: String(err), at: now });
       errors++;
     }
@@ -245,7 +245,7 @@ async function executePendingSteps(supabase: SupabaseClient) {
     }
   }
 
-  console.log(`[PlaybookRunner] Phase 2: ${executed} steps executed, ${errors} errors`);
+  log.info('Phase 2 complete', { stepsExecuted: executed, errors });
   return { executed, errors };
 }
 
@@ -339,7 +339,7 @@ async function executeStep(supabase: SupabaseClient, step: PlaybookStep, custome
 
       const pipeline = pipelines?.[0];
       if (!pipeline) {
-        console.warn('[PlaybookRunner] No renovation pipeline found');
+        log.warn('No renovation pipeline found');
         break;
       }
 
@@ -395,6 +395,6 @@ async function executeStep(supabase: SupabaseClient, step: PlaybookStep, custome
     }
 
     default:
-      console.warn(`[PlaybookRunner] Unknown step type: ${step.type}`);
+      log.warn('Unknown step type', { type: step.type });
   }
 }

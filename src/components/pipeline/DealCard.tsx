@@ -127,7 +127,7 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
           // Fire-and-forget AI analysis
           supabase.functions.invoke('deal-loss-analysis', {
             body: { deal_id: deal.id },
-          }).catch(console.error);
+          }).catch(() => { /* fire-and-forget */ });
           toast.info('Análise da IA em andamento...');
         },
       }

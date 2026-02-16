@@ -45,7 +45,6 @@ export async function checkFaqAutoApproval(pergunta: string, resposta: string, e
       body: { pergunta, resposta, empresa },
     });
     if (error) {
-      console.error('Auto-review error:', error);
       return { auto_approve: false, confianca: 0, justificativa: 'Erro na verificação' };
     }
     return data ?? { auto_approve: false, confianca: 0, justificativa: 'Sem resposta' };

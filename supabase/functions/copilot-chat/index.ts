@@ -4,9 +4,10 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 
+const log = createLogger('copilot-chat');
+
 // ========================================
 // PATCH 7 — Copilot Chat (Amélia IA)
-// Usa callAI() da camada compartilhada com fallback automático
 // ========================================
 
 import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
@@ -114,9 +115,9 @@ serve(async (req) => {
         }
         dynamicPrompt = selected.content;
         selectedPromptVersionId = selected.id;
-        console.log(`[Copilot] A/B selected prompt version ${selected.id} (weight: ${selected.ab_weight})`);
+        log.info('A/B selected prompt version', { versionId: selected.id, weight: selected.ab_weight });
       }
-    } catch (pvErr) { console.warn('[Copilot] prompt_versions lookup failed:', pvErr); }
+    } catch (pvErr) { log.warn('prompt_versions lookup failed', { error: String(pvErr) }); }
 
     const ACTIVE_SYSTEM_PROMPT = dynamicPrompt || SYSTEM_PROMPT;
 
@@ -187,7 +188,7 @@ serve(async (req) => {
           break;
       }
     } catch (enrichError) {
-      console.warn('[Copilot] Erro no enriquecimento:', enrichError);
+      log.warn('Erro no enriquecimento', { error: String(enrichError) });
       contextBlock = '⚠️ Não foi possível carregar dados do CRM para este contexto.';
     }
 
@@ -195,12 +196,11 @@ serve(async (req) => {
       ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
       : ACTIVE_SYSTEM_PROMPT;
 
-    console.log(`[Copilot] Chamando IA — contexto: ${contextType}, msgs: ${messages.length}`);
+    log.info('Chamando IA', { contexto: contextType, msgs: messages.length });
 
-    // === CHAMADA UNIFICADA VIA callAI() ===
     const aiResult = await callAI({
       system: systemContent,
-      prompt: '', // not used when messages is provided
+      prompt: '',
       functionName: 'copilot-chat',
       empresa,
       temperature: 0.4,
@@ -221,7 +221,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[Copilot] Erro geral:', error);
+    log.error('Erro geral', { error: String(error) });
     return new Response(
       JSON.stringify({ error: error instanceof Error ? error.message : 'Erro desconhecido' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -573,7 +573,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // === DEALS DO VENDEDOR COM DETALHES ===
   if (userId) {
     queries.push((async () => {
       const { data: deals } = await supabase
@@ -593,7 +592,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // === ATIVIDADES RECENTES DO VENDEDOR ===
   if (userId) {
     queries.push((async () => {
       const { data: activities } = await supabase
@@ -612,7 +610,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // === CADÊNCIAS ATIVAS ===
   queries.push((async () => {
     const { data: cadences } = await supabase
       .from('lead_cadence_runs')
@@ -626,7 +623,6 @@ async function enrichGeralContext(
     }
   })());
 
-  // === CONVERSAS RECENTES (INBOUND) ===
   queries.push((async () => {
     const { data: msgs } = await supabase
       .from('lead_messages')
@@ -644,7 +640,6 @@ async function enrichGeralContext(
     }
   })());
 
-  // === TAREFAS PENDENTES ===
   if (userId) {
     queries.push((async () => {
       const { data: tarefas } = await supabase
@@ -676,7 +671,6 @@ async function enrichGeralContext(
     })());
   }
 
-  // === LEADS QUENTES ===
   queries.push((async () => {
     const { data: hotLeads } = await supabase
       .from('lead_classifications')

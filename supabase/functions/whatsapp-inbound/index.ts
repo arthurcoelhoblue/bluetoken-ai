@@ -12,6 +12,7 @@ import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
 import { checkWebhookRateLimit, rateLimitResponse, simpleHash } from "../_shared/webhook-rate-limit.ts";
 
+const log = createLogger('whatsapp-inbound');
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 // ========================================
@@ -20,10 +21,10 @@ const corsHeaders = getWebhookCorsHeaders("x-api-key");
 type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 
 interface InboundPayload {
-  from: string;           // +5561998317422
-  message_id: string;     // ID externo da mensagem
-  timestamp: string;      // ISO timestamp
-  text: string;           // Conteúdo da mensagem
+  from: string;
+  message_id: string;
+  timestamp: string;
+  text: string;
   media_url?: string;
   media_type?: string;
 }
@@ -56,25 +57,14 @@ interface InboundResult {
 // UTILITÁRIOS
 // ========================================
 
-/**
- * Normaliza número de telefone para formato consistente
- * Input: +5561998317422, 5561998317422, 61998317422
- * Output: 5561998317422
- */
 function normalizePhone(raw: string): string {
   let normalized = raw.replace(/\D/g, '');
-  
-  // Se tiver 11 dígitos (sem DDI), adiciona 55
   if (normalized.length === 11) {
     normalized = '55' + normalized;
   }
-  
   return normalized;
 }
 
-/**
- * Valida autenticação do webhook
- */
 function validateAuth(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
@@ -82,7 +72,7 @@ function validateAuth(req: Request): boolean {
   const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
   
   if (!inboundSecret) {
-    console.error('[Auth] WHATSAPP_INBOUND_SECRET não configurado');
+    log.error('WHATSAPP_INBOUND_SECRET não configurado');
     return false;
   }
   
@@ -97,51 +87,38 @@ function validateAuth(req: Request): boolean {
     return true;
   }
   
-  console.warn('[Auth] Token inválido');
+  log.warn('Token inválido');
   return false;
 }
 
-/**
- * Gera variações do telefone para busca flexível
- * Trata variações do nono dígito brasileiro
- */
 function generatePhoneVariations(phone: string): string[] {
   const variations: string[] = [phone];
   
-  // Remove DDI se presente (55)
   const withoutDDI = phone.startsWith('55') ? phone.slice(2) : phone;
-  const ddd = withoutDDI.slice(0, 2); // Ex: 61
-  const number = withoutDDI.slice(2);  // Ex: 98317422 ou 998317422
+  const ddd = withoutDDI.slice(0, 2);
+  const number = withoutDDI.slice(2);
   
-  // Se tem 8 dígitos (sem nono), adiciona variação com 9
   if (number.length === 8) {
     const withNine = `55${ddd}9${number}`;
     variations.push(withNine);
     variations.push(`${ddd}9${number}`);
   }
   
-  // Se tem 9 dígitos (com nono), adiciona variação sem 9
   if (number.length === 9 && number.startsWith('9')) {
     const withoutNine = `55${ddd}${number.slice(1)}`;
     variations.push(withoutNine);
     variations.push(`${ddd}${number.slice(1)}`);
   }
   
-  // Adiciona versões sem DDI
   variations.push(withoutDDI);
   
-  return [...new Set(variations)]; // Remove duplicatas
+  return [...new Set(variations)];
 }
 
-/**
- * Verifica se há handoff pendente para este telefone
- * Retorna a empresa de destino se houver handoff, null caso contrário
- */
 async function checkPendingHandoff(
   supabase: SupabaseClient,
   phoneE164: string
 ): Promise<{ empresaDestino: EmpresaTipo; leadIdOrigem: string } | null> {
-  // Buscar todos os leads com este telefone
   const { data: leads } = await supabase
     .from('lead_contacts')
     .select('lead_id, empresa')
@@ -149,7 +126,6 @@ async function checkPendingHandoff(
   
   if (!leads || leads.length === 0) return null;
   
-  // Para cada lead, verificar se há handoff pendente
   for (const lead of leads) {
     const { data: state } = await supabase
       .from('lead_conversation_state')
@@ -160,10 +136,10 @@ async function checkPendingHandoff(
       .maybeSingle();
     
     if (state?.empresa_proxima_msg) {
-      console.log('[Handoff] Handoff pendente encontrado:', {
+      log.info('Handoff pendente encontrado', {
         de: lead.empresa,
         para: state.empresa_proxima_msg,
-        leadOrigem: lead.lead_id
+        leadOrigem: lead.lead_id,
       });
       return {
         empresaDestino: state.empresa_proxima_msg as EmpresaTipo,
@@ -175,9 +151,6 @@ async function checkPendingHandoff(
   return null;
 }
 
-/**
- * Limpa o flag de handoff após processamento
- */
 async function clearHandoffFlag(
   supabase: SupabaseClient,
   leadId: string,
@@ -189,28 +162,22 @@ async function clearHandoffFlag(
     .eq('lead_id', leadId)
     .eq('empresa', empresa);
   
-  console.log('[Handoff] Flag limpo para:', { leadId, empresa });
+  log.info('Handoff flag limpo', { leadId, empresa });
 }
 
-/**
- * Busca lead pelo telefone normalizado
- * MELHORIA: Busca em TODAS as empresas e prioriza leads com cadência ativa
- */
 async function findLeadByPhone(
   supabase: SupabaseClient,
   phoneNormalized: string
 ): Promise<{ lead: LeadContact | null; handoffInfo?: { leadIdOrigem: string; empresaOrigem: EmpresaTipo } }> {
-  console.log('[Lead] Buscando por telefone em TODAS empresas:', phoneNormalized);
+  log.info('Buscando lead por telefone em TODAS empresas', { phone: phoneNormalized });
   
   const e164 = phoneNormalized.startsWith('+') 
     ? phoneNormalized 
     : `+${phoneNormalized}`;
   
-  // 1. Verificar se há handoff pendente
   const handoff = await checkPendingHandoff(supabase, e164);
   
   if (handoff) {
-    // Buscar o lead na empresa DESTINO do handoff
     const { data: leadDestino } = await supabase
       .from('lead_contacts')
       .select('*')
@@ -219,9 +186,8 @@ async function findLeadByPhone(
       .maybeSingle();
     
     if (leadDestino) {
-      console.log('[Lead] Handoff: roteando para', handoff.empresaDestino, '->', (leadDestino as LeadContact).lead_id);
+      log.info('Handoff: roteando para empresa destino', { empresa: handoff.empresaDestino, leadId: (leadDestino as LeadContact).lead_id });
       
-      // Buscar empresa de origem para limpar o flag depois
       const { data: leadOrigem } = await supabase
         .from('lead_contacts')
         .select('empresa')
@@ -237,11 +203,9 @@ async function findLeadByPhone(
       };
     }
     
-    // Lead não existe na empresa destino - criar novo ou retornar origem
-    console.log('[Lead] Lead não existe na empresa destino, buscando origem');
+    log.info('Lead não existe na empresa destino, buscando origem');
   }
   
-  // 2. Busca por telefone_e164 em TODAS as empresas, priorizando quem tem cadência ativa
   const { data: e164Matches } = await supabase
     .from('lead_contacts')
     .select('*')
@@ -249,9 +213,8 @@ async function findLeadByPhone(
     .order('updated_at', { ascending: false });
     
   if (e164Matches && e164Matches.length > 0) {
-    console.log('[Lead] Encontrados', e164Matches.length, 'leads por telefone_e164');
+    log.info('Encontrados leads por telefone_e164', { count: e164Matches.length });
     
-    // Verificar qual tem cadência ativa
     for (const lead of e164Matches as LeadContact[]) {
       const { data: activeRun } = await supabase
         .from('lead_cadence_runs')
@@ -263,19 +226,17 @@ async function findLeadByPhone(
         .maybeSingle();
       
       if (activeRun) {
-        console.log('[Lead] Match com cadência ativa:', lead.lead_id, '-', lead.empresa);
+        log.info('Match com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
         return { lead };
       }
     }
     
-    // Nenhum com cadência ativa, retorna o mais recente
-    console.log('[Lead] Match por telefone_e164 (mais recente):', (e164Matches[0] as LeadContact).lead_id);
+    log.info('Match por telefone_e164 (mais recente)', { leadId: (e164Matches[0] as LeadContact).lead_id });
     return { lead: e164Matches[0] as LeadContact };
   }
   
-  // 3. Gera todas as variações possíveis para busca no campo telefone
   const variations = generatePhoneVariations(phoneNormalized);
-  console.log('[Lead] Variações a testar:', variations);
+  log.debug('Variações a testar', { variations });
   
   for (const variant of variations) {
     const { data: matches } = await supabase
@@ -285,7 +246,6 @@ async function findLeadByPhone(
       .order('updated_at', { ascending: false });
       
     if (matches && matches.length > 0) {
-      // Priorizar quem tem cadência ativa
       for (const lead of matches as LeadContact[]) {
         const { data: activeRun } = await supabase
           .from('lead_cadence_runs')
@@ -297,17 +257,16 @@ async function findLeadByPhone(
           .maybeSingle();
         
         if (activeRun) {
-          console.log('[Lead] Match exato com cadência ativa:', lead.lead_id, '-', lead.empresa);
+          log.info('Match exato com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
           return { lead };
         }
       }
       
-      console.log('[Lead] Match exato (mais recente):', (matches[0] as LeadContact).lead_id);
+      log.info('Match exato (mais recente)', { leadId: (matches[0] as LeadContact).lead_id });
       return { lead: matches[0] as LeadContact };
     }
   }
   
-  // 4. Tenta busca parcial com os últimos 8 dígitos
   const last8Digits = phoneNormalized.slice(-8);
   const { data: partialMatches } = await supabase
     .from('lead_contacts')
@@ -316,7 +275,6 @@ async function findLeadByPhone(
     .order('updated_at', { ascending: false });
     
   if (partialMatches && partialMatches.length > 0) {
-    // Priorizar quem tem cadência ativa
     for (const lead of partialMatches as LeadContact[]) {
       const { data: activeRun } = await supabase
         .from('lead_cadence_runs')
@@ -328,18 +286,16 @@ async function findLeadByPhone(
         .maybeSingle();
       
       if (activeRun) {
-        console.log('[Lead] Match parcial com cadência ativa:', lead.lead_id, '-', lead.empresa);
+        log.info('Match parcial com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
         return { lead };
       }
     }
     
-    console.log('[Lead] Match parcial (mais recente):', (partialMatches[0] as LeadContact).lead_id);
+    log.info('Match parcial (mais recente)', { leadId: (partialMatches[0] as LeadContact).lead_id });
     return { lead: partialMatches[0] as LeadContact };
   }
   
-  // 5. FALLBACK: Busca por última mensagem OUTBOUND recente (modo teste)
-  // Útil quando o número de resposta não bate com o número cadastrado
-  console.log('[Lead] Tentando fallback por último OUTBOUND...');
+  log.info('Tentando fallback por último OUTBOUND...');
   const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   
   const { data: lastOutbound } = await supabase
@@ -354,9 +310,8 @@ async function findLeadByPhone(
     .maybeSingle();
 
   if (lastOutbound && lastOutbound.lead_id) {
-    console.log('[Lead] Fallback: encontrado OUTBOUND recente para lead:', lastOutbound.lead_id);
+    log.info('Fallback: encontrado OUTBOUND recente', { leadId: lastOutbound.lead_id });
     
-    // Buscar dados completos do lead
     const { data: leadData } = await supabase
       .from('lead_contacts')
       .select('*')
@@ -365,18 +320,15 @@ async function findLeadByPhone(
       .maybeSingle();
     
     if (leadData) {
-      console.log('[Lead] Fallback: associando ao lead do último OUTBOUND:', (leadData as LeadContact).lead_id, '-', (leadData as LeadContact).empresa);
+      log.info('Fallback: associando ao lead do último OUTBOUND', { leadId: (leadData as LeadContact).lead_id, empresa: (leadData as LeadContact).empresa });
       return { lead: leadData as LeadContact };
     }
   }
   
-  console.log('[Lead] Nenhum lead encontrado para:', phoneNormalized);
+  log.info('Nenhum lead encontrado', { phone: phoneNormalized });
   return { lead: null };
 }
 
-/**
- * Busca run ativa do lead
- */
 async function findActiveRun(
   supabase: SupabaseClient,
   leadId: string,
@@ -393,16 +345,13 @@ async function findActiveRun(
     .maybeSingle();
     
   if (data) {
-    console.log('[Run] Run ativa encontrada:', (data as LeadCadenceRun).id);
+    log.info('Run ativa encontrada', { runId: (data as LeadCadenceRun).id });
     return data as LeadCadenceRun;
   }
   
   return null;
 }
 
-/**
- * Verifica se mensagem já foi processada (idempotência)
- */
 async function isDuplicate(
   supabase: SupabaseClient,
   messageId: string
@@ -417,18 +366,14 @@ async function isDuplicate(
   return !!data;
 }
 
-/**
- * Registra mensagem inbound
- */
 async function saveInboundMessage(
   supabase: SupabaseClient,
   payload: InboundPayload,
   leadContact: LeadContact | null,
   activeRun: LeadCadenceRun | null
 ): Promise<InboundResult> {
-  // Verificar duplicata
   if (await isDuplicate(supabase, payload.message_id)) {
-    console.log('[Inbound] Mensagem duplicada:', payload.message_id);
+    log.info('Mensagem duplicada', { messageId: payload.message_id });
     return {
       success: true,
       status: 'DUPLICATE',
@@ -436,10 +381,8 @@ async function saveInboundMessage(
     };
   }
   
-  // Determinar empresa (do lead ou default)
   const empresa: EmpresaTipo = leadContact?.empresa || 'TOKENIZA';
   
-  // Montar registro
   const messageRecord = {
     lead_id: leadContact?.lead_id || null,
     empresa,
@@ -452,7 +395,7 @@ async function saveInboundMessage(
     recebido_em: payload.timestamp,
   };
   
-  console.log('[Inbound] Salvando mensagem:', {
+  log.info('Salvando mensagem', {
     from: normalizePhone(payload.from),
     leadId: messageRecord.lead_id,
     runId: messageRecord.run_id,
@@ -466,7 +409,7 @@ async function saveInboundMessage(
     .single();
     
   if (error) {
-    console.error('[Inbound] Erro ao salvar:', error);
+    log.error('Erro ao salvar', { error: error.message });
     return {
       success: false,
       status: 'ERROR',
@@ -475,9 +418,8 @@ async function saveInboundMessage(
   }
   
   const savedMessage = data as { id: string };
-  console.log('[Inbound] Mensagem salva:', savedMessage.id);
+  log.info('Mensagem salva', { messageId: savedMessage.id });
   
-  // Se tiver run ativa, registrar evento de resposta detectada
   if (activeRun) {
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: activeRun.id,
@@ -490,7 +432,7 @@ async function saveInboundMessage(
         preview: payload.text.substring(0, 100),
       },
     });
-    console.log('[Inbound] Evento RESPOSTA_DETECTADA registrado');
+    log.info('Evento RESPOSTA_DETECTADA registrado');
   }
   
   return {
@@ -506,12 +448,10 @@ async function saveInboundMessage(
 // Handler Principal
 // ========================================
 serve(async (req) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
 
-  // Apenas POST
   if (req.method !== 'POST') {
     return new Response(
       JSON.stringify({ error: 'Method not allowed' }),
@@ -519,9 +459,8 @@ serve(async (req) => {
     );
   }
 
-  // Validar autenticação
   if (!validateAuth(req)) {
-    console.error('[Inbound] Acesso não autorizado');
+    log.error('Acesso não autorizado');
     return new Response(
       JSON.stringify({ error: 'Unauthorized' }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -531,7 +470,6 @@ serve(async (req) => {
   try {
     const rawPayload = await req.json();
 
-    // Zod validation
     const inboundSchema = z.object({
       from: z.string().min(8, 'Phone number required').max(20),
       message_id: z.string().min(1, 'message_id required').max(200),
@@ -550,7 +488,7 @@ serve(async (req) => {
     }
     const payload: InboundPayload = parsed.data;
     
-    console.log('[Inbound] Webhook recebido:', {
+    log.info('Webhook recebido', {
       from: payload.from,
       message_id: payload.message_id,
       textPreview: payload.text?.substring(0, 50),
@@ -560,18 +498,15 @@ serve(async (req) => {
     
     const supabase = createServiceClient();
 
-    // Rate limiting (200 req/min per token+phone)
     const rateLimitId = simpleHash((getOptionalEnv('WHATSAPP_INBOUND_SECRET') || '') + phoneNormalized);
     const rateCheck = await checkWebhookRateLimit(supabase, 'whatsapp-inbound', rateLimitId, 200);
     if (!rateCheck.allowed) {
-      console.warn('[Inbound] Rate limit exceeded:', rateCheck.currentCount);
+      log.warn('Rate limit exceeded', { currentCount: rateCheck.currentCount });
       return rateLimitResponse(corsHeaders);
     }
 
-    // 1. Buscar lead pelo telefone (com suporte a handoff)
     const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);
     
-    // 1.5 Verificar se o canal mensageria está habilitado para a empresa do lead
     if (leadContact) {
       const { data: channelConfig } = await supabase
         .from('integration_company_config')
@@ -581,7 +516,7 @@ serve(async (req) => {
         .maybeSingle();
 
       if (channelConfig && !channelConfig.enabled) {
-        console.log(`[Inbound] Canal mensageria desabilitado para empresa ${leadContact.empresa}`);
+        log.info('Canal mensageria desabilitado', { empresa: leadContact.empresa });
         return new Response(
           JSON.stringify({ 
             success: false, 
@@ -593,27 +528,24 @@ serve(async (req) => {
       }
     }
     
-    // 2. Buscar run ativa (se lead encontrado)
     let activeRun: LeadCadenceRun | null = null;
     if (leadContact) {
       activeRun = await findActiveRun(supabase, leadContact.lead_id, leadContact.empresa);
     }
     
-    // 3. Salvar mensagem
     const result = await saveInboundMessage(supabase, payload, leadContact, activeRun);
     
-    // 4. Limpar flag de handoff após processar mensagem na empresa correta
     if (handoffInfo) {
       await clearHandoffFlag(supabase, handoffInfo.leadIdOrigem, handoffInfo.empresaOrigem);
-      console.log('[Inbound] Handoff processado:', {
+      log.info('Handoff processado', {
         de: handoffInfo.empresaOrigem,
         para: leadContact?.empresa,
         leadOrigem: handoffInfo.leadIdOrigem,
-        leadDestino: leadContact?.lead_id
+        leadDestino: leadContact?.lead_id,
       });
     }
     
-    // SPRINT 2: Notificação para leads quentes
+    // Notificação para leads quentes
     if (result.success && result.status === 'MATCHED' && leadContact) {
       try {
         const { data: classif } = await supabase
@@ -622,17 +554,16 @@ serve(async (req) => {
           .eq('lead_id', leadContact.lead_id)
           .maybeSingle();
 
-        if (classif && (classif as any).temperatura === 'QUENTE') {
-          // Find owner to notify
+        if (classif && (classif as Record<string, unknown>).temperatura === 'QUENTE') {
           const { data: ownerData } = await supabase
             .from('contacts')
             .select('owner_id')
             .eq('legacy_lead_id', leadContact.lead_id)
             .maybeSingle();
 
-          if (ownerData && (ownerData as any).owner_id) {
+          if (ownerData && (ownerData as Record<string, unknown>).owner_id) {
             await supabase.from('notifications').insert({
-              user_id: (ownerData as any).owner_id,
+              user_id: (ownerData as Record<string, unknown>).owner_id,
               empresa: leadContact.empresa,
               tipo: 'LEAD_QUENTE',
               titulo: `Lead quente respondeu: ${leadContact.nome || 'Sem nome'}`,
@@ -641,15 +572,15 @@ serve(async (req) => {
               entity_id: leadContact.lead_id,
               entity_type: 'LEAD',
             });
-            console.log('[Inbound] Notificação LEAD_QUENTE enviada');
+            log.info('Notificação LEAD_QUENTE enviada');
           }
         }
       } catch (notifErr) {
-        console.error('[Inbound] Erro ao criar notificação:', notifErr);
+        log.error('Erro ao criar notificação', { error: String(notifErr) });
       }
     }
 
-    // 4. Disparar interpretação IA (PATCH 5G)
+    // Disparar interpretação IA (PATCH 5G)
     if (result.success && result.messageId && result.status === 'MATCHED') {
       const MAX_RETRIES = 2;
       const RETRY_DELAY_MS = 2000;
@@ -668,17 +599,17 @@ serve(async (req) => {
           
           if (response.ok) {
             const iaResult = await response.json();
-            console.log('[Inbound] Interpretação IA:', iaResult);
-            (result as any).iaInterpretation = iaResult;
+            log.info('Interpretação IA concluída', iaResult);
+            (result as Record<string, unknown>).iaInterpretation = iaResult;
             break;
           } else {
-            console.error(`[Inbound] Erro ao chamar SDR IA (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, response.status);
+            log.error(`Erro ao chamar SDR IA (tentativa ${attempt + 1}/${MAX_RETRIES + 1})`, { status: response.status });
             if (attempt < MAX_RETRIES && [500, 502, 503, 504].includes(response.status)) {
               await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
             }
           }
         } catch (iaError) {
-          console.error(`[Inbound] Erro ao disparar interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1}):`, iaError);
+          log.error(`Erro ao disparar interpretação (tentativa ${attempt + 1}/${MAX_RETRIES + 1})`, { error: String(iaError) });
           if (attempt < MAX_RETRIES) {
             await new Promise(r => setTimeout(r, RETRY_DELAY_MS * (attempt + 1)));
           }
@@ -695,7 +626,7 @@ serve(async (req) => {
     );
 
   } catch (error) {
-    console.error('[Inbound] Erro geral:', error);
+    log.error('Erro geral', { error: String(error) });
     
     return new Response(
       JSON.stringify({ 

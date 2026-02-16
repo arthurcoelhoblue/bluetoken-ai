@@ -37,8 +37,8 @@ export function useCopilotInsights(empresa: string) {
 
       if (error) throw error;
       setInsights((data as CopilotInsight[]) || []);
-    } catch (err) {
-      console.error('[CopilotInsights] Erro ao buscar insights:', err);
+    } catch (_err) {
+      // Error handled silently — UI shows empty state
     } finally {
       setIsLoading(false);
     }
@@ -64,8 +64,8 @@ export function useCopilotInsights(empresa: string) {
       if (data?.insights) {
         await fetchInsights();
       }
-    } catch (err) {
-      console.error('[CopilotInsights] Erro ao gerar insights:', err);
+    } catch (_err) {
+      // Error handled silently — insights will be retried next cycle
     }
   }, [user?.id, empresa, fetchInsights]);
 
@@ -77,8 +77,8 @@ export function useCopilotInsights(empresa: string) {
         .eq('id', insightId);
 
       setInsights(prev => prev.filter(i => i.id !== insightId));
-    } catch (err) {
-      console.error('[CopilotInsights] Erro ao dispensar insight:', err);
+    } catch (_err) {
+      // Error handled silently — UI already removed the card
     }
   }, []);
 
