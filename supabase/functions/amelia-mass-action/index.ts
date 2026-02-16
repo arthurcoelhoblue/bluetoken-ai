@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient, envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('amelia-mass-action');
 
@@ -23,6 +24,10 @@ serve(async (req) => {
       if (jobErr || !job) throw new Error('Job not found: ' + jobErr?.message);
       if (job.status !== 'PREVIEW') throw new Error('Job must be in PREVIEW status');
 
+      // Validate tenant
+      assertEmpresa(job.empresa);
+      const jobEmpresa = job.empresa;
+
       await supabase.from('mass_action_jobs').update({ status: 'SENDING' }).eq('id', jobId);
       const messagesPreview: Array<{ deal_id: string; contact_name: string; message: string; approved: boolean }> = job.messages_preview || [];
       const approved = messagesPreview.filter(m => m.approved);
@@ -39,7 +44,9 @@ serve(async (req) => {
 
       for (const msg of approved) {
         try {
-          const { data: deal } = await supabase.from('deals').select('id, titulo, contacts(id, nome, telefone, email)').eq('id', msg.deal_id).single();
+          // Filter deal by tenant via pipeline_empresa
+          const { data: deal } = await supabase.from('deals').select('id, titulo, contacts(id, nome, telefone, email)')
+            .eq('id', msg.deal_id).eq('pipeline_empresa', jobEmpresa).single();
           if (!deal) { errors++; continue; }
           const contact = deal.contacts as { id?: string; nome?: string; telefone?: string; email?: string } | null;
 
@@ -63,9 +70,15 @@ serve(async (req) => {
     const { data: job, error: jobErr } = await supabase.from('mass_action_jobs').select('*').eq('id', jobId).single();
     if (jobErr || !job) throw new Error('Job not found: ' + jobErr?.message);
 
+    // Validate tenant
+    assertEmpresa(job.empresa);
+    const jobEmpresa = job.empresa;
+
     await supabase.from('mass_action_jobs').update({ status: 'GENERATING' }).eq('id', jobId);
     const dealIds: string[] = job.deal_ids || [];
-    const { data: deals } = await supabase.from('deals').select('id, titulo, valor, temperatura, status, contacts(id, nome, telefone, email)').in('id', dealIds);
+    // Filter deals by tenant via pipeline_empresa
+    const { data: deals } = await supabase.from('deals').select('id, titulo, valor, temperatura, status, contacts(id, nome, telefone, email)')
+      .in('id', dealIds).eq('pipeline_empresa', jobEmpresa);
 
     if (!deals || deals.length === 0) {
       await supabase.from('mass_action_jobs').update({ status: 'FAILED' }).eq('id', jobId);
@@ -87,7 +100,7 @@ serve(async (req) => {
           system: `Você é Amélia, SDR virtual profissional. Gere UMA mensagem personalizada de ${canal === 'WHATSAPP' ? 'WhatsApp' : 'e-mail'}.\nRegras: PT-BR informal+profissional. Curta (máx 3 par WhatsApp, 5 email). Use nome. Direta. Sem markdown. WhatsApp: máx 2 emojis.`,
           prompt: userPrompt,
           functionName: 'amelia-mass-action',
-          empresa: job.empresa || null,
+          empresa: jobEmpresa,
           temperature: 0.5,
           maxTokens: 500,
           supabase,

@@ -44,16 +44,24 @@ serve(async (req) => {
     let briefings = 0;
 
     for (const csmId of csmIds) {
-      const [customersRes, incidentsRes, renewalsRes] = await Promise.all([
+      const [customersRes, renewalsRes] = await Promise.all([
         supabase.from('cs_customers').select('id, health_score, health_status, valor_mrr, empresa, contacts(nome)').eq('csm_id', csmId).eq('is_active', true),
-        supabase.from('cs_incidents').select('titulo, gravidade, status, customer_id').in('status', ['ABERTA', 'EM_ANDAMENTO']).limit(20),
         supabase.from('cs_customers').select('id, proxima_renovacao, valor_mrr, health_status, contacts(nome)').eq('csm_id', csmId).eq('is_active', true).gte('proxima_renovacao', new Date().toISOString()).lte('proxima_renovacao', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString()),
       ]);
 
       const customers = (customersRes.data ?? []) as unknown as CSCustomerRow[];
-      const incidents = ((incidentsRes.data ?? []) as unknown as IncidentRow[]).filter((i) => customers.some((c) => c.id === i.customer_id));
-      const renewals = (renewalsRes.data ?? []) as unknown as RenewalRow[];
       if (customers.length === 0) continue;
+
+      // Resolve empresa from CSM's customers and filter incidents by it
+      const csmEmpresa = customers[0]?.empresa;
+      const customerIds = customers.map((c) => c.id);
+      const { data: incidentsData } = await supabase.from('cs_incidents').select('titulo, gravidade, status, customer_id')
+        .in('status', ['ABERTA', 'EM_ANDAMENTO'])
+        .in('customer_id', customerIds)
+        .eq('empresa', csmEmpresa || '')
+        .limit(20);
+      const incidents = (incidentsData ?? []) as unknown as IncidentRow[];
+      const renewals = (renewalsRes.data ?? []) as unknown as RenewalRow[];
 
       const healthDist: Record<string, number> = {};
       let totalMrr = 0;

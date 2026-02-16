@@ -35,7 +35,7 @@ serve(async (req) => {
     }
 
     // ANÁLISE 2: Padrões de Perda
-    const { data: perdas } = await supabase.from('deal_activities').select('deal_id, tipo, descricao, metadata, created_at').eq('tipo', 'PERDA').gte('created_at', since).limit(200);
+    const { data: perdas } = await supabase.from('deal_activities').select('deal_id, tipo, descricao, metadata, created_at, deals!inner(pipeline_empresa)').eq('tipo', 'PERDA').eq('deals.pipeline_empresa', empresa).gte('created_at', since).limit(200);
     if (perdas && perdas.length >= 3) {
       const byCategoria: Record<string, number> = {};
       for (const p of perdas) { const cat = (p.metadata as Record<string, unknown> | null)?.categoria as string || 'SEM_CATEGORIA'; byCategoria[cat] = (byCategoria[cat] || 0) + 1; }
@@ -66,7 +66,7 @@ serve(async (req) => {
 
     // ANÁLISE 4: Deals sem atividade
     const twoDaysAgo = new Date(Date.now() - 48 * 3600_000).toISOString();
-    const { data: inactiveDeals } = await supabase.from('deals').select('id, titulo, owner_id, updated_at, contacts!inner(nome)').eq('status', 'ABERTO').lt('updated_at', twoDaysAgo).limit(20);
+    const { data: inactiveDeals } = await supabase.from('deals').select('id, titulo, owner_id, updated_at, contacts!inner(nome)').eq('status', 'ABERTO').eq('pipeline_empresa', empresa).lt('updated_at', twoDaysAgo).limit(20);
     if (inactiveDeals) {
       for (const deal of inactiveDeals) {
         const hash = `inativo_${deal.id}`;
@@ -97,7 +97,7 @@ serve(async (req) => {
 
     // ANÁLISE 6: Mineração de Sequências (Perda)
     const ninetyDaysAgo = new Date(Date.now() - 90 * 86400_000).toISOString();
-    const { data: lostDeals } = await supabase.from('deals').select('id, contact_id, titulo').eq('status', 'PERDIDO').gte('updated_at', ninetyDaysAgo).limit(30);
+    const { data: lostDeals } = await supabase.from('deals').select('id, contact_id, titulo').eq('status', 'PERDIDO').eq('pipeline_empresa', empresa).gte('updated_at', ninetyDaysAgo).limit(30);
     if (lostDeals && lostDeals.length >= 5) {
       const timelines: { dealId: string; titulo: string; events: string[] }[] = [];
       for (const deal of lostDeals.slice(0, 20)) {

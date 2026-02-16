@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('cs-suggest-note');
 
@@ -29,6 +30,9 @@ serve(async (req) => {
     if (!customer) {
       return new Response(JSON.stringify({ error: 'Cliente não encontrado' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
+
+    // Validate tenant
+    assertEmpresa(customer.empresa);
 
     const surveys = surveysRes.data ?? [];
     const incidents = incidentsRes.data ?? [];
@@ -59,7 +63,7 @@ Responda APENAS com a sugestão de nota, sem prefixos ou explicações.`;
       system: 'Você é um assistente de Customer Success que gera notas de acompanhamento práticas e acionáveis.',
       prompt,
       functionName: 'cs-suggest-note',
-      empresa: customer.empresa || null,
+      empresa: customer.empresa,
       temperature: 0.3,
       maxTokens: 300,
       supabase,
