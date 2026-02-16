@@ -1,145 +1,64 @@
 
 
-# Docusaurus - Documentacao do Amelia CRM
+# Auditoria Pos-Fase G — Plano de Correcao
 
-## Objetivo
+## Diagnostico
 
-Criar um site de documentacao profissional usando Docusaurus dentro do repositorio atual (pasta `/docs-site`), com 5 visoes/perfis de usuario e conteudo pratico baseado nos manuais existentes.
+A varredura identificou 3 niveis de prioridade. Apos investigacao do codigo:
 
-## Estrutura do Projeto
+### Prioridade 0 — ESLint (Bloqueador CI)
 
-```text
-docs-site/
-  docusaurus.config.ts
-  package.json
-  tsconfig.json
-  sidebars.ts
-  static/
-    img/
-      logo.svg
-      favicon.ico
-  src/
-    css/
-      custom.css
-    pages/
-      index.tsx          -- Landing page com cards por perfil
-  docs/
-    intro.md             -- Visao geral do sistema
-    guia-rapido.md       -- Primeiros passos (todos os perfis)
-    vendedor/
-      index.md           -- Introducao vendedor
-      meu-dia.md         -- Central de comando diaria
-      pipeline.md        -- Funil de vendas
-      deals.md           -- Detalhes de oportunidades
-      cadencias.md       -- Follow-up automatico
-      conversas.md       -- WhatsApp e BlueChat
-      leads-quentes.md   -- Oportunidades prioritarias
-      metas.md           -- Metas e comissoes
-      telefonia.md       -- Click-to-call
-      faq.md
-    cs/
-      index.md           -- Introducao CS
-      dashboard.md       -- Metricas e visao geral
-      clientes.md        -- Portfolio de clientes
-      health-score.md    -- Calculo e interpretacao
-      churn.md           -- Predicao de cancelamento
-      pesquisas.md       -- NPS e CSAT
-      incidencias.md     -- Deteccao e resolucao
-      playbooks.md       -- Automacao de CS
-      briefing.md        -- Briefing diario IA
-      renovacoes.md      -- Gestao de renovacoes
-      faq.md
-    gestor/
-      index.md           -- Introducao gestor
-      cockpit.md         -- Painel estrategico
-      analytics.md       -- Relatorios executivos
-      pipelines-config.md -- Configuracao de funis
-      usuarios.md        -- Gestao de acesso
-      campos-custom.md   -- Campos customizados
-      templates.md       -- Templates e regras
-      performance.md     -- Analise de equipe
-      faq.md
-    admin/
-      index.md           -- Introducao admin
-      ia-config.md       -- Configuracoes da Amelia
-      conhecimento.md    -- Base de conhecimento
-      custos-ia.md       -- Monitoramento de custos
-      benchmark.md       -- Benchmark de IA
-      integracoes.md     -- Webhooks e integracoes
-      importacao.md      -- Importacao de dados
-      saude-operacional.md -- Health check
-      cron-jobs.md       -- Automacao CRON
-      multi-tenancy.md   -- Schemas e isolamento
-      faq.md
-    desenvolvedor/
-      index.md           -- Arquitetura geral
-      stack.md           -- React + Vite + Supabase
-      edge-functions.md  -- Guia de edge functions
-      rls.md             -- Politicas RLS e seguranca
-      multi-tenancy.md   -- Schema views e provisioning
-      sdr-ia.md          -- Motor SDR e IA
-      cadence-engine.md  -- Motor de cadencias
-      webhooks.md        -- Integracao via webhooks
-      api-reference.md   -- Referencia de APIs
-      testes.md          -- Estrategia de testes
-      adr.md             -- Architecture Decision Records
-```
+O relatorio menciona 4 erros de ESLint. Como nao consigo executar o linter diretamente, vou revisar as regras ativas e corrigir os padroes mais provaveis de erro:
+
+- Verificar se ha imports nao utilizados ou variaveis declaradas sem uso nos arquivos `src/`
+- Revisar os 2 `eslint-disable` existentes (`useLeadsQuentes.ts` e `supabase-mock.ts`) para garantir que estao justificados
+- Executar uma varredura manual nos arquivos mais recentes para identificar violacoes
+
+**Acao:** Corrigir todos os erros encontrados para garantir build limpo em CI.
+
+### Prioridade 1 — tokeniza-offers e config.ts
+
+Apos inspecao, `tokeniza-offers/index.ts` ja utiliza `createLogger` do `logger.ts`. Ele nao usa `config.ts` porque nao precisa de variaveis de ambiente nem cliente Supabase. Portanto, **nenhuma acao necessaria** neste item — a funcao ja segue o padrao.
+
+### Prioridade 2 — Migrar console.log do backend para logger estruturado
+
+Foram encontradas **~20 ocorrencias** de `console.log` em 5 arquivos do backend:
+
+| Arquivo | Ocorrencias |
+|---------|-------------|
+| `sgt-webhook/cadence.ts` | 9 |
+| `sgt-webhook/classification.ts` | 3 |
+| `_shared/pipeline-routing.ts` | 5 |
+| `_shared/phone-utils.ts` | 2 |
+| `email-send/index.ts` | 4 |
+
+**Nota:** `_shared/logger.ts` usa `console.log` internamente como mecanismo de output — esse e intencional e nao sera alterado.
+
+**Acao:** Substituir todas as chamadas `console.log(...)` por `log.info(...)` ou `log.debug(...)` usando o logger estruturado de cada funcao. Para arquivos `_shared`, importar e criar instancia local do logger.
 
 ## Implementacao
 
-### 1. Configuracao base do Docusaurus
+### Passo 1 — Corrigir ESLint (4 erros)
+- Identificar e corrigir os erros especificos (provavelmente imports nao utilizados ou violacoes de tipo)
+- Garantir 0 erros no lint
 
-- Criar `docs-site/package.json` com Docusaurus 3.x
-- `docusaurus.config.ts` com tema, navbar, footer, search
-- Tema com cores da marca Blue CRM
-- Navbar com links para cada visao
+### Passo 2 — Migrar console.log no backend
+- `sgt-webhook/cadence.ts`: Importar logger e substituir 9 `console.log` por `log.info`/`log.debug`
+- `sgt-webhook/classification.ts`: Substituir 3 `console.log` por `log.info`/`log.debug`
+- `_shared/pipeline-routing.ts`: Criar logger local e substituir 5 `console.log`
+- `_shared/phone-utils.ts`: Criar logger local e substituir 2 `console.log`
+- `email-send/index.ts`: Substituir 4 `console.log` por chamadas ao logger existente
 
-### 2. Sidebar organizada por perfil
+### Passo 3 — Deploy das Edge Functions alteradas
+- Deploy automatico das funcoes modificadas: `sgt-webhook`, `email-send`
 
-Cada perfil tera uma sidebar propria com navegacao logica:
-- **Vendedor**: Fluxo do dia a dia (Meu Dia -> Pipeline -> Deals -> Cadencias)
-- **CS**: Fluxo de monitoramento (Dashboard -> Clientes -> Health -> Incidencias)
-- **Gestor**: Fluxo estrategico (Cockpit -> Analytics -> Configuracao -> Equipe)
-- **Admin**: Fluxo tecnico (IA -> Integracoes -> Importacao -> Operacional)
-- **Desenvolvedor**: Fluxo arquitetural (Stack -> Edge Functions -> RLS -> APIs)
+### Passo 4 — Validacao
+- Confirmar 0 erros ESLint
+- Confirmar 0 `console.log` remanescentes no backend (exceto `logger.ts`)
 
-### 3. Conteudo migrado dos manuais v2
+## Resultado Esperado
 
-- Migrar conteudo dos 5 manuais em `docs/manuais_v2/` para a estrutura Docusaurus
-- Quebrar cada manual em paginas menores e focadas (1 topico = 1 pagina)
-- Adicionar admonitions do Docusaurus (:::tip, :::warning, :::info)
-- Converter tabelas e dicas para formato Docusaurus
-
-### 4. Secao Desenvolvedor (nova)
-
-Conteudo novo baseado nos ADRs e patches existentes:
-- Arquitetura do sistema (React + Supabase + Edge Functions)
-- Guia de Edge Functions com exemplos reais do projeto
-- Documentacao do multi-tenancy (Schema Views implementado no Bloco 4.1)
-- Estrategia de RLS e seguranca
-- Motor SDR-IA e cadencias
-- Referencia de APIs e webhooks
-
-### 5. Landing page
-
-Pagina inicial com cards visuais para cada perfil, permitindo ao usuario escolher sua visao rapidamente.
-
-## Detalhes Tecnicos
-
-- **Docusaurus 3.x** com TypeScript
-- Configurado como subprojeto independente (`docs-site/package.json`)
-- Nao interfere no build do app principal (pasta separada)
-- Adicionar `docs-site` ao `.gitignore` do build principal se necessario
-- Para rodar localmente: `cd docs-site && npm install && npm start`
-- Para build: `cd docs-site && npm run build`
-
-## Escopo da primeira entrega
-
-1. Estrutura Docusaurus configurada e funcional
-2. Landing page com cards por perfil
-3. Conteudo completo para **Vendedor** e **CS** (migrado dos manuais v2)
-4. Conteudo completo para **Gestor** e **Admin** (migrado dos manuais v2)
-5. Conteudo inicial para **Desenvolvedor** (arquitetura, multi-tenancy, edge functions)
-6. Sidebar navegavel por perfil
-7. Busca integrada (Docusaurus search local)
+- Build 100% limpo para CI/CD
+- 0 `console.log` no backend (padrao de observabilidade completo)
+- Sistema pronto para deploy sem bloqueadores
 
