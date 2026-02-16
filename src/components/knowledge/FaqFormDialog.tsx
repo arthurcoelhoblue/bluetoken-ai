@@ -49,7 +49,7 @@ export function FaqFormDialog({ open, onOpenChange }: FaqFormDialogProps) {
     if (!valid) return;
 
     const data = form.getValues();
-    const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+    const empresa = activeCompany;
 
     if (mode === 'RASCUNHO') {
       createFaq.mutate({

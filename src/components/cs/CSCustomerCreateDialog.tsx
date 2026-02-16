@@ -18,7 +18,7 @@ export function CSCustomerCreateDialog() {
   const [open, setOpen] = useState(false);
   const [contactSearch, setContactSearch] = useState('');
   const [contactId, setContactId] = useState('');
-  const [empresa, setEmpresa] = useState<string>(activeCompany !== 'ALL' ? activeCompany : 'BLUE');
+  const [empresa, setEmpresa] = useState<string>(activeCompany);
   const [valorMrr, setValorMrr] = useState('');
   const [proximaRenovacao, setProximaRenovacao] = useState('');
   const [notas, setNotas] = useState('');

@@ -18,9 +18,7 @@ export function useAmeliaLearnings(statusFilter?: AmeliaLearningStatus) {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany);
-      }
+      query = query.eq('empresa', activeCompany);
 
       if (statusFilter) {
         query = query.eq('status', statusFilter);
@@ -50,9 +48,7 @@ export function useAmeliaSequenceAlerts() {
         .order('confianca', { ascending: false })
         .limit(20);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany);
-      }
+      query = query.eq('empresa', activeCompany);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -100,9 +96,7 @@ export function useRecentAlerts() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany);
-      }
+      query = query.eq('empresa', activeCompany);
 
       const { data, error } = await query;
       if (error) throw error;

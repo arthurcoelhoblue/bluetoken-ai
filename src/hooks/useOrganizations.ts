@@ -16,9 +16,7 @@ export function useOrganizations(search?: string) {
         .order('nome', { ascending: true })
         .limit(200);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,cnpj.ilike.%${search}%,nome_fantasia.ilike.%${search}%`);
       }

@@ -7,8 +7,7 @@ import type { WorkbenchTarefa, WorkbenchSLAAlert, WorkbenchPipelineSummary, Rece
 
 type EmpresaEnum = 'BLUE' | 'TOKENIZA';
 
-function empresaFilter(activeCompany: string): EmpresaEnum | null {
-  if (activeCompany === 'ALL') return null;
+function empresaFilter(activeCompany: string): EmpresaEnum {
   return activeCompany as EmpresaEnum;
 }
 

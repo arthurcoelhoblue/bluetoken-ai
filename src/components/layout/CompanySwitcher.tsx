@@ -10,7 +10,6 @@ import {
 const options: { value: ActiveCompany; label: string; color: string }[] = [
   { value: 'BLUE', label: 'Blue Consult', color: 'bg-primary' },
   { value: 'TOKENIZA', label: 'Tokeniza', color: 'bg-accent' },
-  { value: 'ALL', label: 'Todas', color: 'bg-muted-foreground' },
 ];
 
 export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {

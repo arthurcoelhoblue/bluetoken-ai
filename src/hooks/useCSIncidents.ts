@@ -19,9 +19,7 @@ export function useCSIncidents(customerId?: string, statusFilter?: CSIncidentSta
         .order('created_at', { ascending: false })
         .limit(200);
 
-      if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
       if (customerId) query = query.eq('customer_id', customerId);
       if (statusFilter) query = query.eq('status', statusFilter);
 

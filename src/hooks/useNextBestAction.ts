@@ -27,7 +27,7 @@ export function useNextBestAction() {
     enabled: !!user?.id,
     staleTime: 5 * 60 * 1000, // 5 minutes
     queryFn: async (): Promise<NBAResponse> => {
-      const empresa = activeCompany === 'ALL' ? null : activeCompany;
+      const empresa = activeCompany;
       const { data, error } = await supabase.functions.invoke('next-best-action', {
         body: { user_id: user!.id, empresa },
       });

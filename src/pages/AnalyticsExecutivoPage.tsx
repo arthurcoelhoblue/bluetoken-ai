@@ -37,7 +37,7 @@ interface CSCustomerRow {
 
 export default function AnalyticsExecutivoPage() {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? null : activeCompany;
+  const empresa = activeCompany;
   const { data: conversion } = useAnalyticsConversion();
   const { data: evolucao } = useAnalyticsEvolucao();
   const [weeklyReport, setWeeklyReport] = useState<WeeklyReportData | null>(null);

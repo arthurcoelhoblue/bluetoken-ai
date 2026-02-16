@@ -14,7 +14,7 @@ const DIALPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 export function ZadarmaPhoneWidget() {
   const { profile } = useAuth();
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? null : activeCompany as EmpresaTipo | null;
+  const empresa = activeCompany as EmpresaTipo;
   const { data: myExtension } = useMyExtension(empresa, profile?.id ?? null);
 
   const [minimized, setMinimized] = useState(true);

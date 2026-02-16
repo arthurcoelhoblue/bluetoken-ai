@@ -5,7 +5,7 @@ import { useCompany } from '@/contexts/CompanyContext';
 
 export function useCSPlaybooks() {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? undefined : activeCompany;
+  const empresa = activeCompany;
   const queryClient = useQueryClient();
 
   const query = useQuery({

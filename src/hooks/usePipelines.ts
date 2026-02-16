@@ -15,9 +15,7 @@ export function usePipelines() {
         .eq('ativo', true)
         .order('created_at', { ascending: true });
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
 
       const { data, error } = await query;
       if (error) throw error;

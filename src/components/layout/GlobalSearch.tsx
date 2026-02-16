@@ -57,9 +57,7 @@ export function GlobalSearch() {
         .select('id, nome, email, telefone, empresa')
         .ilike('nome', searchTerm)
         .limit(5);
-      if (activeCompany !== 'ALL') {
-        contactsQuery = contactsQuery.eq('empresa', activeCompany);
-      }
+      contactsQuery = contactsQuery.eq('empresa', activeCompany);
 
       // Build deals query — filter via pipeline join for empresa isolation
       let dealsQuery = supabase
@@ -67,9 +65,7 @@ export function GlobalSearch() {
         .select('id, titulo, valor, pipelines!inner(empresa)')
         .ilike('titulo', searchTerm)
         .limit(5);
-      if (activeCompany !== 'ALL') {
-        dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as 'BLUE' | 'TOKENIZA');
 
       // Build orgs query with empresa filter
       let orgsQuery = supabase
@@ -77,9 +73,7 @@ export function GlobalSearch() {
         .select('id, nome, empresa')
         .ilike('nome', searchTerm)
         .limit(5);
-      if (activeCompany !== 'ALL') {
-        orgsQuery = orgsQuery.eq('empresa', activeCompany);
-      }
+      orgsQuery = orgsQuery.eq('empresa', activeCompany);
 
       const [contactsRes, dealsRes, orgsRes] = await Promise.all([
         contactsQuery,

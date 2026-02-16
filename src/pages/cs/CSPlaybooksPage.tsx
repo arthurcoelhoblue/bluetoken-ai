@@ -23,7 +23,7 @@ const triggerTypes = [
 
 export default function CSPlaybooksPage() {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+  const empresa = activeCompany;
   const { data: playbooks = [], isLoading, createPlaybook, updatePlaybook, deletePlaybook } = useCSPlaybooks();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState({ nome: '', descricao: '', trigger_type: 'HEALTH_DEGRADED' });

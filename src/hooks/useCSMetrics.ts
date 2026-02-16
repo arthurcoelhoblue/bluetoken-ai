@@ -15,9 +15,7 @@ export function useCSMetrics() {
         .select('health_score, health_status, ultimo_nps, proxima_renovacao, is_active')
         .eq('is_active', true);
 
-      if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
 
       const { data, error } = await query;
       if (error) throw error;
