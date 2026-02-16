@@ -197,7 +197,7 @@ function PipelineConfigContent() {
                               />
                             </div>
                           </TooltipTrigger>
-                          <TooltipContent>Tempo mínimo (dias) para ganhar/perder deal neste stage</TooltipContent>
+                          <TooltipContent>Tempo mínimo (dias) para perder deal neste stage</TooltipContent>
                         </Tooltip>
                         <Tooltip>
                           <TooltipTrigger asChild>
