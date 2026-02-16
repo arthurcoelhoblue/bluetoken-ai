@@ -6889,6 +6889,10 @@ export type Database = {
         }
         Returns: boolean
       }
+      provision_tenant_schema: {
+        Args: { tenant_empresa: string }
+        Returns: undefined
+      }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       update_conversation_with_intent: {
