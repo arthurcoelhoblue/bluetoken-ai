@@ -8,21 +8,6 @@ import { Sun, Moon, ArrowLeft } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
-import { CopilotPanel } from '@/components/copilot/CopilotPanel';
-import { useCompany } from '@/contexts/CompanyContext';
-import type { CopilotContextType } from '@/types/conversas';
-
-function getCopilotContext(pathname: string, empresa: string): { type: CopilotContextType; id?: string; empresa: string } {
-  const leadMatch = pathname.match(/^\/leads\/([^/]+)\/([^/]+)$/);
-  if (leadMatch) return { type: 'LEAD', id: leadMatch[1], empresa: leadMatch[2] };
-
-  const csMatch = pathname.match(/^\/cs\/clientes\/([^/]+)$/);
-  if (csMatch) return { type: 'CUSTOMER', id: csMatch[1], empresa };
-
-  if (pathname === '/pipeline') return { type: 'PIPELINE', empresa };
-
-  return { type: 'GERAL', empresa };
-}
 
 const ROUTE_TITLES: Record<string, string> = {
   '/': 'Meu Dia',
@@ -82,7 +67,6 @@ export function TopBar() {
   const navigate = useNavigate();
   const { profile } = useAuth();
   const { theme, toggleTheme } = useTheme();
-  const { activeCompany } = useCompany();
   const title = getTitle(location.pathname);
 
   const getInitials = (name: string | null, email: string) => {
@@ -106,9 +90,6 @@ export function TopBar() {
 
       {/* Global Search */}
       <GlobalSearch />
-
-      {/* Amélia Copilot */}
-      <CopilotPanel context={getCopilotContext(location.pathname, activeCompany)} variant="icon" />
 
       {/* Notifications */}
       <NotificationBell />

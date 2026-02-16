@@ -25,6 +25,8 @@ interface CopilotContext {
 interface CopilotPanelProps {
   context: CopilotContext;
   variant?: 'icon' | 'button' | 'fab';
+  externalOpen?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 const QUICK_SUGGESTIONS: Record<CopilotContextType, string[]> = {
@@ -53,8 +55,11 @@ const QUICK_SUGGESTIONS: Record<CopilotContextType, string[]> = {
   ],
 };
 
-export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps) {
-  const [open, setOpen] = useState(false);
+export function CopilotPanel({ context, variant = 'button', externalOpen, onOpenChange }: CopilotPanelProps) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = externalOpen !== undefined;
+  const open = isControlled ? externalOpen : internalOpen;
+  const setOpen = isControlled ? (onOpenChange ?? setInternalOpen) : setInternalOpen;
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -168,7 +173,7 @@ export function CopilotPanel({ context, variant = 'button' }: CopilotPanelProps)
 
   return (
     <Sheet open={open} onOpenChange={setOpen}>
-      <SheetTrigger asChild>{trigger}</SheetTrigger>
+      {!isControlled && <SheetTrigger asChild>{trigger}</SheetTrigger>}
       <SheetContent className="w-[440px] sm:max-w-[440px] flex flex-col">
         <SheetHeader>
           <div className="flex items-center justify-between">
