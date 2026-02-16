@@ -13,6 +13,37 @@ import { createLogger } from "../_shared/logger.ts";
 const corsHeaders = getWebhookCorsHeaders();
 const log = createLogger('sdr-ia-interpret');
 
+// Valid enum values for sdr_acao_tipo
+const VALID_ACOES = new Set([
+  'NENHUMA', 'ENVIAR_RESPOSTA_AUTOMATICA', 'CRIAR_TAREFA_CLOSER',
+  'ESCALAR_HUMANO', 'PAUSAR_CADENCIA', 'CANCELAR_CADENCIA',
+  'RETOMAR_CADENCIA', 'AJUSTAR_TEMPERATURA', 'MARCAR_OPT_OUT', 'HANDOFF_EMPRESA',
+]);
+
+const ACAO_MAP: Record<string, string> = {
+  ESCLARECIMENTO_INICIAL: 'ENVIAR_RESPOSTA_AUTOMATICA',
+  APRESENTAR_CLARIFICAR: 'ENVIAR_RESPOSTA_AUTOMATICA',
+  ESCLARECER_SITUACAO: 'ENVIAR_RESPOSTA_AUTOMATICA',
+  APRESENTAR_ESCLARECER: 'ENVIAR_RESPOSTA_AUTOMATICA',
+  RESPONDER_QUALIFICAR: 'ENVIAR_RESPOSTA_AUTOMATICA',
+  DESQUALIFICAR_LEAD: 'MARCAR_OPT_OUT',
+  AGUARDAR_ESCOLHA_DEPARTAMENTO: 'ESCALAR_HUMANO',
+  RESPONDER_DEPARTAMENTO_COMERCIAL: 'ESCALAR_HUMANO',
+  QUEBRAR_LOOP_AUTOMATICO: 'PAUSAR_CADENCIA',
+};
+
+function normalizarAcao(acao: string | undefined): string {
+  if (!acao) return 'NENHUMA';
+  if (VALID_ACOES.has(acao)) return acao;
+  const mapped = ACAO_MAP[acao];
+  if (mapped) {
+    log.info('Ação normalizada', { original: acao, normalizada: mapped });
+    return mapped;
+  }
+  log.warn('Ação desconhecida normalizada para NENHUMA', { original: acao });
+  return 'NENHUMA';
+}
+
 interface InterpretRequest {
   messageId: string;
   source?: 'BLUECHAT' | 'WHATSAPP' | string;
@@ -289,7 +320,8 @@ serve(async (req) => {
     }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   } catch (error) {
-    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
+    const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+    log.error('Error', { error: errMsg });
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
@@ -313,7 +345,7 @@ async function saveInterpretation(
     intent: aiResponse.intent || 'OUTRO',
     intent_confidence: aiResponse.confidence || 0.5,
     intent_summary: aiResponse.summary || aiResponse.resumo || null,
-    acao_recomendada: aiResponse.acao || aiResponse.acao_recomendada || 'NENHUMA',
+    acao_recomendada: normalizarAcao(aiResponse.acao || aiResponse.acao_recomendada),
     acao_aplicada: acaoAplicada,
     acao_detalhes: aiResponse.acao_detalhes || null,
     modelo_ia: aiResponse.model || 'unknown',
