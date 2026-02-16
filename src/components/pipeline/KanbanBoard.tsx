@@ -49,7 +49,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
   const toggleIaSort = useCallback(() => {
     setIaSort(prev => {
       const next = !prev;
-      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch {}
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
       return next;
     });
   }, []);

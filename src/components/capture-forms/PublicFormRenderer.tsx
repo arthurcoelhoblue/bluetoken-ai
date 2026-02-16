@@ -121,7 +121,7 @@ export function PublicFormRenderer({ fields, settings, formName, onSubmit }: Pub
             ))}
           </div>
         );
-      case 'multi_select':
+      case 'multi_select': {
         const selected = (val as string[]) || [];
         return (
           <div className="space-y-3">
@@ -146,6 +146,7 @@ export function PublicFormRenderer({ fields, settings, formName, onSubmit }: Pub
             })}
           </div>
         );
+      }
       default:
         return null;
     }
