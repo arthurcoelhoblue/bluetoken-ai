@@ -90,9 +90,16 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
     onSave(payload);
   }
 
-  // Highlight placeholders in preview
+  // Highlight placeholders in preview — safe React rendering (no dangerouslySetInnerHTML)
   function renderPreview(text: string) {
-    return text.replace(/\{\{(\w+)\}\}/g, '<mark class="bg-amber-200 dark:bg-amber-800 px-1 rounded text-xs">{{$1}}</mark>');
+    const parts = text.split(/(\{\{\w+\}\})/g);
+    return parts.map((part, i) =>
+      /^\{\{\w+\}\}$/.test(part) ? (
+        <mark key={i} className="bg-amber-200 dark:bg-amber-800 px-1 rounded text-xs">{part}</mark>
+      ) : (
+        <span key={i}>{part}</span>
+      )
+    );
   }
 
   return (
@@ -192,10 +199,9 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
             {conteudo && (
               <div>
                 <Label className="text-xs text-muted-foreground">Preview</Label>
-                <div
-                  className="mt-1 p-3 bg-muted rounded-md text-sm whitespace-pre-wrap"
-                  dangerouslySetInnerHTML={{ __html: renderPreview(conteudo) }}
-                />
+                <div className="mt-1 p-3 bg-muted rounded-md text-sm whitespace-pre-wrap">
+                  {renderPreview(conteudo)}
+                </div>
               </div>
             )}
 
