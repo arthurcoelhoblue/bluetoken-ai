@@ -127,9 +127,21 @@ Criar testes automatizados para as edge functions refatoradas, validando que que
 
 ## Resumo de mudancas
 
-| Tipo | Arquivo/Recurso | Acao |
-|------|-----------------|------|
-| SQL Migration | 3 trigger functions | Corrigir filtros cross-tenant |
-| Plan | `.lovable/plan.md` | Atualizar status Fases 3 e 4 |
-| Test | `supabase/functions/_shared/tenant_test.ts` | Criar testes unitarios |
+| Tipo | Arquivo/Recurso | Acao | Status |
+|------|-----------------|------|--------|
+| SQL Migration | 3 trigger functions | Corrigir filtros cross-tenant | ✅ CONCLUIDO |
+| Plan | `.lovable/plan.md` | Atualizar status Fases 3 e 4 | ✅ CONCLUIDO |
+| Test | `supabase/functions/_shared/tenant_test.ts` | Criar testes unitarios | ✅ CONCLUIDO |
+
+---
+
+## Status Geral do Hardening Multi-Tenant
+
+| Fase | Descricao | Status |
+|------|-----------|--------|
+| 1 | RLS Hardening (80+ tabelas) | ✅ CONCLUIDO |
+| 2A | Criar `_shared/tenant.ts` | ✅ CONCLUIDO |
+| 2B | Refatorar 5 Edge Functions prioritarias | ✅ CONCLUIDO |
+| 3 | Auditoria e correcao de triggers cross-tenant | ✅ CONCLUIDO |
+| 4 | Testes de isolamento | ✅ CONCLUIDO |
 
