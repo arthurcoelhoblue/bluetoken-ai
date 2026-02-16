@@ -14,11 +14,14 @@ Deno.serve(async (req) => {
     const supabase = createServiceClient();
 
     let dealContext = '';
+    let resolvedEmpresa: string | null = null;
+
     if (deal_id) {
-      const { data: deal } = await supabase.from('deals').select('titulo, valor, temperatura, status, scoring_dimensoes, proxima_acao_sugerida').eq('id', deal_id).single();
+      const { data: deal } = await supabase.from('deals').select('titulo, valor, temperatura, status, scoring_dimensoes, proxima_acao_sugerida, pipeline_empresa').eq('id', deal_id).single();
       if (deal) {
         dealContext += `\nDEAL: ${deal.titulo} | Valor: R$${deal.valor || 0} | Temperatura: ${deal.temperatura || 'N/A'}`;
         if (deal.proxima_acao_sugerida) dealContext += `\nPróxima ação sugerida: ${deal.proxima_acao_sugerida}`;
+        resolvedEmpresa = (deal as Record<string, unknown>).pipeline_empresa as string | null;
       }
       const { data: dealFull } = await supabase.from('deals').select('contact_id').eq('id', deal_id).single();
       if (dealFull?.contact_id) {
@@ -36,7 +39,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    const { data: products } = await supabase.from('knowledge_products').select('nome, descricao, diferenciais, objecoes_comuns').limit(5);
+    // Filter knowledge_products by tenant if resolved
+    let productsQuery = supabase.from('knowledge_products').select('nome, descricao, diferenciais, objecoes_comuns').limit(5);
+    if (resolvedEmpresa) {
+      productsQuery = productsQuery.eq('empresa', resolvedEmpresa);
+    }
+    const { data: products } = await productsQuery;
+    
     let productContext = '';
     if (products && products.length > 0) {
       productContext = '\n\nPRODUTOS/SERVIÇOS:\n' + products.map(p => `- ${p.nome}: ${p.descricao || ''}\n  Diferenciais: ${p.diferenciais || 'N/A'}\n  Objeções comuns: ${p.objecoes_comuns || 'N/A'}`).join('\n');
@@ -55,6 +64,7 @@ Retorne APENAS o JSON, sem markdown.`;
       prompt,
       functionName: 'call-coach',
       maxTokens: 1024,
+      empresa: resolvedEmpresa,
       supabase,
     });
 

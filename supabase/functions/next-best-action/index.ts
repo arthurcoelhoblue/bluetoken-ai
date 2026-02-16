@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('next-best-action');
 
@@ -26,35 +27,42 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
+    assertEmpresa(empresa);
 
     const supabase = createServiceClient();
 
-    // Gather context in parallel
+    // Gather context in parallel — all queries filtered by empresa
     const [
       tarefasRes, slaRes, dealsParadosRes, leadsQuentesRes,
       dealScoresRes, csAlertsRes, cadenceActiveRes, sentimentRecentRes,
     ] = await Promise.all([
       supabase.from('workbench_tarefas').select('*')
-        .eq('owner_id', user_id).order('tarefa_prazo', { ascending: true, nullsFirst: false }).limit(10),
+        .eq('owner_id', user_id).eq('pipeline_empresa', empresa)
+        .order('tarefa_prazo', { ascending: true, nullsFirst: false }).limit(10),
       supabase.from('workbench_sla_alerts').select('*')
-        .eq('owner_id', user_id).order('sla_percentual', { ascending: false }).limit(10),
+        .eq('owner_id', user_id).eq('pipeline_empresa', empresa)
+        .order('sla_percentual', { ascending: false }).limit(10),
       supabase.from('deals').select('id, titulo, valor, temperatura, updated_at, contacts!inner(nome), pipeline_stages!deals_stage_id_fkey(nome)')
-        .eq('owner_id', user_id).eq('status', 'ABERTO')
+        .eq('owner_id', user_id).eq('status', 'ABERTO').eq('pipeline_empresa', empresa)
         .lt('updated_at', new Date(Date.now() - 5 * 86400000).toISOString())
         .order('updated_at', { ascending: true }).limit(5),
       supabase.from('lead_message_intents').select('id, lead_id, intent, intent_summary, created_at')
+        .eq('empresa', empresa)
         .in('intent', ['INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'])
         .gte('created_at', new Date(Date.now() - 3 * 86400000).toISOString())
         .order('created_at', { ascending: false }).limit(5),
       supabase.from('deals').select('id, titulo, valor, score_probabilidade, scoring_dimensoes, proxima_acao_sugerida, pipeline_stages!deals_stage_id_fkey(nome)')
-        .eq('owner_id', user_id).eq('status', 'ABERTO').gt('score_probabilidade', 0)
+        .eq('owner_id', user_id).eq('status', 'ABERTO').eq('pipeline_empresa', empresa)
+        .gt('score_probabilidade', 0)
         .order('score_probabilidade', { ascending: false }).limit(10),
       supabase.from('cs_customers').select('id, health_score, health_status, proxima_renovacao, contacts!inner(nome)')
+        .eq('empresa', empresa)
         .or('health_score.lt.60,proxima_renovacao.lte.' + new Date(Date.now() + 30 * 86400000).toISOString().split('T')[0])
         .eq('is_active', true).limit(10),
-      supabase.from('deal_cadence_runs').select('id, status, deal_id, deals(titulo)')
-        .eq('status', 'ACTIVE').limit(10),
+      supabase.from('deal_cadence_runs').select('id, status, deal_id, deals!inner(titulo, pipeline_empresa)')
+        .eq('status', 'ACTIVE').eq('deals.pipeline_empresa', empresa).limit(10),
       supabase.from('lead_message_intents').select('lead_id, intent, sentimento, created_at')
+        .eq('empresa', empresa)
         .not('sentimento', 'is', null)
         .gte('created_at', new Date(Date.now() - 2 * 86400000).toISOString())
         .order('created_at', { ascending: false }).limit(5),

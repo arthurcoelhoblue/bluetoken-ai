@@ -39,8 +39,8 @@ serve(async (req) => {
     const [openDealsRes, csCustomersRes, wonDealsRes, lostDealsRes] = await Promise.all([
       (() => { let q = supabase.from('deals').select('id, titulo, valor, score_probabilidade, pipeline_id, stage_id, created_at, updated_at, contact_id, lead_id, pipeline_empresa').eq('status', 'ABERTO'); if (targetEmpresa) q = q.eq('pipeline_empresa', targetEmpresa); return q.limit(500); })(),
       (() => { let q = supabase.from('cs_customers').select('id, valor_mrr, risco_churn_pct, empresa').eq('is_active', true); if (targetEmpresa) q = q.eq('empresa', targetEmpresa); return q.limit(500); })(),
-      supabase.from('deals').select('id, titulo, valor, pipeline_id, created_at, data_ganho, pipeline_empresa').eq('status', 'GANHO').gte('data_ganho', new Date(Date.now() - 180 * 86400000).toISOString()).limit(500),
-      supabase.from('deals').select('id, valor, created_at, updated_at').eq('status', 'PERDIDO').gte('updated_at', new Date(Date.now() - 180 * 86400000).toISOString()).limit(500),
+      (() => { let q = supabase.from('deals').select('id, titulo, valor, pipeline_id, created_at, data_ganho, pipeline_empresa').eq('status', 'GANHO').gte('data_ganho', new Date(Date.now() - 180 * 86400000).toISOString()); if (targetEmpresa) q = q.eq('pipeline_empresa', targetEmpresa); return q.limit(500); })(),
+      (() => { let q = supabase.from('deals').select('id, valor, created_at, updated_at, pipeline_empresa').eq('status', 'PERDIDO').gte('updated_at', new Date(Date.now() - 180 * 86400000).toISOString()); if (targetEmpresa) q = q.eq('pipeline_empresa', targetEmpresa); return q.limit(500); })(),
     ]);
 
     const openDeals = openDealsRes.data ?? [];

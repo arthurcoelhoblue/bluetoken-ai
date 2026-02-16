@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { assertEmpresa } from "../_shared/tenant.ts";
 
 const log = createLogger('deal-context-summary');
 
@@ -29,14 +30,26 @@ serve(async (req) => {
     if (!deal) return new Response(JSON.stringify({ error: 'Deal not found' }), { status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const contact = (deal as Record<string, unknown>).contacts as DealContact | null;
+    
+    // Validate tenant from contact
+    const contactEmpresa = contact?.empresa;
+    assertEmpresa(contactEmpresa);
+
     const legacyLeadId = contact?.legacy_lead_id;
     if (!legacyLeadId) return new Response(JSON.stringify({ error: 'No lead associated with deal contact' }), { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
     const [messagesRes, convStateRes, classificationsRes, intentsRes] = await Promise.all([
-      supabase.from('lead_messages').select('direcao, conteudo, canal, sender_type, created_at').eq('lead_id', legacyLeadId).order('created_at', { ascending: true }).limit(50),
-      supabase.from('lead_conversation_state').select('estado_funil, framework_ativo, framework_data, perfil_disc, idioma_preferido').eq('lead_id', legacyLeadId).limit(1).single(),
-      supabase.from('lead_classifications').select('icp, temperatura, tags, created_at').eq('lead_id', legacyLeadId).order('created_at', { ascending: false }).limit(1),
-      supabase.from('lead_message_intents').select('intent, intent_summary, acao_recomendada, created_at').eq('lead_id', legacyLeadId).order('created_at', { ascending: false }).limit(10),
+      supabase.from('lead_messages').select('direcao, conteudo, canal, sender_type, created_at')
+        .eq('lead_id', legacyLeadId).eq('empresa', contactEmpresa)
+        .order('created_at', { ascending: true }).limit(50),
+      supabase.from('lead_conversation_state').select('estado_funil, framework_ativo, framework_data, perfil_disc, idioma_preferido')
+        .eq('lead_id', legacyLeadId).limit(1).single(),
+      supabase.from('lead_classifications').select('icp, temperatura, tags, created_at')
+        .eq('lead_id', legacyLeadId).eq('empresa', contactEmpresa)
+        .order('created_at', { ascending: false }).limit(1),
+      supabase.from('lead_message_intents').select('intent, intent_summary, acao_recomendada, created_at')
+        .eq('lead_id', legacyLeadId).eq('empresa', contactEmpresa)
+        .order('created_at', { ascending: false }).limit(10),
     ]);
 
     const messages = messagesRes.data ?? [];
@@ -77,7 +90,7 @@ ${transcript.substring(0, 8000)}`;
       system: systemPrompt,
       prompt: userContent,
       functionName: 'deal-context-summary',
-      empresa: contact?.empresa || null,
+      empresa: contactEmpresa,
       maxTokens: 2000,
       supabase,
     });
