@@ -634,7 +634,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!disparo.success) {
-    log.error('Erro no disparo', { error: disparo.error });
+    log.warn('Disparo não realizado (pré-condição não atendida)', { error: disparo.error });
     
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: run.id,
