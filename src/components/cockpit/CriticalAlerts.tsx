@@ -15,7 +15,7 @@ interface CriticalAlert {
 
 export function CriticalAlerts() {
   const { activeCompany } = useCompany();
-  const emp = activeCompany === 'ALL' ? null : activeCompany;
+  const emp = activeCompany;
 
   const { data: alerts, isLoading } = useQuery({
     queryKey: ['critical_alerts', emp],

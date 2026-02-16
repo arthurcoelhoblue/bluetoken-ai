@@ -30,9 +30,7 @@ export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null, page: number =
     queryFn: async () => {
       let q = supabase.from('message_templates' as any).select('*', { count: 'exact' });
 
-      if (activeCompany !== 'ALL') {
-        q = q.eq('empresa', activeCompany);
-      }
+      q = q.eq('empresa', activeCompany);
       if (canal) {
         q = q.eq('canal', canal);
       }

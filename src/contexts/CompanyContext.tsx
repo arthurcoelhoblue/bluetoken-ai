@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState } from 'react';
 
-export type ActiveCompany = 'BLUE' | 'TOKENIZA' | 'ALL';
+export type ActiveCompany = 'BLUE' | 'TOKENIZA';
 
 interface CompanyContextType {
   activeCompany: ActiveCompany;
@@ -11,7 +11,6 @@ interface CompanyContextType {
 const LABELS: Record<ActiveCompany, string> = {
   BLUE: 'Blue Consult',
   TOKENIZA: 'Tokeniza',
-  ALL: 'Todas',
 };
 
 const STORAGE_KEY = 'bluecrm-company';
@@ -21,11 +20,10 @@ const CompanyContext = createContext<CompanyContextType | undefined>(undefined);
 export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [activeCompany, setActiveCompanyState] = useState<ActiveCompany>(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === 'BLUE' || stored === 'TOKENIZA' || stored === 'ALL') return stored;
-    // Migrate old lowercase values
+    if (stored === 'BLUE' || stored === 'TOKENIZA') return stored;
+    // Migrate old lowercase/ALL values
     if (stored === 'blue') return 'BLUE';
     if (stored === 'tokeniza') return 'TOKENIZA';
-    if (stored === 'all') return 'ALL';
     return 'BLUE';
   });
 

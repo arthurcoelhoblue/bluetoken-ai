@@ -15,9 +15,7 @@ export function useCSSurveys(customerId?: string) {
         .order('enviado_em', { ascending: false })
         .limit(200);
 
-      if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
       if (customerId) query = query.eq('customer_id', customerId);
 
       const { data, error } = await query;

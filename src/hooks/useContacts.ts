@@ -17,9 +17,7 @@ export function useContacts(search?: string, page = 0) {
         .order('nome', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
 
       if (search) {
         query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);

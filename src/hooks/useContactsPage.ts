@@ -24,9 +24,7 @@ export function useContactsPage(opts: {
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      if (activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany);
-      }
+      query = query.eq('empresa', activeCompany);
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);
       }

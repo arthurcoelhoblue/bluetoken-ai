@@ -6,7 +6,6 @@ import type { CaptureForm, CaptureFormField, CaptureFormSettings } from '@/types
 
 function useEmpresa() {
   const { activeCompany } = useCompany();
-  if (activeCompany === 'ALL') return 'BLUE';
   return activeCompany;
 }
 

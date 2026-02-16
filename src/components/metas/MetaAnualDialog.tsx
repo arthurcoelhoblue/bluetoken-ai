@@ -22,7 +22,7 @@ const fmt = (v: number) => v.toLocaleString('pt-BR', { style: 'currency', curren
 
 export function MetaAnualDialog({ open, onOpenChange, ano, vendedores }: Props) {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+  const empresa = activeCompany;
 
   const { data: indices = [] } = useSazonalidade();
   const upsertBatch = useUpsertMetasBatch();

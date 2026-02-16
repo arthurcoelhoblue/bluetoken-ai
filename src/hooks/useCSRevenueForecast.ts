@@ -34,9 +34,7 @@ export function useCSRevenueForecast() {
         .select('health_status, valor_mrr, proxima_renovacao')
         .eq('is_active', true);
 
-      if (activeCompany && activeCompany !== 'ALL') {
-        query = query.eq('empresa', activeCompany as 'BLUE' | 'TOKENIZA');
-      }
+      query = query.eq('empresa', activeCompany);
 
       const { data, error } = await query;
       if (error) throw error;

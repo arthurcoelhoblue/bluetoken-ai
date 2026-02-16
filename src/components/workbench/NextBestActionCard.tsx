@@ -39,7 +39,7 @@ export function NextBestActionCard() {
     trackFeatureUse('nba_action_clicked', { action: acao.tipo_acao, priority: acao.prioridade });
     if (acao.deal_id) navigate(`/pipeline?deal=${acao.deal_id}`);
     else if (acao.lead_id) {
-      const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+      const empresa = activeCompany;
       navigate(`/leads/${acao.lead_id}/${empresa}`);
     }
   };

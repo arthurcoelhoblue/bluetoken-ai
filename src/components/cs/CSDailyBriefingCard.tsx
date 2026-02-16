@@ -9,7 +9,7 @@ import { toast } from 'sonner';
 
 export function CSDailyBriefingCard() {
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany;
+  const empresa = activeCompany;
   const [briefing, setBriefing] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 

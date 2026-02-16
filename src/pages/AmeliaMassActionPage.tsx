@@ -120,7 +120,7 @@ function useAllOpenDeals(empresa: string | undefined) {
 export default function AmeliaMassActionPage() {
   const { user } = useAuth();
   const { activeCompany } = useCompany();
-  const empresa = activeCompany === 'ALL' ? undefined : activeCompany;
+  const empresa = activeCompany;
   const { data: allPipelines = [] } = usePipelines();
   const { data: deals = [], isLoading: loadingDeals } = useAllOpenDeals(empresa);
   const pipelines = allPipelines;

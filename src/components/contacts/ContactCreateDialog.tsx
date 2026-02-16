@@ -42,7 +42,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
   });
 
   const handleCreate = async (data: ContactCreateFormData) => {
-    const empresa = activeCompany === 'ALL' ? 'BLUE' : activeCompany as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
     try {
       await create.mutateAsync({
         ...data,

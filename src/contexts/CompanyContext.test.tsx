@@ -9,7 +9,7 @@ function TestConsumer() {
     React.createElement("span", { "data-testid": "company" }, activeCompany),
     React.createElement("span", { "data-testid": "label" }, companyLabel),
     React.createElement("button", { onClick: () => setActiveCompany("TOKENIZA") }, "Switch Tokeniza"),
-    React.createElement("button", { onClick: () => setActiveCompany("ALL") }, "Switch All"),
+    React.createElement("button", { onClick: () => setActiveCompany("BLUE") }, "Switch Blue"),
   );
 }
 
@@ -41,15 +41,14 @@ describe("CompanyContext", () => {
     expect(localStorage.getItem("bluecrm-company")).toBe("TOKENIZA");
   });
 
-  it("reads stored value on mount", () => {
+  it("migrates old ALL value to BLUE", () => {
     localStorage.setItem("bluecrm-company", "ALL");
     const { getByTestId } = render(
       React.createElement(CompanyProvider, null,
         React.createElement(TestConsumer)
       )
     );
-    expect(getByTestId("company").textContent).toBe("ALL");
-    expect(getByTestId("label").textContent).toBe("Todas");
+    expect(getByTestId("company").textContent).toBe("BLUE");
   });
 
   it("migrates old lowercase values", () => {
