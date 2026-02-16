@@ -125,3 +125,6 @@ verify_jwt = false
 
 [functions.sgt-buscar-lead]
 verify_jwt = false
+
+[functions.sgt-sync-clientes]
+verify_jwt = false
