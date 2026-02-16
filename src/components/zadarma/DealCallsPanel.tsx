@@ -32,10 +32,9 @@ function CallItem({ call }: { call: Call }) {
   const Icon = call.direcao === 'OUTBOUND' ? PhoneOutgoing : call.status === 'MISSED' ? PhoneMissed : PhoneIncoming;
   const cfg = statusConfig[call.status] || statusConfig.RINGING;
 
-  const callAny = call as any;
-  const hasSummary = !!callAny.summary_ia;
-  const hasTranscription = !!callAny.transcription;
-  const actionItems = callAny.action_items as string[] | null;
+  const hasSummary = !!call.summary_ia;
+  const hasTranscription = !!call.transcription;
+  const actionItems = call.action_items ?? null;
 
   return (
     <>
@@ -48,9 +47,9 @@ function CallItem({ call }: { call: Call }) {
                 {call.contact_nome || (call.direcao === 'OUTBOUND' ? call.destination_number : call.caller_number) || 'Desconhecido'}
               </span>
               <Badge variant={cfg.variant} className="text-[10px] px-1.5 py-0">{cfg.label}</Badge>
-              {callAny.sentiment && (
-                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${callAny.sentiment === 'POSITIVO' ? 'text-success border-success/30' : callAny.sentiment === 'NEGATIVO' ? 'text-destructive border-destructive/30' : 'text-muted-foreground'}`}>
-                  {callAny.sentiment}
+              {call.sentiment && (
+                <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${call.sentiment === 'POSITIVO' ? 'text-success border-success/30' : call.sentiment === 'NEGATIVO' ? 'text-destructive border-destructive/30' : 'text-muted-foreground'}`}>
+                  {call.sentiment}
                 </Badge>
               )}
             </div>
@@ -82,7 +81,7 @@ function CallItem({ call }: { call: Call }) {
                 <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
                   <Brain className="h-3 w-3" /> Resumo IA
                 </div>
-                <p className="text-sm">{callAny.summary_ia}</p>
+                <p className="text-sm">{call.summary_ia}</p>
               </div>
             )}
 
@@ -121,7 +120,7 @@ function CallItem({ call }: { call: Call }) {
               <DialogTitle>Transcrição da Chamada</DialogTitle>
             </DialogHeader>
             <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
-              {callAny.transcription}
+              {call.transcription}
             </div>
           </DialogContent>
         </Dialog>

@@ -50,7 +50,7 @@ function PipelineConfigContent() {
   const handleCreatePipeline = async () => {
     if (!newName.trim()) return;
     try {
-      await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo } as any);
+      await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo });
       toast.success('Pipeline criado');
       setNewName('');
       setNewDialogOpen(false);

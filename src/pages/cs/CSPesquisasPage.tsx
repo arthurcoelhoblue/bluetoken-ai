@@ -72,7 +72,7 @@ export default function CSPesquisasPage() {
               <TableRow><TableCell colSpan={5} className="text-center py-6 text-muted-foreground">Nenhuma pesquisa</TableCell></TableRow>
             ) : items?.map(s => (
               <TableRow key={s.id}>
-                <TableCell className="font-medium text-sm">{(s.customer as any)?.contact?.nome || '—'}</TableCell>
+                <TableCell className="font-medium text-sm">{s.customer?.contact?.nome || '—'}</TableCell>
                 <TableCell><Badge variant="outline">{s.tipo}</Badge></TableCell>
                 <TableCell>{s.nota != null ? <span className="font-bold">{s.nota}</span> : '—'}</TableCell>
                 <TableCell className="text-xs">{format(new Date(s.enviado_em), 'dd/MM/yy HH:mm', { locale: ptBR })}</TableCell>
