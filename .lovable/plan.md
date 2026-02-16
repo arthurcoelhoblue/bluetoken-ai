@@ -1,64 +1,82 @@
 
+# Correção dos Erros Sentry — Pós-Fase G
 
-# Auditoria Pos-Fase G — Plano de Correcao
+## Diagnóstico
 
-## Diagnostico
+### Erro 1: `sdr-ia-interpret` — "Error: Error"
 
-A varredura identificou 3 niveis de prioridade. Apos investigacao do codigo:
+**Causa raiz:** A IA (sdr-intent-classifier) retorna valores de ação que **não existem** no enum `sdr_acao_tipo` do banco. Exemplos dos logs:
+- `ESCLARECIMENTO_INICIAL`
+- `APRESENTAR_CLARIFICAR`
+- `RESPONDER_QUALIFICAR`
+- `DESQUALIFICAR_LEAD`
+- `AGUARDAR_ESCOLHA_DEPARTAMENTO`
+- `QUEBRAR_LOOP_AUTOMATICO`
 
-### Prioridade 0 — ESLint (Bloqueador CI)
+Os valores válidos do enum são apenas 10: `NENHUMA`, `ENVIAR_RESPOSTA_AUTOMATICA`, `CRIAR_TAREFA_CLOSER`, `ESCALAR_HUMANO`, `PAUSAR_CADENCIA`, `CANCELAR_CADENCIA`, `RETOMAR_CADENCIA`, `AJUSTAR_TEMPERATURA`, `MARCAR_OPT_OUT`, `HANDOFF_EMPRESA`.
 
-O relatorio menciona 4 erros de ESLint. Como nao consigo executar o linter diretamente, vou revisar as regras ativas e corrigir os padroes mais provaveis de erro:
+Quando `saveInterpretation` tenta inserir um valor inválido, o Postgres rejeita e a função lança um erro genérico `Error` que vai para o Sentry.
 
-- Verificar se ha imports nao utilizados ou variaveis declaradas sem uso nos arquivos `src/`
-- Revisar os 2 `eslint-disable` existentes (`useLeadsQuentes.ts` e `supabase-mock.ts`) para garantir que estao justificados
-- Executar uma varredura manual nos arquivos mais recentes para identificar violacoes
+**Segundo problema:** O catch na linha 292 faz `String(error)` num objeto Supabase, resultando em `[object Object]` — sem informação útil.
 
-**Acao:** Corrigir todos os erros encontrados para garantir build limpo em CI.
+### Erro 2: `cadence-runner` — "Erro ao resolver mensagem"
 
-### Prioridade 1 — tokeniza-offers e config.ts
+**Causa raiz:** Leads que estão em cadência de WhatsApp/SMS não possuem telefone cadastrado. A função `resolverMensagem` retorna `{success: false, error: "Contato sem telefone"}` e o código trata como `log.error`, disparando Sentry. Isto é um cenário esperado (dados incompletos), não um erro de sistema.
 
-Apos inspecao, `tokeniza-offers/index.ts` ja utiliza `createLogger` do `logger.ts`. Ele nao usa `config.ts` porque nao precisa de variaveis de ambiente nem cliente Supabase. Portanto, **nenhuma acao necessaria** neste item — a funcao ja segue o padrao.
+---
 
-### Prioridade 2 — Migrar console.log do backend para logger estruturado
+## Correções
 
-Foram encontradas **~20 ocorrencias** de `console.log` em 5 arquivos do backend:
+### 1. sdr-ia-interpret — Normalizar ação da IA antes de salvar
 
-| Arquivo | Ocorrencias |
-|---------|-------------|
-| `sgt-webhook/cadence.ts` | 9 |
-| `sgt-webhook/classification.ts` | 3 |
-| `_shared/pipeline-routing.ts` | 5 |
-| `_shared/phone-utils.ts` | 2 |
-| `email-send/index.ts` | 4 |
+Criar uma função `normalizarAcao()` que mapeia os valores livres da IA para o enum válido:
 
-**Nota:** `_shared/logger.ts` usa `console.log` internamente como mecanismo de output — esse e intencional e nao sera alterado.
+```text
+Mapeamento:
+- ESCLARECIMENTO_INICIAL, APRESENTAR_CLARIFICAR, ESCLARECER_SITUACAO,
+  APRESENTAR_ESCLARECER, RESPONDER_QUALIFICAR → ENVIAR_RESPOSTA_AUTOMATICA
+- DESQUALIFICAR_LEAD → MARCAR_OPT_OUT
+- AGUARDAR_ESCOLHA_DEPARTAMENTO, RESPONDER_DEPARTAMENTO_COMERCIAL → ESCALAR_HUMANO
+- QUEBRAR_LOOP_AUTOMATICO → PAUSAR_CADENCIA
+- Qualquer outro valor desconhecido → NENHUMA
+```
 
-**Acao:** Substituir todas as chamadas `console.log(...)` por `log.info(...)` ou `log.debug(...)` usando o logger estruturado de cada funcao. Para arquivos `_shared`, importar e criar instancia local do logger.
+Aplicar esta normalização em `saveInterpretation` antes do insert no campo `acao_recomendada`.
 
-## Implementacao
+### 2. sdr-ia-interpret — Corrigir log do catch
 
-### Passo 1 — Corrigir ESLint (4 erros)
-- Identificar e corrigir os erros especificos (provavelmente imports nao utilizados ou violacoes de tipo)
-- Garantir 0 erros no lint
+Melhorar a serialização do erro no catch principal (linha 292) para exibir o erro real em vez de `[object Object]`:
 
-### Passo 2 — Migrar console.log no backend
-- `sgt-webhook/cadence.ts`: Importar logger e substituir 9 `console.log` por `log.info`/`log.debug`
-- `sgt-webhook/classification.ts`: Substituir 3 `console.log` por `log.info`/`log.debug`
-- `_shared/pipeline-routing.ts`: Criar logger local e substituir 5 `console.log`
-- `_shared/phone-utils.ts`: Criar logger local e substituir 2 `console.log`
-- `email-send/index.ts`: Substituir 4 `console.log` por chamadas ao logger existente
+```typescript
+// De:
+log.error('Error', { error: error instanceof Error ? error.message : String(error) });
+// Para:
+const errMsg = error instanceof Error ? error.message : JSON.stringify(error);
+log.error('Error', { error: errMsg });
+```
 
-### Passo 3 — Deploy das Edge Functions alteradas
-- Deploy automatico das funcoes modificadas: `sgt-webhook`, `email-send`
+### 3. cadence-runner — Downgrade de severidade
 
-### Passo 4 — Validacao
-- Confirmar 0 erros ESLint
-- Confirmar 0 `console.log` remanescentes no backend (exceto `logger.ts`)
+Na função `processarRun`, o "Contato sem telefone" é um cenário de dados incompletos, não um erro de sistema. Mudar de `log.error` para `log.warn` para que não dispare alertas no Sentry:
+
+```typescript
+// De:
+log.error('Erro ao resolver mensagem', { error: mensagemResolvida.error });
+// Para:
+log.warn('Mensagem não resolvida (dados incompletos)', { error: mensagemResolvida.error });
+```
+
+---
+
+## Arquivos Alterados
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Adicionar `normalizarAcao()` + corrigir serialização do catch |
+| `supabase/functions/cadence-runner/index.ts` | Downgrade `log.error` → `log.warn` na resolução de mensagem |
 
 ## Resultado Esperado
 
-- Build 100% limpo para CI/CD
-- 0 `console.log` no backend (padrao de observabilidade completo)
-- Sistema pronto para deploy sem bloqueadores
-
+- Zero alertas Sentry para ações desconhecidas da IA (normalizadas silenciosamente)
+- Zero alertas Sentry para leads sem telefone (warning, não error)
+- Logs estruturados com mensagens legíveis (sem `[object Object]`)
