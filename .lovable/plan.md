@@ -1,57 +1,104 @@
-# Plano: Isolamento Multi-Tenant 100%
 
-## Status de Implementação
 
-| Etapa | Descrição | Status |
-|-------|-----------|--------|
-| 1A | Migração SQL - Batch 1 (tabelas críticas) | ✅ CONCLUÍDO |
-| 3A | Remover ALL do CompanyContext + Switcher | ✅ CONCLUÍDO |
-| 3B | Limpar hooks (remover !== ALL) | ✅ CONCLUÍDO |
-| 1B | Migração SQL - Batch 2 (suporte) | ⬜ PENDENTE |
-| 1C | Migração SQL - Batch 3 (config/logs) | ⬜ PENDENTE |
-| 2A | Criar _shared/tenant.ts | ⬜ PENDENTE |
-| 2B | Refatorar 5 edge functions prioritárias | ⬜ PENDENTE |
-| 2C | Refatorar 5 edge functions restantes | ⬜ PENDENTE |
-| 3C | Adicionar filtro nos hooks sem empresa | ⬜ PENDENTE |
-| 4 | Triggers de validação | ⬜ PENDENTE |
-| 5 | Testes de isolamento | ⬜ PENDENTE |
+# Etapa 1B + 3C: Hardening RLS Batch 2 + Hooks sem filtro
 
-## Detalhes das Etapas Concluídas
+## Escopo
 
-### Etapa 1A — RLS Batch 1 (tabelas críticas)
-Policies ADMIN hardened com filtro de empresa em 12 tabelas:
-- contacts, organizations, pipelines, pipeline_stages, deals
-- lead_contacts, lead_messages, lead_message_intents
-- lead_classifications, lead_conversation_state
-- lead_cadence_runs, lead_contact_issues
+### Migracao SQL (Etapa 1B)
 
-Policies SELECT também corrigidas — antes ADMIN via bypass sem empresa.
+Analise das policies atuais revelou os seguintes gaps nas tabelas de suporte:
 
-### Etapa 3A — Remover ALL do CompanyContext
-- `ActiveCompany` agora é `'BLUE' | 'TOKENIZA'` (sem `'ALL'`)
-- CompanySwitcher não mostra mais opção "Todas"
-- localStorage com valor 'ALL' faz fallback para 'BLUE'
+**Tabelas com ADMIN sem filtro empresa (precisam correcao):**
 
-### Etapa 3B — Limpar hooks
-~40 arquivos corrigidos removendo padrões `!== 'ALL'` e `=== 'ALL' ? X : Y`.
-Hooks agora sempre aplicam filtro de empresa obrigatoriamente.
+| Tabela | Policy atual | Correcao |
+|--------|-------------|----------|
+| `cadences` | `has_role(ADMIN)` sem empresa | Adicionar `AND empresa::text = get_user_empresa(auth.uid())` |
+| `cadence_steps` | `has_role(ADMIN)` sem empresa | Via EXISTS em cadences (nao tem empresa direta) |
+| `message_templates` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `custom_field_definitions` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `custom_field_values` | ADMIN ALL + CLOSER ALL sem empresa | Via EXISTS em custom_field_definitions |
+| `product_knowledge` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `metas_vendedor` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `comissao_lancamentos` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `comissao_regras` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `follow_up_optimal_hours` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `integration_company_config` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `mass_action_jobs` | INSERT/UPDATE/DELETE sem empresa | Adicionar filtro empresa |
+| `sgt_events` | ADMIN SELECT sem empresa | Adicionar filtro empresa |
+| `sazonalidade_indices` | INSERT/UPDATE sem empresa | Adicionar filtro empresa |
+| `import_jobs` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `import_mapping` | ADMIN ALL sem empresa | Adicionar filtro empresa |
+| `zadarma_config` | ADMIN CRUD sem empresa | Adicionar filtro empresa |
+| `zadarma_extensions` | ADMIN CRUD sem empresa (exceto SELECT ja ok) | Adicionar filtro empresa no INSERT/UPDATE/DELETE |
+| `user_access_assignments` | ADMIN CRUD sem empresa + SELECT true | Adicionar filtro empresa |
+| `knowledge_documents` | ADMIN ALL sem empresa | Sem coluna empresa — filtrar via tipo ou manter admin-only |
+| `knowledge_sections` | ADMIN ALL sem empresa | Sem coluna empresa — manter admin-only |
+| `knowledge_faq` | INSERT/UPDATE/DELETE sem empresa | Adicionar filtro empresa |
+| `notifications` | SELECT/UPDATE por user_id (ok), INSERT service_role (ok) | Ja isolado por user_id, ok |
+| `pessoas` | ADMIN SELECT sem empresa | Sem coluna empresa — via contact_id JOIN |
 
-## Próximos Passos
+**Tabelas CS com `OR get_user_empresa IS NULL` (brecha):**
 
-### Etapa 1B — Batch 2 (suporte)
-Tabelas: cadences, cadence_steps, message_templates, custom_field_definitions, custom_field_values, product_knowledge, sgt_events, metas_vendedor, comissao_lancamentos, comissao_regras, follow_up_optimal_hours, integration_company_config, mass_action_jobs, sazonalidade_indices, notifications, cs_customers, cs_incidents, cs_surveys, cs_playbooks
+| Tabela | Problema |
+|--------|----------|
+| `cs_customers` | SELECT/INSERT/UPDATE permitem acesso se empresa IS NULL |
+| `cs_incidents` | Mesma brecha |
+| `cs_surveys` | Mesma brecha |
+| `cs_playbooks` | Mesma brecha |
+| `cs_health_log` | INSERT com `WITH CHECK true` — qualquer um insere |
 
-### Etapa 1C — Batch 3 (config/logs)
-Tabelas globais/logs: access_profiles, ai_model_benchmarks, ai_usage_log, analytics_events, cadence_runner_logs, prompt_versions, system_settings, rate_limit_log
+Correcao: remover fallback `OR get_user_empresa IS NULL` e corrigir INSERT do cs_health_log.
 
-### Etapa 2A-2C — Edge Functions
-Criar `_shared/tenant.ts` e refatorar 10 edge functions com queries cross-tenant.
+**Tabelas com DELETE `qual: true` (qualquer autenticado deleta):**
 
-### Etapa 3C — Hooks sem filtro empresa
-Auditar e corrigir: useAIMetrics, useAutoRules, useObservabilityData, useLeadClassification, useOperationalHealth, useSdrIaStats
+| Tabela | Correcao |
+|--------|----------|
+| `cs_customers` | Restringir DELETE a ADMIN da mesma empresa |
+| `cs_incidents` | Restringir DELETE a ADMIN da mesma empresa |
+| `cs_playbooks` | Restringir DELETE a ADMIN da mesma empresa |
+| `cs_surveys` | Restringir DELETE a ADMIN da mesma empresa |
 
-### Etapa 4 — Triggers de validação
-Cross-tenant validation em deals, lead_cadence_runs, custom_field_values, cs_customers.
+### Frontend Hooks (Etapa 3C)
 
-### Etapa 5 — Testes de isolamento
-Testes automatizados de isolamento entre tenants.
+Hooks que fazem queries sem filtro empresa:
+
+| Hook | Problema | Correcao |
+|------|----------|----------|
+| `useAIMetrics` | Busca lead_message_intents sem empresa | Adicionar filtro activeCompany |
+| `useAutoRules` | Busca pipeline_auto_rules sem empresa | Filtrar via pipeline_id join ou adicionar empresa |
+| `useSdrIaStats` | Busca lead_contacts/intents sem empresa | Adicionar filtro activeCompany |
+| `useOperationalHealth` | Verifica integracoes sem filtro | Passar empresa nas chamadas |
+| `useLeadClassification` | Ja recebe empresa como parametro | Verificar se sempre e passado |
+
+## Detalhes Tecnicos
+
+### Migracao SQL — Estrutura
+
+Uma unica migracao com 3 blocos:
+
+**Bloco 1**: Tabelas com coluna `empresa` direta (~18 tabelas)
+- Padrao: DROP policy antiga sem filtro -> CREATE com `AND empresa::text = get_user_empresa(auth.uid())`
+
+**Bloco 2**: Tabelas CS — remover brecha `OR IS NULL` + corrigir DELETE
+- DROP policies com fallback NULL
+- CREATE policies estritas: `empresa::text = get_user_empresa(auth.uid())` sem OR
+
+**Bloco 3**: Tabelas sem coluna empresa
+- `cadence_steps`: EXISTS via cadences.empresa
+- `custom_field_values`: EXISTS via custom_field_definitions.empresa
+- `pessoas`: EXISTS via contacts.empresa (usando contact_id)
+- `knowledge_documents`, `knowledge_sections`: manter admin-only (sao config global)
+
+### Hooks Frontend
+
+Para cada hook listado:
+1. Importar `useCompany` de `@/contexts/CompanyContext`
+2. Adicionar `.eq('empresa', activeCompany)` nas queries
+3. Incluir `activeCompany` no `queryKey` do react-query
+
+### Estimativa de arquivos alterados
+
+- 1 arquivo SQL (migracao)
+- 4-5 hooks TypeScript
+- Atualizacao do `.lovable/plan.md`
+
