@@ -1,9 +1,10 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
-
-// SDR Action Executor — Full action execution + saveInterpretation + Pipedrive sync + DISC + conversation state
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+const log = createLogger('sdr-action-executor');
 const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
@@ -46,7 +47,7 @@ async function applyAction(
         await supabase.from('lead_contacts').update({ opt_out: true, opt_out_em: now, opt_out_motivo: mensagemOriginal?.substring(0, 500) || 'Solicitado via mensagem', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
         const { data: activeRuns } = await supabase.from('lead_cadence_runs').select('id').eq('lead_id', leadId).in('status', ['ATIVA', 'PAUSADA']);
         if (activeRuns?.length) {
-          const runIds = activeRuns.map((r: any) => r.id);
+          const runIds = activeRuns.map((r: { id: string }) => r.id);
           await supabase.from('lead_cadence_runs').update({ status: 'CANCELADA', updated_at: now }).in('id', runIds);
           for (const rid of runIds) {
             await supabase.from('lead_cadence_events').insert({ lead_cadence_run_id: rid, step_ordem: 0, template_codigo: 'SDR_IA_OPT_OUT', tipo_evento: 'RESPOSTA_DETECTADA', detalhes: { acao, motivo: 'Lead solicitou opt-out' } });
@@ -71,8 +72,8 @@ async function applyAction(
       }
       if (leadId) {
         // Notify closer
-        const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-        const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+        const supabaseUrl = envConfig.SUPABASE_URL;
+        const serviceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
         try {
           await fetch(`${supabaseUrl}/functions/v1/notify-closer`, {
             method: 'POST',
@@ -102,7 +103,7 @@ async function applyAction(
         await supabase.from('lead_classifications').update({ temperatura: 'FRIO', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
         const { data: runs } = await supabase.from('lead_cadence_runs').select('id').eq('lead_id', leadId).eq('status', 'ATIVA');
         if (runs?.length) {
-          await supabase.from('lead_cadence_runs').update({ status: 'CANCELADA', updated_at: now }).in('id', runs.map((r: any) => r.id));
+          await supabase.from('lead_cadence_runs').update({ status: 'CANCELADA', updated_at: now }).in('id', runs.map((r: { id: string }) => r.id));
         }
         return true;
       }
@@ -123,28 +124,33 @@ async function autoCreateDeal(supabase: SupabaseClient, leadId: string, empresa:
     const { data: pipeline } = await supabase.from('pipelines').select('id').eq('empresa', empresa).eq('is_default', true).eq('ativo', true).maybeSingle();
     if (!pipeline) return;
 
-    const { data: existingDeal } = await supabase.from('deals').select('id').eq('contact_id', (contact as any).id).eq('pipeline_id', (pipeline as any).id).eq('status', 'ABERTO').maybeSingle();
+    const { data: existingDeal } = await supabase.from('deals').select('id').eq('contact_id', (contact as Record<string, unknown>).id as string).eq('pipeline_id', (pipeline as Record<string, unknown>).id as string).eq('status', 'ABERTO').maybeSingle();
     if (existingDeal) return;
 
-    const { data: firstStage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', (pipeline as any).id).eq('is_won', false).eq('is_lost', false).order('posicao', { ascending: true }).limit(1).maybeSingle();
+    const { data: firstStage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', (pipeline as Record<string, unknown>).id as string).eq('is_won', false).eq('is_lost', false).order('posicao', { ascending: true }).limit(1).maybeSingle();
     if (!firstStage) return;
 
-    const valorMencionado = (detalhes as any)?.valor_mencionado as number | undefined;
-    const necessidade = (detalhes as any)?.necessidade_principal as string | undefined;
-    const urgencia = (detalhes as any)?.urgencia as string | undefined;
+    const valorMencionado = (detalhes as Record<string, unknown> | undefined)?.valor_mencionado as number | undefined;
+    const necessidade = (detalhes as Record<string, unknown> | undefined)?.necessidade_principal as string | undefined;
+    const urgencia = (detalhes as Record<string, unknown> | undefined)?.urgencia as string | undefined;
     const temperatura = urgencia === 'ALTA' ? 'QUENTE' : 'QUENTE';
-    const titulo = necessidade ? `Oportunidade - ${(contact as any).nome} - ${necessidade}` : `Oportunidade - ${(contact as any).nome}`;
+    const contactName = (contact as Record<string, unknown>).nome as string;
+    const contactId = (contact as Record<string, unknown>).id as string;
+    const pipelineId = (pipeline as Record<string, unknown>).id as string;
+    const stageId = (firstStage as Record<string, unknown>).id as string;
+    const titulo = necessidade ? `Oportunidade - ${contactName} - ${necessidade}` : `Oportunidade - ${contactName}`;
 
     const { data: newDeal } = await supabase.from('deals').insert({
-      contact_id: (contact as any).id, pipeline_id: (pipeline as any).id, stage_id: (firstStage as any).id,
+      contact_id: contactId, pipeline_id: pipelineId, stage_id: stageId,
       titulo: titulo.substring(0, 200), valor: valorMencionado ?? 0, temperatura, status: 'ABERTO', posicao_kanban: 0, moeda: 'BRL',
     }).select('id').single();
 
     if (newDeal) {
-      await supabase.from('deal_activities').insert({ deal_id: (newDeal as any).id, tipo: 'CRIACAO', descricao: 'Deal criado automaticamente pela SDR IA', metadata: { origem: 'SDR_IA', lead_id: leadId } });
-      console.log('[AutoDeal] Deal criado:', (newDeal as any).id);
+      const dealId = (newDeal as Record<string, unknown>).id as string;
+      await supabase.from('deal_activities').insert({ deal_id: dealId, tipo: 'CRIACAO', descricao: 'Deal criado automaticamente pela SDR IA', metadata: { origem: 'SDR_IA', lead_id: leadId } });
+      log.info('Deal criado', { dealId });
     }
-  } catch (err) { console.error('[AutoDeal] Error:', err); }
+  } catch (err) { log.error('AutoDeal Error', { error: err instanceof Error ? err.message : String(err) }); }
 }
 
 // ========================================
@@ -152,8 +158,8 @@ async function autoCreateDeal(supabase: SupabaseClient, leadId: string, empresa:
 // ========================================
 
 async function sendAutoResponse(telefone: string, empresa: string, resposta: string, leadId: string | null, runId: string | null): Promise<boolean> {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+  const supabaseUrl = envConfig.SUPABASE_URL;
+  const serviceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
   try {
     const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
       method: 'POST',
@@ -168,11 +174,11 @@ async function sendAutoResponse(telefone: string, empresa: string, resposta: str
 // SYNC WITH PIPEDRIVE (background)
 // ========================================
 
-async function syncWithPipedrive(pipedriveDealeId: string, empresa: string, intent: string, acao: string, acaoAplicada: boolean, historico: any[], mensagemAtual: string, classificacao: any) {
-  const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-  const anonKey = Deno.env.get('SUPABASE_ANON_KEY')!;
+async function syncWithPipedrive(pipedriveDealeId: string, empresa: string, intent: string, acao: string, acaoAplicada: boolean, historico: Array<Record<string, unknown>>, mensagemAtual: string, classificacao: Record<string, unknown> | null) {
+  const supabaseUrl = envConfig.SUPABASE_URL;
+  const anonKey = envConfig.SUPABASE_ANON_KEY;
   try {
-    const messages = [...historico.slice(0, 5).map((h: any) => ({ direcao: h.direcao, conteudo: h.conteudo?.substring(0, 200), created_at: h.created_at })), { direcao: 'INBOUND', conteudo: mensagemAtual.substring(0, 500), created_at: new Date().toISOString() }];
+    const messages = [...historico.slice(0, 5).map((h) => ({ direcao: h.direcao, conteudo: (h.conteudo as string)?.substring(0, 200), created_at: h.created_at })), { direcao: 'INBOUND', conteudo: mensagemAtual.substring(0, 500), created_at: new Date().toISOString() }];
     await fetch(`${supabaseUrl}/functions/v1/pipedrive-sync`, {
       method: 'POST',
       headers: { 'Authorization': `Bearer ${anonKey}`, 'Content-Type': 'application/json' },
@@ -185,7 +191,7 @@ async function syncWithPipedrive(pipedriveDealeId: string, empresa: string, inte
         body: JSON.stringify({ action: 'add_activity', deal_id: pipedriveDealeId, empresa, data: { activity_type: 'call', subject: `[SDR IA] Lead qualificado - ${intent}`, note: `Intent: ${intent}. Lead qualificado via frameworks.` } }),
       });
     }
-  } catch (e) { console.error('[Pipedrive] Error:', e); }
+  } catch (e) { log.error('Pipedrive sync error', { error: e instanceof Error ? e.message : String(e) }); }
 }
 
 // ========================================
@@ -199,7 +205,7 @@ async function checkAmeliaSequences(supabase: SupabaseClient, leadId: string, em
     if (!sequences?.length) return;
 
     const { data: recentIntents } = await supabase.from('lead_message_intents').select('intent').eq('lead_id', leadId).order('created_at', { ascending: false }).limit(10);
-    const recentList = (recentIntents || []).map((i: any) => i.intent).reverse();
+    const recentList = (recentIntents || []).map((i: { intent: string }) => i.intent).reverse();
     recentList.push(intent);
 
     for (const seq of sequences) {
@@ -220,7 +226,7 @@ async function checkAmeliaSequences(supabase: SupabaseClient, leadId: string, em
         break;
       }
     }
-  } catch (e) { console.error('[AMELIA-SEQ] Error:', e); }
+  } catch (e) { log.error('AMELIA-SEQ Error', { error: e instanceof Error ? e.message : String(e) }); }
 }
 
 // ========================================
@@ -231,7 +237,7 @@ serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
-    const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!);
+    const supabase = createServiceClient();
     const body = await req.json();
     const {
       lead_id, empresa, message, source, acao_recomendada, intent, temperatura, confidence,
@@ -281,7 +287,7 @@ serve(async (req) => {
         sentimento: aiResponse?.sentimento || null,
       };
       const { data: intentData } = await supabase.from('lead_message_intents').insert(record).select('id').single();
-      if (intentData) actionsExecuted.push(`Intent salvo: ${(intentData as any).id}`);
+      if (intentData) actionsExecuted.push(`Intent salvo: ${(intentData as Record<string, unknown>).id}`);
     }
 
     // 4a. Apply classification upgrade (from sdr-intent-classifier)
@@ -299,14 +305,14 @@ serve(async (req) => {
           .eq('empresa', empresa)
           .neq('origem', 'MANUAL');
         if (!error) actionsExecuted.push(`Classification upgrade: P${upgrade.prioridade || '?'} ICP=${upgrade.icp || '?'} Score=${upgrade.score_interno || '?'}`);
-        else console.error('[ClassUpgrade] Error:', error);
+        else log.error('ClassUpgrade Error', { error: error.message });
       }
     }
 
     // 4b. Update conversation state
     if (lead_id && (novo_estado_funil || framework_updates || disc_estimado)) {
       const validEstados = ['SAUDACAO', 'DIAGNOSTICO', 'QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'];
-      const stateUpdates: any = {};
+      const stateUpdates: Record<string, unknown> = {};
       
       if (novo_estado_funil) {
         const upper = novo_estado_funil.toUpperCase();
@@ -315,10 +321,10 @@ serve(async (req) => {
       }
       
       if (framework_updates) {
-        const normalize = (obj: any) => {
+        const normalize = (obj: unknown): Record<string, unknown> => {
           if (!obj || typeof obj !== 'object') return {};
-          const r: any = {};
-          for (const [k, v] of Object.entries(obj)) r[k.toLowerCase()] = v;
+          const r: Record<string, unknown> = {};
+          for (const [k, v] of Object.entries(obj as Record<string, unknown>)) r[k.toLowerCase()] = v;
           return r;
         };
         const existing = conversation_state?.framework_data || {};
@@ -367,12 +373,12 @@ serve(async (req) => {
 
     // 7. Sync Pipedrive (background)
     if (pipedriveDealeId) {
-      syncWithPipedrive(pipedriveDealeId, empresa, intent, acao_recomendada, acaoAplicada, historico || [], message?.conteudo || '', classificacao).catch(e => console.error('[Pipedrive] bg error:', e));
+      syncWithPipedrive(pipedriveDealeId, empresa, intent, acao_recomendada, acaoAplicada, historico || [], message?.conteudo || '', classificacao).catch((e: unknown) => log.error('Pipedrive bg error', { error: e instanceof Error ? e.message : String(e) }));
     }
 
     // 8. Amelia sequence matching
     if (lead_id && intent) {
-      checkAmeliaSequences(supabase, lead_id, empresa, intent).catch(e => console.error('[SEQ] bg error:', e));
+      checkAmeliaSequences(supabase, lead_id, empresa, intent).catch((e: unknown) => log.error('SEQ bg error', { error: e instanceof Error ? e.message : String(e) }));
     }
 
     // Determine escalation
@@ -394,7 +400,7 @@ serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     });
   } catch (error) {
-    console.error('[sdr-action-executor] Error:', error);
+    log.error('Error', { error: error instanceof Error ? error.message : String(error) });
     return new Response(JSON.stringify({ error: String(error) }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });

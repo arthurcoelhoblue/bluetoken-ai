@@ -1,6 +1,8 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { z } from "https://esm.sh/zod@3.25.76";
+import { createServiceClient, getOptionalEnv } from "../_shared/config.ts";
+import { createLogger } from "../_shared/logger.ts";
 
 // ========================================
 // PATCH 5F - WhatsApp Inbound Webhook
@@ -77,7 +79,7 @@ function validateAuth(req: Request): boolean {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
   
-  const inboundSecret = Deno.env.get('WHATSAPP_INBOUND_SECRET');
+  const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
   
   if (!inboundSecret) {
     console.error('[Auth] WHATSAPP_INBOUND_SECRET não configurado');
@@ -556,12 +558,10 @@ serve(async (req) => {
 
     const phoneNormalized = normalizePhone(payload.from);
     
-    const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-    const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-    const supabase = createClient(supabaseUrl, supabaseServiceKey);
+    const supabase = createServiceClient();
 
     // Rate limiting (200 req/min per token+phone)
-    const rateLimitId = simpleHash((Deno.env.get('WHATSAPP_INBOUND_SECRET') || '') + phoneNormalized);
+    const rateLimitId = simpleHash((getOptionalEnv('WHATSAPP_INBOUND_SECRET') || '') + phoneNormalized);
     const rateCheck = await checkWebhookRateLimit(supabase, 'whatsapp-inbound', rateLimitId, 200);
     if (!rateCheck.allowed) {
       console.warn('[Inbound] Rate limit exceeded:', rateCheck.currentCount);
@@ -656,12 +656,12 @@ serve(async (req) => {
       
       for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const supabaseFunctionsUrl = Deno.env.get('SUPABASE_URL')!;
-          const response = await fetch(`${supabaseFunctionsUrl}/functions/v1/sdr-ia-interpret`, {
+          const { SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY } = (await import('../_shared/config.ts')).envConfig;
+          const response = await fetch(`${SUPABASE_URL}/functions/v1/sdr-ia-interpret`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
-              'Authorization': `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`,
+              'Authorization': `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
             },
             body: JSON.stringify({ messageId: result.messageId }),
           });
