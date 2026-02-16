@@ -122,3 +122,6 @@ verify_jwt = false
 
 [functions.reclassify-leads]
 verify_jwt = false
+
+[functions.sgt-buscar-lead]
+verify_jwt = false
