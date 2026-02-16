@@ -27,6 +27,15 @@ SELECT public.provision_tenant_schema('novo_tenant');
 
 Isso cria ~57 views no schema correspondente, cobrindo todas as tabelas com filtro de empresa.
 
+## Defesa em Profundidade
+
+Além das views e do RLS, o sistema possui **triggers de validação** que impedem corrupção cross-tenant:
+
+- **`validate_deal_pipeline_tenant`** — Bloqueia inserção/atualização de deals onde o pipeline pertence a uma empresa diferente do contato
+- **`validate_activity_tenant`** — Bloqueia criação de atividades vinculadas a deals de outro tenant
+
+Estes triggers funcionam como última linha de defesa, mesmo que as camadas superiores (RLS, Edge Functions) falhem.
+
 :::warning Isolamento
 Os dados entre tenants são completamente isolados. Um usuário BLUE nunca acessa dados TOKENIZA, mesmo em caso de falha nos filtros de aplicação.
 :::
