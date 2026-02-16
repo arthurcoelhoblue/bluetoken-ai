@@ -1,49 +1,46 @@
 
-# Corrigir card "Proximo Passo" invisivel no Meu Dia
+
+# Corrigir erro CORS que impede as sugestoes de carregar
 
 ## Diagnostico
 
-O card **"Proximo Passo"** (NextBestActionCard) esta presente no codigo da pagina Meu Dia (WorkbenchPage.tsx, linha 124), e a edge function `next-best-action` funciona corretamente (testada com sucesso, retorna acoes e narrativa).
+A edge function `next-best-action` funciona perfeitamente (testei e retornou acoes e narrativa com sucesso). O problema e que o **navegador bloqueia a resposta por CORS**.
 
-O problema esta no componente `NextBestActionCard.tsx`, linha que diz:
+O arquivo `supabase/functions/_shared/cors.ts` tem uma whitelist de origens permitidas:
+- `https://sdrgrupobue.lovable.app` (dominio publicado)
+- `https://id-preview--2e625147-f0fa-49c2-9624-dcb7484793c1.lovable.app` (preview antigo)
 
-```
-if (isError) return null;
-```
+Porem o preview atual roda em `https://2e625147-f0fa-49c2-9624-dcb7484793c1.lovableproject.com`, que **nao esta na lista**. Quando o origin nao bate, a funcao retorna o primeiro dominio como fallback, e o navegador rejeita a resposta.
 
-Quando a chamada a edge function falha (por timeout, token expirado, ou qualquer erro de rede), o card **desaparece silenciosamente** sem nenhum feedback ao usuario. Isso acontece porque o React Query marca a query como `isError` e o componente retorna `null`.
+Isso afeta **todas as funcoes do frontend** que usam `getCorsHeaders()`, nao apenas o Next Best Action.
 
 ## Solucao
 
-Substituir o `return null` por um estado de erro visivel com botao de retry, mantendo o card na tela para que o usuario saiba que a funcionalidade existe e pode tentar novamente.
+Adicionar o dominio `.lovableproject.com` na whitelist de CORS. Em vez de listar cada dominio exato, vou usar uma verificacao mais flexivel que aceita qualquer subdominio do Lovable.
 
-## Detalhes tecnicos
+### Arquivo modificado: `supabase/functions/_shared/cors.ts`
 
-**Arquivo modificado**: `src/components/workbench/NextBestActionCard.tsx`
+Atualizar a logica de `getCorsHeaders` para aceitar origens que terminem com `.lovable.app` ou `.lovableproject.com`, mantendo a seguranca (apenas dominios Lovable sao aceitos).
 
-Mudanca na linha `if (isError) return null;` para renderizar um card com:
-- Icone de alerta
-- Mensagem: "Nao foi possivel carregar as sugestoes"
-- Botao "Tentar novamente" que chama `refresh()`
+```text
+Antes:
+  const ALLOWED_ORIGINS = [
+    "https://sdrgrupobue.lovable.app",
+    "https://id-preview--2e625147-...lovable.app",
+  ];
+  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 
-Codigo aproximado do estado de erro:
-
-```tsx
-if (isError) {
-  return (
-    <Card className="border-destructive/20">
-      <CardContent className="p-5 flex items-center justify-between">
-        <div className="flex items-center gap-3 text-muted-foreground">
-          <Sparkles className="h-4 w-4" />
-          <p className="text-sm">Nao foi possivel carregar sugestoes</p>
-        </div>
-        <Button variant="ghost" size="sm" onClick={refresh}>
-          <RefreshCw className="h-3.5 w-3.5 mr-1" /> Tentar novamente
-        </Button>
-      </CardContent>
-    </Card>
-  );
-}
+Depois:
+  function isAllowedOrigin(origin: string): boolean {
+    return origin.endsWith('.lovable.app')
+        || origin.endsWith('.lovableproject.com');
+  }
+  const allowed = isAllowedOrigin(origin) ? origin : ALLOWED_ORIGINS[0];
 ```
 
-**Impacto**: Apenas visual. Nenhuma mudanca de logica de negocio ou backend.
+## Impacto
+
+- Corrige o card "Proximo Passo" e qualquer outra funcao que esteja falhando por CORS no preview
+- Previne o problema de acontecer novamente caso o dominio de preview mude
+- Mantém segurança: apenas domínios Lovable sao aceitos
+
