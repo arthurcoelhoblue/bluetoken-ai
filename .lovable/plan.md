@@ -1,26 +1,24 @@
 
 
-# Bloco 3 — Automacao Inteligente: Analise e Plano
+# Bloco 3 — Automacao Inteligente ✅ CONCLUÍDO
 
-## Descoberta: Item 3.1 ja esta implementado
+## Descoberta: Item 3.1 ja estava implementado
 
-Ao analisar o codigo da funcao `call-transcribe/index.ts`, identifiquei que **toda a logica do item 3.1 ja existe e esta funcional**:
+Ao analisar o codigo da funcao `call-transcribe/index.ts`, identificamos que **toda a logica do item 3.1 ja existia e estava funcional**:
 
 | Funcionalidade | Status | Localização |
 |---|---|---|
-| Transcricao automatica via Whisper | Implementado | Linhas 24-41 |
-| Analise de sentimento + action items via IA | Implementado | Linhas 48-63 |
-| Auto-criacao de `deal_activity` tipo LIGACAO | Implementado | Linhas 68-71 |
-| Notificacao ao CSM quando ha `cs_customer_id` | Implementado | Linhas 73-79 |
-| Auto-criacao de incidencia CS em sentimento negativo | Implementado | Linhas 82-84 |
+| Transcricao automatica via Whisper | ✅ Implementado | Linhas 24-41 |
+| Analise de sentimento + action items via IA | ✅ Implementado | Linhas 48-63 |
+| Auto-criacao de `deal_activity` tipo LIGACAO | ✅ Implementado | Linhas 68-71 |
+| Notificacao ao CSM quando ha `cs_customer_id` | ✅ Implementado | Linhas 73-79 |
+| Auto-criacao de incidencia CS em sentimento negativo | ✅ Implementado | Linhas 82-84 |
 
-## Proposta
+**Resultado**: Bloco 3 concluído sem alterações — funcionalidade já existia no `call-transcribe`.
 
-Vou simplesmente **marcar o item 3.1 como concluido** no roadmap, ja que o codigo esta pronto e funcionando.
+---
 
-Com isso, o **Bloco 3 estara finalizado** e podemos avancar para o **Bloco 4** ou definir novos itens de trabalho.
+## Próximo: Bloco 4 — Arquitetura de Longo Prazo
 
-## Acao tecnica
-
-1. Atualizar `.lovable/plan.md` marcando Bloco 3 como concluido com nota explicativa de que a funcionalidade ja existia no `call-transcribe`
-
+- **4.1** Multi-tenancy com separação de schema (BLUE / TOKENIZA)
+- **4.2** Revenue forecast com ML (substituir heurísticas por modelos de regressão)
