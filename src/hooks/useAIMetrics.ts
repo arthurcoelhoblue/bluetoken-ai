@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useCompany } from "@/contexts/CompanyContext";
 import { useSystemSettings } from "./useSystemSettings";
 
 interface AIMetricsByProvider {
@@ -19,10 +20,11 @@ interface AIMetricsSummary {
 }
 
 export function useAIMetrics(days: number = 30) {
+  const { activeCompany } = useCompany();
   const { getSettingValue } = useSystemSettings("ia");
 
   const { data: metrics, isLoading, error } = useQuery({
-    queryKey: ["ai-metrics", days],
+    queryKey: ["ai-metrics", days, activeCompany],
     queryFn: async () => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -30,6 +32,7 @@ export function useAIMetrics(days: number = 30) {
       const { data, error } = await supabase
         .from("lead_message_intents")
         .select("modelo_ia, tokens_usados, tempo_processamento_ms, created_at")
+        .eq("empresa", activeCompany)
         .gte("created_at", startDate.toISOString());
 
       if (error) throw error;

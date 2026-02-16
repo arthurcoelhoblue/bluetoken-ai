@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 import { startOfDay, subDays, format } from 'date-fns';
 
 export interface SdrIaStats {
@@ -36,8 +37,9 @@ export interface SdrIaStats {
 }
 
 export function useSdrIaStats() {
+  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ['sdr-ia-stats'],
+    queryKey: ['sdr-ia-stats', activeCompany],
     queryFn: async (): Promise<SdrIaStats> => {
       const now = new Date();
       const today = startOfDay(now);
@@ -53,17 +55,20 @@ export function useSdrIaStats() {
         supabase
           .from('lead_message_intents')
           .select('intent, acao_recomendada, acao_aplicada, created_at, tempo_processamento_ms, intent_confidence')
+          .eq('empresa', activeCompany)
           .gte('created_at', weekAgo.toISOString()),
         
         // Cadências
         supabase
           .from('lead_cadence_runs')
-          .select('status, created_at'),
+          .select('status, created_at')
+          .eq('empresa', activeCompany),
         
         // Mensagens
         supabase
           .from('lead_messages')
           .select('estado, enviado_em, entregue_em, lido_em, created_at, direcao')
+          .eq('empresa', activeCompany)
           .eq('direcao', 'SAIDA')
           .gte('created_at', weekAgo.toISOString()),
       ]);
