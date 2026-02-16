@@ -1,11 +1,14 @@
 import { useEffect } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Activity, RefreshCcw, CheckCircle2, XCircle, AlertTriangle, Clock, Loader2 } from 'lucide-react';
 import { useOperationalHealth } from '@/hooks/useOperationalHealth';
+import { useWebVitals, useEdgeFunctionLatency } from '@/hooks/useObservabilityData';
+import { WebVitalsCard } from '@/components/observability/WebVitalsCard';
+import { EdgeFunctionLatencyCard } from '@/components/observability/EdgeFunctionLatencyCard';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 
@@ -19,18 +22,26 @@ const STATUS_CONFIG: Record<string, { icon: React.ReactNode; className: string; 
 
 export default function OperationalHealthPage() {
   const { integrations, cronStatuses, loading, checkAll } = useOperationalHealth();
+  const { data: webVitals, isLoading: loadingVitals } = useWebVitals();
+  const { data: edgeFnData, isLoading: loadingEdgeFn } = useEdgeFunctionLatency();
 
   useEffect(() => { checkAll(); }, [checkAll]);
 
   return (
     <AppLayout>
       <div className="flex-1 overflow-auto">
-        <PageShell icon={Activity} title="Saúde Operacional" description="Status em tempo real de integrações e CRON jobs" />
+        <PageShell icon={Activity} title="Saúde Operacional" description="Web Vitals, integrações, CRON jobs e latência de Edge Functions" />
         <div className="px-6 pb-6 space-y-6">
           <div className="flex justify-end">
             <Button onClick={checkAll} disabled={loading} variant="outline" size="sm">
               <RefreshCcw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Verificar Agora
             </Button>
+          </div>
+
+          {/* Web Vitals + Edge Function Latency */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <WebVitalsCard vitals={webVitals || []} loading={loadingVitals} />
+            <EdgeFunctionLatencyCard data={edgeFnData || []} loading={loadingEdgeFn} />
           </div>
 
           {/* Integrations Grid */}
@@ -59,7 +70,7 @@ export default function OperationalHealthPage() {
 
           {/* CRON Jobs */}
           <div>
-            <h3 className="text-sm font-semibold mb-3">CRON Jobs</h3>
+            <h3 className="text-sm font-semibold mb-3">CRON Jobs ({cronStatuses.length})</h3>
             <Card>
               <CardContent className="pt-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
