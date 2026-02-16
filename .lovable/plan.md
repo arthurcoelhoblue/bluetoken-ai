@@ -1,67 +1,57 @@
 
 
-# Documentacao Wiki no endereco /wiki
+# Corrigir Wiki para funcionar na UI do sistema
 
-## Contexto
+## Problemas identificados
 
-O projeto possui um site Docusaurus em `docs-site/` com documentacao organizada por perfil (Vendedor, CS, Gestor, Admin, Desenvolvedor). Porem, o Docusaurus e um projeto separado com build proprio e nao roda dentro do Vite/React. A solucao e criar uma pagina Wiki nativa no React que renderiza o conteudo markdown dos docs diretamente na aplicacao.
+1. **Admonitions do Docusaurus nao renderizam**: Os arquivos markdown usam sintaxe `:::info`, `:::warning`, `:::tip` (encontrada em 34 arquivos, 183 ocorrencias). O react-markdown nao suporta essa sintaxe, entao o conteudo aparece como texto puro com ":::" visivel.
 
-## Implementacao
+2. **Links relativos quebrados**: Os markdowns usam links como `[Meu Dia](./meu-dia)` que sao padrao Docusaurus. Na wiki atual, a navegacao usa query params (`?page=vendedor/meu-dia`), entao esses links nao funcionam.
 
-### 1. Instalar dependencia: `react-markdown`
+## Solucao
 
-Pacote leve para renderizar conteudo Markdown dentro de componentes React.
+### 1. Plugin de admonitions para react-markdown
 
-### 2. Novo componente: `src/pages/WikiPage.tsx`
-
-Pagina completa de wiki com:
-- Sidebar com navegacao por secao (Vendedor, CS, Gestor, Admin, Desenvolvedor)
-- Area principal que exibe o conteudo da pagina selecionada
-- Carrega os arquivos `.md` do diretorio `docs-site/docs/` via import raw
-- Estilizacao com Tailwind (prose) para renderizacao limpa do markdown
-- Busca simples por titulo de pagina
-
-### 3. Novo componente: `src/components/wiki/WikiLayout.tsx`
-
-Layout com sidebar colapsavel contendo a arvore de navegacao dos docs, separada por grupo/perfil.
-
-### 4. Novo componente: `src/components/wiki/WikiSidebar.tsx`
-
-Sidebar com links para cada secao e pagina, usando a estrutura de pastas do docs-site como base.
-
-### 5. Registro de conteudo: `src/config/wikiContent.ts`
-
-Arquivo que mapeia as paginas de documentacao disponiveis com titulo, grupo e conteudo importado via `?raw`:
+Criar um processador que converte a sintaxe `:::tipo` em blocos HTML estilizados antes de passar para o ReactMarkdown. Isso transforma:
 
 ```text
-import introMd from '../../docs-site/docs/intro.md?raw';
-import guiaRapidoMd from '../../docs-site/docs/guia-rapido.md?raw';
-// ... demais arquivos
+:::info Titulo
+Conteudo aqui
+:::
 ```
 
-### 6. Rota no App.tsx
+Em cards estilizados com icone e cor correspondente (azul para info, amarelo para warning, verde para tip, vermelho para danger).
 
-Adicionar rota `/wiki/*` apontando para `WikiPage`, protegida por autenticacao (usuarios logados podem acessar a wiki).
+### 2. Processador de links relativos
 
-### 7. Sidebar de navegacao principal
+Criar uma funcao que converte links Docusaurus relativos (`./meu-dia`, `../admin/benchmark`) nos links corretos da wiki (`?page=vendedor/meu-dia`). Aplicar como componente customizado de link no ReactMarkdown.
 
-Adicionar item "Wiki" no grupo "Configuracao" do `AppSidebar.tsx` com icone `BookOpen` e URL `/wiki`.
+### 3. Ajuste de layout
 
-Registrar a tela no `screenRegistry.ts` com key `wiki`.
+Remover o `h-[calc(100vh-3.5rem)]` que pode conflitar com o AppLayout (que ja gerencia a altura do conteudo), usando `h-full` para preencher o espaco disponivel corretamente.
 
-Adicionar titulo no `TopBar.tsx` para a rota `/wiki`.
+## Detalhes tecnicos
 
-## Arquivos
+### Arquivos alterados
 
 | Arquivo | Acao |
 |---------|------|
-| `src/pages/WikiPage.tsx` | Novo |
-| `src/components/wiki/WikiLayout.tsx` | Novo |
-| `src/components/wiki/WikiSidebar.tsx` | Novo |
-| `src/config/wikiContent.ts` | Novo |
-| `src/App.tsx` | Alterar - adicionar rota /wiki |
-| `src/components/layout/AppSidebar.tsx` | Alterar - adicionar item Wiki |
-| `src/components/layout/TopBar.tsx` | Alterar - adicionar titulo Wiki |
-| `src/config/screenRegistry.ts` | Alterar - registrar tela wiki |
-| `package.json` | Alterar - adicionar react-markdown |
+| `src/config/wikiContent.ts` | Alterar - adicionar funcao `processContent()` que converte admonitions `:::tipo` em HTML/markdown estilizado |
+| `src/pages/WikiPage.tsx` | Alterar - passar componentes customizados ao ReactMarkdown (link handler, admonition blocks), ajustar layout |
+| `src/components/wiki/WikiSidebar.tsx` | Sem alteracao (ja esta correto) |
+
+### Processamento de admonitions
+
+A funcao `processContent()` em `wikiContent.ts` vai:
+- Usar regex para encontrar blocos `:::tipo Titulo\n...conteudo...\n:::`
+- Converter em blocos markdown com HTML inline que o react-markdown renderiza como cards coloridos
+- Mapear tipos para estilos: info (azul), warning (amarelo), tip (verde), note (cinza), danger (vermelho)
+
+### Links customizados no ReactMarkdown
+
+No `WikiPage.tsx`, passar um componente `a` customizado ao ReactMarkdown que:
+- Detecta links relativos (comecam com `./` ou `../`)
+- Resolve o caminho relativo baseado no slug atual da pagina
+- Converte para navegacao interna via `onSelect(resolvedSlug)`
+- Mantem links externos funcionando normalmente
 
