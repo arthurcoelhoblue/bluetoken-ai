@@ -36,7 +36,7 @@ export function OrgDetailSheet({ orgId, open, onOpenChange }: Props) {
   const saveEdit = async () => {
     if (!orgId || !editField) return;
     try {
-      await update.mutateAsync({ id: orgId, [editField]: editValue || null } as any);
+      await update.mutateAsync({ id: orgId, [editField]: editValue || null } as Parameters<typeof update.mutateAsync>[0]);
       toast.success('Campo atualizado');
     } catch {
       toast.error('Erro ao atualizar');
@@ -133,7 +133,7 @@ export function OrgDetailSheet({ orgId, open, onOpenChange }: Props) {
                   {!contacts?.length ? (
                     <p className="text-sm text-muted-foreground text-center py-8">Nenhum contato vinculado.</p>
                   ) : (
-                    contacts.map((c: any) => (
+                    contacts.map((c: { id: string; nome: string; email?: string | null; telefone?: string | null; is_cliente?: boolean }) => (
                       <button
                         key={c.id}
                         className="w-full flex items-center gap-3 p-3 rounded-lg border hover:bg-muted/50 transition-colors text-left"

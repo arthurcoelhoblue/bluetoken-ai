@@ -25,26 +25,25 @@ interface UseMessageIntentOptions {
   enabled?: boolean;
 }
 
-function mapRowToIntent(row: any): LeadMessageIntent {
+function mapRowToIntent(row: Record<string, unknown>): LeadMessageIntent {
   return {
-    id: row.id,
-    message_id: row.message_id,
-    lead_id: row.lead_id,
-    run_id: row.run_id,
+    id: row.id as string,
+    message_id: row.message_id as string,
+    lead_id: row.lead_id as string,
+    run_id: row.run_id as string,
     empresa: row.empresa as EmpresaTipo,
     intent: row.intent as LeadIntentTipo,
     intent_confidence: Number(row.intent_confidence),
-    intent_summary: row.intent_summary,
+    intent_summary: row.intent_summary as string,
     acao_recomendada: row.acao_recomendada as SdrAcaoTipo,
-    acao_aplicada: row.acao_aplicada,
+    acao_aplicada: row.acao_aplicada as boolean,
     acao_detalhes: row.acao_detalhes as Record<string, unknown> | null,
-    modelo_ia: row.modelo_ia,
-    tokens_usados: row.tokens_usados,
-    tempo_processamento_ms: row.tempo_processamento_ms,
-    created_at: row.created_at,
-    // PATCH 5G-B: Novos campos
-    resposta_automatica_texto: row.resposta_automatica_texto ?? null,
-    resposta_enviada_em: row.resposta_enviada_em ?? null,
+    modelo_ia: row.modelo_ia as string,
+    tokens_usados: row.tokens_usados as number,
+    tempo_processamento_ms: row.tempo_processamento_ms as number,
+    created_at: row.created_at as string,
+    resposta_automatica_texto: (row.resposta_automatica_texto as string) ?? null,
+    resposta_enviada_em: (row.resposta_enviada_em as string) ?? null,
   };
 }
 

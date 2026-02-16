@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
@@ -54,6 +54,26 @@ interface CopilotRequest {
   empresa: string;
 }
 
+interface PromptVersion {
+  id: string;
+  content: string;
+  ab_weight: number | null;
+}
+
+interface CustomFieldRow {
+  value_text: string | null;
+  value_number: number | null;
+  value_boolean: boolean | null;
+  value_date: string | null;
+  value_json?: Record<string, unknown> | null;
+  field_id?: string;
+  custom_field_definitions: { label: string; value_type?: string } | null;
+}
+
+interface RoleRow { role: string }
+interface UserAccessAssignment { access_profile_id: string | null }
+interface AccessProfileRow { permissions: Record<string, { view: boolean; edit: boolean }> | null }
+
 serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
   if (req.method === 'OPTIONS') {
@@ -85,7 +105,7 @@ serve(async (req) => {
         .gt('ab_weight', 0);
 
       if (pvList && pvList.length > 0) {
-        const totalWeight = pvList.reduce((sum: number, p: any) => sum + (p.ab_weight || 100), 0);
+        const totalWeight = pvList.reduce((sum: number, p: PromptVersion) => sum + (p.ab_weight || 100), 0);
         let rand = Math.random() * totalWeight;
         let selected = pvList[0];
         for (const pv of pvList) {
@@ -119,7 +139,7 @@ serve(async (req) => {
           .select('role')
           .eq('user_id', userId);
 
-        isAdmin = roles?.some((r: any) => r.role === 'ADMIN') ?? false;
+        isAdmin = roles?.some((r: RoleRow) => r.role === 'ADMIN') ?? false;
 
         if (!isAdmin) {
           const { data: assignment } = await supabase
@@ -128,11 +148,11 @@ serve(async (req) => {
             .eq('user_id', userId)
             .maybeSingle();
 
-          if (assignment?.access_profile_id) {
+          if ((assignment as UserAccessAssignment | null)?.access_profile_id) {
             const { data: profile } = await supabase
               .from('access_profiles')
               .select('permissions')
-              .eq('id', assignment.access_profile_id)
+              .eq('id', (assignment as UserAccessAssignment).access_profile_id)
               .single();
 
             if (profile?.permissions) {
@@ -213,7 +233,85 @@ serve(async (req) => {
 // FUNÇÕES DE ENRIQUECIMENTO
 // ========================================
 
-async function enrichLeadContext(supabase: any, leadId: string | undefined, empresa: string): Promise<string> {
+function formatCustomField(f: CustomFieldRow): string {
+  const label = f.custom_field_definitions?.label || 'Campo';
+  const value = f.value_text || f.value_number || f.value_date || f.value_boolean || (f.value_json ? JSON.stringify(f.value_json) : null);
+  return `- ${label}: ${value ?? '-'}`;
+}
+
+interface IntentRow {
+  intent: string;
+  intent_confidence: number;
+  intent_summary: string | null;
+  sentimento: string | null;
+  created_at: string;
+}
+
+interface MessageRow {
+  direcao: string;
+  conteudo: string;
+  canal: string;
+  sender_type: string;
+  created_at: string;
+}
+
+interface DealActivityRow {
+  tipo: string;
+  descricao: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+  tarefa_concluida: boolean | null;
+  tarefa_prazo: string | null;
+}
+
+interface IncidentRow {
+  titulo: string;
+  gravidade: string;
+  status: string;
+  created_at: string;
+}
+
+interface PipelineSummaryRow {
+  pipeline_nome: string;
+  deals_abertos: number | null;
+  valor_aberto: number | null;
+  valor_ganho: number | null;
+}
+
+interface DealRow {
+  id: string;
+  titulo: string | null;
+  valor: number | null;
+  status: string;
+  temperatura: string | null;
+  updated_at: string;
+  stage_id: string | null;
+}
+
+interface SlaAlertRow {
+  deal_id: string;
+  deal_titulo: string;
+  sla_percentual: number;
+  sla_estourado: boolean;
+  stage_nome: string;
+  owner_id?: string;
+}
+
+interface TarefaRow {
+  deal_id: string;
+  descricao: string | null;
+  tarefa_prazo: string | null;
+  deal_titulo: string;
+}
+
+interface MetaRow {
+  nome_vendedor: string | null;
+  valor_meta: number;
+  valor_realizado: number;
+  user_id: string;
+}
+
+async function enrichLeadContext(supabase: SupabaseClient, leadId: string | undefined, empresa: string): Promise<string> {
   if (!leadId) return 'Nenhum lead selecionado.';
 
   const [classResult, msgsResult, stateResult, contactResult, intentsResult] = await Promise.all([
@@ -271,7 +369,7 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
   if (stateResult.data) {
     const st = stateResult.data;
     parts.push(`**Estado Conversa**: Funil=${st.estado_funil}, Framework=${st.framework_ativo}, DISC=${st.perfil_disc || '-'}, Perfil Investidor=${st.perfil_investidor || '-'}, Modo=${st.modo || 'SDR_IA'}, Idioma=${st.idioma_preferido}`);
-    if (st.framework_data && Object.keys(st.framework_data).length > 0) {
+    if (st.framework_data && Object.keys(st.framework_data as Record<string, unknown>).length > 0) {
       parts.push(`**Framework Data**: ${JSON.stringify(st.framework_data)}`);
     }
   }
@@ -285,7 +383,7 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
       .maybeSingle();
 
     if (linkedContact?.organizations) {
-      const org = linkedContact.organizations;
+      const org = linkedContact.organizations as Record<string, string | null>;
       parts.push(`**Organização**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
     }
 
@@ -297,26 +395,22 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
         .eq('entity_type', 'CONTACT');
 
       if (cfValues && cfValues.length > 0) {
-        const fields = cfValues.map((f: any) => {
-          const label = f.custom_field_definitions?.label || 'Campo';
-          const value = f.value_text || f.value_number || f.value_date || f.value_boolean;
-          return `- ${label}: ${value ?? '-'}`;
-        }).join('\n');
+        const fields = (cfValues as unknown as CustomFieldRow[]).map(formatCustomField).join('\n');
         parts.push(`**Campos Customizados (Contato)**:\n${fields}`);
       }
     }
   }
 
   if (intentsResult.data && intentsResult.data.length > 0) {
-    const intents = intentsResult.data.map((i: any) =>
+    const intents = (intentsResult.data as IntentRow[]).map((i) =>
       `- [${i.intent}] conf=${i.intent_confidence} | ${i.intent_summary?.substring(0, 80) || '-'}${i.sentimento ? ` | Sent=${i.sentimento}` : ''}`
     ).join('\n');
     parts.push(`**Últimos intents**:\n${intents}`);
   }
 
   if (msgsResult.data && msgsResult.data.length > 0) {
-    const msgs = msgsResult.data.reverse();
-    const formatted = msgs.map((m: any) => {
+    const msgs = (msgsResult.data as MessageRow[]).reverse();
+    const formatted = msgs.map((m) => {
       const dir = m.direcao === 'INBOUND' ? '← Lead' : `→ ${m.sender_type}`;
       return `[${dir}] ${m.conteudo.substring(0, 200)}`;
     }).join('\n');
@@ -326,7 +420,7 @@ async function enrichLeadContext(supabase: any, leadId: string | undefined, empr
   return parts.length > 0 ? parts.join('\n\n') : 'Sem dados disponíveis para este lead.';
 }
 
-async function enrichDealContext(supabase: any, dealId: string | undefined): Promise<string> {
+async function enrichDealContext(supabase: SupabaseClient, dealId: string | undefined): Promise<string> {
   if (!dealId) return 'Nenhum deal selecionado.';
 
   const [dealResult, activitiesResult, customFieldsResult] = await Promise.all([
@@ -364,11 +458,7 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
   }
 
   if (customFieldsResult.data && customFieldsResult.data.length > 0) {
-    const fields = customFieldsResult.data.map((f: any) => {
-      const label = f.custom_field_definitions?.label || 'Campo';
-      const value = f.value_text || f.value_number || f.value_date || f.value_boolean || (f.value_json ? JSON.stringify(f.value_json) : null);
-      return `- ${label}: ${value ?? '-'}`;
-    }).join('\n');
+    const fields = (customFieldsResult.data as unknown as CustomFieldRow[]).map(formatCustomField).join('\n');
     parts.push(`**Campos Customizados (Deal)**:\n${fields}`);
   }
 
@@ -387,23 +477,19 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
     ]);
 
     if (contactCfResult.data && contactCfResult.data.length > 0) {
-      const fields = contactCfResult.data.map((f: any) => {
-        const label = f.custom_field_definitions?.label || 'Campo';
-        const value = f.value_text || f.value_number || f.value_date || f.value_boolean || (f.value_json ? JSON.stringify(f.value_json) : null);
-        return `- ${label}: ${value ?? '-'}`;
-      }).join('\n');
+      const fields = (contactCfResult.data as unknown as CustomFieldRow[]).map(formatCustomField).join('\n');
       parts.push(`**Campos Customizados (Contato)**:\n${fields}`);
     }
 
     if (orgResult.data?.organizations) {
-      const org = orgResult.data.organizations;
+      const org = orgResult.data.organizations as Record<string, string | null>;
       parts.push(`**Organização Detalhada**: ${org.nome || '-'} | Setor: ${org.setor || '-'} | Site: ${org.website || '-'}`);
       if (org.notas) parts.push(`**Notas Org**: ${org.notas.substring(0, 200)}`);
     }
   }
 
   if (activitiesResult.data && activitiesResult.data.length > 0) {
-    const acts = activitiesResult.data.map((a: any) =>
+    const acts = (activitiesResult.data as DealActivityRow[]).map((a) =>
       `- [${a.tipo}] ${a.descricao || '-'} (${new Date(a.created_at).toLocaleDateString('pt-BR')})`
     ).join('\n');
     parts.push(`**Últimas atividades**:\n${acts}`);
@@ -412,7 +498,7 @@ async function enrichDealContext(supabase: any, dealId: string | undefined): Pro
   return parts.length > 0 ? parts.join('\n\n') : 'Sem dados disponíveis para este deal.';
 }
 
-async function enrichPipelineContext(supabase: any, empresa: string): Promise<string> {
+async function enrichPipelineContext(supabase: SupabaseClient, empresa: string): Promise<string> {
   const [pipelinesResult, slaResult] = await Promise.all([
     supabase
       .from('workbench_pipeline_summary')
@@ -428,7 +514,7 @@ async function enrichPipelineContext(supabase: any, empresa: string): Promise<st
   const parts: string[] = [];
 
   if (pipelinesResult.data && pipelinesResult.data.length > 0) {
-    const summary = pipelinesResult.data.map((p: any) =>
+    const summary = (pipelinesResult.data as PipelineSummaryRow[]).map((p) =>
       `- ${p.pipeline_nome}: ${p.deals_abertos || 0} deals abertos, R$ ${p.valor_aberto || 0} aberto, R$ ${p.valor_ganho || 0} ganho`
     ).join('\n');
     parts.push(`**Pipelines**:\n${summary}`);
@@ -447,7 +533,7 @@ function canView(perms: Record<string, { view: boolean; edit: boolean }> | null,
 }
 
 async function enrichGeralContext(
-  supabase: any,
+  supabase: SupabaseClient,
   empresa: string,
   isAdmin: boolean,
   userPermissions: Record<string, { view: boolean; edit: boolean }> | null,
@@ -468,17 +554,18 @@ async function enrichGeralContext(
         supabase.from('workbench_sla_alerts').select('*').eq('owner_id', userId || '').limit(20),
       ]);
       if (pipelinesRes.data && pipelinesRes.data.length > 0) {
-        const totalAbertos = pipelinesRes.data.reduce((s: number, p: any) => s + (p.deals_abertos || 0), 0);
-        const totalValorAberto = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_aberto || 0), 0);
-        const totalValorGanho = pipelinesRes.data.reduce((s: number, p: any) => s + (p.valor_ganho || 0), 0);
-        const summary = pipelinesRes.data.map((p: any) =>
+        const rows = pipelinesRes.data as PipelineSummaryRow[];
+        const totalAbertos = rows.reduce((s, p) => s + (p.deals_abertos || 0), 0);
+        const totalValorAberto = rows.reduce((s, p) => s + (p.valor_aberto || 0), 0);
+        const totalValorGanho = rows.reduce((s, p) => s + (p.valor_ganho || 0), 0);
+        const summary = rows.map((p) =>
           `- ${p.pipeline_nome}: ${p.deals_abertos || 0} abertos, R$ ${p.valor_aberto || 0}`
         ).join('\n');
         parts.push(`**Resumo Pipeline**: ${totalAbertos} deals abertos, R$ ${totalValorAberto.toLocaleString('pt-BR')} em pipeline, R$ ${totalValorGanho.toLocaleString('pt-BR')} ganho`);
         parts.push(`**Pipelines**:\n${summary}`);
       }
       if (slaRes.data && slaRes.data.length > 0) {
-        const slaDetails = slaRes.data.map((s: any) =>
+        const slaDetails = (slaRes.data as SlaAlertRow[]).map((s) =>
           `- ${s.deal_titulo}: SLA ${s.sla_percentual}% ${s.sla_estourado ? '⚠️ ESTOURADO' : ''} (${s.stage_nome})`
         ).join('\n');
         parts.push(`**SLA Alerts (${slaRes.data.length})**:\n${slaDetails}`);
@@ -497,7 +584,7 @@ async function enrichGeralContext(
         .limit(30);
 
       if (deals && deals.length > 0) {
-        const dealsSummary = deals.map((d: any) => {
+        const dealsSummary = (deals as DealRow[]).map((d) => {
           const diasParado = Math.floor((Date.now() - new Date(d.updated_at).getTime()) / 86400000);
           return `- ${d.titulo}: R$ ${d.valor || 0}, temp=${d.temperatura || '-'}, ${diasParado}d parado`;
         }).join('\n');
@@ -517,7 +604,7 @@ async function enrichGeralContext(
         .limit(20);
 
       if (activities && activities.length > 0) {
-        const acts = activities.map((a: any) =>
+        const acts = (activities as DealActivityRow[]).map((a) =>
           `- [${a.tipo}] ${a.descricao || '-'} (${new Date(a.created_at).toLocaleDateString('pt-BR')})`
         ).join('\n');
         parts.push(`**Minhas Últimas Atividades**:\n${acts}`);
@@ -549,7 +636,7 @@ async function enrichGeralContext(
       .limit(15);
 
     if (msgs && msgs.length > 0) {
-      const formatted = msgs.map((m: any) => {
+      const formatted = (msgs as MessageRow[]).map((m) => {
         const dir = m.direcao === 'INBOUND' ? '← Lead' : '→ SDR';
         return `[${dir}] ${m.conteudo?.substring(0, 100) || '-'} (${new Date(m.created_at).toLocaleString('pt-BR')})`;
       }).join('\n');
@@ -568,7 +655,7 @@ async function enrichGeralContext(
         .limit(15);
 
       if (tarefas && tarefas.length > 0) {
-        const list = tarefas.map((t: any) =>
+        const list = (tarefas as TarefaRow[]).map((t) =>
           `- ${t.deal_titulo}: ${t.descricao || 'Sem desc'} (prazo: ${t.tarefa_prazo || 'sem prazo'})`
         ).join('\n');
         parts.push(`**Tarefas Pendentes (${tarefas.length})**:\n${list}`);
@@ -600,7 +687,7 @@ async function enrichGeralContext(
       .limit(10);
 
     if (hotLeads && hotLeads.length > 0) {
-      const list = hotLeads.map((l: any) =>
+      const list = hotLeads.map((l: { lead_id: string; temperatura: string; persona: string | null; score_interno: number | null }) =>
         `- Lead ${l.lead_id?.substring(0, 8)}: ${l.temperatura}, persona=${l.persona || '-'}, score=${l.score_interno || '-'}`
       ).join('\n');
       parts.push(`**Leads Quentes/Mornos (${hotLeads.length})**:\n${list}`);
@@ -615,8 +702,8 @@ async function enrichGeralContext(
         .eq('empresa', empresa)
         .eq('is_active', true);
       if (csData && csData.length > 0) {
-        const totalMRR = csData.reduce((s: number, c: any) => s + (c.valor_mrr || 0), 0);
-        const criticos = csData.filter((c: any) => c.health_status === 'CRITICO' || c.health_status === 'EM_RISCO').length;
+        const totalMRR = csData.reduce((s: number, c: { health_status: string; valor_mrr: number | null }) => s + (c.valor_mrr || 0), 0);
+        const criticos = csData.filter((c: { health_status: string }) => c.health_status === 'CRITICO' || c.health_status === 'EM_RISCO').length;
         parts.push(`**CS**: ${csData.length} clientes ativos, MRR total R$ ${totalMRR.toLocaleString('pt-BR')}, ${criticos} em risco/crítico`);
       }
     })());
@@ -633,7 +720,7 @@ async function enrichGeralContext(
         .eq('mes', now.getMonth() + 1)
         .limit(10);
       if (metasData && metasData.length > 0) {
-        const summary = metasData.map((m: any) => {
+        const summary = (metasData as MetaRow[]).map((m) => {
           const pct = m.valor_meta > 0 ? Math.round((m.valor_realizado / m.valor_meta) * 100) : 0;
           const isMe = m.user_id === userId ? ' (EU)' : '';
           return `- ${m.nome_vendedor || 'Vendedor'}${isMe}: ${pct}% da meta (R$ ${m.valor_realizado} / R$ ${m.valor_meta})`;
@@ -648,7 +735,7 @@ async function enrichGeralContext(
   return parts.length > 0 ? parts.join('\n\n') : 'Contexto geral — sem dados específicos carregados.';
 }
 
-async function enrichCustomerContext(supabase: any, customerId: string | undefined): Promise<string> {
+async function enrichCustomerContext(supabase: SupabaseClient, customerId: string | undefined): Promise<string> {
   if (!customerId) return 'Nenhum cliente CS selecionado.';
 
   const [customerRes, incidentsRes, healthLogRes, dealsRes] = await Promise.all([
@@ -682,12 +769,12 @@ async function enrichCustomerContext(supabase: any, customerId: string | undefin
 
   if (customerRes.data) {
     const c = customerRes.data;
-    const contact = c.contacts;
+    const contact = c.contacts as Record<string, string | null> | null;
     parts.push(`**Cliente CS**: ${contact?.nome || '-'} | Email: ${contact?.email || '-'} | Tel: ${contact?.telefone || '-'}`);
     parts.push(`**Health Score**: ${c.health_score ?? 'N/A'}/100 (${c.health_status || 'N/A'})`);
 
     if (healthLogRes.data?.dimensoes) {
-      const d = healthLogRes.data.dimensoes as any;
+      const d = healthLogRes.data.dimensoes as Record<string, number | null>;
       parts.push(`**Dimensões**: NPS=${d.nps ?? '-'}, CSAT=${d.csat ?? '-'}, Engajamento=${d.engajamento ?? '-'}, Financeiro=${d.financeiro ?? '-'}, Tempo=${d.tempo ?? '-'}, Sentimento=${d.sentimento ?? '-'}`);
     }
 
@@ -711,11 +798,11 @@ async function enrichCustomerContext(supabase: any, customerId: string | undefin
 
   if (incidentsRes.data && incidentsRes.data.length > 0) {
     const byGrav: Record<string, number> = {};
-    incidentsRes.data.forEach((i: any) => { byGrav[i.gravidade] = (byGrav[i.gravidade] || 0) + 1; });
+    (incidentsRes.data as IncidentRow[]).forEach((i) => { byGrav[i.gravidade] = (byGrav[i.gravidade] || 0) + 1; });
     const summary = Object.entries(byGrav).map(([g, n]) => `${n} ${g}`).join(', ');
     parts.push(`**Incidências Abertas**: ${incidentsRes.data.length} (${summary})`);
 
-    const list = incidentsRes.data.slice(0, 5).map((i: any) =>
+    const list = (incidentsRes.data as IncidentRow[]).slice(0, 5).map((i) =>
       `- [${i.gravidade}] ${i.titulo} (${new Date(i.created_at).toLocaleDateString('pt-BR')})`
     ).join('\n');
     parts.push(list);
@@ -730,7 +817,7 @@ async function enrichCustomerContext(supabase: any, customerId: string | undefin
       .limit(10);
 
     if (deals && deals.length > 0) {
-      const dealsList = deals.map((d: any) =>
+      const dealsList = (deals as DealRow[]).map((d) =>
         `- ${d.titulo || 'Sem título'} | ${d.status} | R$ ${d.valor || 0}`
       ).join('\n');
       parts.push(`**Deals vinculados**:\n${dealsList}`);

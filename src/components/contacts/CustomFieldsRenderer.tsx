@@ -37,11 +37,11 @@ export function CustomFieldsRenderer({ fields, entityType, entityId }: Props) {
   };
 
   const saveField = async (def: CustomFieldDefinition) => {
-    const payload: any = {
+    const payload = {
       field_id: def.id,
       entity_type: entityType,
       entity_id: entityId,
-    };
+    } as { field_id: string; entity_type: 'CONTACT' | 'ORGANIZATION' | 'DEAL'; entity_id: string; value_text?: string | null; value_number?: number | null; value_boolean?: boolean; value_date?: string | null };
 
     const vt = def.value_type;
     if (['TEXT', 'EMAIL', 'PHONE', 'URL', 'TAG'].includes(vt)) {

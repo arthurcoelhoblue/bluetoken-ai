@@ -76,7 +76,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
   const conteudo = form.watch('conteudo');
 
   function handleSubmit(values: FormValues) {
-    const payload: any = {
+    const payload: TemplateInsert | TemplateUpdate = {
       nome: values.nome,
       codigo: values.codigo,
       empresa: values.empresa,
@@ -85,8 +85,8 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
       descricao: values.descricao || null,
       assunto_template: values.canal === 'EMAIL' ? (values.assunto_template || null) : null,
       ativo: values.ativo,
-    };
-    if (isEditing) payload.id = template!.id;
+      ...(isEditing ? { id: template!.id } : {}),
+    } as TemplateInsert | TemplateUpdate;
     onSave(payload);
   }
 

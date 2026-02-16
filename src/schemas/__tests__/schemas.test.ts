@@ -104,21 +104,26 @@ describe('organizationCreateSchema', () => {
 
 // ─── Deals Schema ──────────────────────────────────────────
 describe('createDealSchema', () => {
+  const base = { owner_id: 'test-user-id' };
+
   it('accepts valid titulo + valor', () => {
-    expect(createDealSchema.safeParse({ titulo: 'Deal X', valor: 1000 }).success).toBe(true);
+    expect(createDealSchema.safeParse({ ...base, titulo: 'Deal X', valor: 1000 }).success).toBe(true);
   });
   it('rejects titulo < 2', () => {
-    expect(createDealSchema.safeParse({ titulo: 'D', valor: 100 }).success).toBe(false);
+    expect(createDealSchema.safeParse({ ...base, titulo: 'D', valor: 100 }).success).toBe(false);
   });
   it('rejects negative valor', () => {
-    expect(createDealSchema.safeParse({ titulo: 'Deal', valor: -1 }).success).toBe(false);
+    expect(createDealSchema.safeParse({ ...base, titulo: 'Deal', valor: -1 }).success).toBe(false);
   });
   it('defaults temperatura to FRIO', () => {
-    const result = createDealSchema.safeParse({ titulo: 'Deal X' });
+    const result = createDealSchema.safeParse({ ...base, titulo: 'Deal X' });
     expect(result.success && result.data.temperatura).toBe('FRIO');
   });
   it('accepts QUENTE', () => {
-    expect(createDealSchema.safeParse({ titulo: 'Deal', temperatura: 'QUENTE' }).success).toBe(true);
+    expect(createDealSchema.safeParse({ ...base, titulo: 'Deal', temperatura: 'QUENTE' }).success).toBe(true);
+  });
+  it('rejects missing owner_id', () => {
+    expect(createDealSchema.safeParse({ titulo: 'Deal X', valor: 100 }).success).toBe(false);
   });
 });
 

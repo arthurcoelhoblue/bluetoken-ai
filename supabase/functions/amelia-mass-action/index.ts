@@ -41,7 +41,7 @@ serve(async (req) => {
         try {
           const { data: deal } = await supabase.from('deals').select('id, titulo, contacts(id, nome, telefone, email)').eq('id', msg.deal_id).single();
           if (!deal) { errors++; continue; }
-          const contact = deal.contacts as any;
+          const contact = deal.contacts as { id?: string; nome?: string; telefone?: string; email?: string } | null;
 
           if (canal === 'WHATSAPP') {
             if (!contact?.telefone) { errors++; continue; }
@@ -76,7 +76,7 @@ serve(async (req) => {
     const canal = job.canal || 'WHATSAPP';
 
     for (const deal of deals) {
-      const contact = deal.contacts as any;
+      const contact = deal.contacts as { id?: string; nome?: string; telefone?: string; email?: string } | null;
       const contactName = contact?.nome || 'Cliente';
 
       let userPrompt = `Contato: ${contactName}\nDeal: ${deal.titulo || 'Negociação'}\nValor: R$ ${deal.valor || 0}\nTemperatura: ${deal.temperatura || 'não definida'}`;

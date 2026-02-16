@@ -64,11 +64,12 @@ function ImportacaoContent() {
   const uniqueStages = [...new Set(dealsFile.map(d => String(d.stage_id)).filter(Boolean))];
   const uniqueOwners = [...new Set(dealsFile.map(d => String(d.user_id)).filter(v => v && v !== 'undefined'))];
 
-  const allStages = pipelines?.flatMap(p =>
-    (p.pipeline_stages || []).map((s: any) => ({ ...s, pipeline_name: p.nome }))
+  interface StageWithPipeline { id: string; nome: string; pipeline_name: string; posicao?: number }
+  const allStages: StageWithPipeline[] = pipelines?.flatMap(p =>
+    (p.pipeline_stages || []).map((s: { id: string; nome: string; posicao?: number }) => ({ ...s, pipeline_name: p.nome }))
   ) || [];
 
-  const handleFileUpload = useCallback((setter: (data: any[]) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = useCallback(<T,>(setter: (data: T[]) => void) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     const reader = new FileReader();
@@ -101,8 +102,8 @@ function ImportacaoContent() {
       if (result.status === 'COMPLETED') toast.success(`Importação concluída: ${result.imported} registros`);
       else if (result.status === 'PARTIAL') toast.warning(`Parcial: ${result.imported} ok, ${result.errors} erros`);
       else toast.error(`Falha: ${result.errors} erros`);
-    } catch (e: any) {
-      toast.error(e.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
       setStep('mapping');
     }
   };
@@ -221,7 +222,7 @@ function ImportacaoContent() {
                         <Select value={stageMapping[sid] || ''} onValueChange={v => setStageMapping(prev => ({ ...prev, [sid]: v }))}>
                           <SelectTrigger className="w-64"><SelectValue placeholder="Selecionar stage CRM" /></SelectTrigger>
                           <SelectContent>
-                            {allStages.map((s: any) => (
+                            {allStages.map((s) => (
                               <SelectItem key={s.id} value={s.id}>{s.pipeline_name} → {s.nome}</SelectItem>
                             ))}
                           </SelectContent>
