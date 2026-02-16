@@ -3,13 +3,15 @@
 // porque são chamados por servidores de terceiros que não enviam Origin.
 // Funções chamadas pelo frontend usam whitelist restritiva.
 
-const ALLOWED_ORIGINS = [
-  "https://sdrgrupobue.lovable.app",
-  "https://id-preview--2e625147-f0fa-49c2-9624-dcb7484793c1.lovable.app",
-];
+const FALLBACK_ORIGIN = "https://sdrgrupobue.lovable.app";
 
 const BASE_HEADERS =
   "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version";
+
+/** Check if origin belongs to a Lovable domain (production or preview). */
+function isAllowedOrigin(origin: string): boolean {
+  return origin.endsWith('.lovable.app') || origin.endsWith('.lovableproject.com');
+}
 
 /**
  * Returns CORS headers scoped to the project's own domains.
@@ -17,7 +19,7 @@ const BASE_HEADERS =
  */
 export function getCorsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get("origin") ?? "";
-  const allowed = ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
+  const allowed = isAllowedOrigin(origin) ? origin : FALLBACK_ORIGIN;
   return {
     "Access-Control-Allow-Origin": allowed,
     "Access-Control-Allow-Headers": BASE_HEADERS,
