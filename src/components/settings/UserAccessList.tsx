@@ -3,6 +3,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { UserPlus, Plus, X, ShieldCheck } from 'lucide-react';
 import { useUsersWithProfiles, useRemoveAssignment, useAccessProfiles } from '@/hooks/useAccessControl';
@@ -10,19 +11,54 @@ import { AssignProfileDialog } from './AssignProfileDialog';
 import { CreateUserDialog } from './CreateUserDialog';
 import { UserPermissionOverrideDialog } from './UserPermissionOverrideDialog';
 import { supabase } from '@/integrations/supabase/client';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQueryClient, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import type { UserWithAccess, PermissionsMap } from '@/types/accessControl';
 
 export function UserAccessList() {
   const { data: users = [], isLoading } = useUsersWithProfiles();
   const { data: profiles = [] } = useAccessProfiles();
+  const { data: extensions = [] } = useQuery({
+    queryKey: ['zadarma-extensions-all'],
+    queryFn: async () => {
+      const { data, error } = await supabase.from('zadarma_extensions').select('user_id, extension_number, empresa');
+      if (error) throw error;
+      return (data ?? []) as { user_id: string; extension_number: string; empresa: string }[];
+    },
+  });
   const removeMutation = useRemoveAssignment();
   const queryClient = useQueryClient();
 
   const [assignTarget, setAssignTarget] = useState<UserWithAccess | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState<UserWithAccess | null>(null);
+  const [editingRamal, setEditingRamal] = useState<string | null>(null);
+  const [ramalValue, setRamalValue] = useState('');
+
+  const getRamal = (userId: string) => {
+    const ext = extensions.find(e => e.user_id === userId);
+    return ext?.extension_number ?? '';
+  };
+
+  const handleSaveRamal = async (userId: string) => {
+    setEditingRamal(null);
+    const current = getRamal(userId);
+    if (ramalValue === current) return;
+
+    if (ramalValue) {
+      const { error } = await supabase.from('zadarma_extensions').upsert(
+        { user_id: userId, extension_number: ramalValue, empresa: 'BLUE' },
+        { onConflict: 'user_id,empresa' }
+      );
+      if (error) { toast.error('Erro ao salvar ramal'); return; }
+    } else if (current) {
+      const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+      if (error) { toast.error('Erro ao remover ramal'); return; }
+    }
+    toast.success('Ramal atualizado');
+    queryClient.invalidateQueries({ queryKey: ['zadarma-extensions-all'] });
+    queryClient.invalidateQueries({ queryKey: ['zadarma-my-extension'] });
+  };
 
   const handleToggleVendedor = async (userId: string, value: boolean) => {
     const { error } = await supabase.from('profiles').update({ is_vendedor: value }).eq('id', userId);
@@ -67,6 +103,7 @@ export function UserAccessList() {
               <TableHead>Perfil</TableHead>
               <TableHead>Empresas</TableHead>
               <TableHead className="text-center">Vendedor</TableHead>
+              <TableHead>Ramal</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[100px]">Ações</TableHead>
             </TableRow>
@@ -113,6 +150,25 @@ export function UserAccessList() {
                     checked={u.is_vendedor ?? false}
                     onCheckedChange={(val) => handleToggleVendedor(u.id, val)}
                   />
+                </TableCell>
+                <TableCell>
+                  {editingRamal === u.id ? (
+                    <Input
+                      className="h-7 w-20 text-xs"
+                      value={ramalValue}
+                      onChange={e => setRamalValue(e.target.value)}
+                      onBlur={() => handleSaveRamal(u.id)}
+                      onKeyDown={e => e.key === 'Enter' && handleSaveRamal(u.id)}
+                      autoFocus
+                    />
+                  ) : (
+                    <span
+                      className="text-xs cursor-pointer hover:underline text-muted-foreground"
+                      onClick={() => { setEditingRamal(u.id); setRamalValue(getRamal(u.id)); }}
+                    >
+                      {getRamal(u.id) || '—'}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   <Badge variant={u.is_active ? 'default' : 'destructive'} className="text-xs">

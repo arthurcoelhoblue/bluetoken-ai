@@ -8,6 +8,7 @@ export const createUserSchema = z.object({
   empresa: z.string().default('all'),
   gestorId: z.string().default('none'),
   isVendedor: z.boolean().default(false),
+  ramal: z.string().optional().or(z.literal('')),
 });
 
 export type CreateUserFormData = z.infer<typeof createUserSchema>;
