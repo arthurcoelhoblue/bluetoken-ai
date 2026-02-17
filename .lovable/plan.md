@@ -1,41 +1,48 @@
 
 
-# Mover Controle de Acesso para o Menu Principal
+# Adicionar Campo de Ramal (Extensao) no Cadastro do Usuario
 
-Tirar a aba "Acesso" de dentro da pagina Configuracoes e transformar em um item proprio no menu lateral, dentro do grupo "Configuracao".
+## Objetivo
+
+Permitir que o administrador configure o numero do ramal (extension) de cada usuario diretamente no formulario de criacao e na tela de edicao do usuario, em vez de obrigar a ir ate a pagina `/admin/zadarma`.
 
 ---
 
 ## Mudancas
 
-### 1. Sidebar (`src/components/layout/AppSidebar.tsx`)
+### 1. Schema do formulario (`src/schemas/users.ts`)
 
-Adicionar novo item no grupo "Configuracao":
+Adicionar campo opcional `ramal` ao schema `createUserSchema`:
 
 ```text
-{ title: 'Controle de Acesso', url: '/admin/access-control', icon: Shield, screenKey: 'controle_acesso' }
+ramal: z.string().optional().or(z.literal(''))
 ```
 
-### 2. Nova Pagina (`src/pages/admin/AccessControl.tsx`)
+### 2. CreateUserDialog (`src/components/settings/CreateUserDialog.tsx`)
 
-Criar pagina dedicada que renderiza o componente `AccessControlTab` dentro do `AppLayout`, com titulo e descricao proprios.
+- Adicionar campo "Ramal" (input de texto) ao formulario, logo apos o campo "Vendedor"
+- No `handleSubmit`, apos criar o usuario com sucesso, se `data.ramal` estiver preenchido, inserir na tabela `zadarma_extensions` com o `user_id` retornado e a empresa selecionada
 
-### 3. Rota (`src/App.tsx`)
+### 3. UserAccessList (`src/components/settings/UserAccessList.tsx`)
 
-Adicionar rota `/admin/access-control` apontando para a nova pagina.
+- Adicionar coluna "Ramal" na tabela de usuarios
+- Buscar o ramal de cada usuario via query na `zadarma_extensions` (ou enriquecer a query existente com um join)
+- Permitir edicao inline (campo de texto editavel direto na celula, com salvamento ao perder o foco ou pressionar Enter)
 
-### 4. TopBar (`src/components/layout/TopBar.tsx`)
+### 4. AssignProfileDialog (`src/components/settings/AssignProfileDialog.tsx`)
 
-Adicionar entrada no `ROUTE_TITLES`:
-```text
-'/admin/access-control': 'Controle de Acesso'
-```
+- Adicionar campo "Ramal" no dialog de atribuicao de perfil, permitindo editar o ramal junto com perfil e empresas
 
-### 5. Settings (`src/pages/admin/Settings.tsx`)
+### 5. Edge function `admin-create-user`
 
-Remover a aba "Acesso" (tab trigger + tab content) e o import do `AccessControlTab`. O grid passa de 6 para 5 colunas.
+- Receber campo opcional `ramal` no body
+- Se preenchido, inserir registro na `zadarma_extensions` apos criar o usuario
 
-### 6. Screen Registry (`src/config/screenRegistry.ts`)
+---
 
-Registrar a nova tela `controle_acesso` com URL `/admin/access-control` para que o sistema de permissoes funcione corretamente.
+## Detalhes tecnicos
 
+- O ramal e salvo na tabela `zadarma_extensions` que ja existe, usando os campos `extension_number`, `user_id` e `empresa`
+- Um usuario pode ter ramais diferentes por empresa, entao o campo aparecera associado a empresa selecionada
+- A query de usuarios em `useAccessControl.ts` sera enriquecida para trazer tambem o ramal (left join com `zadarma_extensions`)
+- O campo e opcional -- nem todo usuario precisa de ramal
