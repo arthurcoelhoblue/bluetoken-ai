@@ -15,15 +15,23 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, UserCheck, ArrowLeftRight, UserCog } from 'lucide-react';
+import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset } from 'lucide-react';
 import { useConversationTakeover } from '@/hooks/useConversationMode';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import type { AtendimentoModo } from '@/types/conversas';
+
+interface BlueChatAgent {
+  id: string;
+  name: string;
+}
 
 interface ConversationTakeoverBarProps {
   leadId: string;
@@ -44,7 +52,9 @@ export function ConversationTakeoverBar({
   const [transferOpen, setTransferOpen] = useState(false);
   const [ownerName, setOwnerName] = useState<string | null>(null);
   const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [blueChatAgents, setBlueChatAgents] = useState<BlueChatAgent[]>([]);
+  const [bluechatTicketId, setBluechatTicketId] = useState<string | null>(null);
+  const [selectedValue, setSelectedValue] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
   const takeover = useConversationTakeover();
 
@@ -74,13 +84,44 @@ export function ConversationTakeoverBar({
     fetchOwner();
   }, [leadId, empresa]);
 
-  // Buscar usuários para transferência
-  const loadUsers = async () => {
-    const { data } = await supabase
+  // Carregar dados ao abrir dialog de transferência
+  const loadTransferData = async () => {
+    // 1. Profiles (Amélia users)
+    const profilesPromise = supabase
       .from('profiles')
       .select('id, nome')
-      .order('nome');
-    setUsers(data || []);
+      .order('nome')
+      .then(({ data }) => setUsers(data || []));
+
+    // 2. Buscar bluechat_ticket_id do framework_data
+    const ticketPromise = supabase
+      .from('lead_conversation_state')
+      .select('framework_data')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+      .maybeSingle()
+      .then(({ data }) => {
+        const fd = data?.framework_data as Record<string, unknown> | null;
+        const ticketId = (fd?.bluechat_ticket_id as string) || (fd?.bluechat_conversation_id as string) || null;
+        setBluechatTicketId(ticketId);
+        return ticketId;
+      });
+
+    // 3. Blue Chat agents (via edge function)
+    const agentsPromise = supabase.functions
+      .invoke('bluechat-proxy', {
+        body: { action: 'list-agents', empresa },
+      })
+      .then(({ data, error }) => {
+        if (error || !data?.agents) {
+          setBlueChatAgents([]);
+        } else {
+          setBlueChatAgents(data.agents);
+        }
+      })
+      .catch(() => setBlueChatAgents([]));
+
+    await Promise.all([profilesPromise, ticketPromise, agentsPromise]);
   };
 
   const handleTakeover = () => {
@@ -91,34 +132,71 @@ export function ConversationTakeoverBar({
   };
 
   const handleTransfer = async () => {
-    if (!selectedUserId) return;
+    if (!selectedValue) return;
     setTransferring(true);
+
     try {
-      const { error } = await supabase
-        .from('lead_contacts')
-        .update({ owner_id: selectedUserId })
-        .eq('lead_id', leadId)
-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
+      if (selectedValue.startsWith('bluechat:')) {
+        // ── Transferência para atendente Blue Chat ──
+        const agentId = selectedValue.replace('bluechat:', '');
+        if (!bluechatTicketId) {
+          toast({ title: 'Erro', description: 'Lead sem ticket ativo no Blue Chat', variant: 'destructive' });
+          return;
+        }
 
-      if (error) throw error;
+        const { data, error } = await supabase.functions.invoke('bluechat-proxy', {
+          body: {
+            action: 'transfer-ticket',
+            empresa,
+            ticket_id: bluechatTicketId,
+            agent_id: agentId,
+          },
+        });
 
-      const selected = users.find(u => u.id === selectedUserId);
-      setOwnerName(selected?.nome || null);
-      toast({ title: 'Transferido', description: `Lead transferido para ${selected?.nome}` });
+        if (error || !data?.success) {
+          throw new Error(data?.error || 'Falha na transferência');
+        }
+
+        const agent = blueChatAgents.find((a) => a.id === agentId);
+        toast({
+          title: 'Transferido',
+          description: `Ticket transferido para ${agent?.name || agentId} no Blue Chat`,
+        });
+      } else {
+        // ── Transferência para usuário Amélia (comportamento atual) ──
+        const userId = selectedValue.replace('amelia:', '');
+        const { error } = await supabase
+          .from('lead_contacts')
+          .update({ owner_id: userId })
+          .eq('lead_id', leadId)
+          .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
+
+        if (error) throw error;
+
+        const selected = users.find((u) => u.id === userId);
+        setOwnerName(selected?.nome || null);
+        toast({ title: 'Transferido', description: `Lead transferido para ${selected?.nome}` });
+      }
       setTransferOpen(false);
     } catch (err) {
-      toast({ title: 'Erro', description: 'Falha ao transferir lead', variant: 'destructive' });
+      toast({
+        title: 'Erro',
+        description: err instanceof Error ? err.message : 'Falha ao transferir',
+        variant: 'destructive',
+      });
     } finally {
       setTransferring(false);
     }
   };
 
+  const hasBlueChatSection = blueChatAgents.length > 0 || bluechatTicketId !== null;
+
   return (
-    <div className={`flex items-center justify-between px-4 py-2 rounded-lg border ${
-      isManual 
-        ? 'bg-primary/5 border-primary/20' 
-        : 'bg-accent/30 border-accent/20'
-    }`}>
+    <div
+      className={`flex items-center justify-between px-4 py-2 rounded-lg border ${
+        isManual ? 'bg-primary/5 border-primary/20' : 'bg-accent/30 border-accent/20'
+      }`}
+    >
       <div className="flex items-center gap-2 flex-wrap">
         {isManual ? (
           <UserCheck className="h-4 w-4 text-primary" />
@@ -129,29 +207,27 @@ export function ConversationTakeoverBar({
           {isManual ? 'Modo Manual' : 'SDR IA Ativo'}
         </Badge>
         {isManual && assumidoPorNome && (
-          <span className="text-xs text-muted-foreground">
-            por {assumidoPorNome}
-          </span>
+          <span className="text-xs text-muted-foreground">por {assumidoPorNome}</span>
         )}
         {ownerName && (
-          <span className="text-xs text-muted-foreground">
-            • Dono: {ownerName}
-          </span>
+          <span className="text-xs text-muted-foreground">• Dono: {ownerName}</span>
         )}
       </div>
 
       <div className="flex items-center gap-2">
         {/* Botão Transferir */}
-        <AlertDialog open={transferOpen} onOpenChange={(v) => {
-          setTransferOpen(v);
-          if (v) loadUsers();
-        }}>
+        <AlertDialog
+          open={transferOpen}
+          onOpenChange={(v) => {
+            setTransferOpen(v);
+            if (v) {
+              setSelectedValue('');
+              loadTransferData();
+            }
+          }}
+        >
           <AlertDialogTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="gap-1.5 text-xs"
-            >
+            <Button variant="ghost" size="sm" className="gap-1.5 text-xs">
               <UserCog className="h-3.5 w-3.5" />
               Transferir
             </Button>
@@ -163,19 +239,60 @@ export function ConversationTakeoverBar({
                 Selecione o novo responsável por este lead.
               </AlertDialogDescription>
             </AlertDialogHeader>
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+
+            <Select value={selectedValue} onValueChange={setSelectedValue}>
               <SelectTrigger>
-                <SelectValue placeholder="Selecione um usuário" />
+                <SelectValue placeholder="Selecione um destinatário" />
               </SelectTrigger>
               <SelectContent>
-                {users.map(u => (
-                  <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
-                ))}
+                {/* Grupo: Usuários Amélia */}
+                <SelectGroup>
+                  <SelectLabel>Usuários Amélia</SelectLabel>
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={`amelia:${u.id}`}>
+                      {u.nome}
+                    </SelectItem>
+                  ))}
+                </SelectGroup>
+
+                {/* Grupo: Atendentes Blue Chat */}
+                {hasBlueChatSection && (
+                  <>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel className="flex items-center gap-1.5">
+                        <Headset className="h-3.5 w-3.5" />
+                        Atendentes Blue Chat
+                      </SelectLabel>
+                      {blueChatAgents.length > 0 ? (
+                        blueChatAgents.map((a) => (
+                          <SelectItem
+                            key={a.id}
+                            value={`bluechat:${a.id}`}
+                            disabled={!bluechatTicketId}
+                          >
+                            {a.name}
+                          </SelectItem>
+                        ))
+                      ) : (
+                        <SelectItem value="__no_agents__" disabled>
+                          {bluechatTicketId
+                            ? 'Nenhum atendente disponível'
+                            : 'Lead sem conversa ativa no Blue Chat'}
+                        </SelectItem>
+                      )}
+                    </SelectGroup>
+                  </>
+                )}
               </SelectContent>
             </Select>
+
             <AlertDialogFooter>
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
-              <AlertDialogAction onClick={handleTransfer} disabled={!selectedUserId || transferring}>
+              <AlertDialogAction
+                onClick={handleTransfer}
+                disabled={!selectedValue || selectedValue === '__no_agents__' || transferring}
+              >
                 {transferring ? 'Transferindo...' : 'Confirmar'}
               </AlertDialogAction>
             </AlertDialogFooter>
