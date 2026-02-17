@@ -13,6 +13,7 @@ const createUserPayload = z.object({
   empresa: z.string().optional(),
   gestor_id: z.string().uuid().optional(),
   is_vendedor: z.boolean().optional(),
+  ramal: z.string().optional(),
 })
 
 import { getCorsHeaders } from "../_shared/cors.ts";
@@ -56,7 +57,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor } = parsed.data
+    const { email, nome, password, access_profile_id, empresa, gestor_id, is_vendedor, ramal } = parsed.data
     const adminClient = createServiceClient()
     const { data: newUser, error: createError } = await adminClient.auth.admin.createUser({
       email, password, email_confirm: true, user_metadata: { nome },
@@ -83,6 +84,15 @@ Deno.serve(async (req) => {
         empresa: empresa === 'all' ? null : empresa, assigned_by: caller.id,
       })
       if (assignError) log.error('Error assigning profile', { error: assignError.message })
+    }
+
+    // Insert ramal (zadarma extension) if provided
+    if (ramal && newUser.user) {
+      const extEmpresa = empresa && empresa !== 'all' ? empresa : 'BLUE'
+      const { error: ramalError } = await adminClient.from('zadarma_extensions').insert({
+        user_id: newUser.user.id, extension_number: ramal, empresa: extEmpresa,
+      })
+      if (ramalError) log.error('Error inserting ramal', { error: ramalError.message })
     }
 
     return new Response(JSON.stringify({ success: true, user: { id: newUser.user?.id, email: newUser.user?.email } }), {

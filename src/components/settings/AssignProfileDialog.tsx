@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAccessProfiles, useAssignProfile } from '@/hooks/useAccessControl';
+import { supabase } from '@/integrations/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
+import { toast } from 'sonner';
 
 interface Props {
   open: boolean;
@@ -23,11 +27,20 @@ const AVAILABLE_EMPRESAS: { value: 'BLUE' | 'TOKENIZA'; label: string }[] = [
 export function AssignProfileDialog({ open, onOpenChange, userId, userName, currentProfileId, currentEmpresas }: Props) {
   const { data: profiles = [] } = useAccessProfiles();
   const assignMutation = useAssignProfile();
+  const queryClient = useQueryClient();
 
   const [profileId, setProfileId] = useState(currentProfileId ?? '');
   const [selectedEmpresas, setSelectedEmpresas] = useState<('BLUE' | 'TOKENIZA')[]>(
     currentEmpresas && currentEmpresas.length > 0 ? currentEmpresas : ['BLUE']
   );
+  const [ramal, setRamal] = useState('');
+
+  useEffect(() => {
+    if (open && userId) {
+      supabase.from('zadarma_extensions').select('extension_number').eq('user_id', userId).limit(1).single()
+        .then(({ data }) => setRamal(data?.extension_number ?? ''));
+    }
+  }, [open, userId]);
 
   const toggleEmpresa = (empresa: 'BLUE' | 'TOKENIZA') => {
     setSelectedEmpresas(prev => {
@@ -40,11 +53,26 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!profileId || selectedEmpresas.length === 0) return;
     assignMutation.mutate(
       { user_id: userId, access_profile_id: profileId, empresas: selectedEmpresas },
-      { onSuccess: () => onOpenChange(false) }
+      {
+        onSuccess: async () => {
+          // Save ramal
+          if (ramal) {
+            await supabase.from('zadarma_extensions').upsert(
+              { user_id: userId, extension_number: ramal, empresa: selectedEmpresas[0] },
+              { onConflict: 'user_id,empresa' }
+            );
+          } else {
+            await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+          }
+          queryClient.invalidateQueries({ queryKey: ['zadarma-extensions-all'] });
+          queryClient.invalidateQueries({ queryKey: ['zadarma-my-extension'] });
+          onOpenChange(false);
+        },
+      }
     );
   };
 
@@ -83,6 +111,10 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
                 </label>
               ))}
             </div>
+          </div>
+          <div className="space-y-2">
+            <Label>Ramal</Label>
+            <Input value={ramal} onChange={e => setRamal(e.target.value)} placeholder="Ex: 100" />
           </div>
         </div>
 

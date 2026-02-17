@@ -34,7 +34,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
   const form = useForm<CreateUserFormData>({
     resolver: zodResolver(createUserSchema),
     defaultValues: {
-      nome: '', email: '', password: '', profileId: '', empresa: 'all', gestorId: 'none', isVendedor: false,
+      nome: '', email: '', password: '', profileId: '', empresa: 'all', gestorId: 'none', isVendedor: false, ramal: '',
     },
   });
 
@@ -51,6 +51,7 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
           empresa: data.empresa === 'all' ? undefined : data.empresa,
           gestor_id: data.gestorId === 'none' ? undefined : data.gestorId,
           is_vendedor: data.isVendedor,
+          ramal: data.ramal || undefined,
         },
       });
 
@@ -138,6 +139,14 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
                 <FormControl>
                   <Switch checked={field.value} onCheckedChange={field.onChange} />
                 </FormControl>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="ramal" render={({ field }) => (
+              <FormItem>
+                <FormLabel>Ramal</FormLabel>
+                <FormControl><Input {...field} placeholder="Ex: 100" /></FormControl>
+                <FormMessage />
               </FormItem>
             )} />
 
