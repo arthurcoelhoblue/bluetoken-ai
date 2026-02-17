@@ -5,17 +5,10 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import type { WorkbenchTarefa, WorkbenchSLAAlert, WorkbenchPipelineSummary, RecentDeal } from '@/types/workbench';
 
-type EmpresaEnum = 'BLUE' | 'TOKENIZA';
-
-function empresaFilter(activeCompany: string): EmpresaEnum {
-  return activeCompany as EmpresaEnum;
-}
-
 export function useWorkbenchTarefas() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const empresa = empresaFilter(activeCompany);
 
   // Realtime for deal_activities (tasks)
   useEffect(() => {
@@ -34,7 +27,7 @@ export function useWorkbenchTarefas() {
   }, [user?.id, qc]);
 
   return useQuery({
-    queryKey: ['workbench-tarefas', empresa, user?.id],
+    queryKey: ['workbench-tarefas', activeCompanies, user?.id],
     enabled: !!user?.id,
     queryFn: async (): Promise<WorkbenchTarefa[]> => {
       let query = supabase
@@ -43,9 +36,7 @@ export function useWorkbenchTarefas() {
         .eq('owner_id', user!.id)
         .order('tarefa_prazo', { ascending: true, nullsFirst: false });
 
-      if (empresa) {
-        query = query.eq('pipeline_empresa', empresa);
-      }
+      query = query.in('pipeline_empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -55,10 +46,9 @@ export function useWorkbenchTarefas() {
 }
 
 export function useWorkbenchSLAAlerts() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
   const qc = useQueryClient();
-  const empresa = empresaFilter(activeCompany);
 
   // Realtime: invalidate SLA alerts when deals change
   useEffect(() => {
@@ -77,7 +67,7 @@ export function useWorkbenchSLAAlerts() {
   }, [user?.id, qc]);
 
   return useQuery({
-    queryKey: ['workbench-sla', empresa, user?.id],
+    queryKey: ['workbench-sla', activeCompanies, user?.id],
     enabled: !!user?.id,
     refetchInterval: 30_000, // Reduced from 60s to 30s
     queryFn: async (): Promise<WorkbenchSLAAlert[]> => {
@@ -87,9 +77,7 @@ export function useWorkbenchSLAAlerts() {
         .eq('owner_id', user!.id)
         .order('sla_percentual', { ascending: false });
 
-      if (empresa) {
-        query = query.eq('pipeline_empresa', empresa);
-      }
+      query = query.in('pipeline_empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -99,12 +87,11 @@ export function useWorkbenchSLAAlerts() {
 }
 
 export function useWorkbenchPipelineSummary() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
-  const empresa = empresaFilter(activeCompany);
 
   return useQuery({
-    queryKey: ['workbench-pipeline-summary', empresa, user?.id],
+    queryKey: ['workbench-pipeline-summary', activeCompanies, user?.id],
     enabled: !!user?.id,
     queryFn: async (): Promise<WorkbenchPipelineSummary[]> => {
       let query = supabase
@@ -112,9 +99,7 @@ export function useWorkbenchPipelineSummary() {
         .select('*')
         .eq('owner_id', user!.id);
 
-      if (empresa) {
-        query = query.eq('pipeline_empresa', empresa);
-      }
+      query = query.in('pipeline_empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -124,12 +109,11 @@ export function useWorkbenchPipelineSummary() {
 }
 
 export function useWorkbenchRecentDeals() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
-  const empresa = empresaFilter(activeCompany);
 
   return useQuery({
-    queryKey: ['workbench-recent-deals', empresa, user?.id],
+    queryKey: ['workbench-recent-deals', activeCompanies, user?.id],
     enabled: !!user?.id,
     queryFn: async (): Promise<RecentDeal[]> => {
       const sevenDaysAgo = new Date();
@@ -148,9 +132,7 @@ export function useWorkbenchRecentDeals() {
         .order('updated_at', { ascending: false })
         .limit(20);
 
-      if (empresa) {
-        query = query.eq('pipelines.empresa', empresa);
-      }
+      query = query.in('pipelines.empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;

@@ -4,18 +4,17 @@ import type { CSPlaybook } from '@/types/customerSuccess';
 import { useCompany } from '@/contexts/CompanyContext';
 
 export function useCSPlaybooks() {
-  const { activeCompany } = useCompany();
-  const empresa = activeCompany;
+  const { activeCompanies } = useCompany();
   const queryClient = useQueryClient();
 
   const query = useQuery({
-    queryKey: ['cs-playbooks', empresa],
+    queryKey: ['cs-playbooks', activeCompanies],
     queryFn: async () => {
       let q = supabase
         .from('cs_playbooks')
         .select('*')
         .order('created_at', { ascending: false });
-      if (empresa) q = q.eq('empresa', empresa);
+      q = q.in('empresa', activeCompanies);
       const { data, error } = await q;
       if (error) throw error;
       return (data ?? []) as unknown as CSPlaybook[];

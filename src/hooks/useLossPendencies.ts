@@ -15,9 +15,9 @@ export interface LossPendency {
 }
 
 export function useLossPendencies() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['loss-pendencies', activeCompany],
+    queryKey: ['loss-pendencies', activeCompanies],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deals')
@@ -31,7 +31,7 @@ export function useLossPendencies() {
         .eq('status', 'PERDIDO')
         .eq('perda_resolvida', false)
         .not('categoria_perda_ia', 'is', null)
-        .eq('pipelines.empresa', activeCompany)
+        .in('pipelines.empresa', activeCompanies)
         .order('fechado_em', { ascending: false });
 
       if (error) throw error;

@@ -6,11 +6,11 @@ import type { CSCustomer, CSCustomerFilters } from '@/types/customerSuccess';
 const PAGE_SIZE = 25;
 
 export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
-  const { activeCompany } = useCompany();
-  const empresa = filters.empresa || activeCompany;
+  const { activeCompanies, activeCompany } = useCompany();
+  const empresa = filters.empresa || null;
 
   return useQuery({
-    queryKey: ['cs-customers', empresa, filters, page],
+    queryKey: ['cs-customers', empresa || activeCompanies, filters, page],
     queryFn: async () => {
       let query = supabase
         .from('cs_customers')
@@ -21,8 +21,10 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
         `, { count: 'exact' })
         .order('updated_at', { ascending: false });
 
-      if (empresa && empresa !== 'ALL') {
+      if (empresa) {
         query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA');
+      } else {
+        query = query.in('empresa', activeCompanies);
       }
       if (filters.health_status) query = query.eq('health_status', filters.health_status);
       if (filters.nps_categoria) query = query.eq('nps_categoria', filters.nps_categoria);

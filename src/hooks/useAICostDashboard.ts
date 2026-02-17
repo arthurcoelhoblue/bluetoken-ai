@@ -33,9 +33,9 @@ export interface AICostSummary {
 }
 
 export function useAICostDashboard(days: number = 30) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ["ai-cost-dashboard", days, activeCompany],
+    queryKey: ["ai-cost-dashboard", days, activeCompanies],
     queryFn: async (): Promise<AICostSummary> => {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
@@ -43,7 +43,7 @@ export function useAICostDashboard(days: number = 30) {
       const { data, error } = await supabase
         .from("ai_usage_log")
         .select("*")
-        .eq("empresa", activeCompany)
+        .in("empresa", activeCompanies)
         .gte("created_at", startDate.toISOString())
         .order("created_at", { ascending: false });
 

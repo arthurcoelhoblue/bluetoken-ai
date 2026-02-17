@@ -9,11 +9,11 @@ export function useOrganizationsPage(opts: {
   search?: string;
   page?: number;
 }) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { search, page = 0 } = opts;
 
   return useQuery({
-    queryKey: ['organizations_with_stats', activeCompany, search, page],
+    queryKey: ['organizations_with_stats', activeCompanies, search, page],
     queryFn: async (): Promise<{ data: OrganizationWithStats[]; count: number }> => {
       let query = supabase
         .from('organizations_with_stats')
@@ -22,7 +22,7 @@ export function useOrganizationsPage(opts: {
         .order('nome', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,cnpj.ilike.%${search}%,nome_fantasia.ilike.%${search}%`);
       }

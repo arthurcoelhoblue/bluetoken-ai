@@ -5,11 +5,11 @@ import { useAuth } from '@/contexts/AuthContext';
 import type { AmeliaLearning, AmeliaLearningStatus } from '@/types/learning';
 
 export function useAmeliaLearnings(statusFilter?: AmeliaLearningStatus) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['amelia-learnings', activeCompany, statusFilter],
+    queryKey: ['amelia-learnings', activeCompanies, statusFilter],
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
@@ -18,7 +18,7 @@ export function useAmeliaLearnings(statusFilter?: AmeliaLearningStatus) {
         .order('created_at', { ascending: false })
         .limit(50);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       if (statusFilter) {
         query = query.eq('status', statusFilter);
@@ -32,11 +32,11 @@ export function useAmeliaLearnings(statusFilter?: AmeliaLearningStatus) {
 }
 
 export function useAmeliaSequenceAlerts() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['amelia-sequence-alerts', activeCompany],
+    queryKey: ['amelia-sequence-alerts', activeCompanies],
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
@@ -48,7 +48,7 @@ export function useAmeliaSequenceAlerts() {
         .order('confianca', { ascending: false })
         .limit(20);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
@@ -82,11 +82,11 @@ export function useValidateLearning() {
 }
 
 export function useRecentAlerts() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { user } = useAuth();
 
   return useQuery({
-    queryKey: ['amelia-recent-alerts', activeCompany],
+    queryKey: ['amelia-recent-alerts', activeCompanies],
     enabled: !!user?.id,
     queryFn: async (): Promise<AmeliaLearning[]> => {
       let query = supabase
@@ -96,7 +96,7 @@ export function useRecentAlerts() {
         .order('created_at', { ascending: false })
         .limit(5);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;

@@ -3,6 +3,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useAccessProfiles, useAssignProfile } from '@/hooks/useAccessControl';
 
 interface Props {
@@ -11,20 +12,38 @@ interface Props {
   userId: string;
   userName: string;
   currentProfileId?: string | null;
-  currentEmpresa?: string | null;
+  currentEmpresas?: ('BLUE' | 'TOKENIZA')[];
 }
 
-export function AssignProfileDialog({ open, onOpenChange, userId, userName, currentProfileId, currentEmpresa }: Props) {
+const AVAILABLE_EMPRESAS: { value: 'BLUE' | 'TOKENIZA'; label: string }[] = [
+  { value: 'BLUE', label: 'Blue Consult' },
+  { value: 'TOKENIZA', label: 'Tokeniza' },
+];
+
+export function AssignProfileDialog({ open, onOpenChange, userId, userName, currentProfileId, currentEmpresas }: Props) {
   const { data: profiles = [] } = useAccessProfiles();
   const assignMutation = useAssignProfile();
 
   const [profileId, setProfileId] = useState(currentProfileId ?? '');
-  const [empresa, setEmpresa] = useState<string>(currentEmpresa ?? 'all');
+  const [selectedEmpresas, setSelectedEmpresas] = useState<('BLUE' | 'TOKENIZA')[]>(
+    currentEmpresas && currentEmpresas.length > 0 ? currentEmpresas : ['BLUE']
+  );
+
+  const toggleEmpresa = (empresa: 'BLUE' | 'TOKENIZA') => {
+    setSelectedEmpresas(prev => {
+      if (prev.includes(empresa)) {
+        // Don't allow deselecting all
+        if (prev.length <= 1) return prev;
+        return prev.filter(e => e !== empresa);
+      }
+      return [...prev, empresa];
+    });
+  };
 
   const handleSave = () => {
-    if (!profileId) return;
+    if (!profileId || selectedEmpresas.length === 0) return;
     assignMutation.mutate(
-      { user_id: userId, access_profile_id: profileId, empresa: empresa === 'all' ? null : empresa as 'BLUE' | 'TOKENIZA' },
+      { user_id: userId, access_profile_id: profileId, empresas: selectedEmpresas },
       { onSuccess: () => onOpenChange(false) }
     );
   };
@@ -52,23 +71,24 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
           </div>
 
           <div className="space-y-2">
-            <Label>Empresa</Label>
-            <Select value={empresa} onValueChange={setEmpresa}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                <SelectItem value="BLUE">Blue</SelectItem>
-                <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-              </SelectContent>
-            </Select>
+            <Label>Empresas</Label>
+            <div className="space-y-2">
+              {AVAILABLE_EMPRESAS.map(emp => (
+                <label key={emp.value} className="flex items-center gap-2 cursor-pointer">
+                  <Checkbox
+                    checked={selectedEmpresas.includes(emp.value)}
+                    onCheckedChange={() => toggleEmpresa(emp.value)}
+                  />
+                  <span className="text-sm">{emp.label}</span>
+                </label>
+              ))}
+            </div>
           </div>
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSave} disabled={!profileId || assignMutation.isPending}>
+          <Button onClick={handleSave} disabled={!profileId || selectedEmpresas.length === 0 || assignMutation.isPending}>
             {assignMutation.isPending ? 'Salvando...' : 'Salvar'}
           </Button>
         </DialogFooter>

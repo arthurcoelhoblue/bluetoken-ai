@@ -25,11 +25,10 @@ export function useNextBestAction() {
   const query = useQuery({
     queryKey: ['next-best-action', user?.id, activeCompany],
     enabled: !!user?.id,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     queryFn: async (): Promise<NBAResponse> => {
-      const empresa = activeCompany;
       const { data, error } = await supabase.functions.invoke('next-best-action', {
-        body: { user_id: user!.id, empresa },
+        body: { user_id: user!.id, empresa: activeCompany },
       });
 
       if (error) throw error;

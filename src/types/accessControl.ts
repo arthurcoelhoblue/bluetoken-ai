@@ -32,7 +32,10 @@ export interface UserWithAccess {
   nome: string | null;
   avatar_url: string | null;
   is_active: boolean;
-  assignment: UserAccessAssignment | null;
+  is_vendedor: boolean;
+  /** All empresa assignments for this user */
+  assignments: UserAccessAssignment[];
+  /** Primary profile name (from first assignment) */
   profile_name: string | null;
 }
 

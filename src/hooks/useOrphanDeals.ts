@@ -14,9 +14,9 @@ export interface OrphanDeal {
 }
 
 export function useOrphanDeals() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['orphan-deals', activeCompany],
+    queryKey: ['orphan-deals', activeCompanies],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deals')
@@ -27,7 +27,7 @@ export function useOrphanDeals() {
         `)
         .is('owner_id', null)
         .eq('status', 'ABERTO')
-        .eq('pipelines.empresa', activeCompany)
+        .in('pipelines.empresa', activeCompanies)
         .order('created_at', { ascending: false });
       if (error) throw error;
       return (data ?? []).map((d) => {

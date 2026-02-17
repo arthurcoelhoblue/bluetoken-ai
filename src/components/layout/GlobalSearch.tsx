@@ -26,7 +26,7 @@ export function GlobalSearch() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const navigate = useNavigate();
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   // ⌘K / Ctrl+K shortcut
   useEffect(() => {
@@ -57,7 +57,7 @@ export function GlobalSearch() {
         .select('id, nome, email, telefone, empresa')
         .ilike('nome', searchTerm)
         .limit(5);
-      contactsQuery = contactsQuery.eq('empresa', activeCompany);
+      contactsQuery = contactsQuery.in('empresa', activeCompanies);
 
       // Build deals query — filter via pipeline join for empresa isolation
       let dealsQuery = supabase
@@ -65,7 +65,7 @@ export function GlobalSearch() {
         .select('id, titulo, valor, pipelines!inner(empresa)')
         .ilike('titulo', searchTerm)
         .limit(5);
-      dealsQuery = dealsQuery.eq('pipelines.empresa', activeCompany as 'BLUE' | 'TOKENIZA');
+      dealsQuery = dealsQuery.in('pipelines.empresa', activeCompanies);
 
       // Build orgs query with empresa filter
       let orgsQuery = supabase
@@ -73,7 +73,7 @@ export function GlobalSearch() {
         .select('id, nome, empresa')
         .ilike('nome', searchTerm)
         .limit(5);
-      orgsQuery = orgsQuery.eq('empresa', activeCompany);
+      orgsQuery = orgsQuery.in('empresa', activeCompanies);
 
       const [contactsRes, dealsRes, orgsRes] = await Promise.all([
         contactsQuery,
@@ -118,7 +118,7 @@ export function GlobalSearch() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [query, activeCompany]);
+  }, [query, activeCompanies]);
 
   const handleSelect = useCallback(
     (result: SearchResult) => {

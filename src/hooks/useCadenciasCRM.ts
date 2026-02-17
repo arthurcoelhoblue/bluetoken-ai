@@ -4,12 +4,12 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { CadenciaCRM, DealCadenciaStatus, StartDealCadencePayload } from '@/types/cadence';
 
 export function useCadenciasCRM() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['cadencias-crm', activeCompany],
+    queryKey: ['cadencias-crm', activeCompanies],
     queryFn: async () => {
       let query = supabase.from('cadencias_crm').select('*');
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       const { data, error } = await query;
       if (error) throw error;
       return (data ?? []) as unknown as CadenciaCRM[];
