@@ -19,13 +19,14 @@ interface Props {
   currentNome: string;
   currentEmail: string;
   currentIsVendedor: boolean;
+  currentIsActive: boolean;
   currentGestorId: string | null;
   currentRamal: string;
 }
 
 export function EditUserDialog({
   open, onOpenChange, userId, currentNome, currentEmail,
-  currentIsVendedor, currentGestorId, currentRamal,
+  currentIsVendedor, currentIsActive, currentGestorId, currentRamal,
 }: Props) {
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],
@@ -42,6 +43,7 @@ export function EditUserDialog({
     defaultValues: {
       nome: currentNome || '',
       isVendedor: currentIsVendedor,
+      isActive: currentIsActive,
       gestorId: currentGestorId || 'none',
       ramal: currentRamal || '',
     },
@@ -52,11 +54,12 @@ export function EditUserDialog({
       form.reset({
         nome: currentNome || '',
         isVendedor: currentIsVendedor,
+        isActive: currentIsActive,
         gestorId: currentGestorId || 'none',
         ramal: currentRamal || '',
       });
     }
-  }, [open, currentNome, currentIsVendedor, currentGestorId, currentRamal, form]);
+  }, [open, currentNome, currentIsVendedor, currentIsActive, currentGestorId, currentRamal, form]);
 
   const handleSubmit = async (data: EditUserFormData) => {
     try {
@@ -64,6 +67,7 @@ export function EditUserDialog({
       const { error: profileError } = await supabase.from('profiles').update({
         nome: data.nome.trim(),
         is_vendedor: data.isVendedor,
+        is_active: data.isActive,
         gestor_id: data.gestorId === 'none' ? null : data.gestorId,
       }).eq('id', userId);
 
@@ -130,6 +134,18 @@ export function EditUserDialog({
                     ))}
                   </SelectContent>
                 </Select>
+              </FormItem>
+            )} />
+
+            <FormField control={form.control} name="isActive" render={({ field }) => (
+              <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-0.5">
+                  <FormLabel>Ativo</FormLabel>
+                  <FormDescription>Usuários inativos não conseguem acessar o sistema</FormDescription>
+                </div>
+                <FormControl>
+                  <Switch checked={field.value} onCheckedChange={field.onChange} />
+                </FormControl>
               </FormItem>
             )} />
 
