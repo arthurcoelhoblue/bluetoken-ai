@@ -1,103 +1,62 @@
 
 
-# Isolamento Multi-Tenant em Batch Mode -- forEachEmpresa
+# Fix: "Próximo Passo" Vazio na Tela Meu Dia
 
----
+## Diagnostico
 
-## Problema
+O problema NAO foi causado pelas mudancas de multi-tenant. A causa raiz e:
 
-Quatro funcoes processam TODOS os registros sem filtro de empresa quando chamadas em batch (CRON):
+1. **Dados faltantes**: Seu usuario (`arthur@tokeniza.com.br`) tem `empresa: NULL` na tabela `user_access_assignments`. Isso faz a funcao `get_user_empresa()` retornar NULL, quebrando todas as policies RLS.
+2. **Zero deals atribuidos**: Voce nao tem nenhum deal como `owner_id`, entao todas as queries de contexto (tarefas, SLA, deals parados) retornam vazio.
+3. **AI parse falha**: Com contexto vazio, a IA retorna algo que nao parseia corretamente. O fallback tambem nao encontra nada, resultando em `acoes: []`.
 
-| Funcao | Linha problematica | O que faz |
-|--------|-------------------|-----------|
-| `deal-scoring` | L54-65 | Sem `empresa` no body, busca TODOS os deals abertos |
-| `cs-health-calculator` | L39-41 | Sem `customer_id`, busca TODOS os cs_customers ativos |
-| `cs-ai-actions/churn-predict` | L55-58 | Busca TODOS os cs_customers ativos sem filtro |
-| `cs-ai-actions/detect-incidents` | L123-124 | Busca TODOS os cs_customers ativos sem filtro |
+### Evidencias (dados do banco)
 
-## Solucao
+```text
+user_access_assignments:
+  user_id: 3eb15a6a-..., empresa: NULL  <-- problema
 
-Aplicar o mesmo padrao `forEachEmpresa` que `cs-scheduled-jobs/trending-topics` ja usa (linhas 194-228): iterar `for (const empresa of EMPRESAS)` e filtrar cada query por empresa.
+deals com owner_id = seu_id: 0 registros
 
----
-
-## Mudancas por Arquivo
-
-### 1. `supabase/functions/deal-scoring/index.ts`
-
-Importar `EMPRESAS` ou definir localmente. No batch mode (sem `deal_id` e sem `empresa`), iterar por empresa:
-
-```typescript
-// Antes (L54-65):
-if (!empresa) { query = query.limit(200); }
-
-// Depois:
-if (!targetDealId && !empresa) {
-  // forEachEmpresa
-  const allResults = [];
-  for (const emp of ['BLUE', 'TOKENIZA']) {
-    const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', emp);
-    // ... processar deals desse tenant
-  }
-  return response;
-}
+workbench_tarefas (BLUE): 0 registros
+workbench_sla_alerts (BLUE): 0 registros
 ```
 
-### 2. `supabase/functions/cs-health-calculator/index.ts`
+## Solucao (2 partes)
 
-No batch mode (sem `customer_id`), iterar por empresa:
+### Parte 1: Corrigir dados (SQL)
 
-```typescript
-// Antes (L39-41):
-const { data } = await supabase.from('cs_customers').select('id').eq('is_active', true);
+Executar uma migration para atribuir empresa aos usuarios que estao com NULL:
 
-// Depois:
-for (const empresa of EMPRESAS) {
-  const { data } = await supabase.from('cs_customers')
-    .select('id').eq('is_active', true).eq('empresa', empresa);
-  // processar por tenant
-}
+```sql
+UPDATE user_access_assignments
+SET empresa = 'BLUE'
+WHERE empresa IS NULL;
 ```
 
-### 3. `supabase/functions/cs-ai-actions/index.ts` -- churn-predict
+Antes de executar, vou confirmar com voce qual empresa atribuir para cada usuario (BLUE ou TOKENIZA). Os usuarios afetados sao:
+- `arthur@tokeniza.com.br` (Arthur Coelho)
+- 2 outros usuarios com empresa NULL
 
-```typescript
-// Antes (L55-58):
-const { data: customers } = await supabase.from('cs_customers')
-  .select('...').eq('is_active', true);
+### Parte 2: Tornar o NBA mais resiliente (codigo)
 
-// Depois:
-for (const empresa of EMPRESAS) {
-  const { data: customers } = await supabase.from('cs_customers')
-    .select('...').eq('is_active', true).eq('empresa', empresa);
-  // processar por tenant
-}
-```
+Mesmo com dados corretos, o card deveria lidar melhor com cenarios vazios. Mudancas:
 
-### 4. `supabase/functions/cs-ai-actions/index.ts` -- detect-incidents
+1. **`next-best-action/index.ts`**: Melhorar o log de erro para incluir o conteudo raw da IA (facilita debug futuro). Adicionar fallback que gera mensagem motivacional mesmo sem dados.
 
-```typescript
-// Antes (L123-124):
-const { data: customers } = await supabase.from('cs_customers')
-  .select('...').eq('is_active', true);
+2. **`NextBestActionCard.tsx`**: Quando `acoes` esta vazio e nao ha erro, mostrar uma mensagem contextual diferente (ex: "Nenhum deal atribuido -- comece criando um deal no pipeline") ao inves do generico "Tudo em dia!".
 
-// Depois:
-for (const empresa of EMPRESAS) {
-  const { data: customers } = await supabase.from('cs_customers')
-    .select('...').eq('is_active', true).eq('empresa', empresa);
-  // processar por tenant
-}
-```
+## Arquivos impactados
 
----
+| Arquivo | Mudanca |
+|---------|---------|
+| Migration SQL | UPDATE empresa NULL para valor correto |
+| `supabase/functions/next-best-action/index.ts` | Melhorar log + fallback vazio |
+| `src/components/workbench/NextBestActionCard.tsx` | Mensagem contextual quando sem dados |
 
-## Resumo
+## Sequencia
 
-| Arquivo | Tipo de mudanca |
-|---------|----------------|
-| `supabase/functions/deal-scoring/index.ts` | Adicionar loop forEachEmpresa no batch mode |
-| `supabase/functions/cs-health-calculator/index.ts` | Adicionar loop forEachEmpresa no batch mode |
-| `supabase/functions/cs-ai-actions/index.ts` | Adicionar .eq('empresa') em churn-predict e detect-incidents |
-
-Total: 3 arquivos editados. Zero impacto no modo single (deal_id/customer_id), que continua funcionando igual.
-
+1. Confirmar empresas corretas para usuarios com NULL
+2. Executar migration SQL
+3. Ajustar edge function e componente
+4. Testar chamando a funcao novamente
