@@ -16,6 +16,7 @@ export type CreateUserFormData = z.infer<typeof createUserSchema>;
 export const editUserSchema = z.object({
   nome: z.string().trim().min(2, 'Nome deve ter no mínimo 2 caracteres').max(100, 'Máximo 100 caracteres'),
   isVendedor: z.boolean().default(false),
+  isActive: z.boolean().default(true),
   gestorId: z.string().default('none'),
   ramal: z.string().optional().or(z.literal('')),
 });

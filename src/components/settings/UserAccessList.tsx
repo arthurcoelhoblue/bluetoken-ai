@@ -243,6 +243,7 @@ export function UserAccessList() {
           currentNome={editTarget.nome || ''}
           currentEmail={editTarget.email}
           currentIsVendedor={editTarget.is_vendedor ?? false}
+          currentIsActive={editTarget.is_active ?? true}
           currentGestorId={(editTarget as any).gestor_id ?? null}
           currentRamal={getRamal(editTarget.id)}
         />
