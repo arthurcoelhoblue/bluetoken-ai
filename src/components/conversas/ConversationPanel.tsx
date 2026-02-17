@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { Mail, ExternalLink, Headset } from 'lucide-react';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { supabase } from '@/integrations/supabase/client';
+import { buildBluechatDeepLink } from '@/utils/bluechat';
 import type { LeadMessageWithContext } from '@/types/messaging';
 import type { AtendimentoModo } from '@/types/conversas';
 
@@ -44,9 +45,9 @@ export function ConversationPanel({
 }: ConversationPanelProps) {
   const [emailOpen, setEmailOpen] = useState(false);
   const [bluechatConversationId, setBluechatConversationId] = useState<string | null>(null);
-  const { isBluechat, bluechatFrontendUrl } = useChannelConfig(empresa);
+  const { isBluechat } = useChannelConfig(empresa);
 
-  // Fetch bluechat_conversation_id from framework_data
+  // Fetch bluechat_conversation_id from framework_data (kept for transfers)
   useEffect(() => {
     if (!leadId || !empresa) return;
 
@@ -66,16 +67,14 @@ export function ConversationPanel({
       });
   }, [leadId, empresa]);
 
-  const bluechatDeepLink =
-    isBluechat && bluechatFrontendUrl && bluechatConversationId
-      ? `${bluechatFrontendUrl}/conversation/${bluechatConversationId}`
-      : null;
+  const bluechatDeepLink = isBluechat ? buildBluechatDeepLink(empresa, telefone || '') : null;
 
   return (
     <div className="space-y-3">
       <ConversationTakeoverBar
         leadId={leadId}
         empresa={empresa}
+        telefone={telefone}
         modo={modo}
         assumidoPorNome={assumidoPorNome}
         bluechatConversationId={bluechatConversationId}

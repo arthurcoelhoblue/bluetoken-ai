@@ -26,6 +26,7 @@ import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset, ExternalLink } from '
 import { useConversationTakeover } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { supabase } from '@/integrations/supabase/client';
+import { buildBluechatDeepLink } from '@/utils/bluechat';
 import { toast } from '@/hooks/use-toast';
 import type { AtendimentoModo } from '@/types/conversas';
 
@@ -37,6 +38,7 @@ interface BlueChatAgent {
 interface ConversationTakeoverBarProps {
   leadId: string;
   empresa: string;
+  telefone?: string | null;
   modo: AtendimentoModo;
   assumidoPorNome?: string | null;
   isLoading?: boolean;
@@ -46,6 +48,7 @@ interface ConversationTakeoverBarProps {
 export function ConversationTakeoverBar({
   leadId,
   empresa,
+  telefone,
   modo,
   assumidoPorNome,
   isLoading,
@@ -60,7 +63,7 @@ export function ConversationTakeoverBar({
   const [selectedValue, setSelectedValue] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
   const takeover = useConversationTakeover();
-  const { isBluechat, bluechatFrontendUrl } = useChannelConfig(empresa);
+  const { isBluechat } = useChannelConfig(empresa);
 
   const isManual = modo === 'MANUAL';
 
@@ -132,11 +135,11 @@ export function ConversationTakeoverBar({
         onSuccess: () => {
           setOpen(false);
           // In Blue Chat mode, open Blue Chat on "Assumir"
-          if (!isManual && isBluechat && bluechatFrontendUrl && bluechatConversationId) {
-            window.open(
-              `${bluechatFrontendUrl}/conversation/${bluechatConversationId}`,
-              '_blank'
-            );
+          if (!isManual && isBluechat) {
+            const deepLink = buildBluechatDeepLink(empresa, telefone || '');
+            if (deepLink) {
+              window.open(deepLink, '_blank');
+            }
           }
         },
         onError: () => setOpen(false),

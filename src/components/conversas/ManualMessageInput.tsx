@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Send, AlertCircle, ExternalLink } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
+import { buildBluechatDeepLink } from '@/utils/bluechat';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -24,7 +25,7 @@ export function ManualMessageInput({
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
-  const { isBluechat, bluechatFrontendUrl } = useChannelConfig(empresa);
+  const { isBluechat } = useChannelConfig(empresa);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -63,11 +64,9 @@ export function ManualMessageInput({
   };
 
   const handleOpenBluechat = () => {
-    if (bluechatFrontendUrl && bluechatConversationId) {
-      window.open(
-        `${bluechatFrontendUrl}/conversation/${bluechatConversationId}`,
-        '_blank'
-      );
+    const deepLink = buildBluechatDeepLink(empresa, telefone || '');
+    if (deepLink) {
+      window.open(deepLink, '_blank');
     }
   };
 
@@ -82,11 +81,11 @@ export function ManualMessageInput({
 
   // ── Blue Chat mode: show link to Blue Chat + optional send via API ──
   if (isBluechat) {
-    const canDeepLink = bluechatFrontendUrl && bluechatConversationId;
+    const deepLink = buildBluechatDeepLink(empresa, telefone || '');
 
     return (
       <div className="space-y-2">
-        {canDeepLink && (
+        {deepLink && (
           <Button
             variant="outline"
             size="sm"

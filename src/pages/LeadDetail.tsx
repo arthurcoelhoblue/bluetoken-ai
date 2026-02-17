@@ -47,12 +47,7 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { Temperatura } from '@/types/classification';
 import type { EmpresaTipo } from '@/types/sgt';
-
-const BLUECHAT_BASE_URL = 'https://chat.grupoblue.com.br';
-const EMPRESA_TO_SLUG: Record<string, string> = {
-  TOKENIZA: 'tokeniza',
-  BLUE: 'blue-consult',
-};
+import { buildBluechatDeepLink } from '@/utils/bluechat';
 
 function TemperatureBadge({ temperatura }: { temperatura: Temperatura }) {
   const colorMap: Record<Temperatura, string> = {
@@ -202,14 +197,14 @@ function LeadDetailContent() {
                 telefone={contact.telefone}
                 nome={contact.nome || contact.primeiro_nome}
               />
-              {contact.telefone && (
+              {contact.telefone && buildBluechatDeepLink(contact.empresa, contact.telefone) && (
                 <Button
                   variant="outline"
                   className="w-full border-green-500/30 text-green-600 hover:bg-green-50 hover:text-green-700"
                   asChild
                 >
                   <a
-                    href={`${BLUECHAT_BASE_URL}/open/${EMPRESA_TO_SLUG[contact.empresa] || contact.empresa.toLowerCase()}/${contact.telefone.replace(/\D/g, '')}`}
+                    href={buildBluechatDeepLink(contact.empresa, contact.telefone)!}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
