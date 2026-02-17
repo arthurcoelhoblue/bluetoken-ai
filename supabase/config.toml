@@ -128,3 +128,6 @@ verify_jwt = false
 
 [functions.sgt-sync-clientes]
 verify_jwt = false
+
+[functions.bluechat-proxy]
+verify_jwt = false
