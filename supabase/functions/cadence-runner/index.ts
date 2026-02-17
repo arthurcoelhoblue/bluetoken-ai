@@ -7,6 +7,7 @@ import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from ".
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 
 const log = createLogger('cadence-runner');
+const MAX_RETRIES = 3;
 const corsHeaders = getWebhookCorsHeaders();
 
 // ========================================
@@ -427,6 +428,72 @@ async function processarCadenciasVencidas(supabase: SupabaseClient): Promise<Pro
   return results;
 }
 
+// ========================================
+// ESCALAÇÃO ANTI-LIMBO (max retries)
+// ========================================
+async function contarErrosStep(
+  supabase: SupabaseClient,
+  runId: string,
+  stepOrdem: number,
+): Promise<number> {
+  const { count } = await supabase
+    .from('lead_cadence_events')
+    .select('*', { count: 'exact', head: true })
+    .eq('lead_cadence_run_id', runId)
+    .eq('step_ordem', stepOrdem)
+    .eq('tipo_evento', 'ERRO');
+  return count ?? 0;
+}
+
+async function escalarErroPermanente(
+  supabase: SupabaseClient,
+  run: LeadCadenceRun,
+  currentStep: CadenceStep,
+  erro: string,
+): Promise<void> {
+  log.warn('Max retries atingido, pausando run', { runId: run.id, step: currentStep.ordem, erro });
+
+  // 1. Pausar run
+  await supabase
+    .from('lead_cadence_runs')
+    .update({ status: 'PAUSADA', next_run_at: null, updated_at: new Date().toISOString() })
+    .eq('id', run.id);
+
+  // 2. Evento final
+  await supabase.from('lead_cadence_events').insert({
+    lead_cadence_run_id: run.id,
+    step_ordem: currentStep.ordem,
+    template_codigo: currentStep.template_codigo,
+    tipo_evento: 'ERRO',
+    detalhes: { error: erro, motivo: 'max_retries_exceeded', tentativas: MAX_RETRIES },
+  });
+
+  // 3. Notificar owner do lead
+  const { data: contact } = await supabase
+    .from('lead_contacts')
+    .select('owner_id, nome')
+    .eq('lead_id', run.lead_id)
+    .eq('empresa', run.empresa)
+    .maybeSingle();
+
+  const ownerId = contact?.owner_id;
+  if (ownerId) {
+    await supabase.from('notifications').insert({
+      user_id: ownerId,
+      empresa: run.empresa,
+      titulo: 'Cadência pausada por erro recorrente',
+      mensagem: `Step ${currentStep.ordem} falhou ${MAX_RETRIES}x para ${contact?.nome || 'lead'}. Erro: ${erro}`,
+      tipo: 'ALERTA',
+      referencia_tipo: 'LEAD',
+      referencia_id: run.lead_id,
+      link: '/conversas',
+    });
+    log.info('Notificação criada para owner', { ownerId, leadId: run.lead_id });
+  } else {
+    log.warn('Sem owner_id para notificar', { leadId: run.lead_id });
+  }
+}
+
 async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Promise<ProcessResult> {
   log.info('Processando run', { runId: run.id, leadId: run.lead_id, step: run.next_step_ordem });
 
@@ -556,31 +623,32 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     .maybeSingle();
 
   if (contactError || !contact) {
-    log.error('Contato não encontrado para lead', { leadId: run.lead_id });
-    
-    await supabase.from('lead_cadence_events').insert({
-      lead_cadence_run_id: run.id,
-      step_ordem: currentStep.ordem,
-      template_codigo: currentStep.template_codigo,
-      tipo_evento: 'ERRO',
-      detalhes: { error: 'Contato do lead não encontrado' },
-    });
+    const erroMsg = 'Contato do lead não encontrado';
+    log.error(erroMsg, { leadId: run.lead_id });
 
-    await supabase
-      .from('lead_cadence_runs')
-      .update({ 
-        next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+    const erroCount = await contarErrosStep(supabase, run.id, currentStep.ordem);
+
+    if (erroCount >= MAX_RETRIES - 1) {
+      await escalarErroPermanente(supabase, run, currentStep, erroMsg);
+      return {
+        runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+        templateCodigo: currentStep.template_codigo, status: 'ERRO',
+        erro: `${erroMsg} (pausada após ${MAX_RETRIES} tentativas)`,
+      };
+    }
+
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id, step_ordem: currentStep.ordem,
+      template_codigo: currentStep.template_codigo, tipo_evento: 'ERRO',
+      detalhes: { error: erroMsg, tentativa: erroCount + 1 },
+    });
+    await supabase.from('lead_cadence_runs')
+      .update({ next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), updated_at: new Date().toISOString() })
       .eq('id', run.id);
 
     return {
-      runId: run.id,
-      leadId: run.lead_id,
-      stepOrdem: currentStep.ordem,
-      templateCodigo: currentStep.template_codigo,
-      status: 'ERRO',
-      erro: 'Contato do lead não encontrado',
+      runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+      templateCodigo: currentStep.template_codigo, status: 'ERRO', erro: erroMsg,
     };
   }
 
@@ -593,31 +661,32 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!mensagemResolvida.success) {
-    log.warn('Mensagem não resolvida (dados incompletos)', { error: mensagemResolvida.error });
-    
-    await supabase.from('lead_cadence_events').insert({
-      lead_cadence_run_id: run.id,
-      step_ordem: currentStep.ordem,
-      template_codigo: currentStep.template_codigo,
-      tipo_evento: 'ERRO',
-      detalhes: { error: mensagemResolvida.error },
-    });
+    const erroMsg = mensagemResolvida.error || 'Erro ao resolver mensagem';
+    log.warn('Mensagem não resolvida (dados incompletos)', { error: erroMsg });
 
-    await supabase
-      .from('lead_cadence_runs')
-      .update({ 
-        next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+    const erroCount = await contarErrosStep(supabase, run.id, currentStep.ordem);
+
+    if (erroCount >= MAX_RETRIES - 1) {
+      await escalarErroPermanente(supabase, run, currentStep, erroMsg);
+      return {
+        runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+        templateCodigo: currentStep.template_codigo, status: 'ERRO',
+        erro: `${erroMsg} (pausada após ${MAX_RETRIES} tentativas)`,
+      };
+    }
+
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id, step_ordem: currentStep.ordem,
+      template_codigo: currentStep.template_codigo, tipo_evento: 'ERRO',
+      detalhes: { error: erroMsg, tentativa: erroCount + 1 },
+    });
+    await supabase.from('lead_cadence_runs')
+      .update({ next_run_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), updated_at: new Date().toISOString() })
       .eq('id', run.id);
 
     return {
-      runId: run.id,
-      leadId: run.lead_id,
-      stepOrdem: currentStep.ordem,
-      templateCodigo: currentStep.template_codigo,
-      status: 'ERRO',
-      erro: mensagemResolvida.error,
+      runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+      templateCodigo: currentStep.template_codigo, status: 'ERRO', erro: erroMsg,
     };
   }
 
@@ -634,31 +703,32 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
   );
 
   if (!disparo.success) {
-    log.warn('Disparo não realizado (pré-condição não atendida)', { error: disparo.error });
-    
-    await supabase.from('lead_cadence_events').insert({
-      lead_cadence_run_id: run.id,
-      step_ordem: currentStep.ordem,
-      template_codigo: currentStep.template_codigo,
-      tipo_evento: 'ERRO',
-      detalhes: { error: disparo.error, to: mensagemResolvida.to },
-    });
+    const erroMsg = disparo.error || 'Erro no disparo';
+    log.warn('Disparo não realizado (pré-condição não atendida)', { error: erroMsg });
 
-    await supabase
-      .from('lead_cadence_runs')
-      .update({ 
-        next_run_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
-        updated_at: new Date().toISOString(),
-      })
+    const erroCount = await contarErrosStep(supabase, run.id, currentStep.ordem);
+
+    if (erroCount >= MAX_RETRIES - 1) {
+      await escalarErroPermanente(supabase, run, currentStep, erroMsg);
+      return {
+        runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+        templateCodigo: currentStep.template_codigo, status: 'ERRO',
+        erro: `${erroMsg} (pausada após ${MAX_RETRIES} tentativas)`,
+      };
+    }
+
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id, step_ordem: currentStep.ordem,
+      template_codigo: currentStep.template_codigo, tipo_evento: 'ERRO',
+      detalhes: { error: erroMsg, to: mensagemResolvida.to, tentativa: erroCount + 1 },
+    });
+    await supabase.from('lead_cadence_runs')
+      .update({ next_run_at: new Date(Date.now() + 15 * 60 * 1000).toISOString(), updated_at: new Date().toISOString() })
       .eq('id', run.id);
 
     return {
-      runId: run.id,
-      leadId: run.lead_id,
-      stepOrdem: currentStep.ordem,
-      templateCodigo: currentStep.template_codigo,
-      status: 'ERRO',
-      erro: disparo.error,
+      runId: run.id, leadId: run.lead_id, stepOrdem: currentStep.ordem,
+      templateCodigo: currentStep.template_codigo, status: 'ERRO', erro: erroMsg,
     };
   }
 
