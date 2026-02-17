@@ -11,11 +11,11 @@ export function useContactsPage(opts: {
   clienteFilter?: string;
   page?: number;
 }) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const { search, tipoFilter, clienteFilter, page = 0 } = opts;
 
   return useQuery({
-    queryKey: ['contacts_with_stats', activeCompany, search, tipoFilter, clienteFilter, page],
+    queryKey: ['contacts_with_stats', activeCompanies, search, tipoFilter, clienteFilter, page],
     queryFn: async (): Promise<{ data: ContactWithStats[]; count: number }> => {
       let query = supabase
         .from('contacts_with_stats' as never)
@@ -24,7 +24,7 @@ export function useContactsPage(opts: {
         .order('created_at', { ascending: false })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);
       }

@@ -20,19 +20,19 @@ export interface AppNotification {
 
 export function useNotifications() {
   const { user } = useAuth();
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   const queryClient = useQueryClient();
   const permissionAsked = useRef(false);
 
   const query = useQuery({
-    queryKey: ['notifications', user?.id, activeCompany],
+    queryKey: ['notifications', user?.id, activeCompanies],
     enabled: !!user?.id,
     queryFn: async (): Promise<AppNotification[]> => {
       const { data, error } = await supabase
         .from('notifications')
         .select('*')
         .eq('user_id', user!.id)
-        .eq('empresa', activeCompany)
+        .in('empresa', activeCompanies)
         .order('created_at', { ascending: false })
         .limit(30);
 

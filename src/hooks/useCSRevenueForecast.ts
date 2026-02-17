@@ -24,17 +24,17 @@ const WEIGHTS: Record<string, number> = {
 };
 
 export function useCSRevenueForecast() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['cs-revenue-forecast', activeCompany],
+    queryKey: ['cs-revenue-forecast', activeCompanies],
     queryFn: async (): Promise<CSRevenueForecast> => {
       let query = supabase
         .from('cs_customers')
         .select('health_status, valor_mrr, proxima_renovacao')
         .eq('is_active', true);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;

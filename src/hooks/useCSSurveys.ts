@@ -4,10 +4,10 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { CSSurvey, CSSurveyTipo } from '@/types/customerSuccess';
 
 export function useCSSurveys(customerId?: string) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['cs-surveys', activeCompany, customerId],
+    queryKey: ['cs-surveys', activeCompanies, customerId],
     queryFn: async () => {
       let query = supabase
         .from('cs_surveys')
@@ -15,7 +15,7 @@ export function useCSSurveys(customerId?: string) {
         .order('enviado_em', { ascending: false })
         .limit(200);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (customerId) query = query.eq('customer_id', customerId);
 
       const { data, error } = await query;

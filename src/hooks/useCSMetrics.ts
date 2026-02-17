@@ -5,17 +5,17 @@ import type { CSMetrics } from '@/types/customerSuccess';
 import { addDays } from 'date-fns';
 
 export function useCSMetrics() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['cs-metrics', activeCompany],
+    queryKey: ['cs-metrics', activeCompanies],
     queryFn: async () => {
       let query = supabase
         .from('cs_customers')
         .select('health_score, health_status, ultimo_nps, proxima_renovacao, is_active')
         .eq('is_active', true);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
