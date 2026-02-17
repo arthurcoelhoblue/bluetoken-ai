@@ -1,152 +1,103 @@
 
 
-# Plano: Consolidacao Seletiva de Edge Functions + Docs de API
+# Isolamento Multi-Tenant em Batch Mode -- forEachEmpresa
 
 ---
 
-## Contexto
+## Problema
 
-Existem 46 Edge Functions deployadas (excluindo `_shared/`). A maioria tem responsabilidade clara e justifica existir separadamente (webhooks, integracao externa, CRON jobs). Porem, ha oportunidades concretas de consolidacao em dois grupos, alem de lacunas na documentacao de API.
+Quatro funcoes processam TODOS os registros sem filtro de empresa quando chamadas em batch (CRON):
+
+| Funcao | Linha problematica | O que faz |
+|--------|-------------------|-----------|
+| `deal-scoring` | L54-65 | Sem `empresa` no body, busca TODOS os deals abertos |
+| `cs-health-calculator` | L39-41 | Sem `customer_id`, busca TODOS os cs_customers ativos |
+| `cs-ai-actions/churn-predict` | L55-58 | Busca TODOS os cs_customers ativos sem filtro |
+| `cs-ai-actions/detect-incidents` | L123-124 | Busca TODOS os cs_customers ativos sem filtro |
+
+## Solucao
+
+Aplicar o mesmo padrao `forEachEmpresa` que `cs-scheduled-jobs/trending-topics` ja usa (linhas 194-228): iterar `for (const empresa of EMPRESAS)` e filtrar cada query por empresa.
 
 ---
 
-## Parte 1: Consolidacao Seletiva de Edge Functions
+## Mudancas por Arquivo
 
-### Grupo A -- SDR Pipeline (4 funcoes internas para 0 deployadas)
+### 1. `supabase/functions/deal-scoring/index.ts`
 
-Atualmente o `sdr-ia-interpret` faz `fetch()` interno para 4 funcoes auxiliares:
-- `sdr-message-parser` (parsing de contexto)
-- `sdr-intent-classifier` (classificacao de intencao)
-- `sdr-response-generator` (geracao de resposta)
-- `sdr-action-executor` (execucao de acoes)
-
-**Problema**: Cada chamada e um HTTP round-trip adicional (cold start + latencia de rede). Essas 4 funcoes NAO sao chamadas diretamente pelo frontend -- existem apenas como sub-etapas do orquestrador.
-
-**Acao**: Converter de Edge Functions deployadas para **modulos locais** importados diretamente pelo `sdr-ia-interpret`:
-
-```text
-supabase/functions/sdr-ia-interpret/
-  index.ts              (orquestrador -- ja existe)
-  message-parser.ts     (extraido de sdr-message-parser/index.ts)
-  intent-classifier.ts  (extraido de sdr-intent-classifier/index.ts)
-  response-generator.ts (extraido de sdr-response-generator/index.ts)
-  action-executor.ts    (extraido de sdr-action-executor/index.ts)
-```
-
-**Resultado**: 46 -> 42 funcoes. Elimina 4 cold starts por mensagem inbound. Latencia do pipeline SDR reduz ~400-800ms.
-
-### Grupo B -- CS Micro-funcoes (6 funcoes para 2)
-
-Funcoes CS pequenas (63-84 linhas cada) que poderiam ser agrupadas por padrao de invocacao:
-
-**cs-ai-actions** (chamadas sob demanda pelo frontend):
-- `cs-suggest-note` (84 linhas)
-- `cs-churn-predictor` (chamada pontual)
-- `cs-incident-detector` (chamada pontual)
-
-**cs-scheduled-jobs** (CRON/batch):
-- `cs-daily-briefing`
-- `cs-nps-auto`
-- `cs-renewal-alerts`
-- `cs-trending-topics`
-
-**Acao**: Consolidar usando roteamento por `action` no body:
+Importar `EMPRESAS` ou definir localmente. No batch mode (sem `deal_id` e sem `empresa`), iterar por empresa:
 
 ```typescript
-// cs-ai-actions/index.ts
-const { action, ...params } = await req.json();
-switch (action) {
-  case 'suggest-note': return handleSuggestNote(params);
-  case 'churn-predict': return handleChurnPredict(params);
-  case 'detect-incidents': return handleDetectIncidents(params);
+// Antes (L54-65):
+if (!empresa) { query = query.limit(200); }
+
+// Depois:
+if (!targetDealId && !empresa) {
+  // forEachEmpresa
+  const allResults = [];
+  for (const emp of ['BLUE', 'TOKENIZA']) {
+    const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', emp);
+    // ... processar deals desse tenant
+  }
+  return response;
 }
 ```
 
-**Resultado**: 42 -> 37 funcoes. Menos deployments para manter.
+### 2. `supabase/functions/cs-health-calculator/index.ts`
 
-### Funcoes que NAO devem ser consolidadas
+No batch mode (sem `customer_id`), iterar por empresa:
 
-| Funcao | Motivo para manter separada |
-|--------|---------------------------|
-| `sdr-ia-interpret` | Orquestrador principal, complexo |
-| `cadence-runner` | CRON job critico, isolamento necessario |
-| `sgt-webhook` | Webhook externo com auth propria |
-| `bluechat-inbound` | Webhook externo com HMAC |
-| `copilot-chat` | Streaming, contexto diferente |
-| `deal-scoring` | Chamado independentemente |
-| `whatsapp-send/email-send` | Integracao externa, reutilizados |
-| `zadarma-*` | Integracao telefonia isolada |
+```typescript
+// Antes (L39-41):
+const { data } = await supabase.from('cs_customers').select('id').eq('is_active', true);
 
----
+// Depois:
+for (const empresa of EMPRESAS) {
+  const { data } = await supabase.from('cs_customers')
+    .select('id').eq('is_active', true).eq('empresa', empresa);
+  // processar por tenant
+}
+```
 
-## Parte 2: Documentacao de API Completa
+### 3. `supabase/functions/cs-ai-actions/index.ts` -- churn-predict
 
-A referencia atual (`api-reference.md`) lista apenas 19 das 46 funcoes. Faltam 27.
+```typescript
+// Antes (L55-58):
+const { data: customers } = await supabase.from('cs_customers')
+  .select('...').eq('is_active', true);
 
-**Acao**: Atualizar `docs-site/docs/desenvolvedor/api-reference.md` com todas as funcoes, organizadas por categoria, incluindo:
-- Endpoint e metodo
-- Descricao
-- Parametros de entrada (body JSON)
-- Autenticacao necessaria (Bearer token, service_role, CRON_SECRET, HMAC)
-- Exemplo de request/response
+// Depois:
+for (const empresa of EMPRESAS) {
+  const { data: customers } = await supabase.from('cs_customers')
+    .select('...').eq('is_active', true).eq('empresa', empresa);
+  // processar por tenant
+}
+```
 
-### Categorias a adicionar na documentacao
+### 4. `supabase/functions/cs-ai-actions/index.ts` -- detect-incidents
 
-| Categoria | Funcoes faltantes |
-|-----------|------------------|
-| Amelia IA | `amelia-learn`, `amelia-mass-action`, `ai-benchmark` |
-| Deals | `deal-loss-analysis`, `next-best-action`, `follow-up-scheduler` |
-| CS | `cs-playbook-runner`, `cs-renewal-alerts`, `cs-trending-topics` |
-| Integracao | `integration-health-check`, `tokeniza-offers`, `capture-form-submit` |
-| Telefonia | `zadarma-proxy`, `zadarma-webhook`, `call-coach`, `call-transcribe` |
-| SDR interno | `sdr-action-executor` (se mantida) |
-| Aprendizado | `icp-learner`, `faq-auto-review` |
-| Admin | `admin-create-user` |
-| Webhooks | `bluechat-inbound` |
-| SGT | `sgt-buscar-lead`, `sgt-sync-clientes` |
-| Notificacao | `notify-closer`, `pipedrive-sync` |
+```typescript
+// Antes (L123-124):
+const { data: customers } = await supabase.from('cs_customers')
+  .select('...').eq('is_active', true);
 
----
-
-## Resumo de Impacto
-
-| Metrica | Antes | Depois |
-|---------|-------|--------|
-| Edge Functions deployadas | 46 | ~37 |
-| Cold starts por msg SDR | 5 | 1 |
-| Funcoes documentadas | 19/46 | 46/46 (ou 37/37 pos-consolidacao) |
-| Latencia estimada SDR | ~2-3s | ~1-1.5s |
+// Depois:
+for (const empresa of EMPRESAS) {
+  const { data: customers } = await supabase.from('cs_customers')
+    .select('...').eq('is_active', true).eq('empresa', empresa);
+  // processar por tenant
+}
+```
 
 ---
 
-## Sequencia de Implementacao
+## Resumo
 
-1. **Grupo A** -- Internalizar 4 funcoes SDR como modulos locais do `sdr-ia-interpret`
-2. **Grupo B** -- Consolidar 6 funcoes CS em 2
-3. **Atualizar frontend** -- Ajustar chamadas que apontem para funcoes consolidadas
-4. **Deletar funcoes antigas** -- Remover deployments obsoletos
-5. **Atualizar docs** -- Reescrever `api-reference.md` com cobertura completa
-6. **Testar** -- Validar fluxos SDR e CS end-to-end
+| Arquivo | Tipo de mudanca |
+|---------|----------------|
+| `supabase/functions/deal-scoring/index.ts` | Adicionar loop forEachEmpresa no batch mode |
+| `supabase/functions/cs-health-calculator/index.ts` | Adicionar loop forEachEmpresa no batch mode |
+| `supabase/functions/cs-ai-actions/index.ts` | Adicionar .eq('empresa') em churn-predict e detect-incidents |
 
----
-
-## Secao Tecnica: Arquivos Impactados
-
-### Novos arquivos
-- `supabase/functions/sdr-ia-interpret/message-parser.ts`
-- `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
-- `supabase/functions/sdr-ia-interpret/response-generator.ts`
-- `supabase/functions/sdr-ia-interpret/action-executor.ts`
-- `supabase/functions/cs-ai-actions/index.ts`
-- `supabase/functions/cs-scheduled-jobs/index.ts`
-
-### Arquivos editados
-- `supabase/functions/sdr-ia-interpret/index.ts` (importar modulos locais em vez de fetch)
-- `docs-site/docs/desenvolvedor/api-reference.md` (documentacao completa)
-- Frontend: hooks/componentes que chamam funcoes CS consolidadas
-
-### Funcoes a deletar (pos-consolidacao)
-- `sdr-message-parser/`, `sdr-intent-classifier/`, `sdr-response-generator/`, `sdr-action-executor/`
-- `cs-suggest-note/`, `cs-churn-predictor/`, `cs-incident-detector/`
-- `cs-daily-briefing/`, `cs-nps-auto/`, `cs-renewal-alerts/`, `cs-trending-topics/`
+Total: 3 arquivos editados. Zero impacto no modo single (deal_id/customer_id), que continua funcionando igual.
 
