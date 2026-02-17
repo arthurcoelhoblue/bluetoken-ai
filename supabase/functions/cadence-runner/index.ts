@@ -5,6 +5,8 @@ import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from "../_shared/types.ts";
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
+import { resolveChannelConfig, sendViaBluechat, openBluechatConversation } from "../_shared/channel-resolver.ts";
+import type { ChannelConfig } from "../_shared/channel-resolver.ts";
 
 const log = createLogger('cadence-runner');
 const MAX_RETRIES = 3;
@@ -280,6 +282,14 @@ async function dispararMensagem(
   log.info('Enviando mensagem', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
 
   if (canal === 'WHATSAPP') {
+    // ── Resolve channel: DIRECT (whatsapp-send) or BLUECHAT (Blue Chat API) ──
+    const channelConfig = await resolveChannelConfig(supabase, empresa);
+
+    if (channelConfig.mode === 'BLUECHAT') {
+      return await dispararViaBluechat(supabase, channelConfig, body, leadId, empresa);
+    }
+
+    // ── DIRECT mode: existing whatsapp-send behavior ──
     const supabaseUrl = envConfig.SUPABASE_URL;
     const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     
@@ -376,6 +386,85 @@ async function dispararMensagem(
     log.warn('Canal SMS não implementado, marcando como erro');
     return { success: false, error: 'Canal SMS não suportado. Altere o step da cadência para WHATSAPP ou EMAIL.' };
   }
+}
+
+// ========================================
+// DISPARO VIA BLUE CHAT (Amélia como agente)
+// ========================================
+async function dispararViaBluechat(
+  supabase: SupabaseClient,
+  channelConfig: ChannelConfig,
+  message: string,
+  leadId: string,
+  empresa: EmpresaTipo,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  log.info('Modo BLUECHAT ativo, enviando via Blue Chat API', { leadId, empresa });
+
+  // 1. Get existing conversation ID from framework_data
+  const { data: convState } = await supabase
+    .from('lead_conversation_state')
+    .select('framework_data')
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa)
+    .maybeSingle();
+
+  const frameworkData = (convState?.framework_data || {}) as Record<string, unknown>;
+  let conversationId = (frameworkData.bluechat_conversation_id as string) || null;
+
+  // 2. If no conversation exists, open one proactively
+  if (!conversationId) {
+    log.info('Sem conversa Blue Chat ativa, abrindo nova conversa', { leadId });
+
+    // Get lead phone for opening conversation
+    const { data: contact } = await supabase
+      .from('lead_contacts')
+      .select('telefone, nome')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa)
+      .maybeSingle();
+
+    if (!contact?.telefone) {
+      return { success: false, error: 'Lead sem telefone para abrir conversa no Blue Chat' };
+    }
+
+    const openResult = await openBluechatConversation(
+      channelConfig,
+      contact.telefone,
+      contact.nome,
+    );
+
+    if (!openResult.success || !openResult.conversationId) {
+      return { success: false, error: openResult.error || 'Falha ao abrir conversa no Blue Chat' };
+    }
+
+    conversationId = openResult.conversationId;
+
+    // Save conversation ID in framework_data
+    const updatedFramework = {
+      ...frameworkData,
+      bluechat_conversation_id: conversationId,
+      ...(openResult.ticketId ? { bluechat_ticket_id: openResult.ticketId } : {}),
+    };
+
+    await supabase
+      .from('lead_conversation_state')
+      .update({ framework_data: updatedFramework, updated_at: new Date().toISOString() })
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa);
+
+    log.info('Conversa Blue Chat aberta e salva', { conversationId, ticketId: openResult.ticketId });
+  }
+
+  // 3. Send message via Blue Chat API
+  const sendResult = await sendViaBluechat(channelConfig, conversationId, message);
+
+  if (!sendResult.success) {
+    log.error('Erro ao enviar via Blue Chat', { error: sendResult.error });
+    return { success: false, error: sendResult.error };
+  }
+
+  log.info('Mensagem enviada via Blue Chat com sucesso', { messageId: sendResult.messageId });
+  return { success: true, messageId: sendResult.messageId };
 }
 
 // ========================================

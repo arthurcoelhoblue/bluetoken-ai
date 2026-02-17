@@ -1,0 +1,180 @@
+// ========================================
+// _shared/channel-resolver.ts — Resolve canal ativo por empresa
+// Decide se mensagens devem ir via WhatsApp direto ou Blue Chat API
+// ========================================
+
+import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { getOptionalEnv } from "./config.ts";
+
+export type ChannelMode = 'DIRECT' | 'BLUECHAT';
+
+export interface ChannelConfig {
+  mode: ChannelMode;
+  bluechatApiUrl?: string;
+  bluechatApiKey?: string;
+}
+
+/**
+ * Resolve which channel is active for a given empresa.
+ * Returns 'BLUECHAT' if bluechat is enabled in integration_company_config,
+ * otherwise 'DIRECT' (mensageria / whatsapp-send).
+ */
+export async function resolveChannelConfig(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<ChannelConfig> {
+  // Check integration_company_config for bluechat enabled
+  const { data: config } = await supabase
+    .from('integration_company_config')
+    .select('enabled')
+    .eq('empresa', empresa)
+    .eq('channel', 'bluechat')
+    .maybeSingle();
+
+  if (!config?.enabled) {
+    return { mode: 'DIRECT' };
+  }
+
+  // Resolve Blue Chat API URL from system_settings
+  const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+  const { data: setting } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
+
+  let apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
+
+  // Fallback to legacy key
+  if (!apiUrl) {
+    const { data: legacy } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'integrations')
+      .eq('key', 'bluechat')
+      .maybeSingle();
+    apiUrl = (legacy?.value as Record<string, unknown>)?.api_url as string | undefined;
+  }
+
+  if (!apiUrl) {
+    return { mode: 'DIRECT' }; // No API URL configured, fallback
+  }
+
+  const apiKey = empresa === 'BLUE'
+    ? getOptionalEnv('BLUECHAT_API_KEY_BLUE')
+    : getOptionalEnv('BLUECHAT_API_KEY');
+
+  if (!apiKey) {
+    return { mode: 'DIRECT' }; // No API key, fallback
+  }
+
+  return {
+    mode: 'BLUECHAT',
+    bluechatApiUrl: apiUrl.replace(/\/$/, ''),
+    bluechatApiKey: apiKey,
+  };
+}
+
+/**
+ * Resolve the Blue Chat frontend URL for a given empresa.
+ * Used to build deep links for human takeover.
+ */
+export async function resolveBluechatFrontendUrl(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<string | null> {
+  const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+  const { data: setting } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
+
+  const frontendUrl = (setting?.value as Record<string, unknown>)?.frontend_url as string | undefined;
+  return frontendUrl?.replace(/\/$/, '') || null;
+}
+
+/**
+ * Send a message through the Blue Chat API.
+ * Uses the conversation/ticket ID to route the message.
+ */
+export async function sendViaBluechat(
+  config: ChannelConfig,
+  conversationId: string,
+  message: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'BLUECHAT' || !config.bluechatApiUrl || !config.bluechatApiKey) {
+    return { success: false, error: 'Blue Chat not configured' };
+  }
+
+  try {
+    const res = await fetch(`${config.bluechatApiUrl}/conversations/${conversationId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': config.bluechatApiKey,
+      },
+      body: JSON.stringify({
+        content: message,
+        type: 'text',
+        source: 'AMELIA',
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Blue Chat API error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.id || data?.message_id };
+  } catch (err) {
+    return { success: false, error: `Blue Chat send failed: ${err}` };
+  }
+}
+
+/**
+ * Open a new conversation in Blue Chat for a lead (proactive outreach).
+ * Returns the conversation_id and ticket_id if successful.
+ */
+export async function openBluechatConversation(
+  config: ChannelConfig,
+  telefone: string,
+  nomeLead?: string | null,
+): Promise<{ success: boolean; conversationId?: string; ticketId?: string; error?: string }> {
+  if (config.mode !== 'BLUECHAT' || !config.bluechatApiUrl || !config.bluechatApiKey) {
+    return { success: false, error: 'Blue Chat not configured' };
+  }
+
+  try {
+    const res = await fetch(`${config.bluechatApiUrl}/conversations`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-API-Key': config.bluechatApiKey,
+      },
+      body: JSON.stringify({
+        phone: telefone,
+        contact_name: nomeLead || undefined,
+        channel: 'whatsapp',
+        source: 'AMELIA',
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Blue Chat open conversation error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return {
+      success: true,
+      conversationId: data?.conversation_id || data?.id,
+      ticketId: data?.ticket_id,
+    };
+  } catch (err) {
+    return { success: false, error: `Blue Chat open conversation failed: ${err}` };
+  }
+}

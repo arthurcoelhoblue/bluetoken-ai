@@ -1,8 +1,9 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, AlertCircle } from 'lucide-react';
+import { Send, AlertCircle, ExternalLink } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
+import { useChannelConfig } from '@/hooks/useChannelConfig';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -10,6 +11,7 @@ interface ManualMessageInputProps {
   empresa: string;
   telefone?: string | null;
   modo: AtendimentoModo;
+  bluechatConversationId?: string | null;
 }
 
 export function ManualMessageInput({
@@ -17,10 +19,12 @@ export function ManualMessageInput({
   empresa,
   telefone,
   modo,
+  bluechatConversationId,
 }: ManualMessageInputProps) {
   const [text, setText] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
+  const { isBluechat, bluechatFrontendUrl } = useChannelConfig(empresa);
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -39,7 +43,14 @@ export function ManualMessageInput({
     if (!trimmed || !telefone) return;
 
     sendMutation.mutate(
-      { leadId, empresa, telefone, conteudo: trimmed, modoAtual: modo },
+      {
+        leadId,
+        empresa,
+        telefone,
+        conteudo: trimmed,
+        modoAtual: modo,
+        bluechatConversationId: bluechatConversationId || undefined,
+      },
       { onSuccess: () => setText('') }
     );
   };
@@ -48,6 +59,15 @@ export function ManualMessageInput({
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
+    }
+  };
+
+  const handleOpenBluechat = () => {
+    if (bluechatFrontendUrl && bluechatConversationId) {
+      window.open(
+        `${bluechatFrontendUrl}/conversation/${bluechatConversationId}`,
+        '_blank'
+      );
     }
   };
 
@@ -60,6 +80,48 @@ export function ManualMessageInput({
     );
   }
 
+  // ── Blue Chat mode: show link to Blue Chat + optional send via API ──
+  if (isBluechat) {
+    const canDeepLink = bluechatFrontendUrl && bluechatConversationId;
+
+    return (
+      <div className="space-y-2">
+        {canDeepLink && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full gap-2 text-xs"
+            onClick={handleOpenBluechat}
+          >
+            <ExternalLink className="h-3.5 w-3.5" />
+            Responder no Blue Chat
+          </Button>
+        )}
+        <div className="flex items-end gap-2">
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Enviar via Blue Chat..."
+            className="min-h-[40px] max-h-[120px] resize-none flex-1"
+            rows={1}
+            disabled={sendMutation.isPending}
+          />
+          <Button
+            size="icon"
+            onClick={handleSend}
+            disabled={!text.trim() || sendMutation.isPending}
+            className="shrink-0"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Mensageria mode: existing behavior ──
   const isSDR = modo === 'SDR_IA';
   const placeholder = isSDR
     ? 'Enviar e assumir atendimento...'

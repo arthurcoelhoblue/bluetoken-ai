@@ -22,8 +22,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset } from 'lucide-react';
+import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset, ExternalLink } from 'lucide-react';
 import { useConversationTakeover } from '@/hooks/useConversationMode';
+import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from '@/hooks/use-toast';
 import type { AtendimentoModo } from '@/types/conversas';
@@ -39,6 +40,7 @@ interface ConversationTakeoverBarProps {
   modo: AtendimentoModo;
   assumidoPorNome?: string | null;
   isLoading?: boolean;
+  bluechatConversationId?: string | null;
 }
 
 export function ConversationTakeoverBar({
@@ -47,6 +49,7 @@ export function ConversationTakeoverBar({
   modo,
   assumidoPorNome,
   isLoading,
+  bluechatConversationId,
 }: ConversationTakeoverBarProps) {
   const [open, setOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -57,6 +60,7 @@ export function ConversationTakeoverBar({
   const [selectedValue, setSelectedValue] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
   const takeover = useConversationTakeover();
+  const { isBluechat, bluechatFrontendUrl } = useChannelConfig(empresa);
 
   const isManual = modo === 'MANUAL';
 
@@ -86,14 +90,12 @@ export function ConversationTakeoverBar({
 
   // Carregar dados ao abrir dialog de transferência
   const loadTransferData = async () => {
-    // 1. Profiles (Amélia users)
     const profilesPromise = supabase
       .from('profiles')
       .select('id, nome')
       .order('nome')
       .then(({ data }) => setUsers(data || []));
 
-    // 2. Buscar bluechat_ticket_id do framework_data
     const ticketPromise = supabase
       .from('lead_conversation_state')
       .select('framework_data')
@@ -107,7 +109,6 @@ export function ConversationTakeoverBar({
         return ticketId;
       });
 
-    // 3. Blue Chat agents (via edge function)
     const agentsPromise = supabase.functions
       .invoke('bluechat-proxy', {
         body: { action: 'list-agents', empresa },
@@ -127,7 +128,19 @@ export function ConversationTakeoverBar({
   const handleTakeover = () => {
     takeover.mutate(
       { leadId, empresa, acao: isManual ? 'DEVOLVER' : 'ASSUMIR' },
-      { onSettled: () => setOpen(false) }
+      {
+        onSuccess: () => {
+          setOpen(false);
+          // In Blue Chat mode, open Blue Chat on "Assumir"
+          if (!isManual && isBluechat && bluechatFrontendUrl && bluechatConversationId) {
+            window.open(
+              `${bluechatFrontendUrl}/conversation/${bluechatConversationId}`,
+              '_blank'
+            );
+          }
+        },
+        onError: () => setOpen(false),
+      }
     );
   };
 
@@ -137,7 +150,6 @@ export function ConversationTakeoverBar({
 
     try {
       if (selectedValue.startsWith('bluechat:')) {
-        // ── Transferência para atendente Blue Chat ──
         const agentId = selectedValue.replace('bluechat:', '');
         if (!bluechatTicketId) {
           toast({ title: 'Erro', description: 'Lead sem ticket ativo no Blue Chat', variant: 'destructive' });
@@ -163,7 +175,6 @@ export function ConversationTakeoverBar({
           description: `Ticket transferido para ${agent?.name || agentId} no Blue Chat`,
         });
       } else {
-        // ── Transferência para usuário Amélia (comportamento atual) ──
         const userId = selectedValue.replace('amelia:', '');
         const { error } = await supabase
           .from('lead_contacts')
@@ -191,6 +202,19 @@ export function ConversationTakeoverBar({
 
   const hasBlueChatSection = blueChatAgents.length > 0 || bluechatTicketId !== null;
 
+  // Blue Chat mode labels
+  const takeoverLabel = isManual
+    ? 'Devolver à Amélia'
+    : isBluechat
+      ? 'Assumir no Blue Chat'
+      : 'Assumir atendimento';
+
+  const takeoverDescription = isManual
+    ? 'A Amélia voltará a responder automaticamente este lead. Você pode reassumir a qualquer momento.'
+    : isBluechat
+      ? 'A Amélia parará de responder automaticamente. Você será redirecionado para o Blue Chat para atender este lead.'
+      : 'A Amélia parará de responder automaticamente. Você será responsável por este atendimento.';
+
   return (
     <div
       className={`flex items-center justify-between px-4 py-2 rounded-lg border ${
@@ -206,6 +230,12 @@ export function ConversationTakeoverBar({
         <Badge variant={isManual ? 'default' : 'secondary'} className="text-xs">
           {isManual ? 'Modo Manual' : 'SDR IA Ativo'}
         </Badge>
+        {isBluechat && (
+          <Badge variant="outline" className="text-xs gap-1">
+            <Headset className="h-3 w-3" />
+            Blue Chat
+          </Badge>
+        )}
         {isManual && assumidoPorNome && (
           <span className="text-xs text-muted-foreground">por {assumidoPorNome}</span>
         )}
@@ -245,7 +275,6 @@ export function ConversationTakeoverBar({
                 <SelectValue placeholder="Selecione um destinatário" />
               </SelectTrigger>
               <SelectContent>
-                {/* Grupo: Usuários Amélia */}
                 <SelectGroup>
                   <SelectLabel>Usuários Amélia</SelectLabel>
                   {users.map((u) => (
@@ -255,7 +284,6 @@ export function ConversationTakeoverBar({
                   ))}
                 </SelectGroup>
 
-                {/* Grupo: Atendentes Blue Chat */}
                 {hasBlueChatSection && (
                   <>
                     <SelectSeparator />
@@ -308,19 +336,21 @@ export function ConversationTakeoverBar({
               disabled={isLoading || takeover.isPending}
               className="gap-1.5"
             >
-              <ArrowLeftRight className="h-3.5 w-3.5" />
-              {isManual ? 'Devolver à Amélia' : 'Assumir atendimento'}
+              {isBluechat && !isManual ? (
+                <ExternalLink className="h-3.5 w-3.5" />
+              ) : (
+                <ArrowLeftRight className="h-3.5 w-3.5" />
+              )}
+              {takeoverLabel}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {isManual ? 'Devolver à Amélia?' : 'Assumir atendimento?'}
+                {isManual ? 'Devolver à Amélia?' : isBluechat ? 'Assumir no Blue Chat?' : 'Assumir atendimento?'}
               </AlertDialogTitle>
               <AlertDialogDescription>
-                {isManual
-                  ? 'A Amélia voltará a responder automaticamente este lead. Você pode reassumir a qualquer momento.'
-                  : 'A Amélia parará de responder automaticamente. Você será responsável por este atendimento.'}
+                {takeoverDescription}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
