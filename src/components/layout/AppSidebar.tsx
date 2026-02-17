@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import {
+  import {
   AlertTriangle,
   BarChart3,
   Bot,
@@ -35,6 +35,7 @@ import {
   HeartPulse,
   Users,
   AlertCircle,
+  Shield,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -130,6 +131,7 @@ const navGroups: NavGroup[] = [
       { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
       { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
       { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },
+      { title: 'Controle de Acesso', url: '/admin/access-control', icon: Shield, screenKey: 'controle_acesso' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },
