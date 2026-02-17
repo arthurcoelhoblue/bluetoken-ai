@@ -29,7 +29,7 @@ export function ZadarmaPhoneWidget() {
 
   const proxy = useZadarmaProxy();
 
-  // Listen for dial events
+  // Listen for dial events — must be before any early return
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<DialEvent>).detail;
@@ -92,14 +92,27 @@ export function ZadarmaPhoneWidget() {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  if (!myExtension) return null;
+  const hasExtension = !!myExtension;
 
-  // Minimized FAB
-  if (minimized) {
+  // Minimized FAB — only show if has extension and no pending dial
+  if (minimized && !number) {
+    if (!hasExtension) return null;
     return (
       <button
         onClick={() => setMinimized(false)}
         className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105"
+      >
+        <Phone className="h-5 w-5" />
+      </button>
+    );
+  }
+
+  // If dial was triggered but minimized, expand
+  if (minimized) {
+    return (
+      <button
+        onClick={() => setMinimized(false)}
+        className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105 animate-pulse"
       >
         <Phone className="h-5 w-5" />
       </button>
@@ -247,14 +260,20 @@ export function ZadarmaPhoneWidget() {
               </Button>
             ))}
           </div>
-          <Button
-            className="w-full gap-2"
-            disabled={!number.trim() || proxy.isPending}
-            onClick={handleDial}
-          >
-            <Phone className="h-4 w-4" />
-            Ligar
-          </Button>
+          {!hasExtension ? (
+            <p className="text-sm text-destructive text-center py-2">
+              Nenhum ramal configurado. Solicite ao administrador a configuração do seu ramal em <strong>Configurações &gt; Zadarma</strong>.
+            </p>
+          ) : (
+            <Button
+              className="w-full gap-2"
+              disabled={!number.trim() || proxy.isPending}
+              onClick={handleDial}
+            >
+              <Phone className="h-4 w-4" />
+              Ligar
+            </Button>
+          )}
         </div>
       )}
     </div>
