@@ -5,10 +5,11 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { UserPlus, Plus, X, ShieldCheck } from 'lucide-react';
+import { UserPlus, Plus, X, ShieldCheck, Pencil } from 'lucide-react';
 import { useUsersWithProfiles, useRemoveAssignment, useAccessProfiles } from '@/hooks/useAccessControl';
 import { AssignProfileDialog } from './AssignProfileDialog';
 import { CreateUserDialog } from './CreateUserDialog';
+import { EditUserDialog } from './EditUserDialog';
 import { UserPermissionOverrideDialog } from './UserPermissionOverrideDialog';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient, useQuery } from '@tanstack/react-query';
@@ -32,6 +33,7 @@ export function UserAccessList() {
   const [assignTarget, setAssignTarget] = useState<UserWithAccess | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [overrideTarget, setOverrideTarget] = useState<UserWithAccess | null>(null);
+  const [editTarget, setEditTarget] = useState<UserWithAccess | null>(null);
   const [editingRamal, setEditingRamal] = useState<string | null>(null);
   const [ramalValue, setRamalValue] = useState('');
 
@@ -180,6 +182,14 @@ export function UserAccessList() {
                     <Button
                       variant="ghost"
                       size="icon"
+                      onClick={() => setEditTarget(u)}
+                      title="Editar usuário"
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
                       onClick={() => setAssignTarget(u)}
                       title="Atribuir perfil"
                     >
@@ -224,6 +234,19 @@ export function UserAccessList() {
       )}
 
       <CreateUserDialog open={createOpen} onOpenChange={setCreateOpen} />
+
+      {editTarget && (
+        <EditUserDialog
+          open={!!editTarget}
+          onOpenChange={(open) => !open && setEditTarget(null)}
+          userId={editTarget.id}
+          currentNome={editTarget.nome || ''}
+          currentEmail={editTarget.email}
+          currentIsVendedor={editTarget.is_vendedor ?? false}
+          currentGestorId={(editTarget as any).gestor_id ?? null}
+          currentRamal={getRamal(editTarget.id)}
+        />
+      )}
 
       {overrideTarget && (
         <UserPermissionOverrideDialog
