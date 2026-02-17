@@ -114,10 +114,19 @@ export function NextBestActionCard() {
                   </Badge>
                 </button>
               ))
-            ) : (
+            ) : narrativaDia ? (
               <p className="text-sm text-muted-foreground text-center py-4">
-                Tudo em dia! Nenhuma ação urgente 🎉
+                {narrativaDia} 🎉
               </p>
+            ) : (
+              <div className="text-center py-4 space-y-2">
+                <p className="text-sm text-muted-foreground">
+                  Nenhum deal atribuído a você ainda.
+                </p>
+                <Button variant="outline" size="sm" onClick={() => navigate('/pipeline')}>
+                  Ir para o Pipeline
+                </Button>
+              </div>
             )}
           </>
         )}
