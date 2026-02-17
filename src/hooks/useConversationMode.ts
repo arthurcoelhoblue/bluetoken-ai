@@ -100,6 +100,7 @@ interface SendManualParams {
   telefone: string;
   conteudo: string;
   modoAtual?: AtendimentoModo;
+  bluechatConversationId?: string;
 }
 
 export function useSendManualMessage() {
@@ -108,7 +109,7 @@ export function useSendManualMessage() {
   const takeover = useConversationTakeover();
 
   return useMutation({
-    mutationFn: async ({ leadId, empresa, telefone, conteudo, modoAtual }: SendManualParams) => {
+    mutationFn: async ({ leadId, empresa, telefone, conteudo, modoAtual, bluechatConversationId }: SendManualParams) => {
       if (!user?.id) throw new Error('Usuário não autenticado');
 
       // Auto-takeover if not already in MANUAL
@@ -121,7 +122,23 @@ export function useSendManualMessage() {
         });
       }
 
-      // Send via whatsapp-send
+      // If bluechatConversationId is provided, route via bluechat-proxy
+      if (bluechatConversationId) {
+        const { data, error } = await supabase.functions.invoke('bluechat-proxy', {
+          body: {
+            action: 'send-message',
+            empresa,
+            conversation_id: bluechatConversationId,
+            content: conteudo,
+          },
+        });
+
+        if (error) throw error;
+        if (!data?.success) throw new Error(data?.error || 'Falha ao enviar via Blue Chat');
+        return data;
+      }
+
+      // Otherwise, send via whatsapp-send (Direct mode)
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
         body: {
           leadId,

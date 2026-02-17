@@ -147,5 +147,91 @@ Deno.serve(async (req) => {
     }
   }
 
+  // ── open-conversation ── (Amélia proactive outreach via Blue Chat)
+  if (action === "open-conversation") {
+    const { telefone, nome_lead } = body as { telefone?: string; nome_lead?: string };
+    if (!telefone) {
+      return jsonResponse({ error: "Missing telefone" }, 400);
+    }
+
+    try {
+      const res = await fetch(`${config.baseUrl}/conversations`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          phone: telefone,
+          contact_name: nome_lead || undefined,
+          channel: "whatsapp",
+          source: "AMELIA",
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("open-conversation error:", res.status, text);
+        return jsonResponse({ error: "Failed to open conversation", detail: text }, res.status);
+      }
+
+      const data = await res.json();
+      return jsonResponse({
+        success: true,
+        conversation_id: data?.conversation_id || data?.id,
+        ticket_id: data?.ticket_id,
+      });
+    } catch (err) {
+      console.error("open-conversation fetch error:", err);
+      return jsonResponse({ error: "Open conversation request failed" }, 500);
+    }
+  }
+
+  // ── send-message ── (Send message via Blue Chat conversation)
+  if (action === "send-message") {
+    const { conversation_id, content } = body as { conversation_id?: string; content?: string };
+    if (!conversation_id || !content) {
+      return jsonResponse({ error: "Missing conversation_id or content" }, 400);
+    }
+
+    try {
+      const res = await fetch(`${config.baseUrl}/conversations/${conversation_id}/messages`, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          content,
+          type: "text",
+          source: "AMELIA",
+        }),
+      });
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error("send-message error:", res.status, text);
+        return jsonResponse({ error: "Failed to send message", detail: text }, res.status);
+      }
+
+      const data = await res.json().catch(() => ({}));
+      return jsonResponse({
+        success: true,
+        message_id: data?.id || data?.message_id,
+      });
+    } catch (err) {
+      console.error("send-message fetch error:", err);
+      return jsonResponse({ error: "Send message request failed" }, 500);
+    }
+  }
+
+  // ── get-frontend-url ── (Resolve Blue Chat frontend URL for deep links)
+  if (action === "get-frontend-url") {
+    const settingsKey = empresa === "BLUE" ? "bluechat_blue" : "bluechat_tokeniza";
+    const { data: frontendSetting } = await serviceClient
+      .from("system_settings")
+      .select("value")
+      .eq("category", "integrations")
+      .eq("key", settingsKey)
+      .maybeSingle();
+
+    const frontendUrl = (frontendSetting?.value as Record<string, unknown>)?.frontend_url as string | undefined;
+    return jsonResponse({ frontend_url: frontendUrl || null });
+  }
+
   return jsonResponse({ error: `Unknown action: ${action}` }, 400);
 });
