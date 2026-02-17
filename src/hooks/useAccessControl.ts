@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { AccessProfile, PermissionsMap, UserAccessAssignment } from '@/types/accessControl';
+import type { AccessProfile, PermissionsMap, UserAccessAssignment, UserWithAccess } from '@/types/accessControl';
 import { toast } from 'sonner';
 
 export function useAccessProfiles() {
@@ -104,17 +104,25 @@ export function useUsersWithProfiles() {
         .select('id, nome');
       if (apErr) throw apErr;
 
-      const assignMap = new Map((assignments ?? []).map((a) => [(a as unknown as { user_id: string }).user_id, a]));
+      // Group assignments by user_id (now supports multiple per user)
+      const assignMap = new Map<string, UserAccessAssignment[]>();
+      for (const a of (assignments ?? [])) {
+        const assignment = a as unknown as UserAccessAssignment;
+        const list = assignMap.get(assignment.user_id) || [];
+        list.push(assignment);
+        assignMap.set(assignment.user_id, list);
+      }
       const profileMap = new Map((accessProfiles ?? []).map((p) => [(p as unknown as { id: string; nome: string }).id, (p as unknown as { id: string; nome: string }).nome]));
 
       return (profiles ?? []).map((u) => {
         const user = u as unknown as { id: string; email: string; nome: string; avatar_url: string | null; is_active: boolean; is_vendedor: boolean };
-        const assignment = assignMap.get(user.id) || null;
+        const userAssignments = assignMap.get(user.id) || [];
+        const firstAssignment = userAssignments[0] || null;
         return {
           ...user,
-          assignment,
-          profile_name: assignment ? (profileMap.get((assignment as unknown as { access_profile_id: string }).access_profile_id) ?? null) : null,
-        };
+          assignments: userAssignments,
+          profile_name: firstAssignment ? (profileMap.get(firstAssignment.access_profile_id) ?? null) : null,
+        } as UserWithAccess;
       });
     },
   });
@@ -123,14 +131,27 @@ export function useUsersWithProfiles() {
 export function useAssignProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { user_id: string; access_profile_id: string; empresa: 'BLUE' | 'TOKENIZA' | null }) => {
-      const { error } = await supabase
+    mutationFn: async (payload: { user_id: string; access_profile_id: string; empresas: ('BLUE' | 'TOKENIZA')[] }) => {
+      // Delete existing assignments for this user
+      const { error: delErr } = await supabase
         .from('user_access_assignments')
-        .upsert(
-          { user_id: payload.user_id, access_profile_id: payload.access_profile_id, empresa: payload.empresa },
-          { onConflict: 'user_id' }
-        );
-      if (error) throw error;
+        .delete()
+        .eq('user_id', payload.user_id);
+      if (delErr) throw delErr;
+
+      // Insert new assignments (one per empresa)
+      const rows = payload.empresas.map(empresa => ({
+        user_id: payload.user_id,
+        access_profile_id: payload.access_profile_id,
+        empresa,
+      }));
+
+      if (rows.length > 0) {
+        const { error } = await supabase
+          .from('user_access_assignments')
+          .insert(rows);
+        if (error) throw error;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users-with-profiles'] });

@@ -4,21 +4,21 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { toast } from 'sonner';
 import type { CaptureForm, CaptureFormField, CaptureFormSettings } from '@/types/captureForms';
 
-function useEmpresa() {
-  const { activeCompany } = useCompany();
-  return activeCompany;
+function useEmpresaCompanies() {
+  const { activeCompanies, activeCompany } = useCompany();
+  return { activeCompanies, activeCompany };
 }
 
 export function useCaptureForms() {
-  const empresa = useEmpresa();
+  const { activeCompanies } = useEmpresaCompanies();
 
   return useQuery({
-    queryKey: ['capture-forms', empresa],
+    queryKey: ['capture-forms', activeCompanies],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('capture_forms')
         .select('*, capture_form_submissions(count)')
-        .eq('empresa', empresa)
+        .in('empresa', activeCompanies)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
@@ -57,7 +57,7 @@ export function useCaptureForm(id: string | undefined) {
 
 export function useCreateCaptureForm() {
   const qc = useQueryClient();
-  const empresa = useEmpresa();
+  const { activeCompany } = useEmpresaCompanies();
 
   return useMutation({
     mutationFn: async (input: { nome: string; slug: string }) => {
@@ -65,7 +65,7 @@ export function useCreateCaptureForm() {
       const { data, error } = await supabase
         .from('capture_forms')
         .insert({
-          empresa,
+          empresa: activeCompany,
           nome: input.nome,
           slug: input.slug,
           created_by: user?.id,

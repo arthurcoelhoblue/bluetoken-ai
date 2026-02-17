@@ -22,15 +22,15 @@ export interface LeadQuente {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function applyEmpresaFilter<T>(query: T, activeCompany: ActiveCompany): T {
-  return (query as any).eq("empresa", activeCompany);
+function applyEmpresaFilter<T>(query: T, activeCompanies: ActiveCompany[]): T {
+  return (query as any).in("empresa", activeCompanies);
 }
 
 export function useLeadsQuentes() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ["leads-quentes", activeCompany],
+    queryKey: ["leads-quentes", activeCompanies],
     queryFn: async () => {
       // Buscar intents com ações que precisam de closer
       let intentsQuery = supabase
@@ -49,7 +49,7 @@ export function useLeadsQuentes() {
         .order("created_at", { ascending: false })
         .limit(50);
 
-      intentsQuery = applyEmpresaFilter(intentsQuery, activeCompany);
+      intentsQuery = applyEmpresaFilter(intentsQuery, activeCompanies);
       const { data: intents, error: intentsError } = await intentsQuery;
 
       if (intentsError) throw intentsError;
@@ -62,7 +62,7 @@ export function useLeadsQuentes() {
         .order("classificado_em", { ascending: false })
         .limit(50);
 
-      classQuery = applyEmpresaFilter(classQuery, activeCompany);
+      classQuery = applyEmpresaFilter(classQuery, activeCompanies);
       const { data: classifications, error: classError } = await classQuery;
 
       if (classError) throw classError;
@@ -119,7 +119,7 @@ export function useLeadsQuentes() {
         .from("lead_contacts")
         .select("lead_id, empresa, nome, telefone, email, telefone_e164")
         .in("lead_id", leadIdList);
-      contactsQuery = applyEmpresaFilter(contactsQuery, activeCompany);
+      contactsQuery = applyEmpresaFilter(contactsQuery, activeCompanies);
       const { data: contacts } = await contactsQuery;
 
       // Buscar estados de conversa
@@ -127,7 +127,7 @@ export function useLeadsQuentes() {
         .from("lead_conversation_state")
         .select("lead_id, empresa, estado_funil, framework_ativo, perfil_disc")
         .in("lead_id", leadIdList);
-      convQuery = applyEmpresaFilter(convQuery, activeCompany);
+      convQuery = applyEmpresaFilter(convQuery, activeCompanies);
       const { data: convStates } = await convQuery;
 
       // Buscar classificações (para os que não vieram da query de quentes)
@@ -135,7 +135,7 @@ export function useLeadsQuentes() {
         .from("lead_classifications")
         .select("lead_id, empresa, temperatura, icp")
         .in("lead_id", leadIdList);
-      allClassQuery = applyEmpresaFilter(allClassQuery, activeCompany);
+      allClassQuery = applyEmpresaFilter(allClassQuery, activeCompanies);
       const { data: allClassifications } = await allClassQuery;
 
       // Enriquecer dados

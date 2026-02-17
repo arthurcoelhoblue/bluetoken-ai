@@ -15,19 +15,18 @@ import type {
   AnalyticsCanalEsforco,
 } from '@/types/analytics';
 
-function empresaFilter(activeCompany: string) {
-  if (activeCompany === 'ALL') return null;
-  return activeCompany as 'BLUE' | 'TOKENIZA';
+function useEmpresaFilter() {
+  const { activeCompanies } = useCompany();
+  return activeCompanies;
 }
 
 export function useAnalyticsFunnel(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_funnel', activeCompany, pipelineId],
+    queryKey: ['analytics_funnel', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_funnel').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('posicao', { ascending: true });
       const { data, error } = await q;
@@ -38,13 +37,12 @@ export function useAnalyticsFunnel(pipelineId?: string | null) {
 }
 
 export function useAnalyticsConversion(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_conversion', activeCompany, pipelineId],
+    queryKey: ['analytics_conversion', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_conversion').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       const { data, error } = await q;
       if (error) throw error;
@@ -54,13 +52,12 @@ export function useAnalyticsConversion(pipelineId?: string | null) {
 }
 
 export function useAnalyticsVendedor() {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_vendedor', activeCompany],
+    queryKey: ['analytics_vendedor', companies],
     queryFn: async () => {
       let q = supabase.from('analytics_vendedor').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       q = q.order('valor_ganho', { ascending: false });
       const { data, error } = await q;
       if (error) throw error;
@@ -70,13 +67,12 @@ export function useAnalyticsVendedor() {
 }
 
 export function useAnalyticsPeriodo(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_periodo', activeCompany, pipelineId],
+    queryKey: ['analytics_periodo', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_deals_periodo').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('mes', { ascending: false }).limit(12);
       const { data, error } = await q;
@@ -87,13 +83,12 @@ export function useAnalyticsPeriodo(pipelineId?: string | null) {
 }
 
 export function useAnalyticsMotivosPerda(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_motivos_perda', activeCompany, pipelineId],
+    queryKey: ['analytics_motivos_perda', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_motivos_perda').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('quantidade', { ascending: false }).limit(20);
       const { data, error } = await q;
@@ -104,13 +99,12 @@ export function useAnalyticsMotivosPerda(pipelineId?: string | null) {
 }
 
 export function useAnalyticsCanalOrigem(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_canal_origem', activeCompany, pipelineId],
+    queryKey: ['analytics_canal_origem', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_canal_origem').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('total_deals', { ascending: false });
       const { data, error } = await q;
@@ -121,13 +115,12 @@ export function useAnalyticsCanalOrigem(pipelineId?: string | null) {
 }
 
 export function useAnalyticsFunilVisual(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_funil_visual', activeCompany, pipelineId],
+    queryKey: ['analytics_funil_visual', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_funil_visual').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('posicao', { ascending: true });
       const { data, error } = await q;
@@ -138,13 +131,12 @@ export function useAnalyticsFunilVisual(pipelineId?: string | null) {
 }
 
 export function useAnalyticsEvolucao(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_evolucao_mensal', activeCompany, pipelineId],
+    queryKey: ['analytics_evolucao_mensal', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_evolucao_mensal').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('mes', { ascending: false }).limit(12);
       const { data, error } = await q;
@@ -155,13 +147,12 @@ export function useAnalyticsEvolucao(pipelineId?: string | null) {
 }
 
 export function useAnalyticsLTV() {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_ltv_cohort', activeCompany],
+    queryKey: ['analytics_ltv_cohort', companies],
     queryFn: async () => {
       let q = supabase.from('analytics_ltv_cohort').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       q = q.order('cohort_mes', { ascending: false }).limit(24);
       const { data, error } = await q;
       if (error) throw error;
@@ -171,13 +162,12 @@ export function useAnalyticsLTV() {
 }
 
 export function useAnalyticsEsforco() {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_esforco_vendedor', activeCompany],
+    queryKey: ['analytics_esforco_vendedor', companies],
     queryFn: async () => {
       let q = supabase.from('analytics_esforco_vendedor').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       q = q.order('total_perdidos', { ascending: false });
       const { data, error } = await q;
       if (error) throw error;
@@ -187,13 +177,12 @@ export function useAnalyticsEsforco() {
 }
 
 export function useAnalyticsCanalEsforco(pipelineId?: string | null) {
-  const { activeCompany } = useCompany();
+  const companies = useEmpresaFilter();
   return useQuery({
-    queryKey: ['analytics_canal_esforco', activeCompany, pipelineId],
+    queryKey: ['analytics_canal_esforco', companies, pipelineId],
     queryFn: async () => {
       let q = supabase.from('analytics_canal_esforco').select('*');
-      const emp = empresaFilter(activeCompany);
-      if (emp) q = q.eq('empresa', emp);
+      q = q.in('empresa', companies);
       if (pipelineId) q = q.eq('pipeline_id', pipelineId);
       q = q.order('total_deals', { ascending: false });
       const { data, error } = await q;

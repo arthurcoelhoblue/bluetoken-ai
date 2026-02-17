@@ -50,7 +50,7 @@ export function UserAccessList() {
         <div>
           <h3 className="text-lg font-semibold">Usuários</h3>
           <p className="text-sm text-muted-foreground">
-            Atribua perfis de acesso e empresa a cada usuário
+            Atribua perfis de acesso e empresas a cada usuário
           </p>
         </div>
         <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-2">
@@ -65,7 +65,7 @@ export function UserAccessList() {
             <TableRow>
               <TableHead>Usuário</TableHead>
               <TableHead>Perfil</TableHead>
-              <TableHead>Empresa</TableHead>
+              <TableHead>Empresas</TableHead>
               <TableHead className="text-center">Vendedor</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[100px]">Ações</TableHead>
@@ -96,15 +96,21 @@ export function UserAccessList() {
                   )}
                 </TableCell>
                 <TableCell>
-                  {u.assignment?.empresa ? (
-                    <Badge variant="secondary">{u.assignment.empresa}</Badge>
+                  {u.assignments.length > 0 ? (
+                    <div className="flex flex-wrap gap-1">
+                      {u.assignments.map(a => (
+                        <Badge key={a.id} variant="secondary" className="text-xs">
+                          {a.empresa || 'Todas'}
+                        </Badge>
+                      ))}
+                    </div>
                   ) : (
-                    <span className="text-xs text-muted-foreground">Todas</span>
+                    <span className="text-xs text-muted-foreground">Nenhuma</span>
                   )}
                 </TableCell>
                 <TableCell className="text-center">
                   <Switch
-                    checked={(u as UserWithAccess & { is_vendedor?: boolean }).is_vendedor ?? false}
+                    checked={u.is_vendedor ?? false}
                     onCheckedChange={(val) => handleToggleVendedor(u.id, val)}
                   />
                 </TableCell>
@@ -131,12 +137,12 @@ export function UserAccessList() {
                     >
                       <ShieldCheck className="h-4 w-4" />
                     </Button>
-                    {u.assignment && (
+                    {u.assignments.length > 0 && (
                       <Button
                         variant="ghost"
                         size="icon"
                         onClick={() => removeMutation.mutate(u.id)}
-                        title="Remover atribuição"
+                        title="Remover todas atribuições"
                         className="text-destructive hover:text-destructive"
                       >
                         <X className="h-4 w-4" />
@@ -156,8 +162,8 @@ export function UserAccessList() {
           onOpenChange={(open) => !open && setAssignTarget(null)}
           userId={assignTarget.id}
           userName={assignTarget.nome || assignTarget.email}
-          currentProfileId={assignTarget.assignment?.access_profile_id}
-          currentEmpresa={assignTarget.assignment?.empresa}
+          currentProfileId={assignTarget.assignments[0]?.access_profile_id}
+          currentEmpresas={assignTarget.assignments.map(a => a.empresa).filter(Boolean) as ('BLUE' | 'TOKENIZA')[]}
         />
       )}
 
@@ -170,13 +176,13 @@ export function UserAccessList() {
           userId={overrideTarget.id}
           userName={overrideTarget.nome || overrideTarget.email}
           currentOverride={
-            (overrideTarget.assignment as { permissions_override?: PermissionsMap } | undefined)?.permissions_override
-              ? (overrideTarget.assignment as { permissions_override?: PermissionsMap }).permissions_override!
+            (overrideTarget.assignments[0] as { permissions_override?: PermissionsMap } | undefined)?.permissions_override
+              ? (overrideTarget.assignments[0] as { permissions_override?: PermissionsMap }).permissions_override!
               : null
           }
           profilePermissions={
-            overrideTarget.assignment?.access_profile_id
-              ? ((profiles.find(p => p.id === overrideTarget.assignment?.access_profile_id)?.permissions ?? null) as PermissionsMap | null)
+            overrideTarget.assignments[0]?.access_profile_id
+              ? ((profiles.find(p => p.id === overrideTarget.assignments[0]?.access_profile_id)?.permissions ?? null) as PermissionsMap | null)
               : null
           }
         />
