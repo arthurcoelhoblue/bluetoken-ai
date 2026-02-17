@@ -28,9 +28,8 @@ const INTEGRATIONS = [
 ];
 
 const CRON_FUNCTIONS = [
-  'cadence-runner', 'deal-scoring', 'cs-health-calculator', 'cs-renewal-alerts',
-  'cs-incident-detector', 'cs-nps-auto', 'cs-daily-briefing', 'cs-churn-predictor',
-  'cs-trending-topics', 'follow-up-scheduler', 'icp-learner', 'copilot-proactive',
+  'cadence-runner', 'deal-scoring', 'cs-health-calculator', 'cs-ai-actions',
+  'cs-scheduled-jobs', 'follow-up-scheduler', 'icp-learner', 'copilot-proactive',
   'faq-auto-review', 'weekly-report', 'integration-health-check', 'revenue-forecast',
 ];
 

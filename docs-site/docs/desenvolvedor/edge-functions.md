@@ -41,14 +41,16 @@ supabase/functions/_shared/
 
 | Função | Descrição |
 |:--|:--|
-| `sdr-ia-interpret` | Interpreta mensagens de leads com IA |
-| `sdr-response-generator` | Gera respostas automáticas |
-| `cadence-runner` | Processa passos de cadências |
+| `sdr-ia-interpret` | Orquestrador SDR (parser + classifier + generator + executor internalizados) |
+| `cadence-runner` | Processa passos de cadências ativas |
 | `deal-scoring` | Calcula score de probabilidade |
 | `cs-health-calculator` | Calcula Health Score dos clientes |
-| `cs-churn-predictor` | Predição de churn com IA |
+| `cs-ai-actions` | Ações CS sob demanda (suggest-note, churn-predict, detect-incidents) |
+| `cs-scheduled-jobs` | Jobs CS agendados (daily-briefing, nps-auto, renewal-alerts, trending-topics) |
+| `cs-playbook-runner` | Executa playbooks automatizados de CS |
 | `bluechat-inbound` | Recebe mensagens do BlueChat |
 | `sgt-webhook` | Webhook do SGT (tráfego) |
+| `copilot-chat` | Chat com Amélia Copilot (streaming) |
 
 ## CORS
 

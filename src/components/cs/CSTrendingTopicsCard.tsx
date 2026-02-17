@@ -50,7 +50,7 @@ export function CSTrendingTopicsCard({ compact = false }: { compact?: boolean })
 
   const refreshMutation = useMutation({
     mutationFn: async () => {
-      const { data, error } = await supabase.functions.invoke('cs-trending-topics');
+      const { data, error } = await supabase.functions.invoke('cs-scheduled-jobs', { body: { action: 'trending-topics' } });
       if (error) throw error;
       return data;
     },

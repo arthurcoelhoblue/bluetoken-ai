@@ -86,8 +86,8 @@ export default function CSClienteDetailPage() {
     if (!customer) return;
     setSendingNpsWa(true);
     try {
-      const { error } = await supabase.functions.invoke('cs-nps-auto', {
-        body: { customer_id: customer.id, tipo: 'NPS' },
+      const { error } = await supabase.functions.invoke('cs-scheduled-jobs', {
+        body: { action: 'nps-auto', customer_id: customer.id, tipo: 'NPS' },
       });
       if (error) throw error;
       toast.success('NPS enviado via WhatsApp');
@@ -368,8 +368,8 @@ export default function CSClienteDetailPage() {
                         onClick={async () => {
                           setSuggestingNote(true);
                           try {
-                            const { data, error } = await supabase.functions.invoke('cs-suggest-note', {
-                              body: { customer_id: customer.id },
+                            const { data, error } = await supabase.functions.invoke('cs-ai-actions', {
+                              body: { action: 'suggest-note', customer_id: customer.id },
                             });
                             if (error) throw error;
                             if (data?.sugestao) {

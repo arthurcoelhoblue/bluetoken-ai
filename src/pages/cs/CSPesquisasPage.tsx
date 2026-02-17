@@ -40,8 +40,8 @@ export default function CSPesquisasPage() {
     }
     setSending(true);
     try {
-      const { data, error } = await supabase.functions.invoke('cs-nps-auto', {
-        body: { customer_id: selectedCustomerId, tipo: selectedTipo },
+      const { data, error } = await supabase.functions.invoke('cs-scheduled-jobs', {
+        body: { action: 'nps-auto', customer_id: selectedCustomerId, tipo: selectedTipo },
       });
       if (error) throw error;
       toast.success(`Pesquisa ${selectedTipo} enviada com sucesso!`);
