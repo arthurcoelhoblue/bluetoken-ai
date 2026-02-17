@@ -1,50 +1,30 @@
 
 
-# Alterar Senha na Pagina "Meu Perfil"
+# Inativar Usuario pelo EditUserDialog
 
 ## Objetivo
 
-Adicionar uma secao "Alterar Senha" na pagina `/me` (Meu Perfil), permitindo que o usuario logado troque a propria senha diretamente, sem precisar sair do sistema.
-
-Tambem corrigir o fluxo de "Esqueci minha senha" que atualmente redireciona para `/auth` em vez de uma pagina dedicada de reset.
-
----
+Adicionar um switch "Ativo" no dialog de edicao de usuario, permitindo que o administrador desative ou reative um usuario. O sistema ja bloqueia usuarios inativos no `ProtectedRoute` -- basta conectar o campo `is_active` ao formulario de edicao.
 
 ## Mudancas
 
-### 1. Secao "Alterar Senha" na pagina Me (`src/pages/Me.tsx`)
+### 1. Schema (`src/schemas/users.ts`)
 
-Adicionar um novo Card abaixo dos cards existentes com:
-- Campo "Nova Senha" (minimo 8 caracteres)
-- Campo "Confirmar Nova Senha"
-- Botao "Alterar Senha"
-- Validacao: senhas devem coincidir e ter no minimo 8 caracteres
-- Ao salvar, chama `supabase.auth.updateUser({ password: novaSenha })`
-- Exibe toast de sucesso ou erro
-- Limpa os campos apos salvar com sucesso
+Adicionar campo `isActive` (boolean, default `true`) ao `editUserSchema`.
 
-### 2. Pagina `/reset-password` (`src/pages/ResetPassword.tsx`)
+### 2. EditUserDialog (`src/components/settings/EditUserDialog.tsx`)
 
-Criar pagina dedicada para o fluxo de recuperacao de senha por email:
-- Detecta o token de recovery na URL (hash)
-- Exibe formulario para definir nova senha
-- Chama `supabase.auth.updateUser({ password })` para salvar
-- Redireciona para `/auth` apos sucesso
+- Receber nova prop `currentIsActive` (boolean)
+- Adicionar switch "Ativo / Inativo" ao formulario, com descricao "Usuarios inativos nao conseguem acessar o sistema"
+- Incluir `is_active` no update do `profiles`
 
-### 3. Corrigir redirect do `resetPassword` (`src/contexts/AuthContext.tsx`)
+### 3. UserAccessList (`src/components/settings/UserAccessList.tsx`)
 
-Alterar o `redirectTo` de `/auth` para `/reset-password` para que o link do email de recuperacao leve a pagina correta.
-
-### 4. Registrar rota (`src/App.tsx` ou arquivo de rotas)
-
-Adicionar a rota publica `/reset-password` apontando para o novo componente `ResetPassword`.
-
----
+- Passar `currentIsActive` (campo `is_active` do usuario) ao `EditUserDialog`
 
 ## Detalhes tecnicos
 
-- A troca de senha do usuario logado usa `supabase.auth.updateUser({ password })` -- nao precisa da senha antiga
-- A pagina `/reset-password` precisa ser publica (fora do guard de autenticacao), pois o usuario ainda nao esta logado quando clica no link do email
-- O schema de validacao sera inline no componente (dois campos + confirmacao), sem necessidade de criar schema separado
-- Icone `Lock` do lucide-react para o card de senha
-
+- A coluna `is_active` ja existe na tabela `profiles` (boolean, default true)
+- O `ProtectedRoute` ja verifica `profile.is_active` e exibe tela de "Acesso Desativado" quando false
+- Nenhuma alteracao de banco de dados e necessaria
+- Nenhuma alteracao no `ProtectedRoute` e necessaria
