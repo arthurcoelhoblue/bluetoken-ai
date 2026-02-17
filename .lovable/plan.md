@@ -1,98 +1,129 @@
 
+# Cadastrar Amelia como Vendedora + Tag IA nos Deals + Teste de Abordagem
 
-# Atualizar Deep Links do Blue Chat + Preservar Chat Interno
+## Resumo
 
-## Principio
+Registrar a Amelia como usuario do sistema (vendedora sem comissao, gestor = Arthur Coelho), adicionar uma tag visual "Atendimento IA" nos cards do Kanban para deals atendidos pela Amelia, e preparar o fluxo para que a Amelia possa ser dona de deals/leads durante o atendimento automatizado.
 
-Nenhum codigo do chat interno sera removido. As funcoes, states, hooks e botoes continuam existindo -- apenas ficam **condicionalmente invisiveis** quando o modo Blue Chat esta ativo. Se o modo for desativado, tudo volta a funcionar como antes sem nenhuma alteracao de codigo.
+---
 
-## Mudancas
+## 1. Cadastrar a Amelia como usuario
 
-### 1. Criar `src/utils/bluechat.ts` (constantes centralizadas)
+Usar a edge function `admin-create-user` para criar a Amelia com:
+- Nome: **Amelia IA**
+- Email: amelia@grupoblue.com.br
+- Senha temporaria (sera definida no cadastro)
+- `is_vendedor: true` (para aparecer em filtros de dono no Kanban)
+- `gestor_id`: Arthur Coelho (`3eb15a6a-9856-4e21-a856-b87eeff933b1`)
+- Empresa: `BLUE` (com possibilidade de adicionar TOKENIZA depois)
+- Sem comissao (nenhuma regra de comissao sera criada para ela)
 
-```typescript
-export const BLUECHAT_BASE_URL = 'https://chat.grupoblue.com.br';
+Isso sera feito via chamada a edge function existente -- nao precisa de mudancas de codigo.
 
-export const EMPRESA_TO_SLUG: Record<string, string> = {
-  TOKENIZA: 'tokeniza',
-  BLUE: 'blue-consult',
-  MPUPPE: 'mpuppe',
-  AXIA: 'axia',
-};
+## 2. Tag visual "Atendimento IA" no DealCard
 
-export function buildBluechatDeepLink(empresa: string, telefone: string): string | null {
-  const slug = EMPRESA_TO_SLUG[empresa];
-  if (!slug || !telefone) return null;
-  const digits = telefone.replace(/\D/g, '');
-  if (digits.length < 10) return null;
-  return `${BLUECHAT_BASE_URL}/open/${slug}/${digits}`;
-}
+A tabela `deals` ja possui a coluna `etiqueta` (text) e `tags` (text[]). Vamos usar o campo `etiqueta` para exibir visualmente no card do Kanban.
+
+### Mudancas no `DealCard.tsx`:
+- Adicionar renderizacao da `etiqueta` quando presente
+- Usar uma Badge com icone de Bot para deals com etiqueta "Amelia IA" ou "Atendimento IA"
+- Estilizacao diferenciada (cor roxa/violeta) para tags de IA
+
+```
+Antes:
+[QUENTE] Deal Titulo
+Arthur Coelho
+R$ 5.000
+
+Depois:
+[QUENTE] [Bot Amelia IA]
+Deal Titulo
+Arthur Coelho
+R$ 5.000
 ```
 
-### 2. `ConversationPanel.tsx`
+### Mudancas no `DealCard.tsx` (tecnico):
+- Verificar `deal.etiqueta` e renderizar uma Badge adicional
+- Se `etiqueta` contem "IA" ou "Amelia", usar icone Bot + cor diferenciada
+- Caso contrario, renderizar como tag generica
 
-- Manter `useEffect` que busca `bluechatConversationId` (usado para transferencias)
-- Manter state `bluechatConversationId`
-- Trocar apenas a construcao do deep link: usar `buildBluechatDeepLink(empresa, telefone)` em vez de `{frontendUrl}/conversation/{id}`
-- O link "Ver no Blue Chat" continua condicional a `isBluechat`
+## 3. Configurar o deal de teste
 
-### 3. `ConversationTakeoverBar.tsx`
+Inserir dados no banco para simular o cenario:
+- Criar um deal no Pipeline Comercial da BLUE, stage MQL (`7e6ee75a-8efd-4cc4-8264-534bf77993c7`)
+- Contact: Arthur Coelho (`d3c63553-497d-4e5c-96d0-12c43893b8f4`)
+- Owner: Amelia (apos criacao do usuario)
+- Etiqueta: "Atendimento IA"
+- Temperatura: FRIO (MQL padrao)
 
-- Manter toda a logica de transferencia, ticket_id, agents (tudo intacto)
-- Adicionar prop `telefone` para construir o deep link
-- No `handleTakeover`, trocar `window.open` para usar `buildBluechatDeepLink(empresa, telefone)`
-- Manter o `bluechatConversationId` prop (usado para transferencias, nao para URL)
+## 4. Fluxo futuro (nao implementado agora, apenas preparado)
 
-### 4. `ManualMessageInput.tsx`
+A arquitetura permite que:
+- Quando a Amelia iniciar um atendimento via SDR, o deal criado automaticamente tera `owner_id = amelia_id` e `etiqueta = 'Atendimento IA'`
+- Quando o closer assumir (takeover), o `owner_id` muda para o closer e a `etiqueta` e removida
+- O gestor (Arthur) monitora todos os deals da Amelia filtrando por dono no Kanban
 
-- Manter toda a logica de envio (textarea, send, etc)
-- No bloco Blue Chat (linha 84-122): trocar o botao "Responder no Blue Chat" para usar `buildBluechatDeepLink` em vez de `{frontendUrl}/conversation/{id}`
-- A funcao `handleOpenBluechat` usa o novo helper
-- Todo o resto fica igual
-
-### 5. `LeadDetail.tsx`
-
-- Substituir as constantes locais `BLUECHAT_BASE_URL` e `EMPRESA_TO_SLUG` pelo import de `src/utils/bluechat.ts`
-- Usar `buildBluechatDeepLink` para o botao "Abrir no Blue Chat"
-
-### 6. `useChannelConfig.ts`
-
-- Remover a busca de `bluechat_frontend_url` do `system_settings` (URL base agora e fixa)
-- Remover `bluechatFrontendUrl` do retorno
-- Manter apenas a verificacao de `integration_company_config` para `isBluechat`/`isMensageria`
-
-### 7. Backend: `channel-resolver.ts`
-
-- Manter `resolveChannelConfig`, `sendViaBluechat`, `openBluechatConversation` (intactos)
-- Manter `resolveBluechatFrontendUrl` (nao remover, apenas nao sera mais chamado do frontend -- pode ser util no futuro)
-
-### 8. Backend: `bluechat-proxy` acao `get-frontend-url`
-
-- Manter a acao (nao remover). Apenas nao sera mais chamada pelo frontend, mas fica disponivel caso necessario
-
-## Resumo de impacto
-
-| Componente | O que muda | O que NAO muda |
-|---|---|---|
-| `src/utils/bluechat.ts` | Novo arquivo com constantes | -- |
-| `ConversationPanel` | Deep link usa novo helper | State, useEffect, props, logica intactos |
-| `TakeoverBar` | Deep link usa novo helper + recebe `telefone` | Transferencia, ticket_id, agents intactos |
-| `ManualMessageInput` | Deep link usa novo helper | Textarea, envio, logica de modo intactos |
-| `LeadDetail` | Import centralizado | Botao e logica intactos |
-| `useChannelConfig` | Remove fetch de `frontend_url` | Verificacao de canal intacta |
-| `channel-resolver.ts` | Nada removido | Tudo intacto |
-| `bluechat-proxy` | Nada removido | Tudo intacto |
+---
 
 ## Arquivos a modificar
 
-| Arquivo | Tipo |
-|---|---|
-| `src/utils/bluechat.ts` | Criar |
-| `src/components/conversas/ConversationPanel.tsx` | Editar (deep link) |
-| `src/components/conversas/ConversationTakeoverBar.tsx` | Editar (deep link + prop telefone) |
-| `src/components/conversas/ManualMessageInput.tsx` | Editar (deep link) |
-| `src/pages/LeadDetail.tsx` | Editar (importar do utils) |
-| `src/hooks/useChannelConfig.ts` | Editar (remover fetch frontend_url) |
+| Arquivo | Tipo | Descricao |
+|---------|------|-----------|
+| `src/components/pipeline/DealCard.tsx` | Editar | Renderizar `etiqueta` como Badge visual |
+| `src/types/deal.ts` | Verificar | `etiqueta` ja existe no tipo `Deal` |
 
-Zero alteracoes no backend. Zero remocoes de funcionalidade.
+## Dados a inserir (via ferramentas do sistema)
 
+1. Criar usuario Amelia via `admin-create-user`
+2. Inserir deal de teste no Pipeline Comercial BLUE, stage MQL, com etiqueta "Atendimento IA"
+
+---
+
+## Detalhes tecnicos
+
+### Badge de etiqueta no DealCard
+
+```typescript
+// Dentro do DealCard, apos o Badge de temperatura/status
+{deal.etiqueta && (
+  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+    deal.etiqueta.toLowerCase().includes('ia') || deal.etiqueta.toLowerCase().includes('amelia')
+      ? 'bg-violet-500/15 text-violet-600 border-violet-500/30'
+      : 'bg-blue-500/15 text-blue-600 border-blue-500/30'
+  }`}>
+    {deal.etiqueta.toLowerCase().includes('ia') && <Bot className="h-3 w-3 mr-0.5" />}
+    {deal.etiqueta}
+  </Badge>
+)}
+```
+
+### Criacao do usuario Amelia
+
+Chamada a `admin-create-user` com body:
+```json
+{
+  "email": "amelia@grupoblue.com.br",
+  "nome": "Amélia IA",
+  "password": "AmeliaGrupoBlue2025!",
+  "gestor_id": "3eb15a6a-9856-4e21-a856-b87eeff933b1",
+  "is_vendedor": true,
+  "empresa": "BLUE"
+}
+```
+
+### Deal de teste
+
+```sql
+INSERT INTO deals (contact_id, pipeline_id, stage_id, titulo, valor, temperatura, owner_id, etiqueta, posicao_kanban)
+VALUES (
+  'd3c63553-497d-4e5c-96d0-12c43893b8f4',
+  '21e577cc-32eb-4f1c-895e-b11bfc056e99',
+  '7e6ee75a-8efd-4cc4-8264-534bf77993c7',
+  'Arthur Coelho - Blue Consult (MQL)',
+  0,
+  'FRIO',
+  '<amelia_user_id>',
+  'Atendimento IA',
+  1
+);
+```
