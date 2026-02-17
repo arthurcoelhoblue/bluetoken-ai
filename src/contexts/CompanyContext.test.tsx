@@ -4,12 +4,14 @@ import React from "react";
 import { CompanyProvider, useCompany } from "./CompanyContext";
 
 function TestConsumer() {
-  const { activeCompany, setActiveCompany, companyLabel } = useCompany();
+  const { activeCompany, activeCompanies, setActiveCompanies, companyLabel } = useCompany();
   return React.createElement("div", null,
     React.createElement("span", { "data-testid": "company" }, activeCompany),
+    React.createElement("span", { "data-testid": "companies" }, JSON.stringify(activeCompanies)),
     React.createElement("span", { "data-testid": "label" }, companyLabel),
-    React.createElement("button", { onClick: () => setActiveCompany("TOKENIZA") }, "Switch Tokeniza"),
-    React.createElement("button", { onClick: () => setActiveCompany("BLUE") }, "Switch Blue"),
+    React.createElement("button", { onClick: () => setActiveCompanies(["TOKENIZA"]) }, "Switch Tokeniza"),
+    React.createElement("button", { onClick: () => setActiveCompanies(["BLUE"]) }, "Switch Blue"),
+    React.createElement("button", { onClick: () => setActiveCompanies(["BLUE", "TOKENIZA"]) }, "Switch Both"),
   );
 }
 
@@ -38,17 +40,20 @@ describe("CompanyContext", () => {
       getByText("Switch Tokeniza").click();
     });
     expect(getByTestId("company").textContent).toBe("TOKENIZA");
-    expect(localStorage.getItem("bluecrm-company")).toBe("TOKENIZA");
+    expect(localStorage.getItem("bluecrm-companies")).toBe('["TOKENIZA"]');
   });
 
-  it("migrates old ALL value to BLUE", () => {
-    localStorage.setItem("bluecrm-company", "ALL");
-    const { getByTestId } = render(
+  it("supports multi-company selection", () => {
+    const { getByTestId, getByText } = render(
       React.createElement(CompanyProvider, null,
         React.createElement(TestConsumer)
       )
     );
-    expect(getByTestId("company").textContent).toBe("BLUE");
+    act(() => {
+      getByText("Switch Both").click();
+    });
+    expect(getByTestId("companies").textContent).toBe('["BLUE","TOKENIZA"]');
+    expect(getByTestId("label").textContent).toBe("2 empresas");
   });
 
   it("migrates old lowercase values", () => {

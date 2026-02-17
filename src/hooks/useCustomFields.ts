@@ -4,17 +4,17 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { CustomFieldDefinition, CustomFieldValue, CustomFieldEntityType, CustomFieldFormData, ResolvedCustomField } from '@/types/customFields';
 
 export function useCustomFieldDefinitions(entityType?: CustomFieldEntityType) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['custom_field_definitions', activeCompany, entityType],
+    queryKey: ['custom_field_definitions', activeCompanies, entityType],
     queryFn: async (): Promise<CustomFieldDefinition[]> => {
       let query = supabase
         .from('custom_field_definitions')
         .select('*')
         .order('posicao', { ascending: true });
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (entityType) {
         query = query.eq('entity_type', entityType);
       }

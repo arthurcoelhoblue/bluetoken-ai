@@ -4,10 +4,10 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { CSIncident, CSIncidentTipo, CSGravidade, CSIncidentStatus } from '@/types/customerSuccess';
 
 export function useCSIncidents(customerId?: string, statusFilter?: CSIncidentStatus) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['cs-incidents', activeCompany, customerId, statusFilter],
+    queryKey: ['cs-incidents', activeCompanies, customerId, statusFilter],
     queryFn: async () => {
       let query = supabase
         .from('cs_incidents')
@@ -19,7 +19,7 @@ export function useCSIncidents(customerId?: string, statusFilter?: CSIncidentSta
         .order('created_at', { ascending: false })
         .limit(200);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (customerId) query = query.eq('customer_id', customerId);
       if (statusFilter) query = query.eq('status', statusFilter);
 

@@ -23,14 +23,14 @@ export type TemplateUpdate = Partial<TemplateInsert> & { id: string };
 const TEMPLATE_PAGE_SIZE = 25;
 
 export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null, page: number = 0) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['message_templates', activeCompany, canal, page],
+    queryKey: ['message_templates', activeCompanies, canal, page],
     queryFn: async () => {
       let q = supabase.from('message_templates' as any).select('*', { count: 'exact' });
 
-      q = q.eq('empresa', activeCompany);
+      q = q.in('empresa', activeCompanies);
       if (canal) {
         q = q.eq('canal', canal);
       }

@@ -4,10 +4,10 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { PipelineWithStages, PipelineStage } from '@/types/deal';
 
 export function usePipelines() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['pipelines', activeCompany],
+    queryKey: ['pipelines', activeCompanies],
     queryFn: async (): Promise<PipelineWithStages[]> => {
       let query = supabase
         .from('pipelines')
@@ -15,7 +15,7 @@ export function usePipelines() {
         .eq('ativo', true)
         .order('created_at', { ascending: true });
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;

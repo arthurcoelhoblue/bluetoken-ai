@@ -4,10 +4,10 @@ import { useCompany } from '@/contexts/CompanyContext';
 import type { Organization, OrganizationFormData } from '@/types/customFields';
 
 export function useOrganizations(search?: string) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['organizations', activeCompany, search],
+    queryKey: ['organizations', activeCompanies, search],
     queryFn: async (): Promise<Organization[]> => {
       let query = supabase
         .from('organizations')
@@ -16,7 +16,7 @@ export function useOrganizations(search?: string) {
         .order('nome', { ascending: true })
         .limit(200);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
       if (search && search.length >= 2) {
         query = query.or(`nome.ilike.%${search}%,cnpj.ilike.%${search}%,nome_fantasia.ilike.%${search}%`);
       }

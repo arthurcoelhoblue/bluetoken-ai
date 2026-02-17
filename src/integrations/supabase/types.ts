@@ -5225,7 +5225,7 @@ export type Database = {
           access_profile_id: string
           assigned_by: string | null
           created_at: string
-          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           permissions_override: Json | null
           updated_at: string
@@ -5235,7 +5235,7 @@ export type Database = {
           access_profile_id: string
           assigned_by?: string | null
           created_at?: string
-          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           permissions_override?: Json | null
           updated_at?: string
@@ -5245,7 +5245,7 @@ export type Database = {
           access_profile_id?: string
           assigned_by?: string | null
           created_at?: string
-          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           permissions_override?: Json | null
           updated_at?: string
@@ -5290,28 +5290,28 @@ export type Database = {
           {
             foreignKeyName: "user_access_assignments_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "analytics_esforco_vendedor"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "user_access_assignments_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "analytics_vendedor"
             referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "user_access_assignments_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "user_access_assignments_user_id_fkey"
             columns: ["user_id"]
-            isOneToOne: true
+            isOneToOne: false
             referencedRelation: "seller_leaderboard"
             referencedColumns: ["user_id"]
           },
@@ -6905,6 +6905,7 @@ export type Database = {
       cleanup_old_rate_limits: { Args: never; Returns: undefined }
       fn_calc_deal_score: { Args: { p_deal_id: string }; Returns: number }
       get_user_empresa: { Args: { _user_id: string }; Returns: string }
+      get_user_empresas: { Args: { _user_id: string }; Returns: string[] }
       get_user_roles: {
         Args: { _user_id: string }
         Returns: Database["public"]["Enums"]["user_role"][]

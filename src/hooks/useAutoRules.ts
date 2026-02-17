@@ -19,14 +19,14 @@ export interface AutoRule {
 }
 
 export function useAutoRules() {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['auto-rules', activeCompany],
+    queryKey: ['auto-rules', activeCompanies],
     queryFn: async (): Promise<AutoRule[]> => {
       const { data, error } = await supabase
         .from('pipeline_auto_rules' as any)
         .select('*, from_stage:from_stage_id(nome), to_stage:to_stage_id(nome), pipeline:pipeline_id(nome)')
-        .eq('empresa', activeCompany)
+        .in('empresa', activeCompanies)
         .order('created_at', { ascending: false });
       if (error) throw error;
       type AutoRuleRow = AutoRule & { from_stage?: { nome: string } | null; to_stage?: { nome: string } | null; pipeline?: { nome: string } | null };

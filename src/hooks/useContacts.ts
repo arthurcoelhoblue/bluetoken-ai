@@ -6,10 +6,10 @@ import type { Contact } from '@/types/deal';
 const PAGE_SIZE = 25;
 
 export function useContacts(search?: string, page = 0) {
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['contacts', activeCompany, search, page],
+    queryKey: ['contacts', activeCompanies, search, page],
     queryFn: async (): Promise<{ data: Contact[]; count: number }> => {
       let query = supabase
         .from('contacts')
@@ -17,7 +17,7 @@ export function useContacts(search?: string, page = 0) {
         .order('nome', { ascending: true })
         .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
 
-      query = query.eq('empresa', activeCompany);
+      query = query.in('empresa', activeCompanies);
 
       if (search) {
         query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);
