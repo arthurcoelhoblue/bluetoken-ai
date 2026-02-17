@@ -1,46 +1,50 @@
 
-# Adicionar Botao de Editar Usuario
+
+# Alterar Senha na Pagina "Meu Perfil"
 
 ## Objetivo
 
-Criar um dialog de edicao de usuario que permita alterar nome, flag vendedor, gestor e ramal de usuarios ja existentes, acessivel por um botao de edicao na tabela de usuarios.
+Adicionar uma secao "Alterar Senha" na pagina `/me` (Meu Perfil), permitindo que o usuario logado troque a propria senha diretamente, sem precisar sair do sistema.
+
+Tambem corrigir o fluxo de "Esqueci minha senha" que atualmente redireciona para `/auth` em vez de uma pagina dedicada de reset.
 
 ---
 
 ## Mudancas
 
-### 1. Novo componente `EditUserDialog` (`src/components/settings/EditUserDialog.tsx`)
+### 1. Secao "Alterar Senha" na pagina Me (`src/pages/Me.tsx`)
 
-Criar um dialog similar ao `CreateUserDialog`, mas para edicao:
-- Campos editaveis: Nome, Vendedor (switch), Gestor (select), Ramal
-- Email aparece como campo somente leitura (informativo)
-- Senha nao aparece (nao faz sentido editar aqui)
-- Perfil e Empresa nao aparecem (ja tem dialogs dedicados para isso)
-- Ao salvar:
-  - Atualiza `profiles` (nome, is_vendedor, gestor_id)
-  - Faz upsert/delete no `zadarma_extensions` para o ramal
-- Invalida as queries relevantes apos salvar
+Adicionar um novo Card abaixo dos cards existentes com:
+- Campo "Nova Senha" (minimo 8 caracteres)
+- Campo "Confirmar Nova Senha"
+- Botao "Alterar Senha"
+- Validacao: senhas devem coincidir e ter no minimo 8 caracteres
+- Ao salvar, chama `supabase.auth.updateUser({ password: novaSenha })`
+- Exibe toast de sucesso ou erro
+- Limpa os campos apos salvar com sucesso
 
-### 2. Schema de edicao (`src/schemas/users.ts`)
+### 2. Pagina `/reset-password` (`src/pages/ResetPassword.tsx`)
 
-Adicionar um novo schema `editUserSchema` com os campos editaveis:
-- `nome` (obrigatorio, min 2 chars)
-- `isVendedor` (boolean)
-- `gestorId` (string, default 'none')
-- `ramal` (string, opcional)
+Criar pagina dedicada para o fluxo de recuperacao de senha por email:
+- Detecta o token de recovery na URL (hash)
+- Exibe formulario para definir nova senha
+- Chama `supabase.auth.updateUser({ password })` para salvar
+- Redireciona para `/auth` apos sucesso
 
-### 3. Botao na tabela (`src/components/settings/UserAccessList.tsx`)
+### 3. Corrigir redirect do `resetPassword` (`src/contexts/AuthContext.tsx`)
 
-- Adicionar estado `editTarget` para controlar qual usuario esta sendo editado
-- Adicionar botao com icone de lapis (`Pencil`) na coluna de acoes, antes dos botoes existentes
-- Renderizar o `EditUserDialog` quando `editTarget` estiver preenchido
-- Passar os dados atuais do usuario (nome, is_vendedor, ramal) como valores iniciais do formulario
+Alterar o `redirectTo` de `/auth` para `/reset-password` para que o link do email de recuperacao leve a pagina correta.
+
+### 4. Registrar rota (`src/App.tsx` ou arquivo de rotas)
+
+Adicionar a rota publica `/reset-password` apontando para o novo componente `ResetPassword`.
 
 ---
 
 ## Detalhes tecnicos
 
-- O `EditUserDialog` recebe: `userId`, `currentNome`, `currentEmail`, `currentIsVendedor`, `currentGestorId`, `currentRamal`
-- A atualizacao do perfil usa `supabase.from('profiles').update(...)` direto
-- O ramal usa a mesma logica de upsert/delete ja existente no `UserAccessList`
-- O gestor_id e atualizado na tabela `profiles` (campo `gestor_id`)
+- A troca de senha do usuario logado usa `supabase.auth.updateUser({ password })` -- nao precisa da senha antiga
+- A pagina `/reset-password` precisa ser publica (fora do guard de autenticacao), pois o usuario ainda nao esta logado quando clica no link do email
+- O schema de validacao sera inline no componente (dois campos + confirmacao), sem necessidade de criar schema separado
+- Icone `Lock` do lucide-react para o card de senha
+
