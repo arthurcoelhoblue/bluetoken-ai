@@ -33,6 +33,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/admin/ai-benchmark': 'Benchmark IA',
   '/monitor/sgt-events': 'Monitor SGT',
   '/admin/leads-quentes': 'Leads Quentes',
+  '/admin/access-control': 'Controle de Acesso',
   '/admin/settings': 'Configurações',
   '/admin/zadarma': 'Telefonia',
   '/settings/pipelines': 'Configuração de Funis',

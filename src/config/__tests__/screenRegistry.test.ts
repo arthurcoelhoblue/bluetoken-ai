@@ -108,7 +108,7 @@ describe('Route consistency (registry vs App.tsx)', () => {
       'monitor_sgt', 'cs_dashboard', 'cs_clientes', 'cs_pesquisas',
       'cs_incidencias', 'cs_playbooks', 'knowledge_base', 'integracoes',
       'benchmark_ia', 'custos_ia', 'funis_config', 'campos_config',
-      'importacao', 'telefonia_zadarma', 'configuracoes',
+      'importacao', 'telefonia_zadarma', 'controle_acesso', 'configuracoes',
     ];
     const registryKeys = new Set(SCREEN_REGISTRY.map(s => s.key));
     for (const key of sidebarKeys) {

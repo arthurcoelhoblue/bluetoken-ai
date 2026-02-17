@@ -66,6 +66,7 @@ const CSPesquisaMassaPage = lazy(() => import("./pages/cs/CSPesquisaMassaPage"))
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
 const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealthPage"));
+const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -158,6 +159,7 @@ const App = () => (
                 <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ImportacaoPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ZadarmaConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/operational-health" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><OperationalHealthPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/access-control" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AccessControl /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* CS Module — isolated ErrorBoundary */}
                 <Route path="/cs" element={<ProtectedRoute><ErrorBoundary><CSDashboardPage /></ErrorBoundary></ProtectedRoute>} />
