@@ -8,6 +8,9 @@ export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
 
 const VALID_EMPRESAS: ReadonlySet<string> = new Set(['TOKENIZA', 'BLUE']);
 
+/** All tenant identifiers for batch iteration (forEachEmpresa pattern) */
+export const EMPRESAS: readonly EmpresaTipo[] = ['BLUE', 'TOKENIZA'] as const;
+
 /**
  * Validates that the given value is a valid tenant identifier.
  * Throws if invalid.

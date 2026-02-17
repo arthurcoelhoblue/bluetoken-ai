@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { EMPRESAS } from "../_shared/tenant.ts";
 
 const log = createLogger('cs-health-calculator');
 const corsHeaders = getWebhookCorsHeaders();
@@ -37,8 +38,11 @@ serve(async (req) => {
 
     if (singleId) customerIds = [singleId];
     else {
-      const { data } = await supabase.from('cs_customers').select('id').eq('is_active', true);
-      customerIds = (data ?? []).map((c: IdRow) => c.id);
+      // forEachEmpresa: buscar customers filtrados por empresa
+      for (const empresa of EMPRESAS) {
+        const { data } = await supabase.from('cs_customers').select('id').eq('is_active', true).eq('empresa', empresa);
+        customerIds.push(...(data ?? []).map((c: IdRow) => c.id));
+      }
     }
 
     if (customerIds.length === 0) return new Response(JSON.stringify({ processed: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
