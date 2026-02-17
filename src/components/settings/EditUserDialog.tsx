@@ -11,6 +11,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { editUserSchema, type EditUserFormData } from '@/schemas/users';
+import { useAuth } from '@/contexts/AuthContext';
 
 interface Props {
   open: boolean;
@@ -28,6 +29,9 @@ export function EditUserDialog({
   open, onOpenChange, userId, currentNome, currentEmail,
   currentIsVendedor, currentIsActive, currentGestorId, currentRamal,
 }: Props) {
+  const { roles } = useAuth();
+  const isAdmin = roles.includes('ADMIN');
+
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],
     queryFn: async () => {
@@ -137,17 +141,19 @@ export function EditUserDialog({
               </FormItem>
             )} />
 
-            <FormField control={form.control} name="isActive" render={({ field }) => (
-              <FormItem className="flex items-center justify-between rounded-lg border p-3">
-                <div className="space-y-0.5">
-                  <FormLabel>Ativo</FormLabel>
-                  <FormDescription>Usuários inativos não conseguem acessar o sistema</FormDescription>
-                </div>
-                <FormControl>
-                  <Switch checked={field.value} onCheckedChange={field.onChange} />
-                </FormControl>
-              </FormItem>
-            )} />
+            {isAdmin && (
+              <FormField control={form.control} name="isActive" render={({ field }) => (
+                <FormItem className="flex items-center justify-between rounded-lg border p-3">
+                  <div className="space-y-0.5">
+                    <FormLabel>Ativo</FormLabel>
+                    <FormDescription>Usuários inativos não conseguem acessar o sistema</FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch checked={field.value} onCheckedChange={field.onChange} />
+                  </FormControl>
+                </FormItem>
+              )} />
+            )}
 
             <FormField control={form.control} name="isVendedor" render={({ field }) => (
               <FormItem className="flex items-center justify-between rounded-lg border p-3">
