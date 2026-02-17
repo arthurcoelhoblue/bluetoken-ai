@@ -1,50 +1,52 @@
 
 
-# Fases 4, 5 e 6 -- Finalizacao do Hardening Multi-Tenancy
-
-**Status: ✅ CONCLUÍDAS**
+# Itens de Producao -- 3 Acoes Finais
 
 ---
 
-## Fase 4 -- Triggers de Validação ✅
+## 1. Habilitar Leaked Password Protection
 
-Migração SQL criando 2 triggers de defesa em profundidade:
+Usar a ferramenta `configure-auth` para ativar a protecao contra senhas vazadas (HaveIBeenPwned). Isso impede que usuarios cadastrem senhas ja comprometidas em vazamentos de dados.
 
-- **`validate_deal_pipeline_tenant`** (deals, BEFORE INSERT OR UPDATE) — Bloqueia writes onde pipeline_id e contact_id pertencem a empresas diferentes
-- **`validate_activity_tenant`** (deal_activities, BEFORE INSERT) — Bloqueia atividades vinculadas a deals de outro tenant
-
----
-
-## Fase 5 -- Testes Expandidos ✅
-
-6 novos testes HTTP adicionados a `tenant_test.ts`:
-
-| # | Função | Cenário | Status |
-|---|--------|---------|--------|
-| 1 | `next-best-action` | Sem empresa → erro | ✅ |
-| 2 | `next-best-action` | Empresa inválida → erro | ✅ |
-| 3 | `amelia-mass-action` | Sem empresa → erro | ✅ |
-| 4 | `amelia-mass-action` | Empresa inválida → erro | ✅ |
-| 5 | `cs-suggest-note` | Sem customer → erro | ✅ |
-| 6 | `cs-suggest-note` | Empresa inválida → erro | ✅ |
+**Acao:** Configurar via ferramenta de auth do Lovable Cloud.
 
 ---
 
-## Fase 6 -- Documentação ✅
+## 2. Sanitizar EmailPreviewDialog (XSS)
 
-- `docs-site/docs/desenvolvedor/multi-tenancy.md` — ADR-005, padrão assertEmpresa, status de cobertura completo
-- `docs-site/docs/admin/multi-tenancy.md` — Nota sobre triggers de defesa em profundidade
-- `.lovable/plan.md` — Este arquivo, marcando tudo como concluído
+O `TemplateFormDialog` ja foi corrigido (usa React elements, sem `dangerouslySetInnerHTML`). Porem, o `EmailPreviewDialog` ainda usa `doc.write(htmlContent)` diretamente num iframe, o que e um vetor de XSS.
+
+**Correcao:** Adicionar sanitizacao do HTML antes de injetar no iframe, usando uma funcao de escape ou removendo tags perigosas (`<script>`, event handlers). O iframe ja tem `sandbox="allow-same-origin"` (sem `allow-scripts`), o que mitiga scripts, mas e melhor sanitizar no lado do React tambem como defesa em profundidade.
+
+**Arquivo:** `src/components/messages/EmailPreviewDialog.tsx`
+
+**Mudanca:**
+- Criar funcao `sanitizeHtml()` que remove `<script>`, `<iframe>`, event handlers (`on*=`), e `javascript:` URLs
+- Aplicar antes do `doc.write()`
+
+Alem disso, atualizar o finding `xss_template_preview` para deletar (ja corrigido) ou atualizar para apontar ao EmailPreviewDialog.
 
 ---
 
-## Resumo Geral do Hardening Multi-Tenancy
+## 3. Marcar Findings de Visibilidade como Aceitos
 
-| Fase | Escopo | Status |
-|------|--------|--------|
-| 1 | RLS + Frontend isolation | ✅ |
-| 2 | Edge Functions iniciais (3) | ✅ |
-| 3 | Edge Functions expandidas (9) | ✅ |
-| 4 | Triggers de validação SQL | ✅ |
-| 5 | Testes de isolamento | ✅ |
-| 6 | Documentação e ADR | ✅ |
+Os 3 findings de visibilidade interna (profiles, deals, cs_customers) serao marcados como ignorados com justificativa de que a visibilidade company-wide e intencional no contexto CRM.
+
+**Findings a ignorar:**
+- `profiles_table_public_exposure` -- Visibilidade entre colegas e intencional
+- `deals_table_financial_exposure` -- CRM requer visibilidade de pipeline para equipe
+- `cs_customers_health_scores` -- CS team precisa de visibilidade compartilhada
+
+---
+
+## Resumo Tecnico
+
+| Item | Arquivo/Ferramenta | Tipo |
+|------|-------------------|------|
+| Leaked password protection | Auth config tool | Configuracao |
+| Sanitizar EmailPreviewDialog | `src/components/messages/EmailPreviewDialog.tsx` | Edicao |
+| Deletar finding stale XSS | Security findings | Atualizacao |
+| Marcar 3 findings como aceitos | Security findings | Atualizacao |
+
+Total: 1 arquivo editado + 1 configuracao de auth + 4 operacoes em findings de seguranca.
+
