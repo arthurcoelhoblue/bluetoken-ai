@@ -1,9 +1,13 @@
+import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import { RoleBadge } from '@/components/auth/RoleBadge';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
 import { 
   Mail, 
   Calendar, 
@@ -11,12 +15,41 @@ import {
   Building2,
   CheckCircle2,
   XCircle,
+  Lock,
+  Loader2,
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { supabase } from '@/integrations/supabase/client';
+import { toast } from 'sonner';
 
 function MeContent() {
   const { profile, roles, user } = useAuth();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 8) {
+      toast.error('A senha deve ter no mínimo 8 caracteres');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('As senhas não coincidem');
+      return;
+    }
+    setIsChangingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    if (error) {
+      toast.error('Erro ao alterar senha. Tente novamente.');
+    } else {
+      toast.success('Senha alterada com sucesso!');
+      setNewPassword('');
+      setConfirmPassword('');
+    }
+    setIsChangingPassword(false);
+  };
 
   const getInitials = (name: string | null, email: string) => {
     if (name) {
@@ -125,6 +158,55 @@ function MeContent() {
                 {formatDate(profile.created_at)}
               </span>
             </div>
+          </CardContent>
+        </Card>
+
+        {/* Change Password */}
+        <Card className="card-shadow">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Lock className="h-5 w-5" />
+              Alterar Senha
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="new-pw">Nova Senha</Label>
+                <Input
+                  id="new-pw"
+                  type="password"
+                  placeholder="Mínimo 8 caracteres"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                  minLength={8}
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="confirm-pw">Confirmar Nova Senha</Label>
+                <Input
+                  id="confirm-pw"
+                  type="password"
+                  placeholder="Repita a nova senha"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  disabled={isChangingPassword}
+                  required
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={isChangingPassword}>
+                {isChangingPassword ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Salvando...
+                  </>
+                ) : (
+                  'Alterar Senha'
+                )}
+              </Button>
+            </form>
           </CardContent>
         </Card>
 
