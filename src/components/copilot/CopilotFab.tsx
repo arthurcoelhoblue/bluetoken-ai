@@ -29,14 +29,14 @@ function loadPosition(): { x: number; y: number } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return JSON.parse(raw);
-  } catch {}
+  } catch { /* ignore – corrupt localStorage */ }
   return null;
 }
 
 function savePosition(pos: { x: number; y: number }) {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(pos));
-  } catch {}
+  } catch { /* ignore – localStorage full or unavailable */ }
 }
 
 export function CopilotFab() {
