@@ -131,3 +131,6 @@ verify_jwt = false
 
 [functions.bluechat-proxy]
 verify_jwt = false
+
+[functions.sdr-proactive-outreach]
+verify_jwt = false
