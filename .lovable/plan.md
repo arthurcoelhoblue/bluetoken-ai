@@ -1,129 +1,71 @@
 
-# Cadastrar Amelia como Vendedora + Tag IA nos Deals + Teste de Abordagem
 
-## Resumo
+# Proteger campo `is_active` - Apenas ADMINs podem inativar usuarios
 
-Registrar a Amelia como usuario do sistema (vendedora sem comissao, gestor = Arthur Coelho), adicionar uma tag visual "Atendimento IA" nos cards do Kanban para deals atendidos pela Amelia, e preparar o fluxo para que a Amelia possa ser dona de deals/leads durante o atendimento automatizado.
+## Problema atual
 
----
+A politica RLS "Users can update their own profile" permite que qualquer usuario autenticado atualize **qualquer coluna** do proprio perfil, incluindo `is_active`. Embora a tela de Controle de Acesso ja seja restrita a admins, uma chamada direta ao banco (via console do navegador, por exemplo) permitiria que um usuario manipulasse o campo `is_active`.
 
-## 1. Cadastrar a Amelia como usuario
+## Solucao
 
-Usar a edge function `admin-create-user` para criar a Amelia com:
-- Nome: **Amelia IA**
-- Email: amelia@grupoblue.com.br
-- Senha temporaria (sera definida no cadastro)
-- `is_vendedor: true` (para aparecer em filtros de dono no Kanban)
-- `gestor_id`: Arthur Coelho (`3eb15a6a-9856-4e21-a856-b87eeff933b1`)
-- Empresa: `BLUE` (com possibilidade de adicionar TOKENIZA depois)
-- Sem comissao (nenhuma regra de comissao sera criada para ela)
+Duas camadas de protecao:
 
-Isso sera feito via chamada a edge function existente -- nao precisa de mudancas de codigo.
+### 1. Trigger no banco de dados (protecao principal)
 
-## 2. Tag visual "Atendimento IA" no DealCard
+Criar um trigger `BEFORE UPDATE` na tabela `profiles` que impede a alteracao de `is_active` por usuarios que nao sejam ADMIN.
 
-A tabela `deals` ja possui a coluna `etiqueta` (text) e `tags` (text[]). Vamos usar o campo `etiqueta` para exibir visualmente no card do Kanban.
+```sql
+CREATE OR REPLACE FUNCTION public.prevent_non_admin_deactivation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Se is_active nao mudou, permitir
+  IF OLD.is_active IS NOT DISTINCT FROM NEW.is_active THEN
+    RETURN NEW;
+  END IF;
 
-### Mudancas no `DealCard.tsx`:
-- Adicionar renderizacao da `etiqueta` quando presente
-- Usar uma Badge com icone de Bot para deals com etiqueta "Amelia IA" ou "Atendimento IA"
-- Estilizacao diferenciada (cor roxa/violeta) para tags de IA
+  -- Verificar se o caller e ADMIN
+  IF NOT public.has_role(auth.uid(), 'ADMIN') THEN
+    RAISE EXCEPTION 'Apenas administradores podem ativar/inativar usuarios';
+  END IF;
 
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_prevent_non_admin_deactivation
+  BEFORE UPDATE ON public.profiles
+  FOR EACH ROW
+  EXECUTE FUNCTION public.prevent_non_admin_deactivation();
 ```
-Antes:
-[QUENTE] Deal Titulo
-Arthur Coelho
-R$ 5.000
 
-Depois:
-[QUENTE] [Bot Amelia IA]
-Deal Titulo
-Arthur Coelho
-R$ 5.000
+### 2. UI: Ocultar toggle "Ativo" para nao-admins (camada visual)
+
+No `EditUserDialog.tsx`, verificar se o usuario logado tem role ADMIN via `useAuth()`. Se nao for admin, esconder o campo `isActive` do formulario.
+
+```typescript
+const { roles } = useAuth();
+const isAdmin = roles.includes('ADMIN');
+
+// No form, renderizar condicionalmente:
+{isAdmin && (
+  <FormField name="isActive" ... />
+)}
 ```
-
-### Mudancas no `DealCard.tsx` (tecnico):
-- Verificar `deal.etiqueta` e renderizar uma Badge adicional
-- Se `etiqueta` contem "IA" ou "Amelia", usar icone Bot + cor diferenciada
-- Caso contrario, renderizar como tag generica
-
-## 3. Configurar o deal de teste
-
-Inserir dados no banco para simular o cenario:
-- Criar um deal no Pipeline Comercial da BLUE, stage MQL (`7e6ee75a-8efd-4cc4-8264-534bf77993c7`)
-- Contact: Arthur Coelho (`d3c63553-497d-4e5c-96d0-12c43893b8f4`)
-- Owner: Amelia (apos criacao do usuario)
-- Etiqueta: "Atendimento IA"
-- Temperatura: FRIO (MQL padrao)
-
-## 4. Fluxo futuro (nao implementado agora, apenas preparado)
-
-A arquitetura permite que:
-- Quando a Amelia iniciar um atendimento via SDR, o deal criado automaticamente tera `owner_id = amelia_id` e `etiqueta = 'Atendimento IA'`
-- Quando o closer assumir (takeover), o `owner_id` muda para o closer e a `etiqueta` e removida
-- O gestor (Arthur) monitora todos os deals da Amelia filtrando por dono no Kanban
-
----
 
 ## Arquivos a modificar
 
 | Arquivo | Tipo | Descricao |
-|---------|------|-----------|
-| `src/components/pipeline/DealCard.tsx` | Editar | Renderizar `etiqueta` como Badge visual |
-| `src/types/deal.ts` | Verificar | `etiqueta` ja existe no tipo `Deal` |
+|---|---|---|
+| Nova migration SQL | Criar | Trigger `prevent_non_admin_deactivation` |
+| `src/components/settings/EditUserDialog.tsx` | Editar | Condicionar toggle "Ativo" a role ADMIN |
 
-## Dados a inserir (via ferramentas do sistema)
+## Impacto
 
-1. Criar usuario Amelia via `admin-create-user`
-2. Inserir deal de teste no Pipeline Comercial BLUE, stage MQL, com etiqueta "Atendimento IA"
+- Nenhum usuario nao-admin consegue alterar `is_active`, nem via UI nem via chamada direta ao banco
+- Admins continuam com o fluxo atual sem mudancas
+- Zero impacto em outras funcionalidades
 
----
-
-## Detalhes tecnicos
-
-### Badge de etiqueta no DealCard
-
-```typescript
-// Dentro do DealCard, apos o Badge de temperatura/status
-{deal.etiqueta && (
-  <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
-    deal.etiqueta.toLowerCase().includes('ia') || deal.etiqueta.toLowerCase().includes('amelia')
-      ? 'bg-violet-500/15 text-violet-600 border-violet-500/30'
-      : 'bg-blue-500/15 text-blue-600 border-blue-500/30'
-  }`}>
-    {deal.etiqueta.toLowerCase().includes('ia') && <Bot className="h-3 w-3 mr-0.5" />}
-    {deal.etiqueta}
-  </Badge>
-)}
-```
-
-### Criacao do usuario Amelia
-
-Chamada a `admin-create-user` com body:
-```json
-{
-  "email": "amelia@grupoblue.com.br",
-  "nome": "Amélia IA",
-  "password": "AmeliaGrupoBlue2025!",
-  "gestor_id": "3eb15a6a-9856-4e21-a856-b87eeff933b1",
-  "is_vendedor": true,
-  "empresa": "BLUE"
-}
-```
-
-### Deal de teste
-
-```sql
-INSERT INTO deals (contact_id, pipeline_id, stage_id, titulo, valor, temperatura, owner_id, etiqueta, posicao_kanban)
-VALUES (
-  'd3c63553-497d-4e5c-96d0-12c43893b8f4',
-  '21e577cc-32eb-4f1c-895e-b11bfc056e99',
-  '7e6ee75a-8efd-4cc4-8264-534bf77993c7',
-  'Arthur Coelho - Blue Consult (MQL)',
-  0,
-  'FRIO',
-  '<amelia_user_id>',
-  'Atendimento IA',
-  1
-);
-```
