@@ -138,7 +138,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
         acoes = parsed.acoes || [];
         narrativa_dia = parsed.narrativa_dia || '';
       } catch {
-        log.error('Failed to parse AI response');
+        log.error('Failed to parse AI response', { raw: aiResult.content?.substring(0, 500) });
       }
     }
 
@@ -172,6 +172,19 @@ Sem markdown, sem explicação, apenas o JSON.`;
       if (!narrativa_dia && fallbackAcoes.length > 0) {
         narrativa_dia = 'Resumo gerado automaticamente com base nos seus dados. A análise inteligente está temporariamente indisponível.';
       }
+    }
+
+    // Even with no actions, provide a motivational narrative
+    if (acoes.length === 0 && !narrativa_dia) {
+      const hasAnyData = contextSummary.tarefas_pendentes.length > 0 ||
+        contextSummary.sla_alerts.length > 0 ||
+        contextSummary.deals_parados.length > 0 ||
+        contextSummary.leads_quentes.length > 0 ||
+        contextSummary.deal_scores_top10.length > 0;
+
+      narrativa_dia = hasAnyData
+        ? 'Tudo em dia! Nenhuma ação urgente no momento. Continue acompanhando seus deals.'
+        : '';
     }
 
     return new Response(JSON.stringify({ success: true, acoes, narrativa_dia }), {
