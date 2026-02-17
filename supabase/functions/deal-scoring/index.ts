@@ -3,6 +3,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders } from "../_shared/cors.ts";
+import { EMPRESAS } from "../_shared/tenant.ts";
 
 const log = createLogger('deal-scoring');
 
@@ -52,17 +53,17 @@ serve(async (req) => {
     if (targetDealId) {
       query = query.eq('id', targetDealId);
     } else {
-      // In batch mode, filter by empresa via pipelines join
-      if (empresa) {
-        const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', empresa);
-        const pipelineIds = (pipelines ?? []).map(p => p.id);
-        if (pipelineIds.length > 0) {
-          query = query.in('pipeline_id', pipelineIds);
-        } else {
-          return new Response(JSON.stringify({ scored: 0, empresa }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-        }
+      // Determine tenant list: explicit empresa or forEachEmpresa
+      const empresaList = empresa ? [empresa] : [...EMPRESAS];
+      const allPipelineIds: string[] = [];
+      for (const emp of empresaList) {
+        const { data: pipelines } = await supabase.from('pipelines').select('id').eq('empresa', emp);
+        allPipelineIds.push(...(pipelines ?? []).map(p => p.id));
       }
-      query = query.limit(200);
+      if (allPipelineIds.length === 0) {
+        return new Response(JSON.stringify({ scored: 0, empresa: empresa ?? 'ALL' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+      query = query.in('pipeline_id', allPipelineIds).limit(200);
     }
 
     const { data: deals, error: dealsErr } = await query;

@@ -3,7 +3,7 @@ import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getCorsHeaders, getWebhookCorsHeaders } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai-provider.ts";
-import { assertEmpresa } from "../_shared/tenant.ts";
+import { assertEmpresa, EMPRESAS } from "../_shared/tenant.ts";
 
 const log = createLogger('cs-ai-actions');
 
@@ -52,13 +52,20 @@ async function handleSuggestNote(supabase: ReturnType<typeof createServiceClient
 
 // ── churn-predict handler ─────────────────────────────────────────────
 async function handleChurnPredict(supabase: ReturnType<typeof createServiceClient>, _params: Record<string, unknown>, corsHeaders: Record<string, string>) {
-  const { data: customers, error: custErr } = await supabase
-    .from('cs_customers')
-    .select('id, health_score, health_status, ultimo_nps, ultimo_contato_em, csm_id, empresa, valor_mrr, risco_churn_pct')
-    .eq('is_active', true);
+  // forEachEmpresa: buscar customers isolados por tenant
+  const allCustomers: Array<Record<string, unknown>> = [];
+  for (const empresa of EMPRESAS) {
+    const { data, error } = await supabase
+      .from('cs_customers')
+      .select('id, health_score, health_status, ultimo_nps, ultimo_contato_em, csm_id, empresa, valor_mrr, risco_churn_pct')
+      .eq('is_active', true)
+      .eq('empresa', empresa);
+    if (error) throw error;
+    if (data) allCustomers.push(...data);
+  }
 
-  if (custErr) throw custErr;
-  if (!customers || customers.length === 0) return new Response(JSON.stringify({ updated: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  const customers = allCustomers;
+  if (customers.length === 0) return new Response(JSON.stringify({ updated: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   let updated = 0, alertsSent = 0;
 
@@ -120,10 +127,17 @@ async function handleDetectIncidents(supabase: ReturnType<typeof createServiceCl
   const fortyEightHoursAgo = new Date(Date.now() - 48 * 60 * 60 * 1000).toISOString();
   let detected = 0;
 
-  const { data: customers } = await supabase
-    .from('cs_customers').select('id, contact_id, csm_id, empresa, contacts(nome, legacy_lead_id)').eq('is_active', true);
+  // forEachEmpresa: buscar customers isolados por tenant
+  const allCustomers: Array<Record<string, unknown>> = [];
+  for (const empresa of EMPRESAS) {
+    const { data } = await supabase
+      .from('cs_customers').select('id, contact_id, csm_id, empresa, contacts(nome, legacy_lead_id)')
+      .eq('is_active', true).eq('empresa', empresa);
+    if (data) allCustomers.push(...data);
+  }
+  const customers = allCustomers;
 
-  if (!customers || customers.length === 0) return new Response(JSON.stringify({ detected: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+  if (customers.length === 0) return new Response(JSON.stringify({ detected: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
 
   for (const customer of customers) {
     const leadId = (customer as Record<string, unknown>).contacts && typeof (customer as Record<string, unknown>).contacts === 'object' ? ((customer as Record<string, unknown>).contacts as Record<string, unknown>)?.legacy_lead_id as string : null;

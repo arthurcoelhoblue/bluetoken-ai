@@ -114,9 +114,13 @@ const { data } = await supabase
 
 | Função | Status | Método |
 |--------|--------|--------|
-| `cs-daily-briefing` | ✅ Hardened | Filtro empresa em `cs_incidents` |
+| `cs-daily-briefing` | ✅ Hardened | Filtro empresa em `cs_incidents` (via cs-scheduled-jobs) |
 | `revenue-forecast` | ✅ Hardened | Filtro `targetEmpresa` em wonDeals/lostDeals |
-| `cs-trending-topics` | ✅ Hardened | Iteração por empresa + chaves separadas |
+| `cs-trending-topics` | ✅ Hardened | Iteração por empresa + chaves separadas (via cs-scheduled-jobs) |
+| `cs-health-calculator` | ✅ Hardened | forEachEmpresa em batch mode |
+| `deal-scoring` | ✅ Hardened | forEachEmpresa via pipelines em batch mode |
+| `cs-ai-actions/churn-predict` | ✅ Hardened | forEachEmpresa em batch mode |
+| `cs-ai-actions/detect-incidents` | ✅ Hardened | forEachEmpresa em batch mode |
 
 ### Grupo C — Funções previamente hardened (Fase 2)
 
@@ -124,4 +128,3 @@ const { data } = await supabase
 |--------|--------|
 | `deal-loss-analysis` | ✅ Hardened |
 | `follow-up-scheduler` | ✅ Hardened |
-| `deal-scoring` | ✅ Hardened |
