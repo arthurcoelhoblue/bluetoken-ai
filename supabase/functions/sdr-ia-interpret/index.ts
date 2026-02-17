@@ -2,13 +2,19 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 // ========================================
-// SDR-IA INTERPRET — ORCHESTRATOR (~250 lines)
-// Calls: sdr-message-parser → sdr-intent-classifier → sdr-response-generator → sdr-action-executor
+// SDR-IA INTERPRET — ORCHESTRATOR (Consolidated)
+// Now imports modules directly instead of HTTP fetch()
 // ========================================
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
-import { envConfig, createServiceClient } from "../_shared/config.ts";
+import { createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
+
+// Local modules (previously separate Edge Functions)
+import { loadFullContext, type ParsedContext } from "./message-parser.ts";
+import { classifyIntent, type ClassifierResult } from "./intent-classifier.ts";
+import { sanitizeResponse } from "./response-generator.ts";
+import { executeActions } from "./action-executor.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 const log = createLogger('sdr-ia-interpret');
@@ -63,41 +69,6 @@ interface MessageRow {
   created_at: string;
 }
 
-interface ClassifierResult {
-  intent: string;
-  confidence: number;
-  summary?: string;
-  resumo?: string;
-  acao?: string;
-  acao_recomendada?: string;
-  acao_detalhes?: Record<string, unknown>;
-  deve_responder?: boolean;
-  resposta_sugerida?: string;
-  sentimento?: string;
-  novo_estado_funil?: string;
-  frameworks_atualizados?: Record<string, unknown>;
-  disc_estimado?: string | null;
-  ultima_pergunta_id?: string | null;
-  departamento_destino?: string | null;
-  provider?: string;
-  model?: string;
-  classification_upgrade?: Record<string, unknown>;
-}
-
-async function callFunction(name: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
-  const resp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/${name}`, {
-    method: 'POST',
-    headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!resp.ok) {
-    const err = await resp.text();
-    log.error(`${name} failed (${resp.status})`, { error: err });
-    throw new Error(`${name} failed: ${resp.status}`);
-  }
-  return resp.json();
-}
-
 serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
   if (req.method !== 'POST') return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
@@ -107,9 +78,9 @@ serve(async (req) => {
 
     // Test mode (urgency detection — kept for backward compat)
     if (body.testMode === 'urgencia') {
-      return callFunction('sdr-intent-classifier', { mensagem_normalizada: 'test', empresa: 'BLUE', testMode: 'urgencia', mensagens: body.mensagens })
-        .then(r => new Response(JSON.stringify(r), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }))
-        .catch(() => new Response(JSON.stringify({ testMode: 'urgencia', error: 'classifier unavailable' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }));
+      const supabase = createServiceClient();
+      const result = await classifyIntent(supabase, { mensagem_normalizada: 'test', empresa: 'BLUE' });
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     const { messageId, source, mode, triageSummary } = body;
@@ -133,7 +104,7 @@ serve(async (req) => {
     const msg = message as MessageRow;
 
     // ========================================
-    // 2. QUICK CHECKS: duplicate, opt-out, manual mode
+    // 2. QUICK CHECKS: duplicate
     // ========================================
     const { data: existingIntent } = await supabase.from('lead_message_intents').select('id').eq('message_id', messageId).limit(1).maybeSingle();
     if (existingIntent) {
@@ -141,14 +112,9 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 3. CALL sdr-message-parser
+    // 3. PARSE CONTEXT (direct call, no HTTP)
     // ========================================
-    const parsedContext = await callFunction('sdr-message-parser', {
-      lead_id: msg.lead_id,
-      empresa: msg.empresa,
-      messageId: msg.id,
-      run_id: msg.run_id,
-    }) as Record<string, unknown>;
+    const parsedContext = await loadFullContext(supabase, msg.id);
 
     // Check opt-out
     if (parsedContext.optOut) {
@@ -156,29 +122,29 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, optOutBlocked: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Check manual mode — still classify but don't send response
-    const convState = parsedContext.conversation_state as Record<string, unknown> | undefined;
-    const isManualMode = convState?.modo === 'MANUAL';
+    // Check manual mode
+    const convState = parsedContext.conversationState;
+    const isManualMode = (convState as Record<string, unknown> | null)?.modo === 'MANUAL';
     if (isManualMode && source !== 'BLUECHAT') {
       log.info('Manual mode — interpreting but suppressing response');
     }
 
     // ========================================
-    // 4. CALL sdr-intent-classifier
+    // 4. CLASSIFY INTENT (direct call, no HTTP)
     // ========================================
-    const classifierResult = await callFunction('sdr-intent-classifier', {
+    const classifierResult = await classifyIntent(supabase, {
       mensagem_normalizada: msg.conteudo,
       empresa: msg.empresa,
-      historico: parsedContext.historico || [],
+      historico: parsedContext.historico,
       classificacao: parsedContext.classificacao,
-      conversation_state: parsedContext.conversation_state,
+      conversation_state: parsedContext.conversationState,
       contato: parsedContext.contato,
       mode,
       triageSummary,
       leadNome: parsedContext.leadNome,
       cadenciaNome: parsedContext.cadenciaNome,
       pessoaContext: parsedContext.pessoaContext,
-    }) as ClassifierResult;
+    });
 
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
 
@@ -189,7 +155,7 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 5. CALL sdr-response-generator (sanitize response)
+    // 5. SANITIZE RESPONSE (direct call, no HTTP)
     // ========================================
     let respostaTexto: string | null = classifierResult.resposta_sugerida || null;
     const deveResponder = classifierResult.deve_responder ?? false;
@@ -197,8 +163,7 @@ serve(async (req) => {
 
     // Anti-limbo patches for BLUECHAT
     if (source === 'BLUECHAT' && classifierResult.intent === 'NAO_ENTENDI') {
-      const historico = parsedContext.historico as unknown[] | undefined;
-      const hasContext = (historico || []).length >= 2;
+      const hasContext = (parsedContext.historico || []).length >= 2;
       if (!hasContext) {
         respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
         classifierResult.deve_responder = true;
@@ -215,73 +180,50 @@ serve(async (req) => {
     }
 
     if (respostaTexto && (classifierResult.deve_responder || deveResponder)) {
-      try {
-        const genResult = await callFunction('sdr-response-generator', {
-          resposta_sugerida: respostaTexto,
-          leadNome: parsedContext.leadNome,
-          empresa: msg.empresa,
-          canal: convState?.canal || 'WHATSAPP',
-          intent: classifierResult.intent,
-        });
-        respostaTexto = (genResult.resposta_sanitizada as string) || respostaTexto;
-      } catch (genErr) {
-        log.warn('response-generator failed, using raw', { error: genErr instanceof Error ? genErr.message : String(genErr) });
-      }
+      respostaTexto = sanitizeResponse(respostaTexto, parsedContext.leadNome || undefined);
     }
 
     // ========================================
-    // 6. CALL sdr-action-executor
+    // 6. EXECUTE ACTIONS (direct call, no HTTP)
     // ========================================
-    let acaoAplicada = false;
-    let respostaEnviada = false;
     const finalAcao = classifierResult.acao || acao;
-    const telefone = parsedContext.telefone as string | undefined;
+    const telefone = parsedContext.telefone;
 
-    // Determine if we should send response
     const canRespond = source === 'BLUECHAT'
       ? (classifierResult.deve_responder && respostaTexto && classifierResult.intent !== 'OPT_OUT')
       : (classifierResult.deve_responder && respostaTexto && telefone && classifierResult.intent !== 'OPT_OUT');
 
-    try {
-      const execResult = await callFunction('sdr-action-executor', {
-        lead_id: msg.lead_id,
-        run_id: msg.run_id,
-        empresa: msg.empresa,
-        acao: finalAcao,
-        acao_detalhes: classifierResult.acao_detalhes || {},
-        telefone,
-        resposta: canRespond ? respostaTexto : null,
-        source,
-        intent: classifierResult.intent,
-        confidence: classifierResult.confidence,
-        mensagem_original: msg.conteudo,
-        novo_estado_funil: classifierResult.novo_estado_funil,
-        frameworks_atualizados: classifierResult.frameworks_atualizados,
-        disc_estimado: classifierResult.disc_estimado,
-        ultima_pergunta_id: classifierResult.ultima_pergunta_id,
-        conversation_state: parsedContext.conversation_state,
-        pessoaContext: parsedContext.pessoaContext,
-        classificacao: parsedContext.classificacao,
-        pipedriveDealeId: parsedContext.pipedriveDealeId,
-        historico: parsedContext.historico,
-        classification_upgrade: classifierResult.classification_upgrade,
-      });
-
-      acaoAplicada = (execResult.acaoAplicada as boolean) ?? false;
-      respostaEnviada = (execResult.respostaEnviada as boolean) ?? false;
-    } catch (execErr) {
-      log.error('action-executor failed', { error: execErr instanceof Error ? execErr.message : String(execErr) });
-    }
+    const execResult = await executeActions(supabase, {
+      lead_id: msg.lead_id,
+      run_id: msg.run_id,
+      empresa: msg.empresa,
+      acao: finalAcao,
+      acao_detalhes: classifierResult.acao_detalhes || {},
+      telefone,
+      resposta: canRespond ? respostaTexto : null,
+      source,
+      intent: classifierResult.intent,
+      confidence: classifierResult.confidence,
+      mensagem_original: msg.conteudo,
+      novo_estado_funil: classifierResult.novo_estado_funil,
+      frameworks_atualizados: classifierResult.frameworks_atualizados,
+      disc_estimado: classifierResult.disc_estimado,
+      ultima_pergunta_id: classifierResult.ultima_pergunta_id,
+      conversation_state: parsedContext.conversationState,
+      pessoaContext: parsedContext.pessoaContext,
+      classificacao: parsedContext.classificacao,
+      pipedriveDealeId: parsedContext.pipedriveDealeId,
+      historico: parsedContext.historico as Record<string, unknown>[],
+      classification_upgrade: classifierResult.classification_upgrade,
+    });
 
     // For BLUECHAT, response is returned via HTTP, not sent via WhatsApp
-    if (source === 'BLUECHAT' && canRespond && !respostaEnviada) {
-      respostaEnviada = false;
-    }
+    const respostaEnviada = source === 'BLUECHAT' && canRespond ? false : execResult.respostaEnviada;
 
     // ========================================
     // 7. SAVE INTERPRETATION
     // ========================================
-    const intentId = await saveInterpretation(supabase, msg, classifierResult, acaoAplicada, respostaEnviada, respostaTexto);
+    const intentId = await saveInterpretation(supabase, msg, classifierResult, execResult.acaoAplicada, respostaEnviada, respostaTexto);
 
     // Log AI usage
     try {
@@ -307,7 +249,7 @@ serve(async (req) => {
       intent: classifierResult.intent,
       confidence: classifierResult.confidence,
       acao: finalAcao,
-      acaoAplicada,
+      acaoAplicada: execResult.acaoAplicada,
       respostaEnviada,
       responseText: respostaTexto,
       leadReady: finalAcao === 'CRIAR_TAREFA_CLOSER',
@@ -327,7 +269,7 @@ serve(async (req) => {
 });
 
 // ========================================
-// SAVE INTERPRETATION (kept in orchestrator)
+// SAVE INTERPRETATION
 // ========================================
 async function saveInterpretation(
   supabase: SupabaseClient,
