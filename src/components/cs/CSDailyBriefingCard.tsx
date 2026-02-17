@@ -16,8 +16,8 @@ export function CSDailyBriefingCard() {
   const fetchBriefing = async () => {
     setLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke('cs-daily-briefing', {
-        body: { empresa },
+      const { data, error } = await supabase.functions.invoke('cs-scheduled-jobs', {
+        body: { action: 'daily-briefing', empresa },
       });
       if (error) throw error;
       setBriefing(data?.briefing || data?.message || 'Briefing gerado sem conteúdo.');

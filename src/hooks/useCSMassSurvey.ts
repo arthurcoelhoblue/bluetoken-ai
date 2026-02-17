@@ -36,8 +36,8 @@ export function useCSMassSurvey() {
     for (let i = 0; i < customerIds.length; i++) {
       const customerId = customerIds[i];
       try {
-        const { error } = await supabase.functions.invoke('cs-nps-auto', {
-          body: { customer_id: customerId, tipo },
+        const { error } = await supabase.functions.invoke('cs-scheduled-jobs', {
+          body: { action: 'nps-auto', customer_id: customerId, tipo },
         });
         results.push({ customerId, success: !error, error: error?.message });
       } catch (err) {

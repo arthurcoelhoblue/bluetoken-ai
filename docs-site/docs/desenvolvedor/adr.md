@@ -31,6 +31,12 @@ Os ADRs documentam decisões arquiteturais significativas do projeto.
 
 **Motivação**: Cobertura de fluxos críticos (auth, pipeline, contatos, cadências) com testes automatizados.
 
+## ADR-005: Consolidação Seletiva de Edge Functions
+
+**Decisão**: Consolidar funções SDR auxiliares como módulos locais do `sdr-ia-interpret` e agrupar micro-funções CS em `cs-ai-actions` (sob demanda) e `cs-scheduled-jobs` (CRON/batch).
+
+**Motivação**: Reduzir cold starts no pipeline SDR (de 5 para 1 por mensagem), diminuir funções deployadas (de 46 para ~35) e simplificar manutenção sem alterar comportamento funcional.
+
 ---
 
 :::info Referência Completa
