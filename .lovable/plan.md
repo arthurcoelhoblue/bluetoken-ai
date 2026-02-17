@@ -1,71 +1,151 @@
 
 
-# Proteger campo `is_active` - Apenas ADMINs podem inativar usuarios
+# Abordagem Proativa da Amelia via Blue Chat para Arthur Coelho
 
-## Problema atual
+## Resumo
 
-A politica RLS "Users can update their own profile" permite que qualquer usuario autenticado atualize **qualquer coluna** do proprio perfil, incluindo `is_active`. Embora a tela de Controle de Acesso ja seja restrita a admins, uma chamada direta ao banco (via console do navegador, por exemplo) permitiria que um usuario manipulasse o campo `is_active`.
+Criar um fluxo de "outreach proativo" onde a Amelia inicia uma conversa com um lead no Blue Chat, gerando uma mensagem de saudacao personalizada via SDR IA e enviando automaticamente. Isso envolve criar uma nova edge function que orquestra todo o fluxo: abrir conversa no Blue Chat, gerar mensagem de abordagem, enviar e registrar no sistema.
 
-## Solucao
+---
 
-Duas camadas de protecao:
+## Contexto atual
 
-### 1. Trigger no banco de dados (protecao principal)
+- Lead Arthur Coelho existe no sistema: `lead_id = 'lead_arthur_blue'`, empresa BLUE, telefone `5561998317422`
+- Canal ativo para BLUE: **bluechat** (confirmado em `integration_company_config`)
+- Conversation state atual: `estado_funil = QUALIFICACAO`, `modo = SDR_IA`
+- O `bluechat-proxy` ja suporta as acoes `open-conversation` e `send-message`
+- O `sdr-ia-interpret` e reativo (precisa de um `messageId` existente em `lead_messages`)
 
-Criar um trigger `BEFORE UPDATE` na tabela `profiles` que impede a alteracao de `is_active` por usuarios que nao sejam ADMIN.
+## Problema
 
-```sql
-CREATE OR REPLACE FUNCTION public.prevent_non_admin_deactivation()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  -- Se is_active nao mudou, permitir
-  IF OLD.is_active IS NOT DISTINCT FROM NEW.is_active THEN
-    RETURN NEW;
-  END IF;
+Nao existe hoje um fluxo de "primeiro contato proativo" via Blue Chat. A Amelia so responde a mensagens recebidas. Para abordar o Arthur, precisamos:
 
-  -- Verificar se o caller e ADMIN
-  IF NOT public.has_role(auth.uid(), 'ADMIN') THEN
-    RAISE EXCEPTION 'Apenas administradores podem ativar/inativar usuarios';
-  END IF;
+1. Gerar uma mensagem de saudacao sem ter uma mensagem inbound
+2. Abrir uma conversa no Blue Chat
+3. Enviar a mensagem
+4. Registrar tudo no banco
 
-  RETURN NEW;
-END;
-$$;
+---
 
-CREATE TRIGGER trg_prevent_non_admin_deactivation
-  BEFORE UPDATE ON public.profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION public.prevent_non_admin_deactivation();
+## Plano de implementacao
+
+### 1. Nova Edge Function: `sdr-proactive-outreach`
+
+Cria uma edge function que orquestra o fluxo completo de abordagem proativa:
+
+**Entrada (body):**
+```json
+{
+  "lead_id": "lead_arthur_blue",
+  "empresa": "BLUE",
+  "motivo": "MQL cadastrado - primeiro contato",
+  "canal": "BLUECHAT"
+}
 ```
 
-### 2. UI: Ocultar toggle "Ativo" para nao-admins (camada visual)
+**Fluxo interno:**
 
-No `EditUserDialog.tsx`, verificar se o usuario logado tem role ADMIN via `useAuth()`. Se nao for admin, esconder o campo `isActive` do formulario.
-
-```typescript
-const { roles } = useAuth();
-const isAdmin = roles.includes('ADMIN');
-
-// No form, renderizar condicionalmente:
-{isAdmin && (
-  <FormField name="isActive" ... />
-)}
+```
+1. Buscar dados do lead (nome, telefone, classificacao, empresa)
+   |
+2. Verificar se ja existe conversa ativa (evitar duplicatas)
+   |
+3. Resetar conversation_state para SAUDACAO (novo ciclo)
+   |
+4. Gerar mensagem de saudacao via IA (usando contexto do lead)
+   |
+5. Abrir conversa no Blue Chat (POST /conversations via API)
+   |
+6. Enviar mensagem via Blue Chat (POST /conversations/:id/messages)
+   |
+7. Registrar mensagem em lead_messages (direcao: OUTBOUND)
+   |
+8. Atualizar conversation_state com bluechat_conversation_id
+   |
+9. Atualizar deal com etiqueta "Atendimento IA" e owner_id = Amelia
 ```
 
-## Arquivos a modificar
+### 2. Geracao da mensagem de saudacao
+
+Usar a IA (via `ai-provider`) para gerar uma mensagem personalizada baseada em:
+- Nome do lead
+- Empresa (Blue Consult)
+- Origem (MQL - cadastro)
+- Personalidade da Amelia (informal, profissional, 0-2 emojis)
+
+Exemplo de mensagem esperada:
+> "Oi Arthur! Aqui e a Amelia, do comercial da Blue Consult. Vi que voce se cadastrou e queria entender melhor como posso te ajudar. Voce tem alguma demanda especifica em mente?"
+
+### 3. Chamada de teste
+
+Apos criar a function, invocar diretamente para iniciar a conversa com Arthur:
+
+```json
+POST /functions/v1/sdr-proactive-outreach
+{
+  "lead_id": "lead_arthur_blue",
+  "empresa": "BLUE",
+  "motivo": "MQL cadastrado - primeiro contato"
+}
+```
+
+---
+
+## Arquivos a criar/modificar
 
 | Arquivo | Tipo | Descricao |
 |---|---|---|
-| Nova migration SQL | Criar | Trigger `prevent_non_admin_deactivation` |
-| `src/components/settings/EditUserDialog.tsx` | Editar | Condicionar toggle "Ativo" a role ADMIN |
+| `supabase/functions/sdr-proactive-outreach/index.ts` | Criar | Edge function de outreach proativo |
+| `supabase/config.toml` | Atualizar automaticamente | Registrar nova function |
 
-## Impacto
+## Detalhes tecnicos
 
-- Nenhum usuario nao-admin consegue alterar `is_active`, nem via UI nem via chamada direta ao banco
-- Admins continuam com o fluxo atual sem mudancas
-- Zero impacto em outras funcionalidades
+### Edge Function `sdr-proactive-outreach/index.ts`
+
+A function ira:
+
+1. **Autenticacao**: Aceitar Bearer token (service_role ou usuario autenticado com role ADMIN/SELLER)
+
+2. **Busca de contexto**: Carregar lead_contacts, lead_classifications, lead_conversation_state e contacts (para o deal)
+
+3. **Geracao de mensagem**: Chamar `ai-provider` com prompt de saudacao contextualizado:
+   - Dados do lead (nome, origem, temperatura)
+   - Regras de personalidade da Amelia
+   - Formato curto (max 200 caracteres)
+
+4. **Integracao Blue Chat**: Usar a mesma logica do `bluechat-proxy` para resolver URL e API key da empresa, depois:
+   - `POST /conversations` para abrir conversa
+   - `POST /conversations/:id/messages` para enviar
+
+5. **Registro no banco**:
+   - `INSERT lead_messages` com direcao OUTBOUND, conteudo da mensagem, canal WHATSAPP
+   - `UPDATE lead_conversation_state` com estado_funil=SAUDACAO, framework_ativo=SPIN, bluechat_conversation_id
+   - `UPDATE deals` com owner_id=amelia_id e etiqueta='Atendimento IA' (se deal existir)
+
+6. **Resposta**:
+```json
+{
+  "success": true,
+  "lead_id": "lead_arthur_blue",
+  "conversation_id": "bc-xxx",
+  "message_sent": "Oi Arthur! ...",
+  "deal_updated": true
+}
+```
+
+### Prompt de saudacao (resumido)
+
+```
+Voce e a Amelia, SDR da Blue Consult. 
+O lead {nome} se cadastrou como MQL.
+Gere uma UNICA mensagem curta de primeiro contato.
+Regras: informal, profissional, max 1 emoji, sem elogios genericos.
+Objetivo: descobrir a necessidade do lead.
+```
+
+### Seguranca
+
+- Autenticacao via Bearer (service_role para chamadas internas, ou usuario autenticado)
+- Verificacao de que o lead pertence a empresa informada
+- Rate limiting: maximo 1 outreach por lead a cada 24h (verificar ultima mensagem OUTBOUND)
 
