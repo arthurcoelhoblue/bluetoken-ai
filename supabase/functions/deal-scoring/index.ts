@@ -95,7 +95,11 @@ serve(async (req) => {
       for (const [pid, s] of Object.entries(sums)) avgTicket[pid] = s.count > 0 ? s.total / s.count : 0;
     }
 
-    const { data: stageHistAvg } = await supabase.from('deal_stage_history').select('to_stage_id, tempo_no_stage_anterior_ms').not('tempo_no_stage_anterior_ms', 'is', null).limit(2000);
+    // Filter stage history by tenant: only stages belonging to the current pipeline set
+    const stageIds = Object.values(stagesByPipeline).flat().map(s => s.id);
+    const { data: stageHistAvg } = stageIds.length > 0
+      ? await supabase.from('deal_stage_history').select('to_stage_id, tempo_no_stage_anterior_ms').in('to_stage_id', stageIds).not('tempo_no_stage_anterior_ms', 'is', null).limit(2000)
+      : { data: [] };
     const stageAvgTime: Record<string, number> = {};
     if (stageHistAvg) {
       const groups: Record<string, number[]> = {};
