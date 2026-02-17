@@ -10,7 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { DollarSign, Clock, Trophy, XCircle, TrendingUp, Sparkles } from 'lucide-react';
+import { DollarSign, Clock, Trophy, XCircle, TrendingUp, Sparkles, Bot } from 'lucide-react';
 import { toast } from 'sonner';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { supabase } from '@/integrations/supabase/client';
@@ -160,7 +160,17 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       >
         <div className="flex items-start justify-between gap-2">
           <span className="font-medium text-sm leading-tight line-clamp-2">{deal.titulo}</span>
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
+            {deal.etiqueta && (
+              <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
+                deal.etiqueta.toLowerCase().includes('ia') || deal.etiqueta.toLowerCase().includes('amelia')
+                  ? 'bg-violet-500/15 text-violet-600 border-violet-500/30'
+                  : 'bg-blue-500/15 text-blue-600 border-blue-500/30'
+              }`}>
+                {(deal.etiqueta.toLowerCase().includes('ia') || deal.etiqueta.toLowerCase().includes('amelia')) && <Bot className="h-3 w-3 mr-0.5" />}
+                {deal.etiqueta}
+              </Badge>
+            )}
             {isClosed ? (
               <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${statusBadge[deal.status] ?? ''}`}>
                 {deal.status}
