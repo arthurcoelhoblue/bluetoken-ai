@@ -7031,7 +7031,7 @@ export type Database = {
         | "URL"
         | "PERCENT"
         | "TAG"
-      empresa_tipo: "TOKENIZA" | "BLUE"
+      empresa_tipo: "TOKENIZA" | "BLUE" | "MPUPPE" | "AXIA"
       estado_funil_tipo:
         | "SAUDACAO"
         | "DIAGNOSTICO"
@@ -7050,6 +7050,8 @@ export type Database = {
         | "BLUE_RECURRENTE"
         | "BLUE_PERDIDO_RECUPERAVEL"
         | "BLUE_NAO_CLASSIFICADO"
+        | "MPUPPE_NAO_CLASSIFICADO"
+        | "AXIA_NAO_CLASSIFICADO"
       knowledge_section_tipo:
         | "FAQ"
         | "OBJECOES"
@@ -7291,7 +7293,7 @@ export const Constants = {
         "PERCENT",
         "TAG",
       ],
-      empresa_tipo: ["TOKENIZA", "BLUE"],
+      empresa_tipo: ["TOKENIZA", "BLUE", "MPUPPE", "AXIA"],
       estado_funil_tipo: [
         "SAUDACAO",
         "DIAGNOSTICO",
@@ -7311,6 +7313,8 @@ export const Constants = {
         "BLUE_RECURRENTE",
         "BLUE_PERDIDO_RECUPERAVEL",
         "BLUE_NAO_CLASSIFICADO",
+        "MPUPPE_NAO_CLASSIFICADO",
+        "AXIA_NAO_CLASSIFICADO",
       ],
       knowledge_section_tipo: [
         "FAQ",
