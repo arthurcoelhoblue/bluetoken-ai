@@ -17,6 +17,7 @@ import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/use
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { KnowledgeFaq } from '@/types/knowledge';
+import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 
 // --- Loss Pendency Card (existing) ---
 function PendencyCard({ pendency }: { pendency: LossPendency }) {
@@ -177,7 +178,7 @@ function FaqPendencyCard({ faq }: { faq: KnowledgeFaq }) {
 }
 
 // --- Orphan Deal Card ---
-function OrphanDealCard({ deal }: { deal: OrphanDeal }) {
+function OrphanDealCard({ deal, onDealClick }: { deal: OrphanDeal; onDealClick?: (dealId: string) => void }) {
   const assignOwner = useAssignDealOwner();
   const [selectedOwner, setSelectedOwner] = useState('');
   const { data: vendedores = [] } = useQuery({
@@ -204,7 +205,7 @@ function OrphanDealCard({ deal }: { deal: OrphanDeal }) {
       <CardHeader className="pb-3">
         <div className="flex items-start justify-between">
           <div>
-            <CardTitle className="text-base">{deal.titulo}</CardTitle>
+            <CardTitle className="text-base cursor-pointer hover:underline" onClick={() => onDealClick?.(deal.id)}>{deal.titulo}</CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {deal.contact_nome ?? 'Sem contato'} • {deal.pipeline_nome ?? '—'} • R$ {deal.valor.toLocaleString('pt-BR')}
             </p>
@@ -240,6 +241,7 @@ export default function PendenciasPerda() {
   const { data: lossPendencies = [], isLoading: loadingLoss } = useLossPendencies();
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
   const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   const isLoading = loadingLoss || loadingFaq || loadingOrphan;
   const totalPendencies = lossPendencies.length + faqPendencies.length + orphanDeals.length;
@@ -269,7 +271,7 @@ export default function PendenciasPerda() {
                   <UserX className="h-5 w-5 text-orange-500" />
                   Deals sem Vendedor ({orphanDeals.length})
                 </h2>
-                {orphanDeals.map(d => <OrphanDealCard key={d.id} deal={d} />)}
+                {orphanDeals.map(d => <OrphanDealCard key={d.id} deal={d} onDealClick={(id) => setSelectedDealId(id)} />)}
               </div>
             )}
             {faqPendencies.length > 0 && (
@@ -285,6 +287,11 @@ export default function PendenciasPerda() {
           </>
         )}
       </div>
+      <DealDetailSheet
+        dealId={selectedDealId}
+        open={selectedDealId !== null}
+        onOpenChange={(open) => { if (!open) setSelectedDealId(null); }}
+      />
     </AppLayout>
   );
 }
