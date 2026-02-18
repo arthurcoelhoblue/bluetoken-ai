@@ -2,15 +2,15 @@ import { getCorsHeaders, handleCorsOptions } from '../_shared/cors.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
-const log = createLogger('sgt-sync-clientes');
+const log = createLogger('sgt-import-clientes');
 
 const SGT_API_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api';
-const BATCH_SIZE = 100;
+const BATCH_SIZE = 200;
 const SETTINGS_CATEGORY = 'sgt-sync';
-const SETTINGS_KEY = 'sync-clientes-offset';
+const SETTINGS_KEY = 'import-clientes-offset';
 
 // ========================================
-// Client detection logic
+// Client detection logic (same as sync)
 // ========================================
 function isCliente(lead: any, empresa: string): boolean {
   if (lead.venda_realizada === true) return true;
@@ -22,63 +22,23 @@ function isCliente(lead: any, empresa: string): boolean {
 }
 
 // ========================================
-// Extract enrichment data from SGT lead
+// Build SGT extras for cs_customers
 // ========================================
-function extractContactEnrichment(lead: any): Record<string, any> {
-  const update: Record<string, any> = {};
-
-  // Score
-  if (lead.score_temperatura != null) update.score_marketing = lead.score_temperatura;
-
-  // LinkedIn
-  if (lead.linkedin_cargo) update.linkedin_cargo = lead.linkedin_cargo;
-  if (lead.linkedin_empresa) update.linkedin_empresa = lead.linkedin_empresa;
-  if (lead.linkedin_setor) update.linkedin_setor = lead.linkedin_setor;
-  if (lead.linkedin_senioridade) update.linkedin_senioridade = lead.linkedin_senioridade;
-  if (lead.linkedin_url) update.linkedin_url = lead.linkedin_url;
-
-  return update;
-}
-
-function extractLeadContactEnrichment(lead: any): Record<string, any> {
-  const update: Record<string, any> = {};
-
-  // Score & LinkedIn (mirror to lead_contacts too)
-  if (lead.score_temperatura != null) update.score_marketing = lead.score_temperatura;
-  if (lead.linkedin_cargo) update.linkedin_cargo = lead.linkedin_cargo;
-  if (lead.linkedin_empresa) update.linkedin_empresa = lead.linkedin_empresa;
-  if (lead.linkedin_setor) update.linkedin_setor = lead.linkedin_setor;
-  if (lead.linkedin_senioridade) update.linkedin_senioridade = lead.linkedin_senioridade;
-  if (lead.linkedin_url) update.linkedin_url = lead.linkedin_url;
-
-  // Mautic
-  if (lead.mautic_score != null) update.score_mautic = lead.mautic_score;
-  if (lead.mautic_page_hits != null) update.mautic_page_hits = lead.mautic_page_hits;
-  if (lead.mautic_tags) {
-    const tags = Array.isArray(lead.mautic_tags) ? lead.mautic_tags : [lead.mautic_tags];
-    update.mautic_tags = tags;
-  }
-
-  // UTMs
-  if (lead.utm_source) update.utm_source = lead.utm_source;
-  if (lead.utm_medium) update.utm_medium = lead.utm_medium;
-  if (lead.utm_campaign) update.utm_campaign = lead.utm_campaign;
-  if (lead.utm_term) update.utm_term = lead.utm_term;
-  if (lead.utm_content) update.utm_content = lead.utm_content;
-
-  // Extra data bucket (GA4, Stape, Blue IRPF, Tokeniza details)
+function buildSgtExtras(lead: any): Record<string, any> {
   const extras: Record<string, any> = {};
-  if (lead.ga4_engajamento_score != null) extras.ga4_engajamento_score = lead.ga4_engajamento_score;
-  if (lead.stape_paginas_visitadas != null) extras.stape_paginas_visitadas = lead.stape_paginas_visitadas;
-  if (lead.irpf_renda_anual != null) extras.irpf_renda_anual = lead.irpf_renda_anual;
-  if (lead.irpf_patrimonio_liquido != null) extras.irpf_patrimonio_liquido = lead.irpf_patrimonio_liquido;
-  if (lead.irpf_perfil_investidor) extras.irpf_perfil_investidor = lead.irpf_perfil_investidor;
   if (lead.tokeniza_valor_investido != null) extras.tokeniza_valor_investido = lead.tokeniza_valor_investido;
   if (lead.tokeniza_qtd_investimentos != null) extras.tokeniza_qtd_investimentos = lead.tokeniza_qtd_investimentos;
   if (lead.tokeniza_projetos) extras.tokeniza_projetos = lead.tokeniza_projetos;
-  if (Object.keys(extras).length > 0) update.sgt_dados_extras = extras;
-
-  return update;
+  if (lead.irpf_renda_anual != null) extras.irpf_renda_anual = lead.irpf_renda_anual;
+  if (lead.irpf_patrimonio_liquido != null) extras.irpf_patrimonio_liquido = lead.irpf_patrimonio_liquido;
+  if (lead.irpf_perfil_investidor) extras.irpf_perfil_investidor = lead.irpf_perfil_investidor;
+  if (lead.ga4_engajamento_score != null) extras.ga4_engajamento_score = lead.ga4_engajamento_score;
+  if (lead.stape_paginas_visitadas != null) extras.stape_paginas_visitadas = lead.stape_paginas_visitadas;
+  if (lead.mautic_score != null) extras.mautic_score = lead.mautic_score;
+  if (lead.mautic_tags) extras.mautic_tags = lead.mautic_tags;
+  if (lead.cliente_status) extras.cliente_status = lead.cliente_status;
+  if (lead.plano_atual) extras.plano_atual = lead.plano_atual;
+  return extras;
 }
 
 // ========================================
@@ -98,6 +58,69 @@ function buildClienteTags(lead: any, empresa: string): string[] {
     if (lead.irpf_perfil_investidor) tags.push(`perfil:${lead.irpf_perfil_investidor}`);
   }
   return tags;
+}
+
+// ========================================
+// Extract enrichment data
+// ========================================
+function extractContactEnrichment(lead: any): Record<string, any> {
+  const update: Record<string, any> = {};
+  if (lead.score_temperatura != null) update.score_marketing = lead.score_temperatura;
+  if (lead.linkedin_cargo) update.linkedin_cargo = lead.linkedin_cargo;
+  if (lead.linkedin_empresa) update.linkedin_empresa = lead.linkedin_empresa;
+  if (lead.linkedin_setor) update.linkedin_setor = lead.linkedin_setor;
+  if (lead.linkedin_senioridade) update.linkedin_senioridade = lead.linkedin_senioridade;
+  if (lead.linkedin_url) update.linkedin_url = lead.linkedin_url;
+  return update;
+}
+
+function extractLeadContactEnrichment(lead: any): Record<string, any> {
+  const update: Record<string, any> = {};
+  if (lead.score_temperatura != null) update.score_marketing = lead.score_temperatura;
+  if (lead.linkedin_cargo) update.linkedin_cargo = lead.linkedin_cargo;
+  if (lead.linkedin_empresa) update.linkedin_empresa = lead.linkedin_empresa;
+  if (lead.linkedin_setor) update.linkedin_setor = lead.linkedin_setor;
+  if (lead.linkedin_senioridade) update.linkedin_senioridade = lead.linkedin_senioridade;
+  if (lead.linkedin_url) update.linkedin_url = lead.linkedin_url;
+  if (lead.mautic_score != null) update.score_mautic = lead.mautic_score;
+  if (lead.mautic_page_hits != null) update.mautic_page_hits = lead.mautic_page_hits;
+  if (lead.mautic_tags) {
+    update.mautic_tags = Array.isArray(lead.mautic_tags) ? lead.mautic_tags : [lead.mautic_tags];
+  }
+  if (lead.utm_source) update.utm_source = lead.utm_source;
+  if (lead.utm_medium) update.utm_medium = lead.utm_medium;
+  if (lead.utm_campaign) update.utm_campaign = lead.utm_campaign;
+  if (lead.utm_term) update.utm_term = lead.utm_term;
+  if (lead.utm_content) update.utm_content = lead.utm_content;
+
+  const extras: Record<string, any> = {};
+  if (lead.ga4_engajamento_score != null) extras.ga4_engajamento_score = lead.ga4_engajamento_score;
+  if (lead.stape_paginas_visitadas != null) extras.stape_paginas_visitadas = lead.stape_paginas_visitadas;
+  if (lead.irpf_renda_anual != null) extras.irpf_renda_anual = lead.irpf_renda_anual;
+  if (lead.irpf_patrimonio_liquido != null) extras.irpf_patrimonio_liquido = lead.irpf_patrimonio_liquido;
+  if (lead.irpf_perfil_investidor) extras.irpf_perfil_investidor = lead.irpf_perfil_investidor;
+  if (lead.tokeniza_valor_investido != null) extras.tokeniza_valor_investido = lead.tokeniza_valor_investido;
+  if (lead.tokeniza_qtd_investimentos != null) extras.tokeniza_qtd_investimentos = lead.tokeniza_qtd_investimentos;
+  if (lead.tokeniza_projetos) extras.tokeniza_projetos = lead.tokeniza_projetos;
+  if (Object.keys(extras).length > 0) update.sgt_dados_extras = extras;
+
+  return update;
+}
+
+// ========================================
+// Persist offset
+// ========================================
+async function saveOffset(supabase: any, offset: number) {
+  await supabase.from('system_settings').upsert(
+    {
+      category: SETTINGS_CATEGORY,
+      key: SETTINGS_KEY,
+      value: { offset, updated_at: new Date().toISOString() },
+      description: 'Offset de paginação do import em massa de clientes SGT',
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: 'category,key' }
+  );
 }
 
 // ========================================
@@ -125,7 +148,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, serviceRoleKey);
 
-    // ---- Load offset from system_settings ----
+    // ---- Load offset ----
     let offset = 0;
     const { data: offsetRow } = await supabase
       .from('system_settings')
@@ -138,7 +161,20 @@ Deno.serve(async (req) => {
       offset = offsetRow.value.offset;
     }
 
-    // ---- Fetch contacts not yet marked as clients ----
+    // Allow manual reset via body
+    try {
+      const body = await req.json();
+      if (body?.reset_offset === true) {
+        offset = 0;
+        log.info('Offset resetado manualmente');
+      }
+      if (body?.offset != null) {
+        offset = body.offset;
+        log.info(`Offset definido manualmente: ${offset}`);
+      }
+    } catch { /* no body or invalid json, continue */ }
+
+    // ---- Fetch ALL active contacts (no is_cliente filter) ----
     const { data: contacts, error: fetchErr } = await supabase
       .from('contacts')
       .select('id, email, telefone, empresa, nome, legacy_lead_id, tags, is_cliente')
@@ -156,31 +192,35 @@ Deno.serve(async (req) => {
     }
 
     if (!contacts || contacts.length === 0) {
-      // Reset offset for next full cycle
       await saveOffset(supabase, 0);
-      log.info('Ciclo completo – nenhum contato pendente, offset resetado');
-      return new Response(JSON.stringify({ synced: 0, enriched: 0, message: 'Ciclo completo, offset resetado', offset: 0 }), {
+      log.info('Import completo – todos os contatos processados, offset resetado');
+      return new Response(JSON.stringify({
+        synced: 0, enriched: 0, message: 'Import completo, offset resetado', offset: 0,
+        ciclo_completo: true,
+      }), {
         status: 200,
         headers: { ...cors, 'Content-Type': 'application/json' },
       });
     }
 
-    log.info(`Processando ${contacts.length} contatos (offset ${offset})`);
+    log.info(`Processando batch de ${contacts.length} contatos (offset ${offset})`);
 
     let synced = 0;
     let enriched = 0;
     let errors = 0;
+    let skipped = 0;
     const details: any[] = [];
+    const now = new Date().toISOString();
 
     for (const contact of contacts) {
       try {
-        // Build search payload
         const payload: Record<string, string> = {};
         if (contact.email) {
           payload.email = contact.email;
         } else if (contact.telefone) {
           payload.telefone = contact.telefone;
         } else {
+          skipped++;
           continue;
         }
 
@@ -202,24 +242,26 @@ Deno.serve(async (req) => {
         const sgtData = await sgtResponse.json();
         const leads = Array.isArray(sgtData) ? sgtData : sgtData ? [sgtData] : [];
 
-        if (leads.length === 0) continue;
+        if (leads.length === 0) {
+          skipped++;
+          continue;
+        }
 
-        // Use first matching lead (most relevant)
         const lead = leads[0];
 
         // ---- ENRICHMENT: contacts ----
         const contactUpdate = extractContactEnrichment(lead);
         if (Object.keys(contactUpdate).length > 0) {
-          contactUpdate.updated_at = new Date().toISOString();
+          contactUpdate.updated_at = now;
           await supabase.from('contacts').update(contactUpdate).eq('id', contact.id);
           enriched++;
         }
 
-        // ---- ENRICHMENT: lead_contacts (if legacy_lead_id exists) ----
+        // ---- ENRICHMENT: lead_contacts ----
         if (contact.legacy_lead_id) {
           const lcUpdate = extractLeadContactEnrichment(lead);
           if (Object.keys(lcUpdate).length > 0) {
-            lcUpdate.updated_at = new Date().toISOString();
+            lcUpdate.updated_at = now;
             await supabase
               .from('lead_contacts')
               .update(lcUpdate)
@@ -228,50 +270,28 @@ Deno.serve(async (req) => {
           }
         }
 
-        // ---- CLIENT DETECTION ----
+        // ---- CLIENT DETECTION & CS_CUSTOMER UPSERT ----
         const empresa = contact.empresa as string;
         if (isCliente(lead, empresa)) {
-          log.info(`Contato ${contact.id} (${contact.nome}) identificado como cliente no SGT`);
-
-          // Merge tags
           const existingTags: string[] = contact.tags || [];
           const newTags = buildClienteTags(lead, empresa);
           const mergedTags = [...new Set([...existingTags, ...newTags])];
 
-          // Update contact only if not already marked
+          // Mark contact as cliente
           if (!contact.is_cliente) {
-            await supabase
-              .from('contacts')
-              .update({
-                is_cliente: true,
-                tags: mergedTags,
-                updated_at: new Date().toISOString(),
-              })
-              .eq('id', contact.id);
+            await supabase.from('contacts').update({
+              is_cliente: true,
+              tags: mergedTags,
+              updated_at: now,
+            }).eq('id', contact.id);
           }
 
-          // Determine financial values
           const valorMrr = lead.valor_venda
             || (empresa === 'TOKENIZA' ? lead.tokeniza_valor_investido : null)
             || 0;
-          const dataPrimeiroGanho = lead.data_venda || new Date().toISOString();
+          const dataPrimeiroGanho = lead.data_venda || now;
+          const sgtExtras = buildSgtExtras(lead);
 
-          // Build SGT extras
-          const sgtExtras: Record<string, any> = {};
-          if (lead.tokeniza_valor_investido != null) sgtExtras.tokeniza_valor_investido = lead.tokeniza_valor_investido;
-          if (lead.tokeniza_qtd_investimentos != null) sgtExtras.tokeniza_qtd_investimentos = lead.tokeniza_qtd_investimentos;
-          if (lead.tokeniza_projetos) sgtExtras.tokeniza_projetos = lead.tokeniza_projetos;
-          if (lead.irpf_renda_anual != null) sgtExtras.irpf_renda_anual = lead.irpf_renda_anual;
-          if (lead.irpf_patrimonio_liquido != null) sgtExtras.irpf_patrimonio_liquido = lead.irpf_patrimonio_liquido;
-          if (lead.irpf_perfil_investidor) sgtExtras.irpf_perfil_investidor = lead.irpf_perfil_investidor;
-          if (lead.ga4_engajamento_score != null) sgtExtras.ga4_engajamento_score = lead.ga4_engajamento_score;
-          if (lead.stape_paginas_visitadas != null) sgtExtras.stape_paginas_visitadas = lead.stape_paginas_visitadas;
-          if (lead.mautic_score != null) sgtExtras.mautic_score = lead.mautic_score;
-          if (lead.mautic_tags) sgtExtras.mautic_tags = lead.mautic_tags;
-          if (lead.cliente_status) sgtExtras.cliente_status = lead.cliente_status;
-          if (lead.plano_atual) sgtExtras.plano_atual = lead.plano_atual;
-
-          // Upsert cs_customers with SGT extras
           await supabase.from('cs_customers').upsert(
             {
               contact_id: contact.id,
@@ -281,7 +301,7 @@ Deno.serve(async (req) => {
               data_primeiro_ganho: dataPrimeiroGanho,
               tags: newTags,
               sgt_dados_extras: sgtExtras,
-              sgt_last_sync_at: new Date().toISOString(),
+              sgt_last_sync_at: now,
             },
             { onConflict: 'contact_id,empresa' }
           );
@@ -301,7 +321,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ---- Save offset for next run ----
+    // ---- Save offset ----
     const nextOffset = contacts.length < BATCH_SIZE ? 0 : offset + BATCH_SIZE;
     await saveOffset(supabase, nextOffset);
 
@@ -309,15 +329,16 @@ Deno.serve(async (req) => {
       synced,
       enriched,
       errors,
+      skipped,
       total_checked: contacts.length,
       offset_atual: offset,
       proximo_offset: nextOffset,
       ciclo_completo: contacts.length < BATCH_SIZE,
       clientes_encontrados: details,
-      timestamp: new Date().toISOString(),
+      timestamp: now,
     };
 
-    log.info('Sync concluída', { synced, enriched, errors, total: contacts.length });
+    log.info('Batch de import concluído', { synced, enriched, errors, skipped, total: contacts.length });
 
     return new Response(JSON.stringify(result), {
       status: 200,
@@ -331,19 +352,3 @@ Deno.serve(async (req) => {
     });
   }
 });
-
-// ========================================
-// Persist offset in system_settings
-// ========================================
-async function saveOffset(supabase: any, offset: number) {
-  await supabase.from('system_settings').upsert(
-    {
-      category: SETTINGS_CATEGORY,
-      key: SETTINGS_KEY,
-      value: { offset, updated_at: new Date().toISOString() },
-      description: 'Offset de paginação do sync de clientes SGT',
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: 'category,key' }
-  );
-}
