@@ -144,15 +144,20 @@ export function ManualMessageInput({
       <>
         <div className="space-y-2">
           {deepLink && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="w-full gap-2 text-xs"
-              onClick={handleOpenBluechat}
+            <a
+              href={deepLink}
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              <ExternalLink className="h-3.5 w-3.5" />
-              Responder no Blue Chat
-            </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full gap-2 text-xs"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                Responder no Blue Chat
+              </Button>
+            </a>
           )}
           <div className="flex items-end gap-2">
             <Textarea
