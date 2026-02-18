@@ -136,7 +136,7 @@ export function ConversationTakeoverBar({
           setOpen(false);
           // In Blue Chat mode, open Blue Chat on "Assumir"
           if (!isManual && isBluechat) {
-            const deepLink = buildBluechatDeepLink(empresa, telefone || '');
+            const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
             if (deepLink) {
               window.open(deepLink, '_blank');
             }

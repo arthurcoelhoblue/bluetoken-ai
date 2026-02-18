@@ -121,7 +121,7 @@ export function ManualMessageInput({
   };
 
   const handleOpenBluechat = () => {
-    const deepLink = buildBluechatDeepLink(empresa, telefone || '');
+    const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
     if (deepLink) {
       window.open(deepLink, '_blank');
     }
@@ -138,7 +138,7 @@ export function ManualMessageInput({
 
   // ── Blue Chat mode: show link to Blue Chat + optional send via API ──
   if (isBluechat) {
-    const deepLink = buildBluechatDeepLink(empresa, telefone || '');
+    const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
 
     return (
       <>
