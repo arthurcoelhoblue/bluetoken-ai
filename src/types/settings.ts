@@ -129,7 +129,7 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     name: 'Blue Chat',
     description: 'Interface de atendimento humano',
     icon: 'Headphones',
-    secrets: ['BLUECHAT_API_KEY', 'BLUECHAT_API_KEY_BLUE'],
+    secrets: ['BLUECHAT_API_KEY'],
     settingsKey: 'bluechat',
     testable: true,
     perCompany: true,

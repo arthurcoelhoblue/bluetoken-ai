@@ -7,6 +7,7 @@ import { createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import type { EmpresaTipo, Temperatura, TipoLead } from "../_shared/types.ts";
+import { mapBluechatEmpresa } from "../_shared/empresa-mapping.ts";
 import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
 import { checkWebhookRateLimit, rateLimitResponse } from "../_shared/webhook-rate-limit.ts";
 
@@ -70,7 +71,7 @@ serve(async (req) => {
     const supabase = createServiceClient();
 
     // Rate limiting (150 req/min per empresa)
-    const empresa: EmpresaTipo = payload.context?.empresa || authResult.empresaFromKey || 'BLUE';
+    const empresa: EmpresaTipo = mapBluechatEmpresa(payload.context?.empresa);
     const rateCheck = await checkWebhookRateLimit(supabase, 'bluechat-inbound', empresa, 150);
     if (!rateCheck.allowed) {
       log.warn('Rate limit exceeded', { count: rateCheck.currentCount });
@@ -78,7 +79,7 @@ serve(async (req) => {
     }
 
     const phoneInfo = normalizePhone(payload.contact.phone);
-    log.info('Empresa determinada', { empresa, payload: payload.context?.empresa, key: authResult.empresaFromKey });
+    log.info('Empresa determinada', { empresa, rawEmpresa: payload.context?.empresa });
 
     // Verificar se bluechat está habilitado para esta empresa
     const { data: channelConfig } = await supabase
@@ -194,10 +195,14 @@ serve(async (req) => {
           leadContact = newContact as LeadContact;
         }
 
+        const defaultIcp = empresa === 'BLUE' ? 'BLUE_NAO_CLASSIFICADO'
+          : empresa === 'MPUPPE' ? 'MPUPPE_NAO_CLASSIFICADO'
+          : empresa === 'AXIA' ? 'AXIA_NAO_CLASSIFICADO'
+          : 'TOKENIZA_NAO_CLASSIFICADO';
         await supabase.from('lead_classifications').insert({
           lead_id: leadContact.lead_id,
           empresa,
-          icp: empresa === 'BLUE' ? 'BLUE_NAO_CLASSIFICADO' : 'TOKENIZA_NAO_CLASSIFICADO',
+          icp: defaultIcp,
           temperatura: 'MORNO',
           prioridade: 2,
           origem: 'AUTOMATICA',

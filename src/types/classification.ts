@@ -29,8 +29,14 @@ export type IcpBlue =
   | 'BLUE_PERDIDO_RECUPERAVEL'
   | 'BLUE_NAO_CLASSIFICADO';
 
+// ICPs MPuppe
+export type IcpMpuppe = 'MPUPPE_NAO_CLASSIFICADO';
+
+// ICPs Axia
+export type IcpAxia = 'AXIA_NAO_CLASSIFICADO';
+
 // ICP unificado
-export type ICP = IcpTokeniza | IcpBlue;
+export type ICP = IcpTokeniza | IcpBlue | IcpMpuppe | IcpAxia;
 
 // Personas Tokeniza
 export type PersonaTokeniza =
@@ -50,7 +56,7 @@ export type Persona = PersonaTokeniza | PersonaBlue;
 // Resultado da classificação
 export interface LeadClassificationResult {
   leadId: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
   icp: ICP;
   persona: Persona | null;
   temperatura: Temperatura;
@@ -62,7 +68,7 @@ export interface LeadClassificationResult {
 export interface LeadClassification {
   id: string;
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
   icp: ICP;
   persona: Persona | null;
   temperatura: Temperatura;
@@ -123,7 +129,7 @@ export interface ClassificationJustificativa {
 export interface LeadWithClassification {
   // Dados de contato
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
   nome: string | null;
   primeiro_nome: string | null;
   email: string | null;
@@ -150,6 +156,10 @@ export const ICP_LABELS: Record<ICP, string> = {
   BLUE_RECURRENTE: 'Cliente Recorrente',
   BLUE_PERDIDO_RECUPERAVEL: 'Perdido Recuperável',
   BLUE_NAO_CLASSIFICADO: 'Não Classificado',
+  // MPuppe
+  MPUPPE_NAO_CLASSIFICADO: 'Não Classificado',
+  // Axia
+  AXIA_NAO_CLASSIFICADO: 'Não Classificado',
 };
 
 export const PERSONA_LABELS: Record<Persona, string> = {

@@ -69,7 +69,13 @@ export async function sendResponseToBluechat(
 ): Promise<void> {
   try {
     // Buscar URL da API do Blue Chat por empresa em system_settings
-    const settingsKey = data.empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+    const SETTINGS_KEY_MAP: Record<string, string> = {
+      'BLUE': 'bluechat_blue',
+      'TOKENIZA': 'bluechat_tokeniza',
+      'MPUPPE': 'bluechat_mpuppe',
+      'AXIA': 'bluechat_axia',
+    };
+    const settingsKey = SETTINGS_KEY_MAP[data.empresa] || 'bluechat_tokeniza';
     const { data: setting } = await supabase
       .from('system_settings')
       .select('value')
@@ -94,17 +100,15 @@ export async function sendResponseToBluechat(
       return;
     }
 
-    // Usar API key correta por empresa
-    const keyName = data.empresa === 'BLUE' ? 'BLUECHAT_API_KEY_BLUE' : 'BLUECHAT_API_KEY';
-    const bluechatApiKey = getOptionalEnv(keyName);
+    // API key única para todas as empresas
+    const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
     if (!bluechatApiKey) {
-      log.warn(`${keyName} não configurada para ${data.empresa}`);
+      log.warn(`BLUECHAT_API_KEY não configurada`);
       return;
     }
 
     log.info('Callback Blue Chat iniciado', {
       empresa: data.empresa,
-      keyName,
       keyPreview: `${bluechatApiKey.substring(0, 6)}...${bluechatApiKey.substring(bluechatApiKey.length - 4)}`,
       apiUrl: apiUrl.substring(0, 50),
     });

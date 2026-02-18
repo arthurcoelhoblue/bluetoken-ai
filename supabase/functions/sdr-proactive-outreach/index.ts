@@ -41,10 +41,7 @@ async function resolveBlueChat(
   }
   if (!apiUrl) return null;
 
-  const apiKey =
-    empresa === "BLUE"
-      ? getOptionalEnv("BLUECHAT_API_KEY_BLUE")
-      : getOptionalEnv("BLUECHAT_API_KEY");
+  const apiKey = getOptionalEnv("BLUECHAT_API_KEY");
   if (!apiKey) return null;
 
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };

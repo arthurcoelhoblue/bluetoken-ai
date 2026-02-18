@@ -2,7 +2,7 @@
 // _shared/types.ts — Tipos compartilhados entre Edge Functions
 // ========================================
 
-export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+export type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 export type CanalTipo = 'WHATSAPP' | 'EMAIL' | 'SMS';
 export type Temperatura = 'FRIO' | 'MORNO' | 'QUENTE';
 export type TipoLead = 'INVESTIDOR' | 'CAPTADOR';

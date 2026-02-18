@@ -33,6 +33,22 @@ const STAGE_TOKENIZA_INVESTIDOR: Record<Temperatura, string> = {
   'QUENTE': 'c48dc6c2-c5dc-47c1-9f27-c058b01898c3',
 };
 
+// MPuppe
+const PIPELINE_MPUPPE = 'f1a2b3c4-d5e6-4f7a-8b9c-0d1e2f3a4b5c';
+const STAGE_MPUPPE: Record<Temperatura, string> = {
+  'FRIO': 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d',
+  'MORNO': 'b2c3d4e5-f6a7-4b8c-9d0e-1f2a3b4c5d6e',
+  'QUENTE': 'c3d4e5f6-a7b8-4c9d-0e1f-2a3b4c5d6e7f',
+};
+
+// Axia
+const PIPELINE_AXIA = 'a2b3c4d5-e6f7-4a8b-9c0d-1e2f3a4b5c6d';
+const STAGE_AXIA: Record<Temperatura, string> = {
+  'FRIO': 'f6a7b8c9-d0e1-4f2a-3b4c-5d6e7f8a9b0c',
+  'MORNO': '07b8c9d0-e1f2-4a3b-4c5d-6e7f8a9b0c1d',
+  'QUENTE': '18c9d0e1-f2a3-4b4c-5d6e-7f8a9b0c1d2e',
+};
+
 /**
  * Resolve o pipeline e stage alvo baseado na empresa, tipo de lead, temperatura e prioridade
  */
@@ -46,6 +62,20 @@ export function resolveTargetPipeline(
     return {
       pipelineId: PIPELINE_BLUE,
       stageId: isPriority ? STAGE_BLUE['QUENTE'] : (STAGE_BLUE[temperatura] || STAGE_BLUE['FRIO']),
+    };
+  }
+
+  if (empresa === 'MPUPPE') {
+    return {
+      pipelineId: PIPELINE_MPUPPE,
+      stageId: isPriority ? STAGE_MPUPPE['QUENTE'] : (STAGE_MPUPPE[temperatura] || STAGE_MPUPPE['FRIO']),
+    };
+  }
+
+  if (empresa === 'AXIA') {
+    return {
+      pipelineId: PIPELINE_AXIA,
+      stageId: isPriority ? STAGE_AXIA['QUENTE'] : (STAGE_AXIA[temperatura] || STAGE_AXIA['FRIO']),
     };
   }
 

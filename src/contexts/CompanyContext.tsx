@@ -1,7 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 
-export type ActiveCompany = 'BLUE' | 'TOKENIZA';
+export type ActiveCompany = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 
 interface CompanyContextType {
   /** All currently selected companies */
@@ -19,6 +19,8 @@ interface CompanyContextType {
 const LABELS: Record<ActiveCompany, string> = {
   BLUE: 'Blue Consult',
   TOKENIZA: 'Tokeniza',
+  MPUPPE: 'MPuppe',
+  AXIA: 'Axia',
 };
 
 const STORAGE_KEY = 'bluecrm-companies';
@@ -30,7 +32,7 @@ function loadInitialCompanies(): ActiveCompany[] {
     try {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const valid = parsed.filter((c: string) => c === 'BLUE' || c === 'TOKENIZA') as ActiveCompany[];
+        const valid = parsed.filter((c: string) => ['BLUE', 'TOKENIZA', 'MPUPPE', 'AXIA'].includes(c)) as ActiveCompany[];
         if (valid.length > 0) return valid;
       }
     } catch { /* ignore */ }

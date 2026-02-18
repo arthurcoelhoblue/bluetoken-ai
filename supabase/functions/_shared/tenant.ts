@@ -4,12 +4,12 @@
 
 import type { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+export type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 
-const VALID_EMPRESAS: ReadonlySet<string> = new Set(['TOKENIZA', 'BLUE']);
+const VALID_EMPRESAS: ReadonlySet<string> = new Set(['TOKENIZA', 'BLUE', 'MPUPPE', 'AXIA']);
 
 /** All tenant identifiers for batch iteration (forEachEmpresa pattern) */
-export const EMPRESAS: readonly EmpresaTipo[] = ['BLUE', 'TOKENIZA'] as const;
+export const EMPRESAS: readonly EmpresaTipo[] = ['BLUE', 'TOKENIZA', 'MPUPPE', 'AXIA'] as const;
 
 /**
  * Validates that the given value is a valid tenant identifier.
@@ -17,7 +17,7 @@ export const EMPRESAS: readonly EmpresaTipo[] = ['BLUE', 'TOKENIZA'] as const;
  */
 export function assertEmpresa(empresa: unknown): asserts empresa is EmpresaTipo {
   if (typeof empresa !== 'string' || !VALID_EMPRESAS.has(empresa)) {
-    throw new Error(`Tenant inválido: "${empresa}". Esperado: BLUE ou TOKENIZA.`);
+    throw new Error(`Tenant inválido: "${empresa}". Esperado: BLUE, TOKENIZA, MPUPPE ou AXIA.`);
   }
 }
 

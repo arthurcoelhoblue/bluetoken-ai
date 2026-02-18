@@ -36,7 +36,13 @@ export async function resolveChannelConfig(
   }
 
   // Resolve Blue Chat API URL from system_settings
-  const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+  const SETTINGS_KEY_MAP: Record<string, string> = {
+    'BLUE': 'bluechat_blue',
+    'TOKENIZA': 'bluechat_tokeniza',
+    'MPUPPE': 'bluechat_mpuppe',
+    'AXIA': 'bluechat_axia',
+  };
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
   const { data: setting } = await supabase
     .from('system_settings')
     .select('value')
@@ -61,9 +67,7 @@ export async function resolveChannelConfig(
     return { mode: 'DIRECT' }; // No API URL configured, fallback
   }
 
-  const apiKey = empresa === 'BLUE'
-    ? getOptionalEnv('BLUECHAT_API_KEY_BLUE')
-    : getOptionalEnv('BLUECHAT_API_KEY');
+  const apiKey = getOptionalEnv('BLUECHAT_API_KEY');
 
   if (!apiKey) {
     return { mode: 'DIRECT' }; // No API key, fallback
@@ -84,7 +88,13 @@ export async function resolveBluechatFrontendUrl(
   supabase: SupabaseClient,
   empresa: string,
 ): Promise<string | null> {
-  const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+  const SETTINGS_KEY_MAP: Record<string, string> = {
+    'BLUE': 'bluechat_blue',
+    'TOKENIZA': 'bluechat_tokeniza',
+    'MPUPPE': 'bluechat_mpuppe',
+    'AXIA': 'bluechat_axia',
+  };
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
   const { data: setting } = await supabase
     .from('system_settings')
     .select('value')

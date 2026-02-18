@@ -21,7 +21,7 @@ export const blueChatSchema = z.object({
     media_url: z.string().url().optional(),
   }),
   context: z.object({
-    empresa: z.enum(['TOKENIZA', 'BLUE']).optional(),
+    empresa: z.string().optional(),
     tipo_lead: z.enum(['INVESTIDOR', 'CAPTADOR']).optional(),
     agent_id: z.string().optional(),
     tags: z.array(z.string()).optional(),

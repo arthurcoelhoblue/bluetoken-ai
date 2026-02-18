@@ -14,7 +14,7 @@ export type SGTEventoTipo =
   | 'FUNIL_ATUALIZADO';
 
 // Empresas suportadas
-export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+export type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 
 // Status de processamento de eventos
 export type SGTEventStatus = 'RECEBIDO' | 'PROCESSADO' | 'ERRO';
@@ -299,7 +299,7 @@ export const SGT_EVENTOS: SGTEventoTipo[] = [
   'FUNIL_ATUALIZADO',
 ];
 
-export const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
+export const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE', 'MPUPPE', 'AXIA'];
 
 export const LEAD_STAGES: LeadStage[] = [
   'Lead',
