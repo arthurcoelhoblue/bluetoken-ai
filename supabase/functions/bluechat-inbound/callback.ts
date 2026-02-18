@@ -100,10 +100,15 @@ export async function sendResponseToBluechat(
       return;
     }
 
-    // API key única para todas as empresas
-    const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
+    // API key por empresa (buscar do settings, fallback para env)
+    const settingValue = (setting?.value as Record<string, unknown>);
+    let bluechatApiKey = settingValue?.api_key as string | undefined;
     if (!bluechatApiKey) {
-      log.warn(`BLUECHAT_API_KEY não configurada`);
+      // Fallback para env (compatibilidade)
+      bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY') || undefined;
+    }
+    if (!bluechatApiKey) {
+      log.warn(`API Key do Blue Chat não configurada para ${data.empresa}`);
       return;
     }
 

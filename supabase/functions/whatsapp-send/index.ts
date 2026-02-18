@@ -52,7 +52,8 @@ async function sendViaBluechat(
   const { leadId, empresa, mensagem, messageId } = opts;
 
   // 1. Buscar config Blue Chat em system_settings
-  const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+  const SETTINGS_KEY_MAP: Record<string, string> = { 'BLUE': 'bluechat_blue', 'TOKENIZA': 'bluechat_tokeniza', 'MPUPPE': 'bluechat_mpuppe', 'AXIA': 'bluechat_axia' };
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
   const { data: setting } = await supabase
     .from('system_settings')
     .select('value')
@@ -76,11 +77,19 @@ async function sendViaBluechat(
     return { success: false, error: `URL da API Blue Chat não configurada para ${empresa}` };
   }
 
-  // 2. Buscar API key (única para todas as empresas)
-  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
+  // 2. Buscar API key por empresa (settings → fallback env)
+  let bluechatApiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
+  if (!bluechatApiKey) {
+    // Fallback para config legada
+    const legacyVal = await (async () => {
+      const { data: ls } = await supabase.from('system_settings').select('value').eq('category', 'integrations').eq('key', 'bluechat').maybeSingle();
+      return (ls?.value as Record<string, unknown>)?.api_key as string | undefined;
+    })();
+    bluechatApiKey = legacyVal || getOptionalEnv('BLUECHAT_API_KEY') || undefined;
+  }
 
   if (!bluechatApiKey) {
-    return { success: false, error: `BLUECHAT_API_KEY não configurada para ${empresa}` };
+    return { success: false, error: `API Key do Blue Chat não configurada para ${empresa}` };
   }
 
   // 3. Buscar conversation_id do lead_conversation_state.framework_data

@@ -13,7 +13,7 @@ import { checkWebhookRateLimit, rateLimitResponse } from "../_shared/webhook-rat
 
 import type { BlueChatPayload, BlueChatResponse, LeadContact } from "./types.ts";
 import { blueChatSchema } from "./schemas.ts";
-import { validateAuth } from "./auth.ts";
+import { validateAuth, validateAuthAsync } from "./auth.ts";
 import { normalizePhone, extractFirstName, findLeadByPhone, createLead } from "./contact-resolver.ts";
 import { parseTriageSummary, enrichLeadFromTriage } from "./triage.ts";
 import { saveInboundMessage } from "./message-handler.ts";
@@ -36,7 +36,7 @@ serve(async (req) => {
     );
   }
 
-  // Validar autenticação
+  // Validar autenticação (sync check with env fallback — async per-empresa check happens after body parsing)
   const authResult = validateAuth(req);
   if (!authResult.valid) {
     log.error('Acesso não autorizado');
@@ -45,6 +45,9 @@ serve(async (req) => {
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
+
+  // Clone request for re-reading body if needed for async auth
+  const clonedReq = req.clone();
 
   try {
     const rawPayload = await req.json();
@@ -72,6 +75,17 @@ serve(async (req) => {
 
     // Rate limiting (150 req/min per empresa)
     const empresa: EmpresaTipo = mapBluechatEmpresa(payload.context?.empresa);
+
+    // Async per-empresa auth validation (checks api_key from system_settings)
+    const asyncAuth = await validateAuthAsync(clonedReq, supabase, empresa);
+    if (!asyncAuth.valid) {
+      log.error('Acesso não autorizado (validação por empresa)', { empresa });
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
     const rateCheck = await checkWebhookRateLimit(supabase, 'bluechat-inbound', empresa, 150);
     if (!rateCheck.allowed) {
       log.warn('Rate limit exceeded', { count: rateCheck.currentCount });

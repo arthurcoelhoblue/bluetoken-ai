@@ -5,7 +5,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -21,6 +20,8 @@ import {
   Loader2,
   Copy,
   ExternalLink,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth, HealthCheckResult } from "@/hooks/useIntegrationHealth";
@@ -35,6 +36,8 @@ type EmpresaTab = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 
 interface CompanyConfig {
   apiUrl: string;
+  apiKey: string;
+  showApiKey: boolean;
   saving: boolean;
   testing: boolean;
   testResult: HealthCheckResult | null;
@@ -45,10 +48,10 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
   const { checkHealth } = useIntegrationHealth();
 
   const [configs, setConfigs] = useState<Record<EmpresaTab, CompanyConfig>>({
-    TOKENIZA: { apiUrl: "https://chat.grupoblue.com.br/api/external-ai", saving: false, testing: false, testResult: null },
-    BLUE: { apiUrl: "", saving: false, testing: false, testResult: null },
-    MPUPPE: { apiUrl: "", saving: false, testing: false, testResult: null },
-    AXIA: { apiUrl: "", saving: false, testing: false, testResult: null },
+    TOKENIZA: { apiUrl: "https://chat.grupoblue.com.br/api/external-ai", apiKey: "", showApiKey: false, saving: false, testing: false, testResult: null },
+    BLUE: { apiUrl: "", apiKey: "", showApiKey: false, saving: false, testing: false, testResult: null },
+    MPUPPE: { apiUrl: "", apiKey: "", showApiKey: false, saving: false, testing: false, testResult: null },
+    AXIA: { apiUrl: "", apiKey: "", showApiKey: false, saving: false, testing: false, testResult: null },
   });
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
@@ -62,24 +65,31 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
       const axiaSetting = settings.find((s) => s.key === "bluechat_axia");
       const legacySetting = settings.find((s) => s.key === "bluechat");
 
+      const getValue = (setting: typeof tokenizaSetting, field: string) =>
+        (setting?.value as Record<string, unknown>)?.[field] as string || "";
+
       setConfigs(prev => ({
         TOKENIZA: {
           ...prev.TOKENIZA,
-          apiUrl: (tokenizaSetting?.value as Record<string, unknown>)?.api_url as string
-            || (legacySetting?.value as Record<string, unknown>)?.api_url as string
+          apiUrl: getValue(tokenizaSetting, 'api_url')
+            || getValue(legacySetting, 'api_url')
             || prev.TOKENIZA.apiUrl,
+          apiKey: getValue(tokenizaSetting, 'api_key') || getValue(legacySetting, 'api_key'),
         },
         BLUE: {
           ...prev.BLUE,
-          apiUrl: (blueSetting?.value as Record<string, unknown>)?.api_url as string || prev.BLUE.apiUrl,
+          apiUrl: getValue(blueSetting, 'api_url') || prev.BLUE.apiUrl,
+          apiKey: getValue(blueSetting, 'api_key'),
         },
         MPUPPE: {
           ...prev.MPUPPE,
-          apiUrl: (mpuppeSetting?.value as Record<string, unknown>)?.api_url as string || prev.MPUPPE.apiUrl,
+          apiUrl: getValue(mpuppeSetting, 'api_url') || prev.MPUPPE.apiUrl,
+          apiKey: getValue(mpuppeSetting, 'api_key'),
         },
         AXIA: {
           ...prev.AXIA,
-          apiUrl: (axiaSetting?.value as Record<string, unknown>)?.api_url as string || prev.AXIA.apiUrl,
+          apiUrl: getValue(axiaSetting, 'api_url') || prev.AXIA.apiUrl,
+          apiKey: getValue(axiaSetting, 'api_key'),
         },
       }));
     }
@@ -102,10 +112,21 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
       const existing = settings?.find((s) => s.key === settingsKey);
       const current = (existing?.value as Record<string, unknown>) || {};
 
+      const newValue: Record<string, unknown> = {
+        ...current,
+        api_url: configs[empresa].apiUrl.trim(),
+      };
+
+      // Only update api_key if user typed something (don't clear existing)
+      const apiKeyValue = configs[empresa].apiKey.trim();
+      if (apiKeyValue) {
+        newValue.api_key = apiKeyValue;
+      }
+
       await updateSetting.mutateAsync({
         category: "integrations",
         key: settingsKey,
-        value: { ...current, api_url: configs[empresa].apiUrl.trim() },
+        value: newValue,
       });
     } catch {
       // Error handled by hook
@@ -151,8 +172,6 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
     }
   };
 
-  const sharedSecretName = 'BLUECHAT_API_KEY';
-
   const renderCompanyTab = (empresa: EmpresaTab) => {
     const config = configs[empresa];
     return (
@@ -186,11 +205,37 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
           />
         </div>
 
-        {/* Secret info */}
+        {/* API Key per company */}
+        <div className="space-y-2">
+          <Label htmlFor={`api-key-${empresa}`} className="text-sm font-medium">
+            API Key ({empresa})
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              id={`api-key-${empresa}`}
+              type={config.showApiKey ? "text" : "password"}
+              placeholder="Cole a API key específica desta empresa"
+              value={config.apiKey}
+              onChange={(e) => updateConfig(empresa, { apiKey: e.target.value })}
+            />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={() => updateConfig(empresa, { showApiKey: !config.showApiKey })}
+            >
+              {config.showApiKey ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Chave de autenticação específica para esta empresa no Blue Chat.
+          </p>
+        </div>
+
+        {/* Info */}
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Secret compartilhado: <code>{sharedSecretName}</code>. Usado para autenticação bidirecional (todas as empresas).
+            Cada empresa usa sua própria API Key. A key é armazenada de forma segura no banco de dados.
           </AlertDescription>
         </Alert>
 
@@ -227,7 +272,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
         <DialogHeader>
           <DialogTitle>Configurar Blue Chat</DialogTitle>
           <DialogDescription>
-            Configure as conexões do Blue Chat por empresa. API key única, URLs separadas por empresa.
+            Configure as conexões do Blue Chat por empresa. Cada empresa tem sua própria API Key e URL.
           </DialogDescription>
         </DialogHeader>
 

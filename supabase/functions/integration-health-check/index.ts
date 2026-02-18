@@ -105,28 +105,52 @@ function checkSGT(): HealthCheckResult {
 }
 
 async function checkBlueChat(): Promise<HealthCheckResult> {
-  const apiKey = getOptionalEnv("BLUECHAT_API_KEY");
-  if (!apiKey) return { status: "error", message: "BLUECHAT_API_KEY não configurada" };
-
   try {
     const supabase = createServiceClient();
-    const { data: setting } = await supabase.from("system_settings").select("value").eq("category", "integrations").eq("key", "bluechat").maybeSingle();
-    const apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
-    if (!apiUrl) return { status: "error", message: "URL da API não configurada. Configure em Integrações → Blue Chat." };
+    
+    // Check all companies for configured keys
+    const empresas = ['TOKENIZA', 'BLUE', 'MPUPPE', 'AXIA'];
+    const keyMap: Record<string, string> = { TOKENIZA: 'bluechat_tokeniza', BLUE: 'bluechat_blue', MPUPPE: 'bluechat_mpuppe', AXIA: 'bluechat_axia' };
+    
+    let anyConfigured = false;
+    let testedUrl: string | undefined;
+    let testedKey: string | undefined;
+    
+    for (const emp of empresas) {
+      const { data: setting } = await supabase.from("system_settings").select("value").eq("category", "integrations").eq("key", keyMap[emp]).maybeSingle();
+      const val = setting?.value as Record<string, unknown> | undefined;
+      if (val?.api_url && val?.api_key) {
+        anyConfigured = true;
+        testedUrl = val.api_url as string;
+        testedKey = val.api_key as string;
+        break;
+      }
+    }
+    
+    // Fallback to env key + legacy config
+    if (!anyConfigured) {
+      const envKey = getOptionalEnv("BLUECHAT_API_KEY");
+      if (!envKey) return { status: "error", message: "Nenhuma API Key configurada (nem por empresa, nem no env)" };
+      testedKey = envKey;
+      const { data: setting } = await supabase.from("system_settings").select("value").eq("category", "integrations").eq("key", "bluechat").maybeSingle();
+      testedUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
+    }
+    
+    if (!testedUrl) return { status: "error", message: "URL da API não configurada. Configure em Integrações → Blue Chat." };
 
     const start = Date.now();
-    const healthEndpoints = [`${apiUrl.replace(/\/$/, "")}/health`, `${apiUrl.replace(/\/$/, "")}/api/health`, apiUrl];
+    const healthEndpoints = [`${testedUrl.replace(/\/$/, "")}/health`, `${testedUrl.replace(/\/$/, "")}/api/health`, testedUrl];
 
     for (const endpoint of healthEndpoints) {
       try {
-        const response = await fetch(endpoint, { method: "GET", headers: { "X-API-Key": apiKey, "Content-Type": "application/json" } });
+        const response = await fetch(endpoint, { method: "GET", headers: { "X-API-Key": testedKey!, "Content-Type": "application/json" } });
         if (response.ok || response.status === 401 || response.status === 403) {
           return { status: "online", latencyMs: Date.now() - start, message: response.ok ? undefined : "API acessível (auth pode precisar revisão)", details: { endpoint, statusCode: response.status } };
         }
       } catch { /* next */ }
     }
 
-    return { status: "offline", message: "Não foi possível conectar à API do Blue Chat", latencyMs: Date.now() - start, details: { apiUrl } };
+    return { status: "offline", message: "Não foi possível conectar à API do Blue Chat", latencyMs: Date.now() - start, details: { apiUrl: testedUrl } };
   } catch (error) {
     return { status: "error", message: error instanceof Error ? error.message : "Erro ao verificar Blue Chat" };
   }
