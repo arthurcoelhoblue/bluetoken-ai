@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -12,6 +12,7 @@ import { useCopilotInsights } from '@/hooks/useCopilotInsights';
 import { CopilotInsightCard } from './CopilotInsightCard';
 import type { CopilotContextType } from '@/types/conversas';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
+import { useQuery } from '@tanstack/react-query';
 
 interface CopilotContext {
   type: CopilotContextType;
@@ -76,6 +77,27 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
   const { insights, generateInsights, dismissInsight, pendingCount } = useCopilotInsights(context.empresa);
   const { trackFeatureUse } = useAnalyticsEvents();
+
+  // Resolve lead names for insights
+  const leadIds = useMemo(() => {
+    const ids = insights.map(i => i.lead_id).filter(Boolean) as string[];
+    return [...new Set(ids)];
+  }, [insights]);
+
+  const { data: leadNames } = useQuery({
+    queryKey: ['insight-lead-names', leadIds],
+    queryFn: async () => {
+      if (leadIds.length === 0) return {} as Record<string, string>;
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, nome')
+        .in('id', leadIds);
+      const map: Record<string, string> = {};
+      (data || []).forEach(c => { map[c.id] = c.nome; });
+      return map;
+    },
+    enabled: leadIds.length > 0,
+  });
 
   // Generate proactive insights when opening
   useEffect(() => {
@@ -196,7 +218,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
             <div className="space-y-2 mb-4">
               <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">💡 Insights da Amélia</p>
               {insights.map(insight => (
-                <CopilotInsightCard key={insight.id} insight={insight} onDismiss={dismissInsight} />
+                <CopilotInsightCard key={insight.id} insight={insight} onDismiss={dismissInsight} leadNome={leadNames?.[insight.lead_id || ''] || null} empresa={context.empresa} />
               ))}
             </div>
           )}
@@ -240,7 +262,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
                   )}
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap ${
+                      className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap break-words ${
                         msg.role === 'user'
                           ? 'bg-primary text-primary-foreground rounded-br-none'
                           : 'bg-muted rounded-bl-none'
