@@ -2,7 +2,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Trophy, XCircle, RotateCcw, Clock, AlertTriangle } from 'lucide-react';
+import { Trophy, XCircle, RotateCcw, Clock, AlertTriangle, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import type { DealFullDetail } from '@/types/deal';
@@ -20,9 +21,13 @@ interface DealDetailHeaderProps {
   onLose: () => void;
   onReopen: () => void;
   onStageClick: (stageId: string) => void;
+  legacyLeadId?: string | null;
+  leadEmpresa?: string | null;
+  onClose?: () => void;
 }
 
-export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReopen, onStageClick }: DealDetailHeaderProps) {
+export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReopen, onStageClick, legacyLeadId, leadEmpresa, onClose }: DealDetailHeaderProps) {
+  const navigate = useNavigate();
   const orderedStages = stages.filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
   const currentStageIndex = orderedStages.findIndex(s => s.id === deal.stage_id);
   const progressPercent = orderedStages.length > 1 ? ((currentStageIndex + 1) / orderedStages.length) * 100 : 0;
@@ -54,6 +59,19 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
             </div>
           </div>
           <div className="flex items-center gap-1">
+            {legacyLeadId && leadEmpresa && (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Ver página completa do lead"
+                onClick={() => {
+                  navigate(`/leads/${legacyLeadId}/${leadEmpresa}`);
+                  onClose?.();
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            )}
             <ClickToCallButton
               phone={deal.contact_telefone}
               contactName={deal.contact_nome}

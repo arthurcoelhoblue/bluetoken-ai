@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Sparkles } from 'lucide-react';
+import { MessageSquare, Sparkles } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useDealDetail,
@@ -16,6 +17,8 @@ import {
 } from '@/hooks/useDealDetail';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { useResolvedFields } from '@/hooks/useCustomFields';
+import { useConversationMessages } from '@/hooks/useConversationMessages';
+import { supabase } from '@/integrations/supabase/client';
 import { CustomFieldsRenderer } from '@/components/contacts/CustomFieldsRenderer';
 import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { InsightsTab } from '@/components/deals/DealInsightsTab';
@@ -23,6 +26,7 @@ import { DealDetailHeader } from '@/components/deals/DealDetailHeader';
 import { DealTimelineTab } from '@/components/deals/DealTimelineTab';
 import { DealDadosTab } from '@/components/deals/DealDadosTab';
 import { DealLossDialog } from '@/components/deals/DealLossDialog';
+import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 
 interface Props {
   dealId: string | null;
@@ -37,6 +41,30 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const { data: lossCategories = [] } = useLossCategories();
   const resolvedFields = useResolvedFields('DEAL', dealId);
 
+  // Resolve legacy_lead_id and empresa from contact
+  const { data: contactBridge } = useQuery({
+    queryKey: ['deal-contact-bridge', deal?.contact_id],
+    enabled: !!deal?.contact_id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, legacy_lead_id, empresa, telefone, nome')
+        .eq('id', deal!.contact_id)
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  const hasChat = !!contactBridge?.legacy_lead_id;
+
+  // Conversation messages for Chat tab
+  const { data: chatMessages = [], isLoading: chatLoading } = useConversationMessages({
+    leadId: contactBridge?.legacy_lead_id ?? '',
+    empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | undefined,
+    telefone: contactBridge?.telefone,
+    enabled: hasChat,
+  });
+
   const addActivity = useAddDealActivity();
   const toggleTask = useToggleTaskActivity();
   const updateField = useUpdateDealField();
@@ -49,6 +77,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
   const orderedStages = (stages ?? []).filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
+
+  const tabCount = hasChat ? 5 : 4;
 
   const handleWin = () => {
     if (!deal) return;
@@ -87,12 +117,21 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 onLose={() => setLossOpen(true)}
                 onReopen={handleReopen}
                 onStageClick={handleStageClick}
+                legacyLeadId={contactBridge?.legacy_lead_id ?? null}
+                leadEmpresa={contactBridge?.empresa ?? null}
+                onClose={() => onOpenChange(false)}
               />
 
               <Tabs defaultValue="timeline" className="flex-1 flex flex-col">
-                <TabsList className="grid w-full grid-cols-4 mx-6 mt-3" style={{ width: 'calc(100% - 3rem)' }}>
+                <TabsList className={`grid w-full grid-cols-${tabCount} mx-6 mt-3`} style={{ width: 'calc(100% - 3rem)', gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }}>
                   <TabsTrigger value="timeline">Timeline</TabsTrigger>
                   <TabsTrigger value="dados">Dados</TabsTrigger>
+                  {hasChat && (
+                    <TabsTrigger value="chat" className="gap-1">
+                      <MessageSquare className="h-3 w-3" />
+                      Chat
+                    </TabsTrigger>
+                  )}
                   <TabsTrigger value="campos">Campos</TabsTrigger>
                   <TabsTrigger value="insights">
                     <Sparkles className="h-3 w-3 mr-1" />
@@ -114,6 +153,23 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 <TabsContent value="dados">
                   <DealDadosTab deal={deal} updateField={updateField} />
                 </TabsContent>
+
+                {hasChat && (
+                  <TabsContent value="chat" className="px-6 mt-3 pb-4">
+                    <ConversationPanel
+                      leadId={contactBridge!.legacy_lead_id!}
+                      empresa={contactBridge!.empresa!}
+                      telefone={contactBridge!.telefone}
+                      leadNome={contactBridge!.nome}
+                      contactEmail={deal.contact_email}
+                      dealId={deal.id}
+                      messages={chatMessages}
+                      isLoading={chatLoading}
+                      modo="MANUAL"
+                      maxHeight="350px"
+                    />
+                  </TabsContent>
+                )}
 
                 <TabsContent value="campos" className="px-6 mt-3">
                   <CustomFieldsRenderer fields={resolvedFields} entityType="DEAL" entityId={dealId!} />
