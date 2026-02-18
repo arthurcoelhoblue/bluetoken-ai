@@ -1,10 +1,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Send, AlertCircle, ExternalLink } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { buildBluechatDeepLink } from '@/utils/bluechat';
+import { supabase } from '@/integrations/supabase/client';
+import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -23,9 +26,43 @@ export function ManualMessageInput({
   bluechatConversationId,
 }: ManualMessageInputProps) {
   const [text, setText] = useState('');
+  const [dealDialogOpen, setDealDialogOpen] = useState(false);
+  const [pendingMessage, setPendingMessage] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
   const { isBluechat } = useChannelConfig(empresa);
+
+  // Resolve contact_id from lead_id
+  const { data: contact } = useQuery({
+    queryKey: ['lead-contact-bridge', leadId, empresa],
+    enabled: !!leadId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('contacts')
+        .select('id, nome')
+        .eq('legacy_lead_id', leadId)
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .maybeSingle();
+      return data;
+    },
+  });
+
+  // Check if contact has an open deal
+  const { data: existingDeals = [], refetch: refetchDeals } = useQuery({
+    queryKey: ['lead-has-deal', contact?.id],
+    enabled: !!contact?.id,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('deals')
+        .select('id')
+        .eq('contact_id', contact!.id)
+        .eq('status', 'ABERTO')
+        .limit(1);
+      return data ?? [];
+    },
+  });
+
+  const hasDeal = existingDeals.length > 0;
 
   const autoResize = useCallback(() => {
     const el = textareaRef.current;
@@ -39,21 +76,41 @@ export function ManualMessageInput({
     autoResize();
   }, [text, autoResize]);
 
-  const handleSend = () => {
-    const trimmed = text.trim();
-    if (!trimmed || !telefone) return;
-
+  const doSend = (message: string) => {
+    if (!message || !telefone) return;
     sendMutation.mutate(
       {
         leadId,
         empresa,
         telefone,
-        conteudo: trimmed,
+        conteudo: message,
         modoAtual: modo,
         bluechatConversationId: bluechatConversationId || undefined,
       },
       { onSuccess: () => setText('') }
     );
+  };
+
+  const handleSend = () => {
+    const trimmed = text.trim();
+    if (!trimmed || !telefone) return;
+
+    // If contact exists but has no deal, require deal creation first
+    if (contact && !hasDeal) {
+      setPendingMessage(trimmed);
+      setDealDialogOpen(true);
+      return;
+    }
+
+    doSend(trimmed);
+  };
+
+  const handleDealCreated = (_dealId: string) => {
+    refetchDeals();
+    if (pendingMessage) {
+      doSend(pendingMessage);
+      setPendingMessage('');
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -84,39 +141,52 @@ export function ManualMessageInput({
     const deepLink = buildBluechatDeepLink(empresa, telefone || '');
 
     return (
-      <div className="space-y-2">
-        {deepLink && (
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full gap-2 text-xs"
-            onClick={handleOpenBluechat}
-          >
-            <ExternalLink className="h-3.5 w-3.5" />
-            Responder no Blue Chat
-          </Button>
-        )}
-        <div className="flex items-end gap-2">
-          <Textarea
-            ref={textareaRef}
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Enviar via Blue Chat..."
-            className="min-h-[40px] max-h-[120px] resize-none flex-1"
-            rows={1}
-            disabled={sendMutation.isPending}
-          />
-          <Button
-            size="icon"
-            onClick={handleSend}
-            disabled={!text.trim() || sendMutation.isPending}
-            className="shrink-0"
-          >
-            <Send className="h-4 w-4" />
-          </Button>
+      <>
+        <div className="space-y-2">
+          {deepLink && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full gap-2 text-xs"
+              onClick={handleOpenBluechat}
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+              Responder no Blue Chat
+            </Button>
+          )}
+          <div className="flex items-end gap-2">
+            <Textarea
+              ref={textareaRef}
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder="Enviar via Blue Chat..."
+              className="min-h-[40px] max-h-[120px] resize-none flex-1"
+              rows={1}
+              disabled={sendMutation.isPending}
+            />
+            <Button
+              size="icon"
+              onClick={handleSend}
+              disabled={!text.trim() || sendMutation.isPending}
+              className="shrink-0"
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
-      </div>
+
+        {contact && (
+          <CreateDealFromConversationDialog
+            open={dealDialogOpen}
+            onOpenChange={setDealDialogOpen}
+            contactId={contact.id}
+            contactNome={contact.nome ?? ''}
+            empresa={empresa}
+            onDealCreated={handleDealCreated}
+          />
+        )}
+      </>
     );
   }
 
@@ -127,25 +197,38 @@ export function ManualMessageInput({
     : 'Digite sua mensagem...';
 
   return (
-    <div className="flex items-end gap-2">
-      <Textarea
-        ref={textareaRef}
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        className="min-h-[40px] max-h-[120px] resize-none flex-1"
-        rows={1}
-        disabled={sendMutation.isPending}
-      />
-      <Button
-        size="icon"
-        onClick={handleSend}
-        disabled={!text.trim() || sendMutation.isPending}
-        className="shrink-0"
-      >
-        <Send className="h-4 w-4" />
-      </Button>
-    </div>
+    <>
+      <div className="flex items-end gap-2">
+        <Textarea
+          ref={textareaRef}
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          className="min-h-[40px] max-h-[120px] resize-none flex-1"
+          rows={1}
+          disabled={sendMutation.isPending}
+        />
+        <Button
+          size="icon"
+          onClick={handleSend}
+          disabled={!text.trim() || sendMutation.isPending}
+          className="shrink-0"
+        >
+          <Send className="h-4 w-4" />
+        </Button>
+      </div>
+
+      {contact && (
+        <CreateDealFromConversationDialog
+          open={dealDialogOpen}
+          onOpenChange={setDealDialogOpen}
+          contactId={contact.id}
+          contactNome={contact.nome ?? ''}
+          empresa={empresa}
+          onDealCreated={handleDealCreated}
+        />
+      )}
+    </>
   );
 }
