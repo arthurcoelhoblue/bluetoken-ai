@@ -69,7 +69,16 @@ function PipelineContent() {
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
   const [showCreateDeal, setShowCreateDeal] = useState(false);
-  const [selectedDealId, setSelectedDealId] = useState<string | null>(searchParams.get('deal'));
+  const dealFromUrl = searchParams.get('deal');
+  const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
+
+  // Auto-open deal from query param when navigating from insights
+  useEffect(() => {
+    const dealParam = searchParams.get('deal');
+    if (dealParam && dealParam !== selectedDealId) {
+      setSelectedDealId(dealParam);
+    }
+  }, [searchParams]);
 
   const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
 
