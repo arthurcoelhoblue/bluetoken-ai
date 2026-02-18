@@ -9,6 +9,48 @@ import type { EmpresaTipo } from "../_shared/types.ts";
 
 const log = createLogger('bluechat-inbound');
 
+/** Retry helper com backoff exponencial (apenas para erros 5xx) */
+async function fetchWithRetry(
+  url: string,
+  options: RequestInit,
+  maxRetries = 2,
+  label = 'request'
+): Promise<Response> {
+  let lastResponse: Response | null = null;
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const response = await fetch(url, options);
+
+    if (response.ok || response.status < 500) {
+      return response;
+    }
+
+    lastResponse = response;
+
+    if (attempt < maxRetries) {
+      const delay = Math.pow(2, attempt) * 500; // 500ms, 1000ms
+      log.warn(`${label}: tentativa ${attempt + 1} falhou com ${response.status}, retry em ${delay}ms`);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+
+  return lastResponse!;
+}
+
+/** Loga detalhes do erro de uma resposta HTTP */
+async function logResponseError(response: Response, label: string): Promise<void> {
+  try {
+    const body = await response.text();
+    log.error(`${label} falhou`, {
+      status: response.status,
+      statusText: response.statusText,
+      responseBody: body.substring(0, 500),
+    });
+  } catch {
+    log.error(`${label} falhou`, { status: response.status });
+  }
+}
+
 /**
  * Envia resposta de volta ao Blue Chat via API (callback assíncrono)
  */
@@ -53,13 +95,19 @@ export async function sendResponseToBluechat(
     }
 
     // Usar API key correta por empresa
-    const bluechatApiKey = data.empresa === 'BLUE'
-      ? getOptionalEnv('BLUECHAT_API_KEY_BLUE')
-      : getOptionalEnv('BLUECHAT_API_KEY');
+    const keyName = data.empresa === 'BLUE' ? 'BLUECHAT_API_KEY_BLUE' : 'BLUECHAT_API_KEY';
+    const bluechatApiKey = getOptionalEnv(keyName);
     if (!bluechatApiKey) {
-      log.warn(`BLUECHAT_API_KEY não configurada para ${data.empresa}`);
+      log.warn(`${keyName} não configurada para ${data.empresa}`);
       return;
     }
+
+    log.info('Callback Blue Chat iniciado', {
+      empresa: data.empresa,
+      keyName,
+      keyPreview: `${bluechatApiKey.substring(0, 6)}...${bluechatApiKey.substring(bluechatApiKey.length - 4)}`,
+      apiUrl: apiUrl.substring(0, 50),
+    });
 
     const baseUrl = apiUrl.replace(/\/$/, '');
     const headers = {
@@ -71,18 +119,23 @@ export async function sendResponseToBluechat(
     const messagesUrl = `${baseUrl}/messages`;
     log.info('Enviando mensagem para Blue Chat', { url: messagesUrl });
 
-    const msgResponse = await fetch(messagesUrl, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        conversation_id: data.conversation_id,
-        content: data.text,
-        source: 'AMELIA_SDR',
-      }),
-    });
+    const msgResponse = await fetchWithRetry(
+      messagesUrl,
+      {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          conversation_id: data.conversation_id,
+          content: data.text,
+          source: 'AMELIA_SDR',
+        }),
+      },
+      2,
+      'POST /messages'
+    );
 
     if (!msgResponse.ok) {
-      log.error('Erro ao enviar mensagem', { status: msgResponse.status });
+      await logResponseError(msgResponse, 'POST /messages');
     } else {
       log.info('Mensagem enviada ao Blue Chat com sucesso');
     }
@@ -92,18 +145,23 @@ export async function sendResponseToBluechat(
       const transferUrl = `${baseUrl}/tickets/${data.ticket_id}/transfer`;
       log.info('Transferindo ticket', { url: transferUrl, department: data.department || 'Comercial' });
 
-      const transferResponse = await fetch(transferUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          reason: 'Lead qualificado - escalar para closer',
-          source: 'AMELIA_SDR',
-          department: data.department || 'Comercial',
-        }),
-      });
+      const transferResponse = await fetchWithRetry(
+        transferUrl,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            reason: 'Lead qualificado - escalar para closer',
+            source: 'AMELIA_SDR',
+            department: data.department || 'Comercial',
+          }),
+        },
+        2,
+        'POST /tickets/transfer'
+      );
 
       if (!transferResponse.ok) {
-        log.error('Erro ao transferir ticket', { status: transferResponse.status });
+        await logResponseError(transferResponse, 'POST /tickets/transfer');
       } else {
         log.info('Ticket transferido com sucesso', { department: data.department || 'Comercial' });
       }
@@ -114,18 +172,23 @@ export async function sendResponseToBluechat(
       const resolveUrl = `${baseUrl}/tickets/${data.ticket_id}/resolve`;
       log.info('Resolvendo ticket', { url: resolveUrl });
 
-      const resolveResponse = await fetch(resolveUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify({
-          summary: data.resolution.summary,
-          reason: data.resolution.reason,
-          source: 'AMELIA_SDR',
-        }),
-      });
+      const resolveResponse = await fetchWithRetry(
+        resolveUrl,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            summary: data.resolution.summary,
+            reason: data.resolution.reason,
+            source: 'AMELIA_SDR',
+          }),
+        },
+        2,
+        'POST /tickets/resolve'
+      );
 
       if (!resolveResponse.ok) {
-        log.error('Erro ao resolver ticket', { status: resolveResponse.status });
+        await logResponseError(resolveResponse, 'POST /tickets/resolve');
       } else {
         log.info('Ticket resolvido com sucesso');
       }
