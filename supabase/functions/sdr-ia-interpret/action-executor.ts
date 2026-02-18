@@ -305,6 +305,7 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
       const existing = conversation_state?.framework_data as Record<string, unknown> || {};
       const fu = frameworks_atualizados as Record<string, unknown>;
       stateUpdates.framework_data = {
+        ...existing,  // preserve bluechat_conversation_id, ia_null_count, etc.
         gpct: { ...(normalize(existing.gpct || existing.GPCT)), ...(normalize(fu.gpct || fu.GPCT)) },
         bant: { ...(normalize(existing.bant || existing.BANT)), ...(normalize(fu.bant || fu.BANT)) },
         spin: { ...(normalize(existing.spin || existing.SPIN)), ...(normalize(fu.spin || fu.SPIN)) },
