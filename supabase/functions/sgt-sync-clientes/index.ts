@@ -200,12 +200,17 @@ Deno.serve(async (req) => {
         }
 
         const sgtData = await sgtResponse.json();
-        const leads = Array.isArray(sgtData) ? sgtData : sgtData ? [sgtData] : [];
-
-        if (leads.length === 0) continue;
-
-        // Use first matching lead (most relevant)
-        const lead = leads[0];
+        // Unwrap: API retorna { found, lead } ou array
+        let rawLead: any = null;
+        if (sgtData?.found && sgtData?.lead) {
+          rawLead = sgtData.lead;
+        } else if (Array.isArray(sgtData) && sgtData.length > 0) {
+          rawLead = sgtData[0]?.lead ?? sgtData[0];
+        } else if (sgtData && !sgtData.found) {
+          continue;
+        }
+        if (!rawLead) continue;
+        const lead = rawLead;
 
         // ---- ENRICHMENT: contacts ----
         const contactUpdate = extractContactEnrichment(lead);
