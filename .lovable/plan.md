@@ -1,128 +1,55 @@
 
+# Diagnóstico: Conversas da Amélia não aparecem no Blue Chat após transferência
 
-# Unificar navegacao Lead/Deal e vincular Conversas a Deals
+## Causa raiz identificada
 
-## Problema atual
+O fluxo de mensagens está correto e NÃO passa pela mensageria interna. A Amélia:
+1. Recebe a mensagem via `bluechat-inbound` (webhook do Blue Chat)
+2. Processa via `sdr-ia-interpret` (classificação + resposta)
+3. Persiste a resposta OUTBOUND no banco (funciona)
+4. Tenta enviar a resposta de volta ao Blue Chat via `sendResponseToBluechat` (callback)
+5. **O callback FALHA com HTTP 401** -- a API key está sendo rejeitada
 
-1. **DealDetailSheet (lateral do Pipeline)** abre ao clicar num card no Kanban, mas nao tem link para a pagina completa do lead (`/leads/:leadId/:empresa`) que mostra conversas, classificacao IA, cadencias, intents, etc.
-2. **Conversas** existem associadas a leads via `legacy_lead_id`, mas nao ha vinculo obrigatorio com um deal no funil.
-3. **Iniciar conversa** manualmente nao exige criacao/selecao de deal, o que permite conversas "orfas" sem rastreabilidade no pipeline.
-
-## Solucao em 3 partes
-
-### Parte 1 — Botao "Ver pagina completa" no DealDetailSheet
-
-No `DealDetailHeader.tsx`, adicionar um botao/link que navega para `/leads/:legacyLeadId/:empresa`. Para isso:
-
-- O `DealFullDetail` ja tem `contact_id`. Precisamos resolver o `legacy_lead_id` e `empresa` do contato.
-- Criar um mini-hook ou query inline em `DealDetailSheet` que busca `legacy_lead_id` e `empresa` do contact via `contact_id`.
-- Renderizar um botao "Ver Lead Completo" (com icone ExternalLink) que faz `navigate(/leads/${legacyLeadId}/${empresa})` e fecha o sheet.
-- Se o contato nao tiver `legacy_lead_id`, o botao nao aparece.
-
-**Arquivos a modificar:**
-- `src/components/deals/DealDetailSheet.tsx` — adicionar query para resolver legacy_lead_id + passar ao header
-- `src/components/deals/DealDetailHeader.tsx` — renderizar botao "Ver Lead Completo"
-
-### Parte 2 — Aba "Conversa" no DealDetailSheet
-
-Adicionar uma aba de conversa direto no DealDetailSheet para que o vendedor veja o historico de mensagens sem sair da lateral.
-
-- Reutilizar `ConversationPanel` (ja usado no `ContactDetailSheet` e `LeadDetail`).
-- Alimentar com dados do `useConversationMessages` via `legacy_lead_id` resolvido na Parte 1.
-- Nova aba "Chat" nas tabs do DealDetailSheet (alem de Timeline, Dados, Campos, IA).
-
-**Arquivos a modificar:**
-- `src/components/deals/DealDetailSheet.tsx` — nova TabsTrigger/TabsContent com ConversationPanel
-
-### Parte 3 — Obrigar deal ao iniciar conversa manual
-
-Quando o vendedor envia a primeira mensagem manual (via `ManualMessageInput`), se nao existir deal vinculado aquele lead, abrir um dialog pedindo:
-1. Selecao do Pipeline
-2. Selecao do Estagio
-3. (Opcional) Titulo e valor do deal
-
-O deal e criado automaticamente antes de enviar a mensagem.
-
-**Logica:**
-- Verificar se ja existe deal aberto para o `contact_id` resolvido a partir do `lead_id`.
-- Se nao existir, abrir `CreateDealFromConversationDialog` antes de prosseguir com o envio.
-- Apos criar o deal, enviar a mensagem normalmente.
-
-**Arquivos a criar:**
-- `src/components/conversas/CreateDealFromConversationDialog.tsx` — dialog com selecao de pipeline/estagio e criacao do deal
-
-**Arquivos a modificar:**
-- `src/components/conversas/ManualMessageInput.tsx` — interceptar envio, checar se deal existe, abrir dialog se necessario
-- `src/components/conversas/ConversationPanel.tsx` — passar `contactEmail` e `dealId` derivados para o novo fluxo
-
-## Detalhes tecnicos
-
-### Query para resolver legacy_lead_id no DealDetailSheet
-
-```typescript
-const { data: contactBridge } = useQuery({
-  queryKey: ['deal-contact-bridge', deal?.contact_id],
-  enabled: !!deal?.contact_id,
-  queryFn: async () => {
-    const { data } = await supabase
-      .from('contacts')
-      .select('legacy_lead_id, empresa, telefone')
-      .eq('id', deal!.contact_id)
-      .maybeSingle();
-    return data;
-  },
-});
+Os logs confirmam isso:
+```
+INFO  "Enviando mensagem para Blue Chat" url: ".../api/external-ai/messages"
+ERROR "Erro ao enviar mensagem" status: 401
 ```
 
-### Verificacao de deal existente para lead
+Ou seja: a Amélia processa e gera a resposta, persiste no banco local (por isso aparece no CRM), mas a mensagem nunca chega ao Blue Chat porque a API key usada no callback é rejeitada pelo servidor do Blue Chat.
 
-```typescript
-const { data: existingDeals } = useQuery({
-  queryKey: ['lead-has-deal', contactId],
-  enabled: !!contactId,
-  queryFn: async () => {
-    const { data } = await supabase
-      .from('deals')
-      .select('id')
-      .eq('contact_id', contactId!)
-      .eq('status', 'ABERTO')
-      .limit(1);
-    return data ?? [];
-  },
-});
-```
+## O que NÃO é o problema
 
-Se `existingDeals.length === 0`, abrir dialog de criacao antes de enviar mensagem.
+- A mensageria interna (`whatsapp-send`) NÃO é acionada para source BLUECHAT -- o código em `action-executor.ts` explicitamente pula esse envio (linha 264-265)
+- O processamento da IA está funcionando normalmente
+- A persistência local das mensagens está ok
 
-### CreateDealFromConversationDialog
+## Solução
 
-Componente com:
-- `usePipelines()` para listar pipelines da empresa ativa
-- Selector de pipeline -> carrega stages
-- Selector de stage
-- Campo titulo (pre-preenchido com nome do lead)
-- Campo valor (opcional)
-- Botao "Criar Deal e Enviar Mensagem"
+O problema é de configuração, não de código. O secret `BLUECHAT_API_KEY` (para Tokeniza) ou `BLUECHAT_API_KEY_BLUE` (para Blue) usado no callback está inválido ou expirado no lado do servidor Blue Chat.
 
-Apos criacao do deal, chama o callback `onDealCreated(dealId)` e entao executa o envio da mensagem.
+### Ação 1 -- Atualizar as API keys (ação do usuário)
 
-### Estrutura de tabs atualizada no DealDetailSheet
+Você precisa verificar com a equipe do Blue Chat se as API keys configuradas ainda são válidas. Se foram rotacionadas, será necessário atualizar os secrets:
+- `BLUECHAT_API_KEY` -- usado para empresa Tokeniza
+- `BLUECHAT_API_KEY_BLUE` -- usado para empresa Blue
 
-```text
-Timeline | Dados | Chat | Campos | IA
-```
+### Ação 2 -- Adicionar log mais detalhado no callback (melhoria de código)
 
-A aba "Chat" so aparece se o contato tiver `legacy_lead_id` (ou seja, tem historico de conversa).
+Para facilitar o diagnóstico futuro, vou adicionar no `callback.ts`:
+- Log do body da resposta de erro (não apenas o status code)
+- Log de qual empresa/key está sendo usada (sem expor a key completa)
 
-## Resumo de arquivos
+### Ação 3 -- Retry automático (melhoria opcional)
 
-| Arquivo | Acao |
+Adicionar uma tentativa de retry com backoff no `sendResponseToBluechat` caso o primeiro envio falhe com erro transiente (5xx), para aumentar a resiliência.
+
+## Arquivos a modificar
+
+| Arquivo | Ação |
 |---|---|
-| `src/components/deals/DealDetailSheet.tsx` | Resolver contactBridge, aba Chat, passar link ao header |
-| `src/components/deals/DealDetailHeader.tsx` | Botao "Ver Lead Completo" com navegacao |
-| `src/components/conversas/CreateDealFromConversationDialog.tsx` | Novo dialog para criar deal ao iniciar conversa |
-| `src/components/conversas/ManualMessageInput.tsx` | Interceptar envio, checar deal, abrir dialog |
-| `src/components/conversas/ConversationPanel.tsx` | Propagar props para o novo fluxo |
+| `supabase/functions/bluechat-inbound/callback.ts` | Melhorar logs de erro e adicionar retry |
 
-Nenhuma migracao de banco necessaria — toda a logica usa tabelas e relacoes existentes (`deals`, `contacts`, `pipelines`, `pipeline_stages`).
+## Resumo
 
+A causa é uma **API key inválida/expirada** no callback para o Blue Chat. O código está correto em não usar a mensageria interna. A correção principal é atualizar os secrets das API keys, e complementar com logs melhores para diagnóstico futuro.
