@@ -1619,6 +1619,62 @@ export type Database = {
           },
         ]
       }
+      cs_contracts: {
+        Row: {
+          ano_fiscal: number
+          created_at: string
+          customer_id: string
+          data_contratacao: string | null
+          data_vencimento: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          notas: string | null
+          plano: string
+          renovado_em: string | null
+          status: string
+          updated_at: string
+          valor: number
+        }
+        Insert: {
+          ano_fiscal: number
+          created_at?: string
+          customer_id: string
+          data_contratacao?: string | null
+          data_vencimento?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          notas?: string | null
+          plano?: string
+          renovado_em?: string | null
+          status?: string
+          updated_at?: string
+          valor?: number
+        }
+        Update: {
+          ano_fiscal?: number
+          created_at?: string
+          customer_id?: string
+          data_contratacao?: string | null
+          data_vencimento?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          notas?: string | null
+          plano?: string
+          renovado_em?: string | null
+          status?: string
+          updated_at?: string
+          valor?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cs_contracts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "cs_customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       cs_customers: {
         Row: {
           contact_id: string

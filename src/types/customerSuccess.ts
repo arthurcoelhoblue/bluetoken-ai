@@ -117,6 +117,33 @@ export interface CSPlaybook {
   updated_at: string;
 }
 
+// Contract types
+export type CSContractStatus = 'ATIVO' | 'RENOVADO' | 'CANCELADO' | 'PENDENTE' | 'VENCIDO';
+
+export interface CSContract {
+  id: string;
+  customer_id: string;
+  empresa: string;
+  ano_fiscal: number;
+  plano: string;
+  valor: number;
+  data_contratacao: string | null;
+  data_vencimento: string | null;
+  status: CSContractStatus;
+  renovado_em: string | null;
+  notas: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export const contractStatusConfig: Record<CSContractStatus, { label: string; bgClass: string }> = {
+  ATIVO: { label: 'Ativo', bgClass: 'bg-green-100 text-green-800' },
+  RENOVADO: { label: 'Renovado', bgClass: 'bg-blue-100 text-blue-800' },
+  CANCELADO: { label: 'Cancelado', bgClass: 'bg-red-100 text-red-800' },
+  PENDENTE: { label: 'Pendente', bgClass: 'bg-yellow-100 text-yellow-800' },
+  VENCIDO: { label: 'Vencido', bgClass: 'bg-orange-100 text-orange-800' },
+};
+
 // Filter types
 export interface CSCustomerFilters {
   empresa?: string;
@@ -125,6 +152,10 @@ export interface CSCustomerFilters {
   csm_id?: string;
   is_active?: boolean;
   search?: string;
+  ano_fiscal?: number;
+  contrato_status?: CSContractStatus;
+  comprou_ano?: number;
+  nao_renovou_ano?: number;
 }
 
 // Metrics

@@ -10,11 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ChevronLeft, ChevronRight, Search, Users } from 'lucide-react';
-import { healthStatusConfig, npsConfig, type CSHealthStatus, type CSCustomerFilters } from '@/types/customerSuccess';
+import { ChevronLeft, ChevronRight, Search, Users, X } from 'lucide-react';
+import { healthStatusConfig, npsConfig, type CSHealthStatus, type CSCustomerFilters, type CSContractStatus } from '@/types/customerSuccess';
 import { CSCustomerCreateDialog } from '@/components/cs/CSCustomerCreateDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+
+const currentYear = new Date().getFullYear();
+const fiscalYears = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
 
 export default function CSClientesPage() {
   const navigate = useNavigate();
@@ -33,6 +36,19 @@ export default function CSClientesPage() {
       )
     : customers;
 
+  const hasAdvancedFilters = !!(filters.ano_fiscal || filters.contrato_status || filters.comprou_ano);
+
+  const clearAdvancedFilters = () => {
+    setFilters(f => ({
+      ...f,
+      ano_fiscal: undefined,
+      contrato_status: undefined,
+      comprou_ano: undefined,
+      nao_renovou_ano: undefined,
+    }));
+    setPage(0);
+  };
+
   return (
     <AppLayout>
     <div className="flex-1 overflow-auto">
@@ -47,7 +63,7 @@ export default function CSClientesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
           </div>
-          <Select value={filters.health_status || 'ALL'} onValueChange={(v) => setFilters(f => ({ ...f, health_status: v === 'ALL' ? undefined : v as CSHealthStatus }))}>
+          <Select value={filters.health_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, health_status: v === 'ALL' ? undefined : v as CSHealthStatus })); setPage(0); }}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Health Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">Todos</SelectItem>
@@ -57,6 +73,41 @@ export default function CSClientesPage() {
               <SelectItem value="CRITICO">Crítico</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={filters.ano_fiscal ? String(filters.ano_fiscal) : 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, ano_fiscal: v === 'ALL' ? undefined : Number(v) })); setPage(0); }}>
+            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Ano Fiscal" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Ano Fiscal</SelectItem>
+              {fiscalYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          <Select value={filters.contrato_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, contrato_status: v === 'ALL' ? undefined : v as CSContractStatus })); setPage(0); }}>
+            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status Contrato" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Status Contrato</SelectItem>
+              <SelectItem value="ATIVO">Ativo</SelectItem>
+              <SelectItem value="RENOVADO">Renovado</SelectItem>
+              <SelectItem value="PENDENTE">Pendente</SelectItem>
+              <SelectItem value="CANCELADO">Cancelado</SelectItem>
+              <SelectItem value="VENCIDO">Vencido</SelectItem>
+            </SelectContent>
+          </Select>
+          {/* Filtro combinado: comprou ano X, não renovou ano Y */}
+          <Select value={filters.comprou_ano ? String(filters.comprou_ano) : 'ALL'} onValueChange={(v) => {
+            const ano = v === 'ALL' ? undefined : Number(v);
+            setFilters(f => ({ ...f, comprou_ano: ano, nao_renovou_ano: ano ? ano + 1 : undefined }));
+            setPage(0);
+          }}>
+            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Não renovou" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Não renovou...</SelectItem>
+              {fiscalYears.slice(0, -1).map(y => <SelectItem key={y} value={String(y)}>Comprou {y}, não renovou {y + 1}</SelectItem>)}
+            </SelectContent>
+          </Select>
+          {hasAdvancedFilters && (
+            <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="gap-1">
+              <X className="h-3 w-3" /> Limpar filtros
+            </Button>
+          )}
         </div>
 
         <Card>

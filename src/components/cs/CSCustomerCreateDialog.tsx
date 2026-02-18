@@ -9,8 +9,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useContacts } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useCreateCSCustomer } from '@/hooks/useCSCustomers';
+import { useCreateCSContract } from '@/hooks/useCSContracts';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
+
+const currentYear = new Date().getFullYear();
+const years = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
 
 export function CSCustomerCreateDialog() {
   const navigate = useNavigate();
@@ -23,9 +27,16 @@ export function CSCustomerCreateDialog() {
   const [proximaRenovacao, setProximaRenovacao] = useState('');
   const [notas, setNotas] = useState('');
 
+  // Contract fields
+  const [anoFiscal, setAnoFiscal] = useState(String(currentYear));
+  const [plano, setPlano] = useState('');
+  const [valorContrato, setValorContrato] = useState('');
+  const [dataContratacao, setDataContratacao] = useState('');
+
   const { data: contactsData } = useContacts(contactSearch, 0);
   const contacts = contactsData?.data ?? [];
   const createMutation = useCreateCSCustomer();
+  const createContract = useCreateCSContract();
 
   const handleSubmit = async () => {
     if (!contactId) {
@@ -41,6 +52,19 @@ export function CSCustomerCreateDialog() {
         proxima_renovacao: proximaRenovacao || null,
         notas: notas || null,
       });
+
+      // Create first contract if plano was filled
+      if (result?.id && plano) {
+        await createContract.mutateAsync({
+          customer_id: result.id,
+          empresa,
+          ano_fiscal: Number(anoFiscal),
+          plano,
+          valor: valorContrato ? Number(valorContrato) : 0,
+          data_contratacao: dataContratacao || null,
+        });
+      }
+
       toast.success('Cliente CS criado com sucesso');
       setOpen(false);
       resetForm();
@@ -56,6 +80,10 @@ export function CSCustomerCreateDialog() {
     setValorMrr('');
     setProximaRenovacao('');
     setNotas('');
+    setPlano('');
+    setValorContrato('');
+    setDataContratacao('');
+    setAnoFiscal(String(currentYear));
   };
 
   return (
@@ -65,7 +93,7 @@ export function CSCustomerCreateDialog() {
           <Plus className="h-4 w-4" /> Novo Cliente
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Novo Cliente CS</DialogTitle>
         </DialogHeader>
@@ -107,22 +135,58 @@ export function CSCustomerCreateDialog() {
             </Select>
           </div>
 
-          {/* MRR */}
-          <div className="space-y-1.5">
-            <Label>MRR (R$)</Label>
-            <Input type="number" min={0} placeholder="0" value={valorMrr} onChange={(e) => setValorMrr(e.target.value)} />
+          {/* MRR + Renovação */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>MRR (R$)</Label>
+              <Input type="number" min={0} placeholder="0" value={valorMrr} onChange={(e) => setValorMrr(e.target.value)} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Próxima Renovação</Label>
+              <Input type="date" value={proximaRenovacao} onChange={(e) => setProximaRenovacao(e.target.value)} />
+            </div>
           </div>
 
-          {/* Próxima renovação */}
-          <div className="space-y-1.5">
-            <Label>Próxima Renovação</Label>
-            <Input type="date" value={proximaRenovacao} onChange={(e) => setProximaRenovacao(e.target.value)} />
+          {/* Primeiro contrato */}
+          <div className="border-t pt-4 space-y-3">
+            <p className="text-sm font-medium text-muted-foreground">Primeiro Contrato (opcional)</p>
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1.5">
+                <Label>Ano Fiscal</Label>
+                <Select value={anoFiscal} onValueChange={setAnoFiscal}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {years.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Plano</Label>
+                <Select value={plano} onValueChange={setPlano}>
+                  <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Diamond">Diamond</SelectItem>
+                    <SelectItem value="Gold">Gold</SelectItem>
+                    <SelectItem value="Silver">Silver</SelectItem>
+                    <SelectItem value="Outro">Outro</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Valor (R$)</Label>
+                <Input type="number" min={0} value={valorContrato} onChange={e => setValorContrato(e.target.value)} placeholder="0" />
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Data Contratação</Label>
+              <Input type="date" value={dataContratacao} onChange={e => setDataContratacao(e.target.value)} />
+            </div>
           </div>
 
           {/* Notas */}
           <div className="space-y-1.5">
             <Label>Notas</Label>
-            <Textarea placeholder="Observações sobre o cliente..." value={notas} onChange={(e) => setNotas(e.target.value)} rows={3} />
+            <Textarea placeholder="Observações sobre o cliente..." value={notas} onChange={(e) => setNotas(e.target.value)} rows={2} />
           </div>
 
           <div className="flex justify-end gap-2 pt-2">

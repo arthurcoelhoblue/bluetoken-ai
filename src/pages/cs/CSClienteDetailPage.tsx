@@ -5,6 +5,7 @@ import { useCSCustomerById } from '@/hooks/useCSCustomers';
 import { useCSSurveys, useCreateSurvey } from '@/hooks/useCSSurveys';
 import { useCSIncidents, useCreateIncident } from '@/hooks/useCSIncidents';
 import { useCSHealthLog } from '@/hooks/useCSHealthLog';
+import { useCSContracts } from '@/hooks/useCSContracts';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -15,8 +16,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock, Clock, Phone, Mail, AlertTriangle, FileText, StickyNote, Bot } from 'lucide-react';
-import { healthStatusConfig, gravidadeConfig, incidentStatusConfig, npsConfig } from '@/types/customerSuccess';
+import { ArrowLeft, HeartPulse, Plus, Send, User, MessageCircle, Briefcase, CalendarClock, Clock, Phone, Mail, AlertTriangle, FileText, StickyNote, Bot, ScrollText } from 'lucide-react';
+import { healthStatusConfig, gravidadeConfig, incidentStatusConfig, npsConfig, contractStatusConfig } from '@/types/customerSuccess';
 import type { CSIncidentTipo, CSGravidade } from '@/types/customerSuccess';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -26,6 +27,7 @@ import { LoadingSpinner } from '@/components/LoadingSpinner';
 import { supabase } from '@/integrations/supabase/client';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
+import { CSContractForm } from '@/components/cs/CSContractForm';
 
 // Icons for timeline items
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -52,6 +54,7 @@ export default function CSClienteDetailPage() {
   const { data: surveys } = useCSSurveys(id);
   const { data: incidents } = useCSIncidents(id);
   const { data: healthLog } = useCSHealthLog(id);
+  const { data: contracts } = useCSContracts(id);
   const createSurvey = useCreateSurvey();
   const createIncident = useCreateIncident();
 
@@ -214,8 +217,9 @@ export default function CSClienteDetailPage() {
           {/* Main */}
           <div className="lg:col-span-3">
             <Tabs defaultValue="visao-geral">
-              <TabsList className="grid grid-cols-7 w-full">
+              <TabsList className="grid grid-cols-8 w-full">
                 <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
+                <TabsTrigger value="contratos">Contratos</TabsTrigger>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
                 <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
                 <TabsTrigger value="renovacao">Renovação</TabsTrigger>
@@ -245,6 +249,39 @@ export default function CSClienteDetailPage() {
                     </div>
                   ))
                 )}
+              </TabsContent>
+
+              {/* Contratos por Ano Fiscal */}
+              <TabsContent value="contratos" className="mt-4 space-y-4">
+                <CSContractForm customerId={customer.id} empresa={customer.empresa} />
+                {contracts?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum contrato registrado</p>}
+                {contracts?.map(ct => (
+                  <Card key={ct.id}>
+                    <CardContent className="pt-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center font-bold text-sm">
+                            {ct.ano_fiscal}
+                          </div>
+                          <div>
+                            <p className="font-medium text-sm">{ct.plano || 'Sem plano'}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {ct.data_contratacao ? format(new Date(ct.data_contratacao), 'dd/MM/yyyy') : '—'}
+                              {ct.data_vencimento ? ` → ${format(new Date(ct.data_vencimento), 'dd/MM/yyyy')}` : ''}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-medium text-sm">R$ {ct.valor?.toLocaleString('pt-BR') ?? '0'}</span>
+                          <Badge className={contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.bgClass || ''}>
+                            {contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.label || ct.status}
+                          </Badge>
+                        </div>
+                      </div>
+                      {ct.notas && <p className="text-xs text-muted-foreground mt-2">{ct.notas}</p>}
+                    </CardContent>
+                  </Card>
+                ))}
               </TabsContent>
 
               {/* Pesquisas */}
