@@ -1234,6 +1234,7 @@ export type Database = {
           legacy_lead_id: string | null
           linkedin_cargo: string | null
           linkedin_empresa: string | null
+          linkedin_senioridade: string | null
           linkedin_setor: string | null
           linkedin_url: string | null
           nome: string
@@ -1274,6 +1275,7 @@ export type Database = {
           legacy_lead_id?: string | null
           linkedin_cargo?: string | null
           linkedin_empresa?: string | null
+          linkedin_senioridade?: string | null
           linkedin_setor?: string | null
           linkedin_url?: string | null
           nome: string
@@ -1314,6 +1316,7 @@ export type Database = {
           legacy_lead_id?: string | null
           linkedin_cargo?: string | null
           linkedin_empresa?: string | null
+          linkedin_senioridade?: string | null
           linkedin_setor?: string | null
           linkedin_url?: string | null
           nome?: string
@@ -3577,6 +3580,8 @@ export type Database = {
           mautic_cidade: string | null
           mautic_estado: string | null
           mautic_first_visit: string | null
+          mautic_page_hits: number | null
+          mautic_tags: string[] | null
           nome: string | null
           numero_nacional: string | null
           opt_out: boolean
@@ -3590,12 +3595,19 @@ export type Database = {
           primeiro_nome: string | null
           prioridade_marketing: string | null
           score_marketing: number | null
+          score_mautic: number | null
+          sgt_dados_extras: Json | null
           telefone: string | null
           telefone_e164: string | null
           telefone_validado_em: string | null
           telefone_valido: boolean
           tokeniza_investor_id: string | null
           updated_at: string
+          utm_campaign: string | null
+          utm_content: string | null
+          utm_medium: string | null
+          utm_source: string | null
+          utm_term: string | null
         }
         Insert: {
           blue_client_id?: string | null
@@ -3621,6 +3633,8 @@ export type Database = {
           mautic_cidade?: string | null
           mautic_estado?: string | null
           mautic_first_visit?: string | null
+          mautic_page_hits?: number | null
+          mautic_tags?: string[] | null
           nome?: string | null
           numero_nacional?: string | null
           opt_out?: boolean
@@ -3634,12 +3648,19 @@ export type Database = {
           primeiro_nome?: string | null
           prioridade_marketing?: string | null
           score_marketing?: number | null
+          score_mautic?: number | null
+          sgt_dados_extras?: Json | null
           telefone?: string | null
           telefone_e164?: string | null
           telefone_validado_em?: string | null
           telefone_valido?: boolean
           tokeniza_investor_id?: string | null
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
         }
         Update: {
           blue_client_id?: string | null
@@ -3665,6 +3686,8 @@ export type Database = {
           mautic_cidade?: string | null
           mautic_estado?: string | null
           mautic_first_visit?: string | null
+          mautic_page_hits?: number | null
+          mautic_tags?: string[] | null
           nome?: string | null
           numero_nacional?: string | null
           opt_out?: boolean
@@ -3678,12 +3701,19 @@ export type Database = {
           primeiro_nome?: string | null
           prioridade_marketing?: string | null
           score_marketing?: number | null
+          score_mautic?: number | null
+          sgt_dados_extras?: Json | null
           telefone?: string | null
           telefone_e164?: string | null
           telefone_validado_em?: string | null
           telefone_valido?: boolean
           tokeniza_investor_id?: string | null
           updated_at?: string
+          utm_campaign?: string | null
+          utm_content?: string | null
+          utm_medium?: string | null
+          utm_source?: string | null
+          utm_term?: string | null
         }
         Relationships: [
           {

@@ -87,6 +87,15 @@ export const mockLeadWithDetails: LeadContact = {
   telefone_validado_em: null,
   telefone_valido: true,
   tokeniza_investor_id: null,
+  score_mautic: null,
+  mautic_page_hits: null,
+  mautic_tags: null,
+  utm_source: null,
+  utm_medium: null,
+  utm_campaign: null,
+  utm_term: null,
+  utm_content: null,
+  sgt_dados_extras: null,
 };
 
 /**
