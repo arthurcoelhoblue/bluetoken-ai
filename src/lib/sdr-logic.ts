@@ -183,7 +183,7 @@ export function detectCrossCompanyInterest(mensagem: string, empresaAtual: Empre
 // AI PROVIDER LOGIC (cost + rate limit constants)
 // ========================================
 export const COST_TABLE: Record<string, { input: number; output: number }> = {
-  'claude-sonnet-4-20250514': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+  'claude-sonnet-4-6': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
   'gemini-3-pro-preview': { input: 1.25 / 1_000_000, output: 10.0 / 1_000_000 },
   'gpt-4o': { input: 2.5 / 1_000_000, output: 10.0 / 1_000_000 },
 };

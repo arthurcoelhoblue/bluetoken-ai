@@ -20,7 +20,7 @@ export function AISettingsTab() {
   const modelPriority = getSettingValue<ModelPriority>("model_priority", {
     ordem: ["ANTHROPIC", "GEMINI", "GPT"],
     modelos: {
-      ANTHROPIC: "claude-sonnet-4-20250514",
+      ANTHROPIC: "claude-sonnet-4-6",
       GEMINI: "google/gemini-2.5-flash",
       GPT: "openai/gpt-5-mini",
     },
