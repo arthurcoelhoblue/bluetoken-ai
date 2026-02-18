@@ -220,7 +220,7 @@ export function useLeadsWithClassification(
 
           return {
             lead_id: contact.lead_id,
-            empresa: contact.empresa as 'TOKENIZA' | 'BLUE',
+            empresa: contact.empresa,
             nome: contact.nome,
             primeiro_nome: contact.primeiro_nome,
             email: contact.email,

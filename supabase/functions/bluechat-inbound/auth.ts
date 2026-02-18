@@ -1,22 +1,20 @@
 // ========================================
-// bluechat-inbound/auth.ts — Autenticação do webhook
+// bluechat-inbound/auth.ts — Autenticação do webhook (API key única)
 // ========================================
 
 import { getOptionalEnv } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
-import type { EmpresaTipo } from "../_shared/types.ts";
 
 const log = createLogger('bluechat-inbound');
 
-export function validateAuth(req: Request): { valid: boolean; empresaFromKey?: EmpresaTipo } {
+export function validateAuth(req: Request): { valid: boolean } {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
 
-  const bluechatApiKeyTokeniza = getOptionalEnv('BLUECHAT_API_KEY');
-  const bluechatApiKeyBlue = getOptionalEnv('BLUECHAT_API_KEY_BLUE');
+  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
 
-  if (!bluechatApiKeyTokeniza && !bluechatApiKeyBlue) {
-    log.error('Nenhuma BLUECHAT_API_KEY configurada');
+  if (!bluechatApiKey) {
+    log.error('BLUECHAT_API_KEY não configurada');
     return { valid: false };
   }
 
@@ -29,12 +27,8 @@ export function validateAuth(req: Request): { valid: boolean; empresaFromKey?: E
     tokenLength: token?.length || 0,
   });
 
-  if (token && bluechatApiKeyTokeniza && token.trim() === bluechatApiKeyTokeniza.trim()) {
-    return { valid: true, empresaFromKey: 'TOKENIZA' };
-  }
-
-  if (token && bluechatApiKeyBlue && token.trim() === bluechatApiKeyBlue.trim()) {
-    return { valid: true, empresaFromKey: 'BLUE' };
+  if (token && token.trim() === bluechatApiKey.trim()) {
+    return { valid: true };
   }
 
   log.warn('Token inválido para Blue Chat');

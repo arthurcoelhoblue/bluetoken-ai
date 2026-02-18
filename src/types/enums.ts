@@ -10,6 +10,8 @@ export type CanalTipo = Database['public']['Enums']['canal_tipo'];
 export const EMPRESA_LABELS: Record<EmpresaTipo, string> = {
   TOKENIZA: 'Tokeniza',
   BLUE: 'Blue',
+  MPUPPE: 'MPuppe',
+  AXIA: 'Axia',
 };
 
 export const CANAL_LABELS: Record<CanalTipo, string> = {

@@ -76,10 +76,8 @@ async function sendViaBluechat(
     return { success: false, error: `URL da API Blue Chat não configurada para ${empresa}` };
   }
 
-  // 2. Buscar API key correta por empresa
-  const bluechatApiKey = empresa === 'BLUE'
-    ? getOptionalEnv('BLUECHAT_API_KEY_BLUE')
-    : getOptionalEnv('BLUECHAT_API_KEY');
+  // 2. Buscar API key (única para todas as empresas)
+  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
 
   if (!bluechatApiKey) {
     return { success: false, error: `BLUECHAT_API_KEY não configurada para ${empresa}` };

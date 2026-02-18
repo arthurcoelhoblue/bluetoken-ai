@@ -10,6 +10,8 @@ import {
 const COMPANY_META: Record<string, { label: string; color: string }> = {
   BLUE: { label: 'Blue Consult', color: 'bg-primary' },
   TOKENIZA: { label: 'Tokeniza', color: 'bg-accent' },
+  MPUPPE: { label: 'MPuppe', color: 'bg-orange-500' },
+  AXIA: { label: 'Axia', color: 'bg-emerald-600' },
 };
 
 export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {

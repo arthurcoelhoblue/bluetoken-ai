@@ -5,7 +5,7 @@ import { useCompany, type ActiveCompany } from "@/contexts/CompanyContext";
 export interface LeadQuente {
   id: string;
   lead_id: string;
-  empresa: "TOKENIZA" | "BLUE";
+  empresa: string;
   motivo: string;
   created_at: string;
   nome: string | null;

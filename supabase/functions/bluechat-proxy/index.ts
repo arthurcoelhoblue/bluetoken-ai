@@ -24,7 +24,13 @@ async function resolveBlueChat(
   supabase: ReturnType<typeof createClient>,
   empresa: string
 ): Promise<{ baseUrl: string; apiKey: string } | null> {
-  const settingsKey = empresa === "BLUE" ? "bluechat_blue" : "bluechat_tokeniza";
+  const SETTINGS_KEY_MAP: Record<string, string> = {
+    'BLUE': 'bluechat_blue',
+    'TOKENIZA': 'bluechat_tokeniza',
+    'MPUPPE': 'bluechat_mpuppe',
+    'AXIA': 'bluechat_axia',
+  };
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || "bluechat_tokeniza";
   const { data: setting } = await supabase
     .from("system_settings")
     .select("value")
@@ -44,10 +50,7 @@ async function resolveBlueChat(
   }
   if (!apiUrl) return null;
 
-  const apiKey =
-    empresa === "BLUE"
-      ? getOptionalEnv("BLUECHAT_API_KEY_BLUE")
-      : getOptionalEnv("BLUECHAT_API_KEY");
+  const apiKey = getOptionalEnv("BLUECHAT_API_KEY");
   if (!apiKey) return null;
 
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };
@@ -221,7 +224,13 @@ Deno.serve(async (req) => {
 
   // ── get-frontend-url ── (Resolve Blue Chat frontend URL for deep links)
   if (action === "get-frontend-url") {
-    const settingsKey = empresa === "BLUE" ? "bluechat_blue" : "bluechat_tokeniza";
+    const SETTINGS_KEY_MAP: Record<string, string> = {
+      'BLUE': 'bluechat_blue',
+      'TOKENIZA': 'bluechat_tokeniza',
+      'MPUPPE': 'bluechat_mpuppe',
+      'AXIA': 'bluechat_axia',
+    };
+    const settingsKey = SETTINGS_KEY_MAP[empresa as string] || "bluechat_tokeniza";
     const { data: frontendSetting } = await serviceClient
       .from("system_settings")
       .select("value")

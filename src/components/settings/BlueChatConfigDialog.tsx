@@ -31,7 +31,7 @@ interface BlueChatConfigDialogProps {
   onOpenChange: (open: boolean) => void;
 }
 
-type EmpresaTab = 'TOKENIZA' | 'BLUE';
+type EmpresaTab = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 
 interface CompanyConfig {
   apiUrl: string;
@@ -47,6 +47,8 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
   const [configs, setConfigs] = useState<Record<EmpresaTab, CompanyConfig>>({
     TOKENIZA: { apiUrl: "https://chat.grupoblue.com.br/api/external-ai", saving: false, testing: false, testResult: null },
     BLUE: { apiUrl: "", saving: false, testing: false, testResult: null },
+    MPUPPE: { apiUrl: "", saving: false, testing: false, testResult: null },
+    AXIA: { apiUrl: "", saving: false, testing: false, testResult: null },
   });
 
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || "";
@@ -56,7 +58,8 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
     if (open && settings) {
       const tokenizaSetting = settings.find((s) => s.key === "bluechat_tokeniza");
       const blueSetting = settings.find((s) => s.key === "bluechat_blue");
-      // Fallback para config legada
+      const mpuppeSetting = settings.find((s) => s.key === "bluechat_mpuppe");
+      const axiaSetting = settings.find((s) => s.key === "bluechat_axia");
       const legacySetting = settings.find((s) => s.key === "bluechat");
 
       setConfigs(prev => ({
@@ -70,6 +73,14 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
           ...prev.BLUE,
           apiUrl: (blueSetting?.value as Record<string, unknown>)?.api_url as string || prev.BLUE.apiUrl,
         },
+        MPUPPE: {
+          ...prev.MPUPPE,
+          apiUrl: (mpuppeSetting?.value as Record<string, unknown>)?.api_url as string || prev.MPUPPE.apiUrl,
+        },
+        AXIA: {
+          ...prev.AXIA,
+          apiUrl: (axiaSetting?.value as Record<string, unknown>)?.api_url as string || prev.AXIA.apiUrl,
+        },
       }));
     }
   }, [open, settings]);
@@ -81,7 +92,13 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
   const handleSave = async (empresa: EmpresaTab) => {
     updateConfig(empresa, { saving: true });
     try {
-      const settingsKey = empresa === 'BLUE' ? 'bluechat_blue' : 'bluechat_tokeniza';
+      const SETTINGS_KEY_MAP: Record<EmpresaTab, string> = {
+        BLUE: 'bluechat_blue',
+        TOKENIZA: 'bluechat_tokeniza',
+        MPUPPE: 'bluechat_mpuppe',
+        AXIA: 'bluechat_axia',
+      };
+      const settingsKey = SETTINGS_KEY_MAP[empresa];
       const existing = settings?.find((s) => s.key === settingsKey);
       const current = (existing?.value as Record<string, unknown>) || {};
 
@@ -134,10 +151,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
     }
   };
 
-  const secretNames: Record<EmpresaTab, string> = {
-    TOKENIZA: 'BLUECHAT_API_KEY',
-    BLUE: 'BLUECHAT_API_KEY_BLUE',
-  };
+  const sharedSecretName = 'BLUECHAT_API_KEY';
 
   const renderCompanyTab = (empresa: EmpresaTab) => {
     const config = configs[empresa];
@@ -155,7 +169,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
             </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Mesmo endpoint para ambas. A empresa é identificada pela API key usada no header <code>X-API-Key</code>.
+            Mesmo endpoint para todas as empresas. A empresa é identificada pelo campo <code>context.empresa</code> do payload.
           </p>
         </div>
 
@@ -176,7 +190,7 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
         <Alert>
           <Info className="h-4 w-4" />
           <AlertDescription>
-            Secret utilizado: <code>{secretNames[empresa]}</code>. Usado para autenticação bidirecional.
+            Secret compartilhado: <code>{sharedSecretName}</code>. Usado para autenticação bidirecional (todas as empresas).
           </AlertDescription>
         </Alert>
 
@@ -213,14 +227,16 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
         <DialogHeader>
           <DialogTitle>Configurar Blue Chat</DialogTitle>
           <DialogDescription>
-            Configure as conexões do Blue Chat por empresa. Cada empresa tem sua própria instância.
+            Configure as conexões do Blue Chat por empresa. API key única, URLs separadas por empresa.
           </DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue="TOKENIZA" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="TOKENIZA">Tokeniza</TabsTrigger>
             <TabsTrigger value="BLUE">Blue</TabsTrigger>
+            <TabsTrigger value="MPUPPE">MPuppe</TabsTrigger>
+            <TabsTrigger value="AXIA">Axia</TabsTrigger>
           </TabsList>
 
           <TabsContent value="TOKENIZA">
@@ -229,6 +245,14 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
 
           <TabsContent value="BLUE">
             {renderCompanyTab('BLUE')}
+          </TabsContent>
+
+          <TabsContent value="MPUPPE">
+            {renderCompanyTab('MPUPPE')}
+          </TabsContent>
+
+          <TabsContent value="AXIA">
+            {renderCompanyTab('AXIA')}
           </TabsContent>
         </Tabs>
       </DialogContent>
