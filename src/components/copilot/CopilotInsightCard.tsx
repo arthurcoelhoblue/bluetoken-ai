@@ -33,7 +33,6 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
   const resolveLeadName = (text: string): string => {
     if (!insight.lead_id || !leadNome) return text;
     const shortId = insight.lead_id.substring(0, 8);
-    // Replace patterns like "Lead 63b6bce7" or just the UUID fragment
     return text
       .replace(new RegExp(`Lead\\s+${shortId}[\\w-]*`, 'gi'), leadNome)
       .replace(new RegExp(shortId, 'g'), leadNome);
@@ -48,6 +47,37 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
     }
   };
 
+  const handleDealClick = () => {
+    if (insight.deal_id) {
+      navigate(`/pipeline?deal=${insight.deal_id}`);
+    }
+  };
+
+  // Render titulo with lead name as a clickable link
+  const renderTitulo = () => {
+    if (!leadNome || !insight.lead_id || !empresa) {
+      return <span className="font-medium break-words">{titulo}</span>;
+    }
+    const idx = titulo.indexOf(leadNome);
+    if (idx === -1) {
+      return <span className="font-medium break-words">{titulo}</span>;
+    }
+    const before = titulo.substring(0, idx);
+    const after = titulo.substring(idx + leadNome.length);
+    return (
+      <span className="font-medium break-words">
+        {before}
+        <button
+          onClick={handleLeadClick}
+          className="text-primary hover:underline font-medium"
+        >
+          {leadNome}
+        </button>
+        {after}
+      </span>
+    );
+  };
+
   return (
     <div className="flex items-start gap-2 p-3 rounded-lg border bg-accent/30 text-sm">
       <div className="mt-0.5 shrink-0">
@@ -55,7 +85,7 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
       </div>
       <div className="flex-1 min-w-0 space-y-1">
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium break-words">{titulo}</span>
+          {renderTitulo()}
           <Badge variant={PRIORITY_VARIANT[insight.prioridade] || 'secondary'} className="text-[10px] px-1.5 py-0 shrink-0">
             {insight.prioridade}
           </Badge>
@@ -63,14 +93,24 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
         <p className="text-muted-foreground text-xs leading-relaxed break-words whitespace-pre-wrap">
           {descricao}
         </p>
-        {insight.lead_id && leadNome && empresa && (
-          <button
-            onClick={handleLeadClick}
-            className="text-xs text-primary hover:underline font-medium mt-1"
-          >
-            Ver perfil de {leadNome} →
-          </button>
-        )}
+        <div className="flex items-center gap-3 flex-wrap">
+          {insight.lead_id && leadNome && empresa && (
+            <button
+              onClick={handleLeadClick}
+              className="text-xs text-primary hover:underline font-medium mt-1"
+            >
+              Ver perfil de {leadNome} →
+            </button>
+          )}
+          {insight.deal_id && (
+            <button
+              onClick={handleDealClick}
+              className="text-xs text-primary hover:underline font-medium mt-1"
+            >
+              Ver negócio →
+            </button>
+          )}
+        </div>
       </div>
       <Button
         variant="ghost"
