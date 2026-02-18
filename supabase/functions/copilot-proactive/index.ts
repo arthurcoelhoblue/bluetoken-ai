@@ -15,6 +15,24 @@ interface CopilotInsight {
   lead_id: string | null;
 }
 
+function sanitizeUUIDs(text: string, nameMap: Record<string, string>): string {
+  // Replace "Lead XXXXXXXX" patterns with name or "contato"
+  let result = text.replace(/Lead\s+([0-9a-f]{8})[0-9a-f-]*/gi, (_match, short) => {
+    const found = Object.entries(nameMap).find(([k]) => k.startsWith(short));
+    return found ? found[1] : 'contato';
+  });
+  // Replace full UUIDs
+  result = result.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (uuid) => {
+    return nameMap[uuid] || 'contato';
+  });
+  // Replace UUID fragments (8+ hex chars)
+  result = result.replace(/\b([0-9a-f]{8,})\b/gi, (match) => {
+    const found = Object.entries(nameMap).find(([k]) => k.startsWith(match) || k.includes(match));
+    return found ? found[1] : match.length >= 12 ? 'contato' : match;
+  });
+  return result;
+}
+
 interface DealRow {
   id: string;
   titulo: string;
@@ -198,9 +216,17 @@ serve(async (req) => {
       let leadNameMap: Record<string, string> = {};
       if (leadIds.length > 0) {
         const { data: leadContacts } = await supabase.from('contacts')
-          .select('id, nome').in('id', leadIds);
+          .select('id, nome, legacy_lead_id')
+          .in('legacy_lead_id', leadIds);
         if (leadContacts) {
-          leadNameMap = Object.fromEntries(leadContacts.map((c: { id: string; nome: string }) => [c.id, c.nome]));
+          leadNameMap = Object.fromEntries(
+            leadContacts.map((c: { id: string; nome: string; legacy_lead_id: string | null }) => [c.legacy_lead_id || c.id, c.nome])
+          );
+          // Enrich global contactNameMap with both keys
+          leadContacts.forEach((c: { id: string; nome: string; legacy_lead_id: string | null }) => {
+            if (c.legacy_lead_id) contactNameMap[c.legacy_lead_id] = c.nome;
+            contactNameMap[c.id] = c.nome;
+          });
         }
       }
       const msgs = (msgsRes.data as MessageRow[]).slice(0, 5).map((m) => {
@@ -270,8 +296,8 @@ serve(async (req) => {
       user_id: userId,
       empresa,
       categoria: ins.categoria || 'COACHING',
-      titulo: ins.titulo || 'Insight',
-      descricao: ins.descricao || '',
+      titulo: sanitizeUUIDs(ins.titulo || 'Insight', contactNameMap),
+      descricao: sanitizeUUIDs(ins.descricao || '', contactNameMap),
       prioridade: ins.prioridade || 'MEDIA',
       deal_id: ins.deal_id || null,
       lead_id: ins.lead_id || null,
