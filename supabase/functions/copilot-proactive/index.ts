@@ -44,11 +44,17 @@ PRIORIZE:
 5. Inclua SEMPRE um feedback positivo quando houver melhoria
 6. Observe o que o usuário tem feito nos últimos minutos (navegação e ações) e adapte seus insights ao contexto de uso atual
 
+REGRAS IMPORTANTES:
+- SEMPRE use o NOME do lead/contato nos textos, NUNCA o ID/UUID.
+- Se não souber o nome, use "contato" ou "lead" genérico — jamais cole UUIDs.
+- Títulos devem ser curtos (máx 60 chars) e descritivos.
+- Descrições devem ser acionáveis em 1-2 frases.
+
 FORMATO DE RESPOSTA: JSON array puro (sem markdown), cada item com:
 {
   "categoria": "DEAL_PARADO" | "SLA_RISCO" | "FOLLOW_UP" | "META_RISCO" | "PADRAO_POSITIVO" | "COACHING",
-  "titulo": "título curto e direto",
-  "descricao": "descrição acionável em 1-2 frases",
+  "titulo": "título curto e direto (use nome do lead, não ID)",
+  "descricao": "descrição acionável em 1-2 frases (use nome do lead, não ID)",
   "prioridade": "ALTA" | "MEDIA" | "BAIXA",
   "deal_id": "uuid ou null",
   "lead_id": "uuid ou null"
@@ -108,7 +114,7 @@ serve(async (req) => {
 
     // Build deals query scoped to empresa pipelines
     let dealsQuery = supabase.from('deals')
-      .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id')
+      .select('id, titulo, valor, status, temperatura, updated_at, stage_id, pipeline_id, contact_id, contacts:contact_id(nome)')
       .eq('owner_id', userId).eq('status', 'ABERTO').limit(50);
     if (pipelineIds.length > 0) {
       dealsQuery = dealsQuery.in('pipeline_id', pipelineIds);
@@ -143,10 +149,16 @@ serve(async (req) => {
         .order('created_at', { ascending: false }).limit(20),
     ]);
 
+    // Build a contact name map from deals for enriching other sections
+    const contactNameMap: Record<string, string> = {};
+
     if (dealsRes.data && dealsRes.data.length > 0) {
-      const dealsSummary = (dealsRes.data as DealRow[]).map((d) => {
+      const dealsSummary = dealsRes.data.map((d: DealRow & { contacts?: { nome: string } | null }) => {
         const diasParado = Math.floor((Date.now() - new Date(d.updated_at).getTime()) / 86400000);
-        return `- ${d.titulo}: R$ ${d.valor || 0}, temp=${d.temperatura || '-'}, ${diasParado} dias parado`;
+        const contactName = d.contacts?.nome || '';
+        if (d.contact_id && contactName) contactNameMap[d.contact_id] = contactName;
+        const nameLabel = contactName ? ` (contato: ${contactName})` : '';
+        return `- ${d.titulo}${nameLabel}: R$ ${d.valor || 0}, temp=${d.temperatura || '-'}, ${diasParado} dias parado`;
       }).join('\n');
       contextParts.push(`**Deals Abertos (${dealsRes.data.length})**:\n${dealsSummary}`);
     }
@@ -181,9 +193,20 @@ serve(async (req) => {
     }
 
     if (msgsRes.data && msgsRes.data.length > 0) {
-      const msgs = (msgsRes.data as MessageRow[]).slice(0, 5).map((m) =>
-        `- Lead ${m.lead_id?.substring(0, 8)}: "${m.conteudo.substring(0, 80)}" (${new Date(m.created_at).toLocaleString('pt-BR')})`
-      ).join('\n');
+      // Fetch lead names for messages
+      const leadIds = [...new Set((msgsRes.data as MessageRow[]).map(m => m.lead_id).filter(Boolean))];
+      let leadNameMap: Record<string, string> = {};
+      if (leadIds.length > 0) {
+        const { data: leadContacts } = await supabase.from('contacts')
+          .select('id, nome').in('id', leadIds);
+        if (leadContacts) {
+          leadNameMap = Object.fromEntries(leadContacts.map((c: { id: string; nome: string }) => [c.id, c.nome]));
+        }
+      }
+      const msgs = (msgsRes.data as MessageRow[]).slice(0, 5).map((m) => {
+        const name = leadNameMap[m.lead_id] || 'Lead sem nome';
+        return `- ${name}: "${m.conteudo.substring(0, 80)}" (${new Date(m.created_at).toLocaleString('pt-BR')})`;
+      }).join('\n');
       contextParts.push(`**Mensagens Inbound Recentes**:\n${msgs}`);
     }
 
