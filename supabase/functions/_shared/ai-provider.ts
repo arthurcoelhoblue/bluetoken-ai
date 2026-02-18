@@ -26,7 +26,7 @@ export interface CallAIResult {
 }
 
 const COST_TABLE: Record<string, { input: number; output: number }> = {
-  'claude-sonnet-4-20250514': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
+  'claude-sonnet-4-6': { input: 3.0 / 1_000_000, output: 15.0 / 1_000_000 },
   'gemini-3-pro-preview': { input: 1.25 / 1_000_000, output: 10.0 / 1_000_000 },
   'gpt-4o': { input: 2.5 / 1_000_000, output: 10.0 / 1_000_000 },
 };
@@ -130,12 +130,12 @@ export async function callAI(opts: CallAIOptions): Promise<CallAIResult> {
       const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
         headers: { 'x-api-key': ANTHROPIC_API_KEY, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
-        body: JSON.stringify({ model: 'claude-sonnet-4-20250514', max_tokens: maxTokens, temperature, system, messages: anthropicMessages }),
+        body: JSON.stringify({ model: 'claude-sonnet-4-6', max_tokens: maxTokens, temperature, system, messages: anthropicMessages }),
       });
       if (resp.ok) {
         const data = await resp.json();
         content = data.content?.[0]?.text || '';
-        model = 'claude-sonnet-4-20250514';
+        model = 'claude-sonnet-4-6';
         provider = 'claude';
         tokensInput = data.usage?.input_tokens || 0;
         tokensOutput = data.usage?.output_tokens || 0;

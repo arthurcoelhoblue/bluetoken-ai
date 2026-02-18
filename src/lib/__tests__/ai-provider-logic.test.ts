@@ -3,17 +3,17 @@ import { COST_TABLE, RATE_LIMITS, DEFAULT_RATE_LIMIT, getRateLimit, computeAICos
 
 describe('AI Provider — Cost Table', () => {
   it('1000 tokens input Claude = $0.003', () => {
-    const cost = computeAICost('claude-sonnet-4-20250514', 1000, 0);
+    const cost = computeAICost('claude-sonnet-4-6', 1000, 0);
     expect(cost).toBeCloseTo(0.003, 6);
   });
 
   it('1000 tokens output Claude = $0.015', () => {
-    const cost = computeAICost('claude-sonnet-4-20250514', 0, 1000);
+    const cost = computeAICost('claude-sonnet-4-6', 0, 1000);
     expect(cost).toBeCloseTo(0.015, 6);
   });
 
   it('Gemini cost is lower than Claude', () => {
-    const claude = computeAICost('claude-sonnet-4-20250514', 1000, 1000);
+    const claude = computeAICost('claude-sonnet-4-6', 1000, 1000);
     const gemini = computeAICost('gemini-3-pro-preview', 1000, 1000);
     expect(gemini).toBeLessThan(claude);
   });
