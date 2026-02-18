@@ -1695,6 +1695,8 @@ export type Database = {
           proxima_renovacao: string | null
           risco_churn_pct: number | null
           sentiment_score: number | null
+          sgt_dados_extras: Json | null
+          sgt_last_sync_at: string | null
           tags: string[] | null
           ultimo_contato_em: string | null
           ultimo_csat: number | null
@@ -1718,6 +1720,8 @@ export type Database = {
           proxima_renovacao?: string | null
           risco_churn_pct?: number | null
           sentiment_score?: number | null
+          sgt_dados_extras?: Json | null
+          sgt_last_sync_at?: string | null
           tags?: string[] | null
           ultimo_contato_em?: string | null
           ultimo_csat?: number | null
@@ -1741,6 +1745,8 @@ export type Database = {
           proxima_renovacao?: string | null
           risco_churn_pct?: number | null
           sentiment_score?: number | null
+          sgt_dados_extras?: Json | null
+          sgt_last_sync_at?: string | null
           tags?: string[] | null
           ultimo_contato_em?: string | null
           ultimo_csat?: number | null
