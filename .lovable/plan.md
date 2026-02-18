@@ -1,143 +1,99 @@
 
 
-# Unificar API Key do Blue Chat + Adicionar novas empresas (MPUPPE, AXIA)
+# Reverter para API Key por Empresa no Blue Chat
 
-## Resumo
+## Problema
+O Blue Chat exige uma API key diferente para cada empresa. Atualmente o sistema usa um unico secret `BLUECHAT_API_KEY` para todas, o que causa erro 401 quando a key nao corresponde a empresa.
 
-Duas mudancas combinadas:
-1. **API Key unica**: Usar apenas `BLUECHAT_API_KEY` para todas as empresas (eliminar `BLUECHAT_API_KEY_BLUE`)
-2. **Novas empresas**: Adicionar MPUPPE e AXIA como tenants independentes no sistema
-3. **Mapeamento de nomes**: O Blue Chat envia nomes como "Tokeniza", "Blue Consult", "Blue Cripto", "MPuppe", "Axia" -- o sistema precisa mapear para os enum values internos (TOKENIZA, BLUE, MPUPPE, AXIA)
+## Solucao
+Armazenar a `api_key` dentro do JSON de cada `system_settings` (por empresa), e resolver dinamicamente em vez de usar um unico env secret.
 
----
-
-## Parte 1 -- Banco de dados
-
-### 1.1 Adicionar novos valores ao enum `empresa_tipo`
-
-```sql
-ALTER TYPE empresa_tipo ADD VALUE 'MPUPPE';
-ALTER TYPE empresa_tipo ADD VALUE 'AXIA';
-```
-
-### 1.2 Criar registros em `integration_company_config` para novas empresas
-
-Inserir configuracoes de canal (bluechat habilitado) para MPUPPE e AXIA.
-
-### 1.3 Adicionar ICPs para novas empresas
-
-Adicionar valores ao enum `icp_tipo`:
-- `MPUPPE_NAO_CLASSIFICADO`
-- `AXIA_NAO_CLASSIFICADO`
-
-(Outros ICPs especificos podem ser adicionados depois conforme necessidade)
-
----
-
-## Parte 2 -- Edge Functions (Backend)
-
-### 2.1 Criar funcao de mapeamento de empresa (novo arquivo ou no `_shared/`)
-
-Funcao `mapBluechatEmpresa` que converte os nomes vindos do Blue Chat para os enum internos:
-
-| Blue Chat envia | Sistema interno |
-|---|---|
-| "Tokeniza" | TOKENIZA |
-| "Blue", "Blue Consult", "Blue Cripto" | BLUE |
-| "MPuppe" | MPUPPE |
-| "Axia" | AXIA |
-
-### 2.2 Arquivos a modificar
-
-| Arquivo | Mudanca |
-|---|---|
-| `supabase/functions/_shared/types.ts` | Adicionar `MPUPPE` e `AXIA` ao tipo `EmpresaTipo` |
-| `supabase/functions/_shared/tenant.ts` | Adicionar `MPUPPE` e `AXIA` ao `VALID_EMPRESAS` e `EMPRESAS` |
-| `supabase/functions/_shared/channel-resolver.ts` | Usar apenas `BLUECHAT_API_KEY`; resolver `system_settings` por empresa (precisa de keys para mpuppe/axia) |
-| `supabase/functions/bluechat-inbound/auth.ts` | Usar apenas `BLUECHAT_API_KEY`, remover `empresaFromKey` |
-| `supabase/functions/bluechat-inbound/schemas.ts` | Aceitar os novos valores de empresa no Zod (`MPUPPE`, `AXIA`) + aceitar nomes "raw" do Blue Chat |
-| `supabase/functions/bluechat-inbound/index.ts` | Usar `mapBluechatEmpresa()` para normalizar o campo empresa do payload |
-| `supabase/functions/bluechat-inbound/callback.ts` | Usar apenas `BLUECHAT_API_KEY` |
-| `supabase/functions/bluechat-proxy/index.ts` | Usar apenas `BLUECHAT_API_KEY` |
-| `supabase/functions/_shared/pipeline-routing.ts` | Adicionar fallback para MPUPPE e AXIA (inicialmente roteando para pipeline generico ou criando pipelines dedicados) |
-
-### 2.3 Logica do mapeamento (exemplo)
-
-```typescript
-const BLUECHAT_EMPRESA_MAP: Record<string, EmpresaTipo> = {
-  'tokeniza': 'TOKENIZA',
-  'blue': 'BLUE',
-  'blue consult': 'BLUE',
-  'blue cripto': 'BLUE',
-  'mpuppe': 'MPUPPE',
-  'axia': 'AXIA',
-};
-
-export function mapBluechatEmpresa(raw?: string): EmpresaTipo {
-  if (!raw) return 'BLUE';
-  const key = raw.trim().toLowerCase();
-  return BLUECHAT_EMPRESA_MAP[key] || 'BLUE';
-}
-```
-
-### 2.4 Auth simplificado
-
-```typescript
-// auth.ts -- apenas uma key
-const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
-if (token && token.trim() === bluechatApiKey.trim()) {
-  return { valid: true };
+Exemplo do formato no `system_settings`:
+```json
+{
+  "api_url": "https://chat.grupoblue.com.br/api/external-ai",
+  "api_key": "chave-especifica-da-empresa",
+  "frontend_url": "...",
+  "enabled": true
 }
 ```
 
 ---
 
-## Parte 3 -- Frontend
+## Arquivos a modificar
 
-### 3.1 Arquivos a modificar
+### 1. `supabase/functions/_shared/channel-resolver.ts`
+- Na funcao `resolveChannelConfig`, em vez de `getOptionalEnv('BLUECHAT_API_KEY')`, ler `api_key` do JSON do `system_settings` da empresa
+- Fallback: se nao encontrar no settings, tentar o env `BLUECHAT_API_KEY` como fallback
 
-| Arquivo | Mudanca |
-|---|---|
-| `src/contexts/CompanyContext.tsx` | Adicionar `MPUPPE` e `AXIA` ao tipo `ActiveCompany` e `LABELS` |
-| `src/components/layout/CompanySwitcher.tsx` | Adicionar metadata (label/cor) para MPUPPE e AXIA |
-| `src/types/classification.ts` | Adicionar ICPs e labels para MPUPPE e AXIA |
-| `src/components/settings/BlueChatConfigDialog.tsx` | Ajustar para mostrar apenas uma API key compartilhada |
-| `src/types/settings.ts` | Remover referencia a `BLUECHAT_API_KEY_BLUE` |
+### 2. `supabase/functions/bluechat-inbound/auth.ts`
+- O webhook de entrada precisa validar a key. Como o payload contem `context.empresa`, extrair a empresa do body e buscar a api_key correspondente no `system_settings`
+- Isso requer mudar a assinatura para receber o supabase client e a empresa
+- Fallback: manter `BLUECHAT_API_KEY` env como validacao generica
 
-### 3.2 Labels das novas empresas
+### 3. `supabase/functions/bluechat-inbound/callback.ts`
+- Em vez de `getOptionalEnv('BLUECHAT_API_KEY')`, buscar a `api_key` do settings da empresa
 
-| Enum | Label display |
-|---|---|
-| MPUPPE | MPuppe |
-| AXIA | Axia |
+### 4. `supabase/functions/bluechat-proxy/index.ts`
+- Na funcao `resolveBlueChat`, ler `api_key` do JSON do settings em vez do env
+
+### 5. `supabase/functions/sdr-proactive-outreach/index.ts`
+- Na funcao `resolveBlueChat`, ler `api_key` do JSON do settings
+
+### 6. `supabase/functions/whatsapp-send/index.ts`
+- Buscar `api_key` do settings da empresa em vez do env
+
+### 7. `supabase/functions/integration-health-check/index.ts`
+- Ajustar para buscar key do settings
+
+### 8. `src/components/settings/BlueChatConfigDialog.tsx`
+- Adicionar campo de input para "API Key" em cada aba de empresa
+- Salvar o valor no JSON do `system_settings` (campo `api_key`)
+- Mostrar campo com tipo password para seguranca
 
 ---
 
-## Parte 4 -- Pipeline Routing para novas empresas
+## Logica central (helper compartilhado)
 
-As novas empresas (MPUPPE, AXIA) ainda nao tem pipelines criados. O `pipeline-routing.ts` precisa de um fallback. Duas opcoes:
+Criar uma funcao helper em `_shared/channel-resolver.ts`:
 
-1. **Criar pipelines via migracao SQL** com stages padrao (Frio/Morno/Quente) para cada nova empresa -- ideal para funcionamento completo
-2. **Usar um lookup dinamico** no banco ao inves de UUIDs hardcoded -- mais flexivel mas requer refatoracao
+```typescript
+async function resolveBluechatApiKey(
+  supabase: SupabaseClient,
+  empresa: string
+): Promise<string | null> {
+  // 1. Buscar do system_settings da empresa
+  const settingsKey = SETTINGS_KEY_MAP[empresa];
+  const { data } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
 
-A abordagem recomendada e criar pipelines com stages padrao para MPUPPE e AXIA na migracao, e adicionar os UUIDs ao `pipeline-routing.ts`.
+  const apiKey = (data?.value as any)?.api_key;
+  if (apiKey) return apiKey;
+
+  // 2. Fallback para env (compatibilidade)
+  return getOptionalEnv('BLUECHAT_API_KEY') || null;
+}
+```
+
+---
+
+## Fluxo de configuracao pelo usuario
+
+1. Ir em Configuracoes > Blue Chat
+2. Em cada aba (Tokeniza, Blue, MPuppe, Axia), preencher a API Key especifica
+3. Salvar -- a key fica armazenada no `system_settings` junto com a `api_url`
 
 ---
 
 ## Ordem de execucao
 
-1. Migracao SQL (enum + integration_company_config + ICPs + pipelines)
-2. Edge functions (mapeamento + unificacao de API key)
-3. Frontend (CompanyContext + CompanySwitcher + labels)
-4. Deploy das edge functions
-5. Testar fluxo end-to-end com mensagem simulada
-
----
-
-## Importante
-
-- O secret `BLUECHAT_API_KEY_BLUE` podera ser removido apos a implementacao
-- O secret `BLUECHAT_API_KEY` deve estar valido e configurado
-- Usuarios que precisam acessar MPUPPE ou AXIA devem receber entradas em `user_access_assignments`
-- A funcao `provision_tenant_schema` existente ja suporta novos tenants automaticamente (basta chamar com o novo nome)
+1. Atualizar o frontend (`BlueChatConfigDialog`) para aceitar API key por empresa
+2. Atualizar os edge functions para buscar a key do settings por empresa
+3. Deploy das edge functions
+4. Configurar as API keys pelo painel
+5. Testar envio de mensagem
 
