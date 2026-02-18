@@ -1,111 +1,99 @@
 
-# Sincronizacao de Clientes SGT -- Enriquecimento Completo
+# Correcao dos Insights do Copilot -- Nomes em vez de IDs
 
-## Contexto
+## Problema identificado
 
-A API `buscar-lead-api` do SGT retorna dados ricos sobre cada lead, incluindo:
-- `venda_realizada`, `valor_venda`, `data_venda` -- indicadores de cliente
-- `stage_atual` (ex: "Cliente") -- stage do funil
-- `cliente_status` (via Notion) -- status do cliente
-- Dados Tokeniza: `tokeniza_investidor`, `tokeniza_valor_investido`, `tokeniza_qtd_investimentos`, `tokeniza_projetos`
-- Dados Blue: `irpf_renda_anual`, `irpf_patrimonio_liquido`, `irpf_perfil_investidor`
-- Dados Mautic: `mautic_score`, `mautic_page_hits`, `mautic_tags`
-- Dados LinkedIn: `linkedin_cargo`, `linkedin_empresa`, `linkedin_setor`, `linkedin_senioridade`
-- Dados GA4/Stape: `ga4_engajamento_score`, `stape_paginas_visitadas`
-- UTMs completos
+Os insights continuam mostrando UUIDs (ex: "Lead 63b6bce7") por dois motivos:
 
-O job atual (`sgt-sync-clientes`) busca apenas 20 contatos por vez, faz uma verificacao binaria (e/nao cliente) e nao traz nenhum dado enriquecido.
+1. **Busca de nomes incorreta**: A funcao busca nomes de leads usando `contacts.id`, mas o `lead_messages.lead_id` corresponde a `contacts.legacy_lead_id`. Resultado: a query nao encontra nenhum nome e o contexto enviado a IA ja contem "Lead sem nome" ou os proprios IDs.
 
-## O que muda
+2. **Sem pos-processamento**: Mesmo com instrucoes no prompt, a IA ocasionalmente inclui UUIDs. Nao ha nenhuma etapa de sanitizacao antes de salvar os insights no banco.
 
-### 1. Reescrever `sgt-sync-clientes/index.ts`
+## Solucao
 
-**Deteccao de cliente melhorada:**
-- `venda_realizada === true` OU
-- `stage_atual === 'Cliente'` OU
-- `cliente_status` contendo "ativo" ou "cliente" OU
-- `tokeniza_investidor === true` (para TOKENIZA)
+### 1. Corrigir a busca de nomes na edge function (`copilot-proactive/index.ts`)
 
-**Enriquecimento de dados no `contacts`:**
-Quando o lead e encontrado no SGT, atualizar o contato local com todos os dados disponiveis:
-- `score_marketing` com `score_temperatura` do SGT
-- `linkedin_url`, `linkedin_cargo`, `linkedin_empresa`, `linkedin_setor` se presentes
-- Tags relevantes (ex: `sgt-cliente`, `tokeniza-investidor`)
+**Mensagens inbound (linha ~200):** Trocar a query de:
+```
+contacts.id IN (lead_ids)
+```
+Para:
+```
+contacts.legacy_lead_id IN (lead_ids)
+```
 
-**Enriquecimento do `cs_customers`:**
-Quando identificado como cliente, provisionar no CS com dados reais:
-- `valor_mrr` baseado em `valor_venda` ou `tokeniza_valor_investido`
-- `data_primeiro_ganho` usando `data_venda` do SGT (nao a data de sync)
-- Tags: tipo de produto, empresa, projetos investidos
+E mapear `legacy_lead_id -> nome` em vez de `id -> nome`.
 
-**Enriquecimento do `lead_contacts`:**
-Atualizar dados do lead com informacoes do SGT:
-- Dados de Mautic (score, page_hits, tags)
-- Dados de LinkedIn (cargo, empresa, setor)
-- Score de marketing
+### 2. Adicionar pos-processamento de sanitizacao de UUIDs
 
-### 2. Aumentar batch e paginacao
+Antes de inserir os insights no banco, aplicar uma funcao que:
+- Detecta padroes de UUID (parcial ou completo) nos campos `titulo` e `descricao`
+- Tenta substituir pelo nome do contato correspondente usando o `contactNameMap` ja construido
+- Se nao encontrar o nome, substitui por "contato" generico (nunca deixa o UUID visivel)
 
-- Aumentar `BATCH_SIZE` de 20 para 50
-- Adicionar suporte a paginacao (offset) para processar TODOS os contatos ao longo de multiplas execucoes
-- Salvar offset no `system_settings` para retomar de onde parou
+Regex para detectar: `Lead\s+[0-9a-f]{8}` e UUIDs completos `[0-9a-f]{8}-[0-9a-f]{4}-...`
 
-### 3. Alimentar conhecimento da Amelia
+### 3. Enriquecer o mapa de nomes com os lead_ids das mensagens
 
-Salvar dados enriquecidos no `lead_contacts` para que a Amelia (via copilot/SDR IA) tenha acesso ao historico do cliente:
-- Historico de investimentos Tokeniza
-- Produtos contratados na Blue
-- Score e engajamento Mautic
-- Dados LinkedIn para personalizacao
+Apos buscar nomes via `legacy_lead_id`, adicionar esses mapeamentos ao `contactNameMap` global, para que tanto o `contact_id` quanto o `legacy_lead_id` sejam resolvidos no pos-processamento.
 
 ## Secao tecnica
 
-### Arquivo: `supabase/functions/sgt-sync-clientes/index.ts`
+### Arquivo modificado: `supabase/functions/copilot-proactive/index.ts`
 
-Reescrever com a seguinte logica:
+**Mudanca 1 -- Query de nomes (linhas 199-204):**
+```typescript
+// ANTES: busca por contacts.id (errado)
+const { data: leadContacts } = await supabase.from('contacts')
+  .select('id, nome').in('id', leadIds);
 
-```text
-1. Buscar contatos nao-cliente com email ou telefone (batch 50, com offset)
-2. Para cada contato, chamar buscar-lead-api do SGT
-3. Se lead encontrado:
-   a. Extrair dados enriquecidos (linkedin, mautic, tokeniza, blue, utm)
-   b. Atualizar contacts com dados enriquecidos
-   c. Atualizar lead_contacts se legacy_lead_id existir
-   d. Verificar se e cliente (venda_realizada, stage, tokeniza_investidor, etc)
-   e. Se cliente:
-      - Marcar contacts.is_cliente = true
-      - Upsert cs_customers com valor_mrr e data_primeiro_ganho reais
-      - Adicionar tags relevantes
-4. Salvar offset para proxima execucao
-5. Retornar relatorio detalhado
+// DEPOIS: busca por contacts.legacy_lead_id (correto)
+const { data: leadContacts } = await supabase.from('contacts')
+  .select('id, nome, legacy_lead_id')
+  .in('legacy_lead_id', leadIds);
+
+// Mapear legacy_lead_id -> nome
+leadNameMap = Object.fromEntries(
+  leadContacts.map(c => [c.legacy_lead_id, c.nome])
+);
+// Tambem adicionar ao contactNameMap global
+leadContacts.forEach(c => {
+  if (c.legacy_lead_id) contactNameMap[c.legacy_lead_id] = c.nome;
+  contactNameMap[c.id] = c.nome;
+});
 ```
 
-### Campos do SGT usados para deteccao de cliente:
+**Mudanca 2 -- Funcao de sanitizacao (nova, antes do insert):**
+```typescript
+function sanitizeUUIDs(text: string, nameMap: Record<string, string>): string {
+  // Substituir "Lead XXXXXXXX" por nome ou "contato"
+  let result = text.replace(/Lead\s+([0-9a-f]{8})[0-9a-f-]*/gi, (match, short) => {
+    const found = Object.entries(nameMap).find(([k]) => k.startsWith(short));
+    return found ? found[1] : 'contato';
+  });
+  // Substituir UUIDs completos soltos
+  result = result.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (uuid) => {
+    return nameMap[uuid] || 'contato';
+  });
+  // Substituir fragmentos de UUID (8+ hex chars seguidos)
+  result = result.replace(/\b([0-9a-f]{8,})\b/gi, (match) => {
+    const found = Object.entries(nameMap).find(([k]) => k.startsWith(match) || k.includes(match));
+    return found ? found[1] : match.length >= 12 ? 'contato' : match;
+  });
+  return result;
+}
+```
 
-| Campo SGT | Condicao |
-|-----------|----------|
-| `venda_realizada` | `=== true` |
-| `stage_atual` | `=== 'Cliente'` |
-| `tokeniza_investidor` | `=== true` (apenas TOKENIZA) |
-| `cliente_status` | contendo 'ativo' ou 'cliente' (case-insensitive) |
-
-### Campos do SGT usados para enriquecimento:
-
-| Campo SGT | Campo local (contacts/lead_contacts) |
-|-----------|--------------------------------------|
-| `score_temperatura` | `score_marketing` |
-| `linkedin_cargo` | `linkedin_cargo` |
-| `linkedin_empresa` | `linkedin_empresa` |
-| `linkedin_setor` | `linkedin_setor` |
-| `linkedin_senioridade` | `linkedin_senioridade` |
-| `mautic_score` | (lead_contacts) `score_mautic` |
-| `mautic_page_hits` | (lead_contacts) `mautic_page_hits` |
-| `valor_venda` | `cs_customers.valor_mrr` |
-| `data_venda` | `cs_customers.data_primeiro_ganho` |
-| `tokeniza_valor_investido` | `cs_customers.valor_mrr` (para TOKENIZA) |
-| `tokeniza_qtd_investimentos` | tags no cs_customers |
-| `utm_source/medium/campaign` | `lead_contacts.utm_*` |
+**Mudanca 3 -- Aplicar sanitizacao nos insights (linhas 269-278):**
+```typescript
+const insightsToInsert = parsedInsights.slice(0, 5).map((ins) => ({
+  ...
+  titulo: sanitizeUUIDs(ins.titulo || 'Insight', contactNameMap),
+  descricao: sanitizeUUIDs(ins.descricao || '', contactNameMap),
+  ...
+}));
+```
 
 ### Deploy
 
-Apenas 1 edge function modificada: `sgt-sync-clientes`
+Re-deploy da edge function `copilot-proactive` apos as mudancas.
