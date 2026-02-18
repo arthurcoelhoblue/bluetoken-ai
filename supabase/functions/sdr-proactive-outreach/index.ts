@@ -21,7 +21,13 @@ async function resolveBlueChat(
   supabase: ReturnType<typeof createClient>,
   empresa: string
 ): Promise<{ baseUrl: string; apiKey: string } | null> {
-  const settingsKey = empresa === "BLUE" ? "bluechat_blue" : "bluechat_tokeniza";
+  const SETTINGS_KEY_MAP: Record<string, string> = {
+    'BLUE': 'bluechat_blue',
+    'TOKENIZA': 'bluechat_tokeniza',
+    'MPUPPE': 'bluechat_mpuppe',
+    'AXIA': 'bluechat_axia',
+  };
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || "bluechat_tokeniza";
   const { data: setting } = await supabase
     .from("system_settings")
     .select("value")
@@ -41,7 +47,11 @@ async function resolveBlueChat(
   }
   if (!apiUrl) return null;
 
-  const apiKey = getOptionalEnv("BLUECHAT_API_KEY");
+  // API key per empresa from settings, fallback to env
+  let apiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
+  if (!apiKey) {
+    apiKey = getOptionalEnv("BLUECHAT_API_KEY") || undefined;
+  }
   if (!apiKey) return null;
 
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };

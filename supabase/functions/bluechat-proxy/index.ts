@@ -50,7 +50,11 @@ async function resolveBlueChat(
   }
   if (!apiUrl) return null;
 
-  const apiKey = getOptionalEnv("BLUECHAT_API_KEY");
+  // API key per empresa from settings, fallback to env
+  let apiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
+  if (!apiKey) {
+    apiKey = getOptionalEnv("BLUECHAT_API_KEY") || undefined;
+  }
   if (!apiKey) return null;
 
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };

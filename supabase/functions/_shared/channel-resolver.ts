@@ -14,6 +14,37 @@ export interface ChannelConfig {
   bluechatApiKey?: string;
 }
 
+const SETTINGS_KEY_MAP: Record<string, string> = {
+  'BLUE': 'bluechat_blue',
+  'TOKENIZA': 'bluechat_tokeniza',
+  'MPUPPE': 'bluechat_mpuppe',
+  'AXIA': 'bluechat_axia',
+};
+
+/**
+ * Resolve the Blue Chat API key for a given empresa.
+ * 1. Tries api_key from system_settings JSON
+ * 2. Falls back to BLUECHAT_API_KEY env var
+ */
+export async function resolveBluechatApiKey(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<string | null> {
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
+  const { data } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
+
+  const apiKey = (data?.value as Record<string, unknown>)?.api_key as string | undefined;
+  if (apiKey) return apiKey;
+
+  // Fallback to env (backward compatibility)
+  return getOptionalEnv('BLUECHAT_API_KEY') || null;
+}
+
 /**
  * Resolve which channel is active for a given empresa.
  * Returns 'BLUECHAT' if bluechat is enabled in integration_company_config,
@@ -36,12 +67,6 @@ export async function resolveChannelConfig(
   }
 
   // Resolve Blue Chat API URL from system_settings
-  const SETTINGS_KEY_MAP: Record<string, string> = {
-    'BLUE': 'bluechat_blue',
-    'TOKENIZA': 'bluechat_tokeniza',
-    'MPUPPE': 'bluechat_mpuppe',
-    'AXIA': 'bluechat_axia',
-  };
   const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
   const { data: setting } = await supabase
     .from('system_settings')
@@ -67,7 +92,7 @@ export async function resolveChannelConfig(
     return { mode: 'DIRECT' }; // No API URL configured, fallback
   }
 
-  const apiKey = getOptionalEnv('BLUECHAT_API_KEY');
+  const apiKey = await resolveBluechatApiKey(supabase, empresa);
 
   if (!apiKey) {
     return { mode: 'DIRECT' }; // No API key, fallback
@@ -88,12 +113,6 @@ export async function resolveBluechatFrontendUrl(
   supabase: SupabaseClient,
   empresa: string,
 ): Promise<string | null> {
-  const SETTINGS_KEY_MAP: Record<string, string> = {
-    'BLUE': 'bluechat_blue',
-    'TOKENIZA': 'bluechat_tokeniza',
-    'MPUPPE': 'bluechat_mpuppe',
-    'AXIA': 'bluechat_axia',
-  };
   const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
   const { data: setting } = await supabase
     .from('system_settings')
