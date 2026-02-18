@@ -1,102 +1,51 @@
 
 
-# Importacao em massa de clientes do SGT para o modulo de CS
+# Corrigir parsing da resposta do SGT no import de clientes
 
-## Situacao atual
-
-- A funcao `sgt-sync-clientes` ja existe e roda diariamente as 9h via pg_cron
-- Porem ela so verifica contatos que ja existem na tabela `contacts` com `is_cliente = false`
-- Resultado: **0 cs_customers** cadastrados atualmente, apesar de haver 1.855 contatos elegíveis (1.356 Blue + 499 Tokeniza)
-- O offset esta em 50, indicando que ja rodou pelo menos uma vez mas nao encontrou clientes (provavelmente porque o SGT nao retornou `venda_realizada = true` para os primeiros 50)
-
-## Problema principal
-
-A abordagem atual e muito lenta e limitada:
-1. Processa apenas 50 contatos por execucao (1x/dia = semanas para cobrir 1.855)
-2. So busca por email/telefone no SGT -- se o contato nao tiver esses dados, e ignorado
-3. Depende do campo `is_cliente = false` como filtro, o que impede re-enriquecimento de dados
-
-## Plano de acao
-
-### 1. Criar funcao de importacao em massa: `sgt-import-clientes`
-
-Nova edge function dedicada a fazer a carga inicial completa, separada da sync diaria. Diferenças da funcao existente:
-
-- **Modo "full scan"**: Em vez de pegar contatos do nosso banco e buscar no SGT, consulta o SGT diretamente pedindo TODOS os clientes de cada empresa
-- **Endpoint SGT adequado**: Usar um parametro de busca que retorne clientes em lote (verificar se o `buscar-lead-api` aceita filtro por `is_cliente` ou `stage=Cliente`)
-- **Fallback**: Se o SGT so suporta busca individual, manter o approach de iterar contatos mas com batch maior (200) e sem filtro `is_cliente = false` para reprocessar todos
-
-### 2. Ajustar a funcao existente `sgt-sync-clientes`
-
-Melhorias para o sync diario apos a carga inicial:
-
-- **Remover filtro `is_cliente = false`**: Processar TODOS os contatos ativos para capturar novos clientes e enriquecer dados de clientes existentes
-- **Aumentar batch para 100**: Acelerar a cobertura do ciclo completo
-- **Enriquecimento de cs_customers existentes**: Quando o contato ja tem cs_customer, atualizar tags e dados extras em vez de pular
-- **Armazenar dados extras do SGT no cs_customer**: Usar o campo `notas_csm` ou criar coluna `sgt_dados_extras` (JSONB) para dados como valor investido, perfil, projetos, etc.
-
-### 3. Adicionar coluna de dados SGT na tabela cs_customers
-
-Migracao SQL para adicionar campo que armazene dados enriquecidos do SGT:
-
-```sql
-ALTER TABLE cs_customers ADD COLUMN IF NOT EXISTS sgt_dados_extras JSONB DEFAULT '{}'::jsonb;
-ALTER TABLE cs_customers ADD COLUMN IF NOT EXISTS sgt_last_sync_at TIMESTAMPTZ;
+## Problema
+A API do SGT (`buscar-lead-api`) retorna a resposta no formato:
+```json
+{ "found": true, "lead": { "venda_realizada": true, "tokeniza_investidor": true, ... } }
 ```
 
-Dados que serao armazenados nesse campo:
-- `tokeniza_valor_investido`, `tokeniza_qtd_investimentos`, `tokeniza_projetos`
-- `irpf_renda_anual`, `irpf_patrimonio_liquido`, `irpf_perfil_investidor`
-- `ga4_engajamento_score`, `stape_paginas_visitadas`
-- `mautic_score`, `mautic_tags`
-- `cliente_status`, `plano_atual`
+Porem tanto `sgt-import-clientes` quanto `sgt-sync-clientes` tratam o objeto raiz como se fosse o lead, sem extrair a propriedade `.lead`. Resultado: todos os campos ficam `undefined` e nenhum cliente e detectado.
 
-### 4. Execucao manual da carga inicial
+## Correcao
 
-Apos o deploy, disparar a funcao manualmente para processar todos os 1.855 contatos de uma vez (ou em poucos minutos via multiplas chamadas automaticas com offset).
+### 1. `supabase/functions/sgt-import-clientes/index.ts`
 
-### 5. Atualizar o CRON para frequencia maior (opcional)
+Apos receber a resposta do SGT, extrair o lead corretamente:
 
-O job atual roda 1x/dia as 9h. Podemos mudar para 2x/dia (9h e 18h) ou ate a cada 6h para manter os dados mais frescos.
+```typescript
+// ANTES (errado):
+const sgtData = await sgtResponse.json();
+const leads = Array.isArray(sgtData) ? sgtData : sgtData ? [sgtData] : [];
+if (leads.length === 0) { skipped++; continue; }
+const lead = leads[0];
 
----
-
-## Secao tecnica
-
-### Novo arquivo: `supabase/functions/sgt-import-clientes/index.ts`
-
-Funcao que itera sobre TODOS os contatos ativos (sem filtro `is_cliente`), consulta o SGT, e:
-1. Enriquece `contacts` e `lead_contacts` com dados do SGT
-2. Detecta clientes e cria/atualiza `cs_customers`
-3. Armazena dados extras no novo campo `sgt_dados_extras`
-4. Marca `sgt_last_sync_at` com a data do ultimo sync
-5. Usa batch de 200 e persiste offset em `system_settings` com chave propria (`sgt-import-offset`)
-
-### Migracao SQL
-
-```sql
-ALTER TABLE cs_customers 
-  ADD COLUMN IF NOT EXISTS sgt_dados_extras JSONB DEFAULT '{}'::jsonb,
-  ADD COLUMN IF NOT EXISTS sgt_last_sync_at TIMESTAMPTZ;
+// DEPOIS (correto):
+const sgtData = await sgtResponse.json();
+// Unwrap: API retorna { found, lead } ou array
+let rawLead = null;
+if (sgtData?.found && sgtData?.lead) {
+  rawLead = sgtData.lead;
+} else if (Array.isArray(sgtData) && sgtData.length > 0) {
+  rawLead = sgtData[0]?.lead ?? sgtData[0];
+} else if (sgtData && !sgtData.found) {
+  skipped++; continue;
+}
+if (!rawLead) { skipped++; continue; }
+const lead = rawLead;
 ```
 
-### Ajustes em `sgt-sync-clientes/index.ts`
+### 2. `supabase/functions/sgt-sync-clientes/index.ts`
 
-- Linha 146: Remover `.eq('is_cliente', false)` para processar todos
-- Linha 8: Aumentar `BATCH_SIZE` para 100
-- Apos upsert em `cs_customers`, tambem salvar `sgt_dados_extras` e `sgt_last_sync_at`
-- Para clientes ja existentes em `cs_customers`, atualizar tags e dados extras
+Aplicar a mesma correcao na funcao de sync diario, que tem o mesmo bug na mesma logica de parsing.
 
-### Config TOML
+### 3. Resetar offset do import
 
-```toml
-[functions.sgt-import-clientes]
-verify_jwt = false
-```
+Apos o fix, resetar o offset para 0 chamando a funcao com `{ "reset_offset": true }` para reprocessar todos os contatos desde o inicio com a logica corrigida.
 
-### Deploy e execucao
+## Resultado esperado
 
-1. Deploy das funcoes atualizadas
-2. Executar `sgt-import-clientes` manualmente via curl para iniciar a carga
-3. Acompanhar progresso pelo offset em `system_settings`
-
+Com a correcao, os 1.855 contatos serao reprocessados e aqueles com `venda_realizada = true`, `tokeniza_investidor = true`, ou `stage_atual = 'Cliente'` serao detectados e criados como `cs_customers`. O cron temporario de 10 em 10 minutos completara o processo em aproximadamente 1h30.
