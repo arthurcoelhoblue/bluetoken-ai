@@ -12,6 +12,48 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
   return useQuery({
     queryKey: ['cs-customers', empresa || activeCompanies, filters, page],
     queryFn: async () => {
+      // If we need contract-based filters, use RPC or post-filter via a separate query
+      const needsContractFilter = !!(filters.ano_fiscal || filters.contrato_status || filters.comprou_ano);
+
+      let contractCustomerIds: string[] | null = null;
+
+      if (needsContractFilter) {
+        // Build a query to get matching customer IDs from cs_contracts
+        if (filters.comprou_ano && filters.nao_renovou_ano) {
+          // "Comprou ano X e não renovou ano Y"
+          const { data: bought } = await supabase
+            .from('cs_contracts')
+            .select('customer_id')
+            .eq('ano_fiscal', filters.comprou_ano);
+          const boughtIds = (bought ?? []).map(r => (r as any).customer_id as string);
+
+          if (boughtIds.length === 0) {
+            return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+          }
+
+          const { data: renewed } = await supabase
+            .from('cs_contracts')
+            .select('customer_id')
+            .eq('ano_fiscal', filters.nao_renovou_ano)
+            .in('customer_id', boughtIds);
+          const renewedIds = new Set((renewed ?? []).map(r => (r as any).customer_id as string));
+          contractCustomerIds = boughtIds.filter(id => !renewedIds.has(id));
+
+          if (contractCustomerIds.length === 0) {
+            return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+          }
+        } else {
+          let cq = supabase.from('cs_contracts').select('customer_id');
+          if (filters.ano_fiscal) cq = cq.eq('ano_fiscal', filters.ano_fiscal);
+          if (filters.contrato_status) cq = cq.eq('status', filters.contrato_status);
+          const { data: cIds } = await cq;
+          contractCustomerIds = [...new Set((cIds ?? []).map(r => (r as any).customer_id as string))];
+          if (contractCustomerIds.length === 0) {
+            return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+          }
+        }
+      }
+
       let query = supabase
         .from('cs_customers')
         .select(`
@@ -30,6 +72,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
       if (filters.nps_categoria) query = query.eq('nps_categoria', filters.nps_categoria);
       if (filters.csm_id) query = query.eq('csm_id', filters.csm_id);
       if (filters.is_active !== undefined) query = query.eq('is_active', filters.is_active);
+      if (contractCustomerIds) query = query.in('id', contractCustomerIds);
 
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
