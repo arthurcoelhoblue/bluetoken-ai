@@ -1,99 +1,35 @@
 
-# Correcao dos Insights do Copilot -- Nomes em vez de IDs
+# Tornar o nome do cliente clicavel nos Insights do Copilot
 
-## Problema identificado
-
-Os insights continuam mostrando UUIDs (ex: "Lead 63b6bce7") por dois motivos:
-
-1. **Busca de nomes incorreta**: A funcao busca nomes de leads usando `contacts.id`, mas o `lead_messages.lead_id` corresponde a `contacts.legacy_lead_id`. Resultado: a query nao encontra nenhum nome e o contexto enviado a IA ja contem "Lead sem nome" ou os proprios IDs.
-
-2. **Sem pos-processamento**: Mesmo com instrucoes no prompt, a IA ocasionalmente inclui UUIDs. Nao ha nenhuma etapa de sanitizacao antes de salvar os insights no banco.
+## Problema atual
+Os cards de insight mostram o nome do lead/cliente no titulo e descricao, mas esse nome nao e clicavel. O botao "Ver perfil de X" so aparece quando ha `lead_id`, e navega para a pagina do lead -- mas nao ha link direto para o deal.
 
 ## Solucao
 
-### 1. Corrigir a busca de nomes na edge function (`copilot-proactive/index.ts`)
+### 1. Tornar o nome do lead clicavel no titulo do card
+Em vez de exibir o titulo como texto simples, detectar o nome do lead dentro do titulo e renderiza-lo como um link clicavel (estilizado com cor primaria e underline no hover).
 
-**Mensagens inbound (linha ~200):** Trocar a query de:
-```
-contacts.id IN (lead_ids)
-```
-Para:
-```
-contacts.legacy_lead_id IN (lead_ids)
-```
+### 2. Adicionar link para o deal quando disponivel
+O insight possui tanto `lead_id` quanto `deal_id`. O link "Ver perfil" atual aponta para o lead. Vamos adicionar tambem um link para o deal, que navega para `/pipeline?deal={deal_id}` -- a PipelinePage ja suporta abrir o DealDetailSheet via `selectedDealId`.
 
-E mapear `legacy_lead_id -> nome` em vez de `id -> nome`.
+### 3. Atualizar PipelinePage para aceitar deal via query param
+Adicionar logica na PipelinePage para ler `?deal=xxx` da URL e automaticamente abrir o DealDetailSheet com aquele deal.
 
-### 2. Adicionar pos-processamento de sanitizacao de UUIDs
+---
 
-Antes de inserir os insights no banco, aplicar uma funcao que:
-- Detecta padroes de UUID (parcial ou completo) nos campos `titulo` e `descricao`
-- Tenta substituir pelo nome do contato correspondente usando o `contactNameMap` ja construido
-- Se nao encontrar o nome, substitui por "contato" generico (nunca deixa o UUID visivel)
+## Detalhes tecnicos
 
-Regex para detectar: `Lead\s+[0-9a-f]{8}` e UUIDs completos `[0-9a-f]{8}-[0-9a-f]{4}-...`
+### Arquivo: `src/components/copilot/CopilotInsightCard.tsx`
 
-### 3. Enriquecer o mapa de nomes com os lead_ids das mensagens
+**Mudanca 1 -- Nome clicavel no titulo:**
+- A funcao `resolveLeadName` atualmente retorna uma string. Criar uma nova funcao `renderTituloWithLink` que retorna JSX, substituindo a ocorrencia do nome do lead por um `<button>` clicavel que navega para a pagina do lead (`/leads/{lead_id}/{empresa}`).
 
-Apos buscar nomes via `legacy_lead_id`, adicionar esses mapeamentos ao `contactNameMap` global, para que tanto o `contact_id` quanto o `legacy_lead_id` sejam resolvidos no pos-processamento.
+**Mudanca 2 -- Link para o deal:**
+- Quando `insight.deal_id` existir, exibir um link adicional "Ver negocio →" que navega para `/pipeline?deal={deal_id}`.
+- O link existente "Ver perfil de X →" continua para o lead.
 
-## Secao tecnica
+### Arquivo: `src/pages/PipelinePage.tsx`
 
-### Arquivo modificado: `supabase/functions/copilot-proactive/index.ts`
-
-**Mudanca 1 -- Query de nomes (linhas 199-204):**
-```typescript
-// ANTES: busca por contacts.id (errado)
-const { data: leadContacts } = await supabase.from('contacts')
-  .select('id, nome').in('id', leadIds);
-
-// DEPOIS: busca por contacts.legacy_lead_id (correto)
-const { data: leadContacts } = await supabase.from('contacts')
-  .select('id, nome, legacy_lead_id')
-  .in('legacy_lead_id', leadIds);
-
-// Mapear legacy_lead_id -> nome
-leadNameMap = Object.fromEntries(
-  leadContacts.map(c => [c.legacy_lead_id, c.nome])
-);
-// Tambem adicionar ao contactNameMap global
-leadContacts.forEach(c => {
-  if (c.legacy_lead_id) contactNameMap[c.legacy_lead_id] = c.nome;
-  contactNameMap[c.id] = c.nome;
-});
-```
-
-**Mudanca 2 -- Funcao de sanitizacao (nova, antes do insert):**
-```typescript
-function sanitizeUUIDs(text: string, nameMap: Record<string, string>): string {
-  // Substituir "Lead XXXXXXXX" por nome ou "contato"
-  let result = text.replace(/Lead\s+([0-9a-f]{8})[0-9a-f-]*/gi, (match, short) => {
-    const found = Object.entries(nameMap).find(([k]) => k.startsWith(short));
-    return found ? found[1] : 'contato';
-  });
-  // Substituir UUIDs completos soltos
-  result = result.replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, (uuid) => {
-    return nameMap[uuid] || 'contato';
-  });
-  // Substituir fragmentos de UUID (8+ hex chars seguidos)
-  result = result.replace(/\b([0-9a-f]{8,})\b/gi, (match) => {
-    const found = Object.entries(nameMap).find(([k]) => k.startsWith(match) || k.includes(match));
-    return found ? found[1] : match.length >= 12 ? 'contato' : match;
-  });
-  return result;
-}
-```
-
-**Mudanca 3 -- Aplicar sanitizacao nos insights (linhas 269-278):**
-```typescript
-const insightsToInsert = parsedInsights.slice(0, 5).map((ins) => ({
-  ...
-  titulo: sanitizeUUIDs(ins.titulo || 'Insight', contactNameMap),
-  descricao: sanitizeUUIDs(ins.descricao || '', contactNameMap),
-  ...
-}));
-```
-
-### Deploy
-
-Re-deploy da edge function `copilot-proactive` apos as mudancas.
+**Mudanca -- Abrir deal via query param:**
+- Ler `searchParams.get('deal')` da URL.
+- Se presente, definir `selectedDealId` com esse valor para que o `DealDetailSheet` abra automaticamente ao carregar a pagina.
