@@ -73,6 +73,16 @@ export function UserAccessList() {
     queryClient.invalidateQueries({ queryKey: ['pipeline-owners'] });
   };
 
+  const handleToggleCsm = async (userId: string, value: boolean) => {
+    const { error } = await supabase.from('profiles').update({ is_csm: value }).eq('id', userId);
+    if (error) {
+      toast.error('Erro ao atualizar flag CS');
+      return;
+    }
+    toast.success(value ? 'Marcado como CS' : 'Removido do time de CS');
+    queryClient.invalidateQueries({ queryKey: ['users-with-profiles'] });
+  };
+
   const getInitials = (nome: string | null, email: string) => {
     if (nome) return nome.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase();
     return email.slice(0, 2).toUpperCase();
@@ -101,10 +111,11 @@ export function UserAccessList() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead>Usuário</TableHead>
+          <TableHead>Usuário</TableHead>
               <TableHead>Perfil</TableHead>
               <TableHead>Empresas</TableHead>
               <TableHead className="text-center">Vendedor</TableHead>
+              <TableHead className="text-center">CS</TableHead>
               <TableHead>Ramal</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="w-[100px]">Ações</TableHead>
@@ -151,6 +162,12 @@ export function UserAccessList() {
                   <Switch
                     checked={u.is_vendedor ?? false}
                     onCheckedChange={(val) => handleToggleVendedor(u.id, val)}
+                  />
+                </TableCell>
+                <TableCell className="text-center">
+                  <Switch
+                    checked={u.is_csm ?? false}
+                    onCheckedChange={(val) => handleToggleCsm(u.id, val)}
                   />
                 </TableCell>
                 <TableCell>

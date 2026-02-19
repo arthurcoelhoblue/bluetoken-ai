@@ -33,6 +33,8 @@ export interface UserWithAccess {
   avatar_url: string | null;
   is_active: boolean;
   is_vendedor: boolean;
+  /** Membro do time de Sucesso do Cliente */
+  is_csm: boolean;
   /** All empresa assignments for this user */
   assignments: UserAccessAssignment[];
   /** Primary profile name (from first assignment) */
