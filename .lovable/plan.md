@@ -1,67 +1,71 @@
 
-# Reset do import + Carga retroativa de contratos
+# Substituir filtro "nao renovou" por filtro de data de renovacao
 
-## 1. Disparar reset do import com sanitizacao
+## O que muda
 
-O `sgt-import-clientes` ja aceita `reset_offset: true` no body. Basta invocar a funcao com esse parametro para reprocessar todos os contatos com a sanitizacao de nomes ativa.
+Remover o filtro "Comprou ano X, nao renovou ano Y" e substituir por dois date pickers que permitem filtrar clientes por periodo de renovacao (campo `proxima_renovacao`).
 
-**Acao**: Invocar a edge function diretamente apos o deploy. Nao precisa de codigo novo — a logica de reset ja existe.
+O usuario podera selecionar "Renovacao de" e "Renovacao ate" para ver apenas os clientes cuja data de renovacao cai naquele intervalo (ex: todos que renovam entre marco e junho de 2026).
 
-**Fix necessario**: O arquivo `sgt-import-clientes/index.ts` tem um import duplicado na linha 4-5 (`import { createClient }` aparece duas vezes). Isso sera corrigido antes do deploy.
+## Alteracoes
 
-## 2. Edge function dedicada: `cs-backfill-contracts`
+### 1. Tipos (`src/types/customerSuccess.ts`)
 
-Criar uma nova edge function que percorre todos os `cs_customers` e gera contratos retroativos baseados em `data_primeiro_ganho` e `valor_mrr`.
+- Remover `comprou_ano` e `nao_renovou_ano` de `CSCustomerFilters`
+- Adicionar `renovacao_de?: string` e `renovacao_ate?: string` (formato ISO date)
 
-**Logica:**
+### 2. Hook (`src/hooks/useCSCustomers.ts`)
 
-Para cada cs_customer com `data_primeiro_ganho` preenchido:
-1. Verificar se ja tem contrato em `cs_contracts` — se sim, pular
-2. Criar contrato com:
-   - `ano_fiscal` = ano de `data_primeiro_ganho`
-   - `valor` = `valor_mrr` do cliente
-   - `data_contratacao` = `data_primeiro_ganho`
-   - `data_vencimento` = `data_primeiro_ganho` + 12 meses
-   - `status` = se vencimento < hoje → 'VENCIDO', senao → 'ATIVO'
-3. Calcular `proxima_renovacao` = `data_primeiro_ganho` + 9 meses
-4. Atualizar `cs_customers.proxima_renovacao`
+- Remover toda a logica de `comprou_ano` / `nao_renovou_ano` (linhas 22-48 do bloco de contract filter)
+- Simplificar `needsContractFilter` para checar apenas `ano_fiscal` e `contrato_status`
+- Adicionar filtro direto na query principal de `cs_customers`:
+  - Se `renovacao_de` preenchido: `.gte('proxima_renovacao', filters.renovacao_de)`
+  - Se `renovacao_ate` preenchido: `.lte('proxima_renovacao', filters.renovacao_ate)`
+- Esses filtros atuam direto na tabela `cs_customers` (campo `proxima_renovacao`), sem necessidade de join com `cs_contracts`
 
-**Processamento em lote**: 100 clientes por execucao com persistencia de offset (mesmo padrao do import).
+### 3. Pagina (`src/pages/cs/CSClientesPage.tsx`)
 
-**Resultados esperados**: 449 contratos criados, 449 clientes com `proxima_renovacao` preenchido.
+- Remover o `<Select>` de "Nao renovou" (linhas 94-105)
+- Remover `fiscalYears` e `currentYear` (nao serao mais usados por nenhum filtro, o Ano Fiscal permanece)
+- Adicionar dois date pickers usando Popover + Calendar (padrao Shadcn):
+  - "Renovacao de" — define `filters.renovacao_de`
+  - "Renovacao ate" — define `filters.renovacao_ate`
+- Atualizar `hasAdvancedFilters` para checar `renovacao_de` ou `renovacao_ate` em vez de `comprou_ano`
+- Atualizar `clearAdvancedFilters` para limpar `renovacao_de` e `renovacao_ate`
+
+### Layout dos filtros (na mesma linha dos existentes)
+
+```text
+[Busca...] [Health Status v] [Ano Fiscal v] [Status Contrato v] [Renovacao de: __/__/__] [Renovacao ate: __/__/__] [Limpar]
+```
+
+Os date pickers usam botoes compactos com icone de calendario, mostrando a data selecionada ou placeholder.
 
 ## Secao tecnica
 
-### Arquivo: `supabase/functions/cs-backfill-contracts/index.ts` (NOVO)
+### Date picker pattern
 
-```text
-Fluxo:
-1. Ler offset de system_settings (category: 'cs-backfill', key: 'contracts-offset')
-2. Buscar cs_customers com data_primeiro_ganho NOT NULL, range(offset, offset+99)
-3. Para cada:
-   a. Checar se ja existe cs_contract para esse customer_id
-   b. Se nao: INSERT cs_contracts com dados calculados
-   c. UPDATE cs_customers.proxima_renovacao
-4. Salvar proximo offset
-5. Retornar { processed, created, skipped, next_offset, ciclo_completo }
+Seguir o padrao Shadcn com `Popover` + `Calendar` e `pointer-events-auto` no className do Calendar:
+
+```typescript
+<Popover>
+  <PopoverTrigger asChild>
+    <Button variant="outline" className={cn("w-[150px] justify-start text-left font-normal text-xs", !date && "text-muted-foreground")}>
+      <CalendarIcon className="mr-1 h-3.5 w-3.5" />
+      {date ? format(date, "dd/MM/yy") : "Renovacao de"}
+    </Button>
+  </PopoverTrigger>
+  <PopoverContent className="w-auto p-0" align="start">
+    <Calendar mode="single" selected={date} onSelect={setDate} className="p-3 pointer-events-auto" />
+  </PopoverContent>
+</Popover>
 ```
 
-### Arquivo: `supabase/config.toml`
+### Query filter no hook
 
-Adicionar:
+```typescript
+if (filters.renovacao_de) query = query.gte('proxima_renovacao', filters.renovacao_de);
+if (filters.renovacao_ate) query = query.lte('proxima_renovacao', filters.renovacao_ate);
 ```
-[functions.cs-backfill-contracts]
-verify_jwt = false
-```
 
-### Arquivo: `supabase/functions/sgt-import-clientes/index.ts`
-
-- Remover import duplicado da linha 5
-
-### Execucao
-
-Apos deploy:
-1. Chamar `sgt-import-clientes` com `{ "reset_offset": true }` — reprocessa nomes
-2. Chamar `cs-backfill-contracts` repetidamente ate `ciclo_completo: true` — gera contratos retroativos
-
-Ambas as chamadas podem ser feitas pela interface de teste de edge functions.
+Nao precisa de migracao SQL — `proxima_renovacao` ja existe na tabela `cs_customers`.
