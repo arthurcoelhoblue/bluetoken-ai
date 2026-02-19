@@ -28,7 +28,7 @@ export type LeadStage =
   | 'Cliente';
 
 // Origem do lead
-export type OrigemTipo = 'INBOUND' | 'OUTBOUND' | 'REFERRAL' | 'PARTNER';
+export type OrigemTipo = 'INBOUND' | 'OUTBOUND' | 'REFERRAL' | 'PARTNER' | 'MANUAL' | 'PAGO';
 
 // ========================================
 // Dados do Lead (dados_lead)
@@ -326,4 +326,6 @@ export const ORIGEM_TIPOS: OrigemTipo[] = [
   'OUTBOUND',
   'REFERRAL',
   'PARTNER',
+  'MANUAL',
+  'PAGO',
 ];

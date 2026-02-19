@@ -59,7 +59,7 @@ const sgtDadosLeadSchema = z.object({
   pipedrive_deal_id: z.string().optional(),
   url_pipedrive: z.string().optional(),
   organizacao: z.string().max(300).optional(),
-  origem_tipo: z.enum(['INBOUND', 'OUTBOUND', 'REFERRAL', 'PARTNER']).optional(),
+  origem_tipo: z.enum(['INBOUND', 'OUTBOUND', 'REFERRAL', 'PARTNER', 'MANUAL', 'PAGO']).optional(),
   lead_pago: z.boolean().optional(),
   data_criacao: z.string().optional(),
   data_mql: z.string().optional(),
