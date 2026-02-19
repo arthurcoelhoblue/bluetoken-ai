@@ -10,11 +10,14 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { ChevronLeft, ChevronRight, Search, Users, X } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { CalendarIcon, ChevronLeft, ChevronRight, Search, Users, X } from 'lucide-react';
 import { healthStatusConfig, npsConfig, type CSHealthStatus, type CSCustomerFilters, type CSContractStatus } from '@/types/customerSuccess';
 import { CSCustomerCreateDialog } from '@/components/cs/CSCustomerCreateDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
+import { cn } from '@/lib/utils';
 
 const currentYear = new Date().getFullYear();
 const fiscalYears = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
@@ -24,6 +27,8 @@ export default function CSClientesPage() {
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<CSCustomerFilters>({ is_active: true });
   const [search, setSearch] = useState('');
+  const [renovacaoDe, setRenovacaoDe] = useState<Date | undefined>();
+  const [renovacaoAte, setRenovacaoAte] = useState<Date | undefined>();
 
   const { data, isLoading } = useCSCustomers(filters, page);
   const customers = data?.data ?? [];
@@ -36,16 +41,30 @@ export default function CSClientesPage() {
       )
     : customers;
 
-  const hasAdvancedFilters = !!(filters.ano_fiscal || filters.contrato_status || filters.comprou_ano);
+  const hasAdvancedFilters = !!(filters.ano_fiscal || filters.contrato_status || filters.renovacao_de || filters.renovacao_ate);
 
   const clearAdvancedFilters = () => {
     setFilters(f => ({
       ...f,
       ano_fiscal: undefined,
       contrato_status: undefined,
-      comprou_ano: undefined,
-      nao_renovou_ano: undefined,
+      renovacao_de: undefined,
+      renovacao_ate: undefined,
     }));
+    setRenovacaoDe(undefined);
+    setRenovacaoAte(undefined);
+    setPage(0);
+  };
+
+  const handleRenovacaoDe = (date: Date | undefined) => {
+    setRenovacaoDe(date);
+    setFilters(f => ({ ...f, renovacao_de: date ? format(date, 'yyyy-MM-dd') : undefined }));
+    setPage(0);
+  };
+
+  const handleRenovacaoAte = (date: Date | undefined) => {
+    setRenovacaoAte(date);
+    setFilters(f => ({ ...f, renovacao_ate: date ? format(date, 'yyyy-MM-dd') : undefined }));
     setPage(0);
   };
 
@@ -91,18 +110,31 @@ export default function CSClientesPage() {
               <SelectItem value="VENCIDO">Vencido</SelectItem>
             </SelectContent>
           </Select>
-          {/* Filtro combinado: comprou ano X, não renovou ano Y */}
-          <Select value={filters.comprou_ano ? String(filters.comprou_ano) : 'ALL'} onValueChange={(v) => {
-            const ano = v === 'ALL' ? undefined : Number(v);
-            setFilters(f => ({ ...f, comprou_ano: ano, nao_renovou_ano: ano ? ano + 1 : undefined }));
-            setPage(0);
-          }}>
-            <SelectTrigger className="w-[200px]"><SelectValue placeholder="Não renovou" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Não renovou...</SelectItem>
-              {fiscalYears.slice(0, -1).map(y => <SelectItem key={y} value={String(y)}>Comprou {y}, não renovou {y + 1}</SelectItem>)}
-            </SelectContent>
-          </Select>
+
+          {/* Date range: Renovação de / até */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !renovacaoDe && "text-muted-foreground")}>
+                <CalendarIcon className="mr-1 h-3.5 w-3.5" />
+                {renovacaoDe ? format(renovacaoDe, "dd/MM/yy") : "Renovação de"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={renovacaoDe} onSelect={handleRenovacaoDe} initialFocus className="p-3 pointer-events-auto" />
+            </PopoverContent>
+          </Popover>
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !renovacaoAte && "text-muted-foreground")}>
+                <CalendarIcon className="mr-1 h-3.5 w-3.5" />
+                {renovacaoAte ? format(renovacaoAte, "dd/MM/yy") : "Renovação até"}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0" align="start">
+              <Calendar mode="single" selected={renovacaoAte} onSelect={handleRenovacaoAte} initialFocus className="p-3 pointer-events-auto" />
+            </PopoverContent>
+          </Popover>
+
           {hasAdvancedFilters && (
             <Button variant="ghost" size="sm" onClick={clearAdvancedFilters} className="gap-1">
               <X className="h-3 w-3" /> Limpar filtros
