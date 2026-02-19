@@ -1,5 +1,7 @@
 import { getCorsHeaders, handleCorsOptions } from '../_shared/cors.ts';
 import { createLogger } from '../_shared/logger.ts';
+import { cleanContactName } from '../_shared/name-sanitizer.ts';
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const log = createLogger('sgt-sync-clientes');
@@ -211,6 +213,12 @@ Deno.serve(async (req) => {
         }
         if (!rawLead) continue;
         const lead = rawLead;
+
+        // ---- NAME SANITIZATION ----
+        const { name: nomeLimpo } = cleanContactName(contact.nome || '');
+        if (nomeLimpo && nomeLimpo !== contact.nome) {
+          await supabase.from('contacts').update({ nome: nomeLimpo, updated_at: new Date().toISOString() }).eq('id', contact.id);
+        }
 
         // ---- ENRICHMENT: contacts ----
         const contactUpdate = extractContactEnrichment(lead);
