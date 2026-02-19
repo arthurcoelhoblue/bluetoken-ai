@@ -64,6 +64,7 @@ function DetailSidebarMetrics({ customer }: { customer: any }) {
             <div className="flex justify-between"><span className="text-muted-foreground">Total Investido</span><span className="font-medium">R$ {(tm?.total_investido ?? 0).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Ticket Médio</span><span className="font-medium">R$ {(tm?.ticket_medio ?? 0).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Investimentos</span><span>{tm?.qtd_investimentos ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">1º Investimento</span><span>{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yy') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Último Aporte</span><span>{tm?.ultimo_investimento ? format(new Date(tm.ultimo_investimento), 'dd/MM/yy') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Dias s/ Investir</span><span>{tm?.dias_sem_investir ?? '—'}</span></div>
           </>
@@ -76,7 +77,7 @@ function DetailSidebarMetrics({ customer }: { customer: any }) {
         <div className="flex justify-between"><span className="text-muted-foreground">NPS</span>{customer.nps_categoria ? <Badge className={npsConfig[customer.nps_categoria]?.bgClass}>{customer.ultimo_nps}</Badge> : <span>—</span>}</div>
         <div className="flex justify-between"><span className="text-muted-foreground">CSAT Médio</span><span>{customer.media_csat?.toFixed(1) ?? '—'}</span></div>
         <div className="flex justify-between"><span className="text-muted-foreground">Risco Churn</span><span>{customer.risco_churn_pct}%</span></div>
-        <div className="flex justify-between"><span className="text-muted-foreground">1º Ganho</span><span>{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yy') : '—'}</span></div>
+        {!isTokeniza && <div className="flex justify-between"><span className="text-muted-foreground">1º Ganho</span><span>{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yy') : '—'}</span></div>}
       </CardContent>
     </Card>
   );
