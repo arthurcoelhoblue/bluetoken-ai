@@ -154,8 +154,8 @@ export interface CSCustomerFilters {
   search?: string;
   ano_fiscal?: number;
   contrato_status?: CSContractStatus;
-  comprou_ano?: number;
-  nao_renovou_ano?: number;
+  renovacao_de?: string;
+  renovacao_ate?: string;
 }
 
 // Metrics
