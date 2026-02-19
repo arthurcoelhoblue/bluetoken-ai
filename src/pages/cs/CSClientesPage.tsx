@@ -34,7 +34,7 @@ export default function CSClientesPage() {
   const [dateDe, setDateDe] = useState<Date | undefined>();
   const [dateAte, setDateAte] = useState<Date | undefined>();
 
-  const { data, isLoading } = useCSCustomers(filters, page);
+  const { data, isLoading } = useCSCustomers(filters, page, search);
   const customers = data?.data ?? [];
   const totalPages = data ? Math.ceil(data.count / data.pageSize) : 0;
 
@@ -43,12 +43,7 @@ export default function CSClientesPage() {
   const { data: tokenizaMetrics } = useCSTokenizaMetrics(isTokeniza ? customerIds : undefined);
   const { data: ofertas } = useCSTokenizaOfertas();
 
-  const filtered = search
-    ? customers.filter(c =>
-        c.contact?.nome?.toLowerCase().includes(search.toLowerCase()) ||
-        c.contact?.email?.toLowerCase().includes(search.toLowerCase())
-      )
-    : customers;
+  const filtered = customers;
 
   const hasAdvancedFilters = !!(
     filters.ano_fiscal || filters.contrato_status || filters.renovacao_de || filters.renovacao_ate ||
@@ -106,7 +101,7 @@ export default function CSClientesPage() {
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px] max-w-sm">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+            <Input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="pl-9" />
           </div>
           <Select value={filters.health_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, health_status: v === 'ALL' ? undefined : v as CSHealthStatus })); setPage(0); }}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Health Status" /></SelectTrigger>
