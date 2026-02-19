@@ -19,6 +19,7 @@ import { parseTriageSummary, enrichLeadFromTriage } from "./triage.ts";
 import { saveInboundMessage } from "./message-handler.ts";
 import { callSdrIaInterpret } from "./sdr-bridge.ts";
 import { sendResponseToBluechat } from "./callback.ts";
+import { maybeCreateCSIncident } from "./cs-incident-bridge.ts";
 
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 const log = createLogger('bluechat-inbound');
@@ -719,6 +720,23 @@ serve(async (req) => {
             .eq('empresa', empresa);
           log.info('Flag ticket_resolved setada');
         } catch (_) { /* non-critical */ }
+
+        // CS: criar incidência RESOLVIDA se for cliente CS
+        maybeCreateCSIncident(supabase, {
+          leadId: leadContact.lead_id,
+          empresa,
+          resolution,
+          isEscalate: false,
+        }).catch(err => log.error('CS incident bridge error (RESOLVE)', { error: String(err) }));
+      }
+
+      // CS: criar incidência ABERTA se for ESCALATE e cliente CS
+      if (response.action === 'ESCALATE') {
+        maybeCreateCSIncident(supabase, {
+          leadId: leadContact.lead_id,
+          empresa,
+          isEscalate: true,
+        }).catch(err => log.error('CS incident bridge error (ESCALATE)', { error: String(err) }));
       }
     }
 
