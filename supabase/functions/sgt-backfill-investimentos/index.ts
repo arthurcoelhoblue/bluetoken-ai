@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const log = createLogger('sgt-backfill-investimentos');
 
 const SGT_API_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api';
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 10;
 const SETTINGS_CATEGORY = 'sgt-sync';
 const SETTINGS_KEY = 'backfill-investimentos-offset';
 
@@ -180,20 +180,11 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // DEBUG: log structure for first 3 contacts
-        if (detalhes.length < 3) {
-          log.info(`DEBUG lead tokeniza data para ${contact.nome}`, {
-            tokeniza_projetos: lead.tokeniza_projetos,
-            tokeniza_projetos_type: typeof lead.tokeniza_projetos,
-            tokeniza_investidor: lead.tokeniza_investidor,
-            tokeniza_qtd_investimentos: lead.tokeniza_qtd_investimentos,
-            tokeniza_valor_investido: lead.tokeniza_valor_investido,
-            tokeniza_ultimo_investimento: lead.tokeniza_ultimo_investimento,
-          });
-        }
+        // dados_tokeniza is at root level of sgtData, NOT inside lead
+        const dadosTokeniza = sgtData.dados_tokeniza;
 
-        // Extract investimentos from dados_tokeniza
-        const investimentos = lead.dados_tokeniza?.investimentos;
+        // Extract investimentos from dados_tokeniza (root level)
+        const investimentos = dadosTokeniza?.investimentos;
         if (!investimentos || !Array.isArray(investimentos) || investimentos.length === 0) {
           sem_dados++;
           detalhes.push({ contact_id: contact.id, nome: contact.nome, status: 'sem_investimentos' });
