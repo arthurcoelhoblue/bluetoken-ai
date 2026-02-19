@@ -100,7 +100,7 @@ export function useDuplicatePipeline() {
       if (sourceErr || !source) throw sourceErr || new Error('Pipeline not found');
 
       // Create new pipeline
-      type SourcePipeline = { id: string; descricao: string | null; pipeline_stages: Array<{ nome: string; posicao: number; cor: string; is_won: boolean; is_lost: boolean; sla_minutos: number | null }> };
+      type SourcePipeline = { id: string; descricao: string | null; tipo: string | null; pipeline_stages: Array<{ nome: string; posicao: number; cor: string; is_won: boolean; is_lost: boolean; sla_minutos: number | null }> };
       const src = source as unknown as SourcePipeline;
 
       const { data: newPipeline, error: newErr } = await supabase
@@ -109,6 +109,7 @@ export function useDuplicatePipeline() {
           empresa: newEmpresa,
           nome: newName,
           descricao: src.descricao,
+          tipo: src.tipo ?? 'COMERCIAL',
           is_default: false,
           ativo: true,
         } as never)
