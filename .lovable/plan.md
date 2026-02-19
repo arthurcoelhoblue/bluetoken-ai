@@ -1,75 +1,119 @@
 
-# Integrar Mapeamento de Ofertas Tokeniza na Tela de Pendências
+# Criar o Time de Customer Success — Grupo "CS" com Pendências Dedicadas
 
-## Contexto
+## Entendimento do que foi pedido
 
-Existem **55 ofertas distintas** sem nome na base, totalizando **614 contratos** de **78 clientes** e **R$ 1.044.814** em volume. A tela de mapeamento já foi criada em `/cs/admin/ofertas`, mas ela está isolada no menu Admin, exigindo que a colaboradora saiba onde encontrá-la.
+O usuário quer criar um grupo funcional de **Sucesso do Cliente (CS)**, espelhando a lógica que já existe para o grupo de vendedores (`is_vendedor`). Membros desse grupo:
 
-A ideia é incluir essas 55 ofertas diretamente na tela de **Pendências do Gestor** (`/pendencias`), seguindo o mesmo padrão visual dos cards de "Deals sem Vendedor" e "Divergências de Perda" que já existem — com um card por oferta, campo de input para o nome e botão "Aplicar".
+1. Terão acesso garantido a todas as telas de CS
+2. Verão, nas **Pendências**, apenas as tarefas relevantes para CS (ex: nomear ofertas da Tokeniza)
+3. Serão identificáveis como CSMs (responsáveis por clientes) no `cs_customers.csm_id`
 
-## Como funciona a lógica atual de Pendências
+## Como o sistema atual funciona
 
-`PendenciasPerda.tsx` já agrega múltiplas fontes de pendências:
-- `useLossPendencies()` → divergências de perda
-- `useFaqPendencies()` → FAQs aguardando aprovação
-- `useOrphanDeals()` → deals sem vendedor
+O sistema já tem dois mecanismos paralelos:
 
-Cada fonte retorna uma lista; a página soma os totais e exibe seções separadas. O badge no menu (`WorkbenchPage`) mostra o total consolidado de pendências.
+- **`is_vendedor`** (flag na tabela `profiles`): identifica quem aparece em rankings, metas e filtros de "Dono" no Kanban
+- **`access_profiles`** (perfis de tela): controla quais telas cada usuário vê via `user_access_assignments`
+
+A abordagem correta é a mesma: adicionar uma flag **`is_csm`** na tabela `profiles` para identificar membros do time de CS, junto com um novo **perfil de acesso "Sucesso do Cliente"** no sistema de permissões — sem depender de papéis hardcoded.
 
 ## O que será feito
 
-### 1. Adicionar seção "Ofertas Tokeniza sem nome" em `PendenciasPerda.tsx`
+### 1. Migração de banco: coluna `is_csm` em `profiles`
 
-Importar `useCSOfertasSemNome` e `useUpdateOfertaNome` (hooks já existem) e adicionar:
-- Uma nova seção no final da lista de pendências, com header e ícone de `Tag`
-- Um card por oferta com: ID truncado, período, qtd de clientes, volume total, input para nome, botão "Aplicar"
-- Ao aplicar: `UPDATE` em massa + card desaparece da lista (revalidação automática via `invalidateQueries`)
-- Badge de total de pendências inclui as ofertas sem nome no contador
-
-### 2. Atualizar o contador de pendências no Workbench
-
-`WorkbenchPage.tsx` usa `useLossPendencyCount()` para exibir o badge. Será necessário atualizar essa contagem para incluir as ofertas sem nome (ou criar um hook de contagem consolidada).
-
-### 3. Arquivos alterados
-
-**`src/pages/admin/PendenciasPerda.tsx`**:
-- Importar `useCSOfertasSemNome`, `useUpdateOfertaNome` e ícones necessários (`Tag`, `Input`)
-- Adicionar componente `OfertaSemNomeCard` seguindo o padrão dos outros cards
-- Incluir no cálculo `totalPendencies`
-- Renderizar nova seção "Ofertas Tokeniza sem nome (55)" no corpo da página
-
-**`src/pages/WorkbenchPage.tsx`** (opcional, se quisermos o contador atualizado):
-- Incluir contagem de ofertas sem nome no badge de pendências
-
-### Resultado visual na página de Pendências
-
-```text
-┌─────────────────────────────────────────────────────┐
-│ ⚠ Pendências do Gestor                              │
-├─────────────────────────────────────────────────────┤
-│ 👤 Deals sem Vendedor (N)                           │
-│   [cards existentes...]                             │
-├─────────────────────────────────────────────────────┤
-│ ❓ FAQs pendentes (N)                               │
-│   [cards existentes...]                             │
-├─────────────────────────────────────────────────────┤
-│ 🏷 Ofertas Tokeniza sem nome (55)                   │
-│  ┌──────────────────────────────────────────────┐   │
-│  │ ID: aca33ec2…  Mar/24 – Abr/24              │   │
-│  │ 42 clientes · R$ 108.206                    │   │
-│  │ [__________________________] [Aplicar]      │   │
-│  └──────────────────────────────────────────────┘   │
-│  [... outros 54 cards ...]                          │
-└─────────────────────────────────────────────────────┘
+```sql
+ALTER TABLE public.profiles ADD COLUMN is_csm BOOLEAN NOT NULL DEFAULT FALSE;
 ```
 
-### Fluxo para a colaboradora
+Essa flag identifica membros do time de CS, assim como `is_vendedor` identifica vendedores. É simples, segura e segue o padrão já estabelecido no sistema.
 
-1. Acessa `/pendencias` normalmente
-2. Rola até a seção "Ofertas Tokeniza sem nome"
-3. Vê o ID truncado + período + impacto (clientes e volume)
-4. Digita o nome correto (ex: "Renda Fixa Tokeniza Mar/24") e clica "Aplicar"
-5. O card some imediatamente; todos os 42 investidores daquela oferta ficam corrigidos na base
-6. Repete para as demais ofertas — em média ~10 minutos para resolver as 55
+### 2. Criar perfil de acesso "Sucesso do Cliente" no banco
 
-A tela de `/cs/admin/ofertas` pode ser mantida como alternativa avançada (com tabela densa para processar tudo de uma vez), mas o fluxo principal passará pelas Pendências.
+Inserir um novo perfil de sistema (`is_system = true`) em `access_profiles` com permissões focadas em CS:
+
+- `cs_dashboard`: view + edit
+- `cs_clientes`: view + edit
+- `cs_pesquisas`: view + edit
+- `cs_incidencias`: view + edit
+- `cs_playbooks`: view + edit
+- `cs_ofertas_admin`: view + edit
+- `pendencias_gestor`: view + edit
+- `dashboard`: view (Meu Dia)
+- `contatos`: view
+
+Isso permite que o admin atribua o perfil "Sucesso do Cliente" a qualquer usuário pela tela de Controle de Acesso já existente.
+
+### 3. Adicionar `cs_ofertas_admin` ao screenRegistry
+
+A tela `/cs/admin/ofertas` já existe mas não está no `SCREEN_REGISTRY`. Precisa ser registrada para aparecer no sistema de permissões.
+
+### 4. Toggle `is_csm` na tela de Controle de Acesso
+
+Adicionar uma coluna **"CS"** na tabela de usuários em `UserAccessList.tsx`, com um `Switch` igual ao de "Vendedor" — permitindo ao admin marcar/desmarcar membros do time de CS.
+
+### 5. Hook `useIsCsm` no AuthContext / hook dedicado
+
+Criar `useIsCsm()` que lê `profile.is_csm` para que componentes possam verificar se o usuário é membro do time de CS.
+
+### 6. Pendências separadas por perfil
+
+Atualmente a página de Pendências (`/pendencias`) mostra tudo para o admin e para quem tem `pendencias_gestor`. O comportamento será refinado:
+
+- **Admins e gestores**: veem tudo (comportamento atual, sem alteração)
+- **Membros do CS (`is_csm = true`)**: veem **apenas** a seção "Ofertas Tokeniza sem nome", que é a pendência de CS por excelência
+
+Para implementar isso, a rota `/pendencias` continuará acessível para todos com `pendencias_gestor`, mas o conteúdo será filtrado:
+
+```text
+Se is_csm e não ADMIN:
+  → mostra apenas seção "Ofertas Tokeniza sem nome"
+  
+Se ADMIN ou gestor (não CS puro):
+  → mostra tudo (comportamento atual)
+```
+
+Isso resolve o pedido central: a colaboradora de CS abre Pendências e vê diretamente o trabalho de nomear as ofertas — sem ver as divergências de perda de deals, FAQs, ou deals sem dono, que são tarefas do gestor comercial.
+
+## Arquivos alterados
+
+### Banco de dados (migração SQL)
+- `ALTER TABLE profiles ADD COLUMN is_csm boolean DEFAULT false`
+- `INSERT INTO access_profiles` com o perfil "Sucesso do Cliente" com permissões CS
+
+### Código frontend
+- **`src/config/screenRegistry.ts`**: adicionar `cs_ofertas_admin`
+- **`src/components/settings/UserAccessList.tsx`**: coluna "CS" com Switch para `is_csm`
+- **`src/hooks/useAccessControl.ts`**: incluir `is_csm` no fetch de `useUsersWithProfiles`
+- **`src/types/accessControl.ts`**: adicionar `is_csm` ao tipo `UserWithAccess`
+- **`src/pages/admin/PendenciasPerda.tsx`**: filtrar seções exibidas baseado em `is_csm` do usuário logado
+- **`src/contexts/AuthContext.tsx`**: expor `profile.is_csm` (já disponível via `profile.*`, sem mudança necessária pois o profile é carregado completo)
+
+## Fluxo de configuração pelo admin
+
+```text
+1. Admin abre Controle de Acesso (/admin/access-control)
+2. Encontra a colaboradora de CS na lista
+3. Liga o toggle "CS" na coluna nova → is_csm = true
+4. Atribui o perfil "Sucesso do Cliente" → acesso às telas de CS garantido
+5. A colaboradora faz login e vê no menu: CS Dashboard, Clientes CS, etc.
+6. Nas Pendências, ela vê apenas "Ofertas Tokeniza sem nome"
+   → entra no card de cada oferta, digita o nome, clica Aplicar
+   → todos os clientes daquela oferta ficam corrigidos de uma vez
+```
+
+## Resultado
+
+```text
+Antes:
+- Pendências mostravam tudo para qualquer um com acesso à tela
+- Sem distinção entre pendências comerciais e pendências de CS
+- Sem forma de marcar quem é do time de CS
+
+Depois:
+- CSMs (is_csm = true) veem apenas pendências de CS nas Pendências
+- Gestores/Admins continuam vendo tudo
+- Admin pode marcar/desmarcar CSMs na tela de Controle de Acesso
+- Perfil "Sucesso do Cliente" disponível para atribuição no sistema de permissões
+- cs_csm_id em cs_customers continua sendo a referência de responsável pelo cliente
+```
