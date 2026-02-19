@@ -7,6 +7,21 @@ import { ptBR } from 'date-fns/locale';
 import { DollarSign, TrendingUp, Calendar, AlertTriangle, Clock } from 'lucide-react';
 import { contractStatusConfig, inactivityTierConfig } from '@/types/customerSuccess';
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+function isUUID(value: string) {
+  return UUID_RE.test(value);
+}
+
+function displayNomeOferta(ct: Record<string, unknown>): { nome: string; semNome: boolean } {
+  const nome = ct['oferta_nome'] as string | null;
+  const id = ct['oferta_id'] as string | null;
+
+  if (!nome) return { nome: id ? `ID: ${id.slice(0, 8)}…` : 'Investimento', semNome: true };
+  if (isUUID(nome)) return { nome: `ID: ${nome.slice(0, 8)}…`, semNome: true };
+  return { nome, semNome: false };
+}
+
 interface CSAportesTabProps {
   customerId: string;
   empresa: string;
@@ -135,17 +150,27 @@ export function CSAportesTab({ customerId, empresa }: CSAportesTabProps) {
                     {contracts.length - index}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium">
-                        {(ct as any).oferta_nome || (ct as any).plano || 'Investimento'}
-                      </span>
-                      {(ct as any).tipo && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0">{(ct as any).tipo}</Badge>
-                      )}
-                      <Badge className={contractStatusConfig[(ct as any).status as keyof typeof contractStatusConfig]?.bgClass || ''}>
-                        {contractStatusConfig[(ct as any).status as keyof typeof contractStatusConfig]?.label || (ct as any).status}
-                      </Badge>
-                    </div>
+                   <div className="flex items-center gap-2 flex-wrap">
+                       {(() => {
+                         const { nome, semNome } = displayNomeOferta(ct as Record<string, unknown>);
+                         return (
+                           <>
+                             <span className="text-sm font-medium">{nome}</span>
+                             {semNome && (
+                               <Badge variant="outline" className="text-[10px] px-1.5 py-0 text-muted-foreground border-muted-foreground/30">
+                                 Sem nome
+                               </Badge>
+                             )}
+                           </>
+                         );
+                       })()}
+                       {(ct as any).tipo && (
+                         <Badge variant="outline" className="text-[10px] px-1.5 py-0">{(ct as any).tipo}</Badge>
+                       )}
+                       <Badge className={contractStatusConfig[(ct as any).status as keyof typeof contractStatusConfig]?.bgClass || ''}>
+                         {contractStatusConfig[(ct as any).status as keyof typeof contractStatusConfig]?.label || (ct as any).status}
+                       </Badge>
+                     </div>
                     <div className="flex items-center gap-3 mt-1">
                       <span className="text-xs text-muted-foreground">
                         {ct.data_contratacao ? format(new Date(ct.data_contratacao), 'dd/MM/yyyy', { locale: ptBR }) : '—'}

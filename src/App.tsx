@@ -66,6 +66,7 @@ const CSPesquisasPage = lazy(() => import("./pages/cs/CSPesquisasPage"));
 const CSPesquisaMassaPage = lazy(() => import("./pages/cs/CSPesquisaMassaPage"));
 const CSIncidenciasPage = lazy(() => import("./pages/cs/CSIncidenciasPage"));
 const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
+const CSOfertasPage = lazy(() => import("./pages/admin/CSOfertasPage"));
 const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealthPage"));
 const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
@@ -171,6 +172,7 @@ const App = () => (
                 <Route path="/cs/pesquisas/massa" element={<ProtectedRoute><ErrorBoundary><CSPesquisaMassaPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/incidencias" element={<ProtectedRoute><ErrorBoundary><CSIncidenciasPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/cs/playbooks" element={<ProtectedRoute><ErrorBoundary><CSPlaybooksPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cs/admin/ofertas" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CSOfertasPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Wiki */}
                 <Route path="/wiki" element={<ProtectedRoute><WikiPage /></ProtectedRoute>} />

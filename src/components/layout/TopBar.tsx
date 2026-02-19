@@ -49,6 +49,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/cs/pesquisas/massa': 'Pesquisa em Massa',
   '/cs/incidencias': 'Incidências CS',
   '/cs/playbooks': 'Playbooks CS',
+  '/cs/admin/ofertas': 'Ofertas Tokeniza — Mapeamento',
   '/wiki': 'Wiki',
 };
 
