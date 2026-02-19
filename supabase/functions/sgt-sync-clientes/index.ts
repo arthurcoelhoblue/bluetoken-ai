@@ -321,7 +321,7 @@ Deno.serve(async (req) => {
                     plano: inv.oferta_nome || 'Investimento',
                     oferta_id: inv.oferta_id,
                     oferta_nome: inv.oferta_nome,
-                    tipo: inv.tipo || 'crowdfunding',
+                    tipo: (inv.tipo && inv.tipo.trim()) ? inv.tipo.trim() : 'crowdfunding',
                     valor: inv.valor || 0,
                     data_contratacao: inv.data || null,
                     status: statusMap[(inv.status || '').toUpperCase()] || 'ATIVO',
