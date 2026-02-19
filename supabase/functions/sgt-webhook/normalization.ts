@@ -7,6 +7,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { normalizePhoneE164 } from "../_shared/phone-utils.ts";
 import { isPlaceholderEmailForDedup as isPlaceholderEmail } from "../_shared/phone-utils.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { cleanContactName } from "../_shared/name-sanitizer.ts";
 import type {
   EmpresaTipo, LeadStage, SGTPayload, LeadNormalizado,
   DadosTokeniza, DadosBlue, DadosMautic, DadosChatwoot, DadosNotion,
@@ -347,12 +348,18 @@ export function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
     return isNaN(date.getTime()) ? null : date;
   };
 
+  // Limpar nome com tags de campanha
+  const rawNome = dados_lead.nome?.trim() || 'Sem nome';
+  const { name: nomeLimpo, campaigns: campanhasOrigem } = cleanContactName(rawNome);
+
   return {
     lead_id,
     empresa,
     evento,
     timestamp: new Date(timestamp),
-    nome: dados_lead.nome?.trim() || 'Sem nome',
+    nome: nomeLimpo,
+    nome_original: rawNome,
+    campanhas_origem: campanhasOrigem,
     email: dados_lead.email?.trim().toLowerCase() || '',
     telefone: dados_lead.telefone?.replace(/\D/g, '') || null,
     organizacao: dados_lead.organizacao?.trim() || null,

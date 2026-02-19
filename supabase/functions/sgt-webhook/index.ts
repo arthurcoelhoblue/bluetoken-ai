@@ -17,6 +17,7 @@ import { validatePayload, generateIdempotencyKey } from "./validation.ts";
 import { normalizeSGTEvent, sanitizeLeadContact, upsertPessoaFromContact } from "./normalization.ts";
 import { classificarLead } from "./classification.ts";
 import { decidirCadenciaParaLead, iniciarCadenciaParaLead } from "./cadence.ts";
+import { isRenewalLead } from "../_shared/name-sanitizer.ts";
 
 const log = createLogger('sgt-webhook');
 const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
@@ -390,10 +391,43 @@ serve(async (req) => {
               mensagem: `Duplicata detectada: deal ${duplicateMatch.dealId} já existe para contact ${duplicateMatch.contactId}`,
             } as Record<string, unknown>);
           } else {
-            const routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
-            log.info('Roteamento', { ...routing, empresa: payload.empresa, tipoLead, temperatura, isPriority });
+            // Detectar se é lead de renovação
+            const isRenewal = isRenewalLead(leadNormalizado.campanhas_origem, leadNormalizado.stage);
+            
+            let routing;
+            if (isRenewal) {
+              // Tentar rotear para pipeline de renovação
+              const { data: renewalPipeline } = await supabase
+                .from('pipelines')
+                .select('id, pipeline_stages!inner(id, posicao)')
+                .eq('empresa', payload.empresa)
+                .eq('tipo', 'RENOVACAO')
+                .eq('ativo', true)
+                .order('posicao', { referencedTable: 'pipeline_stages', ascending: true })
+                .limit(1)
+                .maybeSingle();
+              
+              if (renewalPipeline && renewalPipeline.pipeline_stages?.[0]) {
+                routing = {
+                  pipelineId: renewalPipeline.id,
+                  stageId: renewalPipeline.pipeline_stages[0].id,
+                };
+                log.info('Lead de renovação roteado para pipeline RENOVACAO', { routing });
+              } else {
+                routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
+                log.info('Pipeline RENOVACAO não encontrado, usando roteamento padrão', { routing });
+              }
+            } else {
+              routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
+            }
+            log.info('Roteamento', { ...routing, empresa: payload.empresa, tipoLead, temperatura, isPriority, isRenewal });
 
-            const dealTitulo = `${leadNormalizado.nome} — Inbound SGT`;
+            // Título do deal: incluir campanha se existir
+            const campanhaLabel = leadNormalizado.campanhas_origem.length > 0 
+              ? ` — ${leadNormalizado.campanhas_origem[0]}` 
+              : '';
+            const dealTitulo = `${leadNormalizado.nome}${campanhaLabel} — Inbound SGT`;
+            
             const { data: newDeal, error: dealError } = await supabase
               .from('deals')
               .insert({

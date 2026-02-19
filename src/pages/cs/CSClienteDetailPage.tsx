@@ -28,6 +28,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 import { CSContractForm } from '@/components/cs/CSContractForm';
+import { CSRenovacaoTab } from '@/components/cs/CSRenovacaoTab';
 
 // Icons for timeline items
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -332,20 +333,15 @@ export default function CSClienteDetailPage() {
               </TabsContent>
 
               {/* Renovação */}
-              <TabsContent value="renovacao" className="mt-4 space-y-4">
-                <Card>
-                  <CardHeader className="pb-2">
-                    <CardTitle className="text-sm flex items-center gap-2"><CalendarClock className="h-4 w-4" /> Renovação</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    <div className="grid grid-cols-2 gap-4 text-sm">
-                      <div><span className="text-muted-foreground">Próxima renovação</span><p className="font-medium">{customer.proxima_renovacao ? format(new Date(customer.proxima_renovacao), 'dd/MM/yyyy') : '—'}</p></div>
-                      <div><span className="text-muted-foreground">1º Ganho</span><p className="font-medium">{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yyyy') : '—'}</p></div>
-                      <div><span className="text-muted-foreground">MRR</span><p className="font-medium">R$ {customer.valor_mrr?.toLocaleString('pt-BR') ?? '0'}</p></div>
-                      <div><span className="text-muted-foreground">Risco Churn</span><p className="font-medium">{customer.risco_churn_pct ?? 0}%</p></div>
-                    </div>
-                  </CardContent>
-                </Card>
+              <TabsContent value="renovacao" className="mt-4">
+                <CSRenovacaoTab
+                  customerId={customer.id}
+                  contactId={customer.contact_id}
+                  empresa={customer.empresa}
+                  dataPrimeiroGanho={customer.data_primeiro_ganho}
+                  proximaRenovacao={customer.proxima_renovacao}
+                  riscoChurnPct={customer.risco_churn_pct}
+                />
               </TabsContent>
 
               {/* Incidências */}

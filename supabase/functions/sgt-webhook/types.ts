@@ -153,6 +153,8 @@ export interface LeadNormalizado {
   evento: SGTEventoTipo;
   timestamp: Date;
   nome: string;
+  nome_original: string;
+  campanhas_origem: string[];
   email: string;
   telefone: string | null;
   organizacao: string | null;
