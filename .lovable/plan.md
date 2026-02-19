@@ -1,103 +1,66 @@
 
-# Plano: Investimentos Tokeniza via SGT no CS
+# Plano: Backfill de Investimentos Tokeniza
 
-## Resumo
+## Contexto
 
-O SGT agora envia um array `investimentos[]` dentro de `dados_tokeniza` com o detalhamento de cada investimento (oferta, valor, data, status, tipo). Precisamos:
+Existem 240 clientes Tokeniza na base, todos com contratos antigos sem detalhamento (`oferta_id = NULL`). O SGT agora envia o array `dados_tokeniza.investimentos` com os investimentos individuais, mas as functions existentes (`sgt-import-clientes` e `sgt-sync-clientes`) ainda referenciam `lead.tokeniza_investimentos` em vez de `lead.dados_tokeniza.investimentos`.
 
-1. Receber e persistir esses investimentos individuais como registros em `cs_contracts`
-2. Ajustar o schema para permitir multiplos registros por ano (Tokeniza pode ter N investimentos no mesmo ano)
-3. Na UI, renomear a aba "Contratos" para "Investimentos" quando o cliente for Tokeniza
+## O que precisa ser feito
 
----
+### 1. Corrigir o caminho do campo nas functions existentes
 
-## Parte 1 -- Schema (Migracao SQL)
+Nas duas functions (`sgt-import-clientes` e `sgt-sync-clientes`), o campo que contem os investimentos individuais vem dentro de `dados_tokeniza`, nao diretamente no lead. Precisamos ajustar de:
+- `lead.tokeniza_investimentos`
 
-**Problema**: A constraint `UNIQUE(customer_id, ano_fiscal)` impede multiplos investimentos no mesmo ano para o mesmo cliente.
+Para:
+- `lead.dados_tokeniza?.investimentos`
 
-**Solucao**: 
-- Dropar a constraint `cs_contracts_customer_id_ano_fiscal_key`
-- Adicionar coluna `oferta_id TEXT NULL` e `oferta_nome TEXT NULL` para identificar a oferta/projeto do investimento
-- Adicionar coluna `tipo TEXT NULL` (ex: "crowdfunding", "automatic-sales")
-- Criar nova constraint `UNIQUE(customer_id, ano_fiscal, oferta_id)` para evitar duplicatas por oferta+ano
-- A Blue continua funcionando normalmente (oferta_id sera NULL para contratos Blue, mantendo unicidade por ano)
+Isso corrige tanto o fluxo normal quanto o backfill.
 
-```text
-ALTER TABLE cs_contracts DROP CONSTRAINT cs_contracts_customer_id_ano_fiscal_key;
-ALTER TABLE cs_contracts ADD COLUMN oferta_id TEXT;
-ALTER TABLE cs_contracts ADD COLUMN oferta_nome TEXT;
-ALTER TABLE cs_contracts ADD COLUMN tipo TEXT;
-ALTER TABLE cs_contracts ADD CONSTRAINT cs_contracts_customer_oferta_key 
-  UNIQUE (customer_id, ano_fiscal, oferta_id);
-```
+### 2. Criar edge function `sgt-backfill-investimentos`
 
----
+Uma function dedicada e otimizada que:
+- Busca apenas os `cs_customers` da Tokeniza que ainda nao tem contratos com `oferta_id` preenchido
+- Para cada um, busca o contato associado (email/telefone)
+- Chama a API do SGT para obter os dados completos incluindo `dados_tokeniza.investimentos`
+- Faz upsert dos investimentos individuais em `cs_contracts`
+- Processa em lotes de 50 (menor que o import geral, pois cada chamada SGT e individual)
+- Usa offset persistido em `system_settings` para retomar de onde parou
+- Pode ser chamada multiplas vezes ate processar todos os 240 clientes
 
-## Parte 2 -- Backend (Edge Functions)
+### 3. Limpar contratos antigos sem detalhamento
 
-### 2a. Atualizar tipo `DadosTokeniza` no sgt-webhook
+Antes de inserir os investimentos detalhados, deletar os contratos Tokeniza antigos que tem `oferta_id IS NULL` para o customer em questao, evitando dados duplicados/desatualizados.
 
-Adicionar o campo `investimentos` na interface:
+## Detalhes tecnicos
 
 ```text
-interface InvestimentoTokeniza {
-  oferta_nome: string;
-  oferta_id: string;
-  valor: number;
-  data: string;
-  status: string;
-  tipo: string;
-}
+Edge Function: sgt-backfill-investimentos
 
-interface DadosTokeniza {
-  // campos existentes...
-  investimentos?: InvestimentoTokeniza[];
-}
+Fluxo:
+1. Buscar cs_customers WHERE empresa='TOKENIZA' AND is_active=true
+   LEFT JOIN cs_contracts (oferta_id IS NOT NULL) 
+   -> filtrar os que tem 0 contratos detalhados
+2. Paginar com offset (persistido em system_settings)
+3. Para cada customer:
+   a. Buscar contact (email/telefone)
+   b. Chamar SGT buscar-lead-api
+   c. Extrair dados_tokeniza.investimentos[]
+   d. Deletar contratos antigos sem oferta_id para esse customer
+   e. Upsert cada investimento em cs_contracts
+4. Salvar offset para proxima execucao
+5. Retornar progresso (processados, total, erros)
 ```
 
-### 2b. Atualizar normalizacao no sgt-webhook
+Correções nas functions existentes:
+```text
+// DE:
+lead.tokeniza_investimentos
 
-Passar o array `investimentos` atraves da normalizacao sem perder os dados.
+// PARA:
+lead.dados_tokeniza?.investimentos
+```
 
-### 2c. Atualizar sgt-import-clientes e sgt-sync-clientes
+## Execucao
 
-Quando o SGT retornar `investimentos[]` para um cliente Tokeniza:
-- Para cada investimento, fazer upsert em `cs_contracts` com:
-  - `customer_id` = cs_customer.id
-  - `empresa` = 'TOKENIZA'
-  - `ano_fiscal` = extraido da `data` do investimento
-  - `plano` = oferta_nome
-  - `oferta_id` = oferta_id do investimento
-  - `oferta_nome` = oferta_nome
-  - `tipo` = tipo (crowdfunding/automatic-sales)
-  - `valor` = valor do investimento
-  - `data_contratacao` = data do investimento
-  - `status` = mapeamento FINISHED/PAID -> 'ATIVO'
-  - `notas` = 'Importado do SGT'
-
----
-
-## Parte 3 -- Frontend (UI)
-
-### 3a. Aba dinamica: "Contratos" vs "Investimentos"
-
-No `CSClienteDetailPage.tsx`:
-- Se `customer.empresa === 'TOKENIZA'`, exibir "Investimentos" no lugar de "Contratos"
-- O card de cada item mostra a **oferta_nome** como titulo principal (em vez de "plano")
-- A data exibida e a `data_contratacao` (data do investimento)
-- Ocultar o botao "Novo Contrato" para Tokeniza (investimentos sao importados automaticamente)
-
-### 3b. Atualizar tipos TypeScript
-
-Adicionar `oferta_id`, `oferta_nome` e `tipo` na interface `CSContract`.
-
----
-
-## Sequencia de implementacao
-
-1. Migracao SQL (schema)
-2. Atualizar tipos no sgt-webhook (`DadosTokeniza` + `InvestimentoTokeniza`)
-3. Atualizar normalizacao para propagar `investimentos[]`
-4. Atualizar `sgt-import-clientes` e `sgt-sync-clientes` para criar contratos por investimento
-5. Atualizar tipos frontend (`CSContract`)
-6. Atualizar UI da aba Contratos/Investimentos
+Apos o deploy, basta chamar a function algumas vezes (5-6 chamadas de 50 cada) para processar todos os 240 clientes Tokeniza.
