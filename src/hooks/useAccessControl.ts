@@ -90,7 +90,7 @@ export function useUsersWithProfiles() {
     queryFn: async () => {
       const { data: profiles, error: pErr } = await supabase
         .from('profiles')
-        .select('id, email, nome, avatar_url, is_active, is_vendedor')
+        .select('id, email, nome, avatar_url, is_active, is_vendedor, is_csm')
         .order('nome');
       if (pErr) throw pErr;
 
@@ -115,7 +115,7 @@ export function useUsersWithProfiles() {
       const profileMap = new Map((accessProfiles ?? []).map((p) => [(p as unknown as { id: string; nome: string }).id, (p as unknown as { id: string; nome: string }).nome]));
 
       return (profiles ?? []).map((u) => {
-        const user = u as unknown as { id: string; email: string; nome: string; avatar_url: string | null; is_active: boolean; is_vendedor: boolean };
+        const user = u as unknown as { id: string; email: string; nome: string; avatar_url: string | null; is_active: boolean; is_vendedor: boolean; is_csm: boolean };
         const userAssignments = assignMap.get(user.id) || [];
         const firstAssignment = userAssignments[0] || null;
         return {

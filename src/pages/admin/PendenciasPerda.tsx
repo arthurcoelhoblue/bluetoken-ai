@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { AlertTriangle, Check, Bot, User, Shield, HelpCircle, UserX, Tag } from 'lucide-react';
+import { AlertTriangle, Check, Bot, User, Shield, HelpCircle, UserX, Tag, HeartPulse } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -18,6 +18,7 @@ import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/use
 import { useCSOfertasSemNome, useUpdateOfertaNome, type CSOfertaSemNome } from '@/hooks/useCSOfertaMapping';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useAuth } from '@/contexts/AuthContext';
 import type { KnowledgeFaq } from '@/types/knowledge';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 
@@ -298,21 +299,35 @@ function OfertaSemNomeCard({ oferta }: { oferta: CSOfertaSemNome }) {
 
 // --- Main Page ---
 export default function PendenciasPerda() {
+  const { profile, hasRole } = useAuth();
   const { data: lossPendencies = [], isLoading: loadingLoss } = useLossPendencies();
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
   const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
   const { data: ofertasSemNome = [], isLoading: loadingOfertas } = useCSOfertasSemNome();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
+  // CSM puro: is_csm=true e não é ADMIN — vê apenas pendências de CS
+  const isAdmin = hasRole('ADMIN');
+  const isCsmPuro = !!(profile as any)?.is_csm && !isAdmin;
+
   const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas;
-  const totalPendencies = lossPendencies.length + faqPendencies.length + orphanDeals.length + ofertasSemNome.length;
+
+  // Pendências visíveis conforme perfil
+  const visibleLoss = isCsmPuro ? [] : lossPendencies;
+  const visibleFaq = isCsmPuro ? [] : faqPendencies;
+  const visibleOrphan = isCsmPuro ? [] : orphanDeals;
+  const visibleOfertas = ofertasSemNome; // sempre visível para quem acessa a tela
+
+  const totalPendencies = visibleLoss.length + visibleFaq.length + visibleOrphan.length + visibleOfertas.length;
 
   return (
     <AppLayout>
       <PageShell
-        icon={AlertTriangle}
-        title="Pendências do Gestor"
-        description="Resolva divergências e tome decisões sobre situações pendentes."
+        icon={isCsmPuro ? HeartPulse : AlertTriangle}
+        title={isCsmPuro ? 'Pendências CS' : 'Pendências do Gestor'}
+        description={isCsmPuro
+          ? 'Ofertas Tokeniza aguardando identificação do produto de investimento.'
+          : 'Resolva divergências e tome decisões sobre situações pendentes.'}
       />
       <div className="px-6 pb-8 space-y-4">
         {isLoading ? (
@@ -326,32 +341,37 @@ export default function PendenciasPerda() {
           </Card>
         ) : (
           <>
-            {orphanDeals.length > 0 && (
+            {visibleOrphan.length > 0 && (
               <div className="space-y-3">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <UserX className="h-5 w-5 text-orange-500" />
-                  Deals sem Vendedor ({orphanDeals.length})
+                  Deals sem Vendedor ({visibleOrphan.length})
                 </h2>
-                {orphanDeals.map(d => <OrphanDealCard key={d.id} deal={d} onDealClick={(id) => setSelectedDealId(id)} />)}
+                {visibleOrphan.map(d => <OrphanDealCard key={d.id} deal={d} onDealClick={(id) => setSelectedDealId(id)} />)}
               </div>
             )}
-            {faqPendencies.length > 0 && (
+            {visibleFaq.length > 0 && (
               <div className="space-y-3">
-                {faqPendencies.map(faq => <FaqPendencyCard key={faq.id} faq={faq} />)}
+                {visibleFaq.map(faq => <FaqPendencyCard key={faq.id} faq={faq} />)}
               </div>
             )}
-            {lossPendencies.length > 0 && (
+            {visibleLoss.length > 0 && (
               <div className="space-y-3">
-                {lossPendencies.map(p => <PendencyCard key={p.id} pendency={p} />)}
+                {visibleLoss.map(p => <PendencyCard key={p.id} pendency={p} />)}
               </div>
             )}
-            {ofertasSemNome.length > 0 && (
+            {visibleOfertas.length > 0 && (
               <div className="space-y-3">
                 <h2 className="text-lg font-semibold flex items-center gap-2">
                   <Tag className="h-5 w-5 text-primary" />
-                  Ofertas Tokeniza sem nome ({ofertasSemNome.length})
+                  Ofertas Tokeniza sem nome ({visibleOfertas.length})
                 </h2>
-                {ofertasSemNome.map(o => <OfertaSemNomeCard key={o.oferta_id} oferta={o} />)}
+                {isCsmPuro && (
+                  <p className="text-sm text-muted-foreground -mt-1">
+                    Digite o nome do produto de investimento e clique em Aplicar. Todos os clientes dessa oferta serão corrigidos automaticamente.
+                  </p>
+                )}
+                {visibleOfertas.map(o => <OfertaSemNomeCard key={o.oferta_id} oferta={o} />)}
               </div>
             )}
           </>
