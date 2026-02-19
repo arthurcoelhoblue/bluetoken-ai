@@ -1,157 +1,151 @@
 
 
-# Adaptacao do CS para Tokeniza - Investimentos
+# Auto-criacao de Incidencias CS a partir de conversas Blue Chat
 
-## Contexto
+## Objetivo
 
-O modulo de CS foi construido com logica de Blue (contratos anuais, renovacao, MRR mensal). Na Tokeniza o modelo e diferente: clientes fazem investimentos em ofertas (crowdfunding), e o que importa e **LTV total**, **ticket medio**, **constancia de aportes** e **tempo desde o ultimo investimento** como indicador de churn.
+Sempre que uma conversa no Blue Chat envolver um cliente CS (Tokeniza ou Blue), registrar automaticamente uma incidencia no modulo CS contendo o resumo da conversa gerado pela IA. Isso alimenta o historico do cliente, contribui para o calculo do CSAT e impacta o health score.
 
-## O que muda
+## Como funciona hoje
 
-### 1. Metricas da Sidebar e Dashboard (condicionais por empresa)
+1. O `bluechat-inbound` recebe mensagens do Blue Chat
+2. A Amelia (SDR IA) interpreta e responde
+3. Quando a conversa encerra (acao RESOLVE), gera um `resolution.summary` e `resolution.reason`
+4. O ticket e resolvido no Blue Chat
+5. **Nenhum registro e feito no CS** - essa informacao se perde
 
-Quando `empresa === 'TOKENIZA'`:
-- **"MRR"** vira **"Total Investido"** (soma de todos os `cs_contracts.valor`)
-- **"Renovacao"** vira **"Ultimo Investimento"** (data do investimento mais recente)
-- Adicionar **"Ticket Medio"** (total investido / numero de investimentos)
-- Adicionar **"Qtd Investimentos"** (total de registros em `cs_contracts`)
-- Remover o KPI "Renovacoes 30d" e substituir por **"Inativos >90d"** (clientes cujo ultimo investimento foi ha mais de 90 dias)
+## Solucao
 
-### 2. Colunas da tabela de listagem (CSClientesPage)
+### Etapa 1: Detectar cliente CS no `bluechat-inbound`
 
-Quando Tokeniza esta selecionada:
-- Coluna "MRR" vira "Total Investido"
-- Coluna "Renovacao" vira "Ultimo Investimento"
-- Adicionar coluna "Ticket Medio"
+Apos resolver o lead/contact, verificar se existe um `cs_customer` vinculado a esse contato. A logica:
 
-### 3. Filtros da listagem
+```text
+1. Buscar contact CRM via legacy_lead_id (ja existe no fluxo atual)
+2. Se contact encontrado, buscar cs_customer por contact_id + empresa
+3. Se cs_customer existe -> marcar como cliente CS
+```
 
-Substituir os filtros de renovacao quando empresa e TOKENIZA:
-- **"Investido de" / "Ate"**: filtra pelo campo `data_contratacao` dos contratos (periodo em que o investimento foi feito)
-- **"Oferta"**: dropdown com as ofertas disponiveis (distinct `oferta_nome` da tabela `cs_contracts` para TOKENIZA)
-- **"Inativo ha"**: selecionar tiers de inatividade (>90 dias, >180 dias, >365 dias) baseado na data do ultimo investimento
+### Etapa 2: Criar incidencia automatica ao encerrar conversa
 
-### 4. Tiers de inatividade e Churn
+Quando a acao for RESOLVE e o lead for um cliente CS:
 
-Adicionar campo calculado ou coluna `dias_sem_investir` baseado na data do ultimo `cs_contracts.data_contratacao`:
-- **90+ dias**: Alerta amarelo - "Sem investir ha X dias"
-- **180+ dias**: Alerta laranja
-- **365+ dias**: Considerar como **churn/inativo**, atualizar `is_active = false` automaticamente
+```text
+1. Coletar todas as mensagens da conversa (INBOUND + OUTBOUND) do lead
+2. Gerar resumo via IA (callAI) com contexto de CS
+3. Inserir em cs_incidents com:
+   - customer_id: id do cs_customer
+   - empresa: empresa do contexto
+   - tipo: 'SOLICITACAO' (ou determinar via IA: RECLAMACAO, INSATISFACAO, etc)
+   - gravidade: determinada pela IA com base no sentimento
+   - titulo: resumo curto gerado pela IA
+   - descricao: resumo completo da conversa
+   - origem: 'BLUECHAT'
+   - status: 'RESOLVIDA' (ja que o ticket foi encerrado)
+   - resolved_at: timestamp atual
+   - detectado_por_ia: true
+```
 
-### 5. Aba "Renovacao" vira "Aportes" para Tokeniza
+### Etapa 3: Trigger CSAT automatico
 
-No `CSClienteDetailPage`, a tab "Renovacao" para TOKENIZA deve:
-- Renomear para "Aportes"
-- Remover logica de elegibilidade de 9 meses
-- Mostrar: timeline de todos investimentos, total investido, ticket medio, dias desde ultimo aporte
-- Alertas de inatividade (90d, 180d, 365d)
+O sistema ja possui o trigger `fn_cs_auto_csat_on_resolve` que dispara automaticamente uma pesquisa CSAT quando uma incidencia muda para status RESOLVIDA. Ao criar a incidencia com status RESOLVIDA, o CSAT sera enviado automaticamente.
 
-### 6. Dashboard KPIs condicionais
+### Etapa 4: Impacto no Health Score
 
-No `CSDashboardPage` e `useCSMetrics`:
-- Quando so TOKENIZA selecionada: trocar "Renovacoes 30d" por "Inativos >90d"
-- "Churn Rate" baseado em clientes com >365 dias sem investir
-- Card "Projecao de Receita" adaptar labels (nao e MRR, e volume investido)
+As incidencias ja alimentam o health score via:
+- `cs-health-calculator`: conta incidencias abertas na dimensao de engajamento
+- `cs-ai-actions`: analisa sentimento das incidencias para detectar risco
+- O CSAT coletado atualiza a dimensao CSAT do health score
 
-### 7. Resolver `oferta_nome` com UUIDs
-
-Dos 1456 contratos Tokeniza, 677 tem `oferta_nome` como UUID. O problema e que o SGT retorna UUID no campo `oferta_nome` para ofertas antigas. Solucao:
-- Criar uma tabela de mapeamento ou atualizar os registros existentes com nomes corretos quando disponiveis
-- No filtro de ofertas, mostrar apenas ofertas com nome legivel (excluir UUIDs e "TEMP")
+Nao e necessario alterar o calculador de health - ele ja consome incidencias.
 
 ## Detalhes tecnicos
 
-### Alteracoes de banco de dados
+### Alteracao principal: `supabase/functions/bluechat-inbound/index.ts`
 
-Nenhuma migration necessaria. Todos os dados ja existem em `cs_contracts` (valor, data_contratacao, oferta_nome, oferta_id). Os calculos de LTV, ticket medio e dias sem investir serao feitos em queries ou no frontend.
-
-### Arquivos a alterar
-
-1. **`src/pages/cs/CSClientesPage.tsx`**
-   - Detectar empresa ativa via `useCompany()`
-   - Condicionar colunas da tabela (MRR vs Total Investido, Renovacao vs Ultimo Investimento)
-   - Condicionar filtros (renovacao vs periodo de investimento + oferta + inatividade)
-   - Buscar lista de ofertas distintas para dropdown
-
-2. **`src/hooks/useCSCustomers.ts`**
-   - Adicionar filtros: `investimento_de`, `investimento_ate`, `oferta_nome`, `dias_inativo_min`
-   - Para filtro de oferta e periodo de investimento, fazer sub-query em `cs_contracts`
-   - Para inatividade, calcular max(`data_contratacao`) e filtrar
-
-3. **`src/types/customerSuccess.ts`**
-   - Adicionar campos ao `CSCustomerFilters`: `investimento_de`, `investimento_ate`, `oferta_nome`, `dias_inativo_min`
-   - Adicionar ao `CSMetrics`: `inativos_90d`, `total_investido`, `ticket_medio`
-
-4. **`src/hooks/useCSMetrics.ts`**
-   - Quando empresa inclui TOKENIZA, calcular metricas especificas (inativos, LTV, ticket medio)
-   - Buscar dados de `cs_contracts` para agregar totais
-
-5. **`src/pages/cs/CSClienteDetailPage.tsx`**
-   - Sidebar: labels condicionais (MRR vs Total Investido, Renovacao vs Ultimo Aporte)
-   - Tab "Renovacao" renomeada para "Aportes" quando TOKENIZA
-   - Metricas adicionais: ticket medio, qtd investimentos, dias desde ultimo aporte
-
-6. **`src/components/cs/CSRenovacaoTab.tsx`**
-   - Quando empresa TOKENIZA: layout diferente focado em aportes
-   - Timeline de investimentos (ja existe via contratos)
-   - Cards: total investido, ticket medio, ultimo aporte, dias sem investir
-   - Alertas por tier de inatividade (90d, 180d, 365d)
-
-7. **`src/pages/cs/CSDashboardPage.tsx`**
-   - KPI "Renovacoes 30d" condicional: vira "Inativos >90d" para Tokeniza
-   - Label "MRR" condicional no card de churn risk
-
-8. **`src/components/cs/CSRevenueCard.tsx`**
-   - Labels condicionais: "MRR" vira "Volume Investido" para Tokeniza
-   - "Projecao" vira "Volume em Risco"
-
-### Hook auxiliar novo: `useCSTokenizaMetrics`
-
-Para calcular metricas especificas de Tokeniza por cliente:
+Adicionar um novo modulo `cs-incident-bridge.ts` no diretorio `bluechat-inbound/`:
 
 ```text
-Query: SELECT customer_id, 
-  SUM(valor) as total_investido,
-  COUNT(*) as qtd_investimentos,
-  AVG(valor) as ticket_medio,
-  MAX(data_contratacao) as ultimo_investimento
-FROM cs_contracts
-WHERE empresa = 'TOKENIZA'
-GROUP BY customer_id
+Funcao: maybeCreateCSIncident(supabase, leadContact, empresa, messages, resolution)
+  1. Buscar contact CRM: contacts WHERE legacy_lead_id = lead_id AND empresa
+  2. Buscar cs_customer: cs_customers WHERE contact_id AND empresa
+  3. Se nao encontrar cs_customer -> retornar (nao e cliente CS)
+  4. Buscar ultimas mensagens da conversa (limit 50)
+  5. Chamar callAI para:
+     - Classificar tipo (RECLAMACAO, SOLICITACAO, INSATISFACAO, OUTRO)
+     - Determinar gravidade (BAIXA, MEDIA, ALTA, CRITICA)
+     - Gerar titulo curto (max 80 chars)
+     - Gerar descricao com resumo completo
+  6. Inserir cs_incidents
+  7. Logar sucesso
 ```
 
-Este hook sera usado tanto na listagem quanto no detalhe.
-
-### Logica de filtro por oferta
+### Prompt da IA para classificacao
 
 ```text
-1. Buscar ofertas distintas: SELECT DISTINCT oferta_nome FROM cs_contracts 
-   WHERE empresa = 'TOKENIZA' AND oferta_nome IS NOT NULL 
-   AND oferta_nome NOT LIKE '%-%-%-%' (excluir UUIDs)
-   AND oferta_nome != 'TEMP'
-2. Popular dropdown de filtro
-3. Ao filtrar, buscar customer_ids com contratos dessa oferta
+Voce e uma analista de Customer Success. Analise a conversa abaixo entre um cliente 
+e a equipe comercial. Classifique:
+1. tipo: RECLAMACAO | SOLICITACAO | INSATISFACAO | OUTRO
+2. gravidade: BAIXA | MEDIA | ALTA | CRITICA
+3. titulo: resumo em 1 frase (max 80 chars)
+4. descricao: resumo completo do que foi tratado, decisoes tomadas e proximo passos
+
+Responda em JSON: { tipo, gravidade, titulo, descricao }
 ```
 
-### Logica de filtro por inatividade
+### Integracao no fluxo principal
+
+No `index.ts`, apos a acao RESOLVE (linha ~706), chamar:
 
 ```text
-1. Calcular ultimo investimento por customer:
-   SELECT customer_id, MAX(data_contratacao) as ultimo
-   FROM cs_contracts WHERE empresa = 'TOKENIZA'
-   GROUP BY customer_id
-   HAVING MAX(data_contratacao) < NOW() - INTERVAL 'X days'
-2. Retornar lista de customer_ids para filtrar
+if (response.action === 'RESOLVE') {
+  // ... codigo existente de ticket_resolved ...
+  
+  // CS: criar incidencia se for cliente CS
+  await maybeCreateCSIncident(supabase, leadContact, empresa, resolution);
+}
+```
+
+### Tambem para conversas nao-RESOLVE
+
+Alem do RESOLVE, criar incidencia tambem quando:
+- Acao e ESCALATE (transferencia para humano = potencial problema)
+- Nesse caso, status sera 'ABERTA' (nao resolvida)
+
+### Arquivo novo: `supabase/functions/bluechat-inbound/cs-incident-bridge.ts`
+
+Contera:
+- `maybeCreateCSIncident()`: funcao principal
+- Logica de busca de cs_customer
+- Chamada a IA para classificacao
+- Insercao em cs_incidents
+
+### Alteracao: `supabase/functions/bluechat-inbound/index.ts`
+
+- Importar `maybeCreateCSIncident` do novo modulo
+- Chamar apos RESOLVE (criar incidencia resolvida)
+- Chamar apos ESCALATE (criar incidencia aberta)
+
+## Fluxo completo
+
+```text
+Blue Chat -> bluechat-inbound
+  -> Identifica lead
+  -> Busca contact CRM
+  -> Verifica se e cs_customer
+  -> SDR IA processa mensagem
+  -> Se RESOLVE ou ESCALATE:
+     -> Coleta mensagens da conversa
+     -> IA classifica (tipo, gravidade, titulo, descricao)
+     -> Insere cs_incidents
+     -> Se RESOLVIDA: trigger CSAT automatico
+     -> Health score recalculado no proximo ciclo
 ```
 
 ## Ordem de execucao
 
-1. Atualizar types (`CSCustomerFilters`, `CSMetrics`)
-2. Criar hook `useCSTokenizaMetrics` e query de ofertas
-3. Atualizar `useCSCustomers` com novos filtros
-4. Atualizar `useCSMetrics` com metricas condicionais
-5. Atualizar `CSClientesPage` (colunas + filtros condicionais)
-6. Atualizar `CSClienteDetailPage` (sidebar + tab rename)
-7. Atualizar `CSRenovacaoTab` para modo Aportes
-8. Atualizar dashboard e revenue card com labels condicionais
+1. Criar `supabase/functions/bluechat-inbound/cs-incident-bridge.ts`
+2. Alterar `supabase/functions/bluechat-inbound/index.ts` para integrar
+3. Deploy da edge function
+4. Testar com uma conversa real no Blue Chat
 
