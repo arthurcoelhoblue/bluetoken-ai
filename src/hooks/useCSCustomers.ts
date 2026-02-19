@@ -12,8 +12,14 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
   return useQuery({
     queryKey: ['cs-customers', empresa || activeCompanies, filters, page],
     queryFn: async () => {
-      // If we need contract-based filters, use RPC or post-filter via a separate query
-      const needsContractFilter = !!(filters.ano_fiscal || filters.contrato_status);
+      // Contract-based filters (both Blue and Tokeniza)
+      const needsContractFilter = !!(
+        filters.ano_fiscal || filters.contrato_status ||
+        filters.investimento_de || filters.investimento_ate || filters.oferta_nome
+      );
+
+      // Inactivity filter requires separate contract aggregation
+      const needsInactivityFilter = !!filters.dias_inativo_min;
 
       let contractCustomerIds: string[] | null = null;
 
@@ -21,10 +27,53 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
         let cq = supabase.from('cs_contracts').select('customer_id');
         if (filters.ano_fiscal) cq = cq.eq('ano_fiscal', filters.ano_fiscal);
         if (filters.contrato_status) cq = cq.eq('status', filters.contrato_status);
+        if (filters.investimento_de) cq = cq.gte('data_contratacao', filters.investimento_de);
+        if (filters.investimento_ate) cq = cq.lte('data_contratacao', filters.investimento_ate);
+        if (filters.oferta_nome) cq = cq.eq('oferta_nome', filters.oferta_nome);
         const { data: cIds } = await cq;
         contractCustomerIds = [...new Set((cIds ?? []).map(r => (r as any).customer_id as string))];
         if (contractCustomerIds.length === 0) {
           return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+        }
+      }
+
+      // Inactivity filter: find customers whose last investment is older than X days
+      if (needsInactivityFilter) {
+        const cutoffDate = new Date();
+        cutoffDate.setDate(cutoffDate.getDate() - filters.dias_inativo_min!);
+        const cutoff = cutoffDate.toISOString().split('T')[0];
+
+        // Get all Tokeniza contracts, group by customer to find max date
+        const { data: allContracts } = await supabase
+          .from('cs_contracts')
+          .select('customer_id, data_contratacao')
+          .eq('empresa', 'TOKENIZA')
+          .not('data_contratacao', 'is', null);
+
+        const lastInvestMap = new Map<string, string>();
+        for (const c of allContracts ?? []) {
+          const cid = (c as any).customer_id as string;
+          const dc = (c as any).data_contratacao as string;
+          if (!lastInvestMap.has(cid) || dc > lastInvestMap.get(cid)!) {
+            lastInvestMap.set(cid, dc);
+          }
+        }
+
+        const inactiveIds = Array.from(lastInvestMap.entries())
+          .filter(([, lastDate]) => lastDate <= cutoff)
+          .map(([cid]) => cid);
+
+        if (inactiveIds.length === 0) {
+          return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+        }
+
+        if (contractCustomerIds) {
+          contractCustomerIds = contractCustomerIds.filter(id => inactiveIds.includes(id));
+          if (contractCustomerIds.length === 0) {
+            return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+          }
+        } else {
+          contractCustomerIds = inactiveIds;
         }
       }
 

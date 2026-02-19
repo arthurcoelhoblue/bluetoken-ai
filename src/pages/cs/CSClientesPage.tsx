@@ -3,6 +3,8 @@ import { AppLayout } from '@/components/layout/AppLayout';
 import { useNavigate } from 'react-router-dom';
 import { PageShell } from '@/components/layout/PageShell';
 import { useCSCustomers } from '@/hooks/useCSCustomers';
+import { useCSTokenizaMetrics, useCSTokenizaOfertas } from '@/hooks/useCSTokenizaMetrics';
+import { useCompany } from '@/contexts/CompanyContext';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
@@ -13,7 +15,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { CalendarIcon, ChevronLeft, ChevronRight, Search, Users, X } from 'lucide-react';
-import { healthStatusConfig, npsConfig, type CSHealthStatus, type CSCustomerFilters, type CSContractStatus } from '@/types/customerSuccess';
+import { healthStatusConfig, npsConfig, inactivityTierConfig, type CSHealthStatus, type CSCustomerFilters, type CSContractStatus } from '@/types/customerSuccess';
 import { CSCustomerCreateDialog } from '@/components/cs/CSCustomerCreateDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -24,15 +26,22 @@ const fiscalYears = Array.from({ length: 10 }, (_, i) => currentYear - 5 + i);
 
 export default function CSClientesPage() {
   const navigate = useNavigate();
+  const { activeCompanies } = useCompany();
+  const isTokeniza = activeCompanies.length === 1 && activeCompanies[0] === 'TOKENIZA';
   const [page, setPage] = useState(0);
   const [filters, setFilters] = useState<CSCustomerFilters>({ is_active: true });
   const [search, setSearch] = useState('');
-  const [renovacaoDe, setRenovacaoDe] = useState<Date | undefined>();
-  const [renovacaoAte, setRenovacaoAte] = useState<Date | undefined>();
+  const [dateDe, setDateDe] = useState<Date | undefined>();
+  const [dateAte, setDateAte] = useState<Date | undefined>();
 
   const { data, isLoading } = useCSCustomers(filters, page);
   const customers = data?.data ?? [];
   const totalPages = data ? Math.ceil(data.count / data.pageSize) : 0;
+
+  // Tokeniza metrics for the visible customers
+  const customerIds = customers.map(c => c.id);
+  const { data: tokenizaMetrics } = useCSTokenizaMetrics(isTokeniza ? customerIds : undefined);
+  const { data: ofertas } = useCSTokenizaOfertas();
 
   const filtered = search
     ? customers.filter(c =>
@@ -41,7 +50,10 @@ export default function CSClientesPage() {
       )
     : customers;
 
-  const hasAdvancedFilters = !!(filters.ano_fiscal || filters.contrato_status || filters.renovacao_de || filters.renovacao_ate);
+  const hasAdvancedFilters = !!(
+    filters.ano_fiscal || filters.contrato_status || filters.renovacao_de || filters.renovacao_ate ||
+    filters.investimento_de || filters.investimento_ate || filters.oferta_nome || filters.dias_inativo_min
+  );
 
   const clearAdvancedFilters = () => {
     setFilters(f => ({
@@ -50,21 +62,35 @@ export default function CSClientesPage() {
       contrato_status: undefined,
       renovacao_de: undefined,
       renovacao_ate: undefined,
+      investimento_de: undefined,
+      investimento_ate: undefined,
+      oferta_nome: undefined,
+      dias_inativo_min: undefined,
     }));
-    setRenovacaoDe(undefined);
-    setRenovacaoAte(undefined);
+    setDateDe(undefined);
+    setDateAte(undefined);
     setPage(0);
   };
 
-  const handleRenovacaoDe = (date: Date | undefined) => {
-    setRenovacaoDe(date);
-    setFilters(f => ({ ...f, renovacao_de: date ? format(date, 'yyyy-MM-dd') : undefined }));
+  const handleDateDe = (date: Date | undefined) => {
+    setDateDe(date);
+    const formatted = date ? format(date, 'yyyy-MM-dd') : undefined;
+    if (isTokeniza) {
+      setFilters(f => ({ ...f, investimento_de: formatted }));
+    } else {
+      setFilters(f => ({ ...f, renovacao_de: formatted }));
+    }
     setPage(0);
   };
 
-  const handleRenovacaoAte = (date: Date | undefined) => {
-    setRenovacaoAte(date);
-    setFilters(f => ({ ...f, renovacao_ate: date ? format(date, 'yyyy-MM-dd') : undefined }));
+  const handleDateAte = (date: Date | undefined) => {
+    setDateAte(date);
+    const formatted = date ? format(date, 'yyyy-MM-dd') : undefined;
+    if (isTokeniza) {
+      setFilters(f => ({ ...f, investimento_ate: formatted }));
+    } else {
+      setFilters(f => ({ ...f, renovacao_ate: formatted }));
+    }
     setPage(0);
   };
 
@@ -92,46 +118,80 @@ export default function CSClientesPage() {
               <SelectItem value="CRITICO">Crítico</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={filters.ano_fiscal ? String(filters.ano_fiscal) : 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, ano_fiscal: v === 'ALL' ? undefined : Number(v) })); setPage(0); }}>
-            <SelectTrigger className="w-[140px]"><SelectValue placeholder="Ano Fiscal" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Ano Fiscal</SelectItem>
-              {fiscalYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
-            </SelectContent>
-          </Select>
-          <Select value={filters.contrato_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, contrato_status: v === 'ALL' ? undefined : v as CSContractStatus })); setPage(0); }}>
-            <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status Contrato" /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="ALL">Status Contrato</SelectItem>
-              <SelectItem value="ATIVO">Ativo</SelectItem>
-              <SelectItem value="RENOVADO">Renovado</SelectItem>
-              <SelectItem value="PENDENTE">Pendente</SelectItem>
-              <SelectItem value="CANCELADO">Cancelado</SelectItem>
-              <SelectItem value="VENCIDO">Vencido</SelectItem>
-            </SelectContent>
-          </Select>
 
-          {/* Date range: Renovação de / até */}
+          {/* Tokeniza-specific filters */}
+          {isTokeniza ? (
+            <>
+              {/* Oferta filter */}
+              <Select
+                value={filters.oferta_nome || 'ALL'}
+                onValueChange={(v) => { setFilters(f => ({ ...f, oferta_nome: v === 'ALL' ? undefined : v })); setPage(0); }}
+              >
+                <SelectTrigger className="w-[200px]"><SelectValue placeholder="Oferta" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Todas as Ofertas</SelectItem>
+                  {ofertas?.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
+                </SelectContent>
+              </Select>
+
+              {/* Inactivity tier filter */}
+              <Select
+                value={filters.dias_inativo_min ? String(filters.dias_inativo_min) : 'ALL'}
+                onValueChange={(v) => { setFilters(f => ({ ...f, dias_inativo_min: v === 'ALL' ? undefined : Number(v) })); setPage(0); }}
+              >
+                <SelectTrigger className="w-[160px]"><SelectValue placeholder="Inatividade" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Atividade</SelectItem>
+                  {Object.entries(inactivityTierConfig).map(([days, cfg]) => (
+                    <SelectItem key={days} value={days}>{cfg.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
+          ) : (
+            <>
+              <Select value={filters.ano_fiscal ? String(filters.ano_fiscal) : 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, ano_fiscal: v === 'ALL' ? undefined : Number(v) })); setPage(0); }}>
+                <SelectTrigger className="w-[140px]"><SelectValue placeholder="Ano Fiscal" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Ano Fiscal</SelectItem>
+                  {fiscalYears.map(y => <SelectItem key={y} value={String(y)}>{y}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Select value={filters.contrato_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, contrato_status: v === 'ALL' ? undefined : v as CSContractStatus })); setPage(0); }}>
+                <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status Contrato" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">Status Contrato</SelectItem>
+                  <SelectItem value="ATIVO">Ativo</SelectItem>
+                  <SelectItem value="RENOVADO">Renovado</SelectItem>
+                  <SelectItem value="PENDENTE">Pendente</SelectItem>
+                  <SelectItem value="CANCELADO">Cancelado</SelectItem>
+                  <SelectItem value="VENCIDO">Vencido</SelectItem>
+                </SelectContent>
+              </Select>
+            </>
+          )}
+
+          {/* Date range */}
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !renovacaoDe && "text-muted-foreground")}>
+              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !dateDe && "text-muted-foreground")}>
                 <CalendarIcon className="mr-1 h-3.5 w-3.5" />
-                {renovacaoDe ? format(renovacaoDe, "dd/MM/yy") : "Renovação de"}
+                {dateDe ? format(dateDe, "dd/MM/yy") : (isTokeniza ? "Investido de" : "Renovação de")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={renovacaoDe} onSelect={handleRenovacaoDe} initialFocus className="p-3 pointer-events-auto" />
+              <Calendar mode="single" selected={dateDe} onSelect={handleDateDe} initialFocus className="p-3 pointer-events-auto" />
             </PopoverContent>
           </Popover>
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !renovacaoAte && "text-muted-foreground")}>
+              <Button variant="outline" className={cn("w-[155px] justify-start text-left font-normal text-xs", !dateAte && "text-muted-foreground")}>
                 <CalendarIcon className="mr-1 h-3.5 w-3.5" />
-                {renovacaoAte ? format(renovacaoAte, "dd/MM/yy") : "Renovação até"}
+                {dateAte ? format(dateAte, "dd/MM/yy") : (isTokeniza ? "Investido até" : "Renovação até")}
               </Button>
             </PopoverTrigger>
             <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={renovacaoAte} onSelect={handleRenovacaoAte} initialFocus className="p-3 pointer-events-auto" />
+              <Calendar mode="single" selected={dateAte} onSelect={handleDateAte} initialFocus className="p-3 pointer-events-auto" />
             </PopoverContent>
           </Popover>
 
@@ -151,60 +211,98 @@ export default function CSClientesPage() {
                   <TableHead>Health</TableHead>
                   <TableHead>NPS</TableHead>
                   <TableHead>CSAT</TableHead>
-                  <TableHead>MRR</TableHead>
-                  <TableHead>Churn Risk</TableHead>
-                  <TableHead>Últ. Contato</TableHead>
-                  <TableHead>Renovação</TableHead>
+                  {isTokeniza ? (
+                    <>
+                      <TableHead>Total Investido</TableHead>
+                      <TableHead>Ticket Médio</TableHead>
+                      <TableHead>Últ. Investimento</TableHead>
+                    </>
+                  ) : (
+                    <>
+                      <TableHead>MRR</TableHead>
+                      <TableHead>Churn Risk</TableHead>
+                      <TableHead>Últ. Contato</TableHead>
+                      <TableHead>Renovação</TableHead>
+                    </>
+                  )}
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {isLoading ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={isTokeniza ? 7 : 8} className="text-center py-8 text-muted-foreground">Carregando...</TableCell></TableRow>
                 ) : filtered.length === 0 ? (
-                  <TableRow><TableCell colSpan={8} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado</TableCell></TableRow>
-                ) : filtered.map((c) => (
-                  <TableRow key={c.id} className="cursor-pointer hover:bg-accent/50" onClick={() => navigate(`/cs/clientes/${c.id}`)}>
-                    <TableCell>
-                      <div className="flex items-center gap-3">
-                        <Avatar className="h-8 w-8">
-                          <AvatarImage src={c.contact?.foto_url || undefined} />
-                          <AvatarFallback className="text-xs">{c.contact?.nome?.charAt(0) || '?'}</AvatarFallback>
-                        </Avatar>
-                        <div>
-                          <p className="font-medium text-sm">{c.contact?.nome || 'Sem nome'}</p>
-                          <p className="text-xs text-muted-foreground">{c.contact?.email || ''}</p>
+                  <TableRow><TableCell colSpan={isTokeniza ? 7 : 8} className="text-center py-8 text-muted-foreground">Nenhum cliente encontrado</TableCell></TableRow>
+                ) : filtered.map((c) => {
+                  const tm = isTokeniza ? tokenizaMetrics?.get(c.id) : null;
+                  return (
+                    <TableRow key={c.id} className="cursor-pointer hover:bg-accent/50" onClick={() => navigate(`/cs/clientes/${c.id}`)}>
+                      <TableCell>
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8">
+                            <AvatarImage src={c.contact?.foto_url || undefined} />
+                            <AvatarFallback className="text-xs">{c.contact?.nome?.charAt(0) || '?'}</AvatarFallback>
+                          </Avatar>
+                          <div>
+                            <p className="font-medium text-sm">{c.contact?.nome || 'Sem nome'}</p>
+                            <p className="text-xs text-muted-foreground">{c.contact?.email || ''}</p>
+                          </div>
                         </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge className={healthStatusConfig[c.health_status]?.bgClass || ''}>
-                        {c.health_score} — {healthStatusConfig[c.health_status]?.label}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {c.nps_categoria ? <Badge variant="outline" className={npsConfig[c.nps_categoria]?.bgClass}>{c.ultimo_nps}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
-                    </TableCell>
-                    <TableCell>{c.media_csat != null ? c.media_csat.toFixed(1) : '—'}</TableCell>
-                    <TableCell className="font-medium">R$ {(c.valor_mrr ?? 0).toLocaleString('pt-BR')}</TableCell>
-                    <TableCell>
-                      {(c.risco_churn_pct ?? 0) > 0 ? (
-                        <Badge variant="outline" className={
-                          (c.risco_churn_pct ?? 0) > 70 ? 'bg-red-100 text-red-800' :
-                          (c.risco_churn_pct ?? 0) > 40 ? 'bg-orange-100 text-orange-800' :
-                          'bg-yellow-100 text-yellow-800'
-                        }>
-                          {c.risco_churn_pct}%
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={healthStatusConfig[c.health_status]?.bgClass || ''}>
+                          {c.health_score} — {healthStatusConfig[c.health_status]?.label}
                         </Badge>
-                      ) : <span className="text-muted-foreground text-xs">—</span>}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {c.ultimo_contato_em ? format(new Date(c.ultimo_contato_em), 'dd/MM/yy', { locale: ptBR }) : '—'}
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {c.proxima_renovacao ? format(new Date(c.proxima_renovacao), 'dd/MM/yy', { locale: ptBR }) : '—'}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                      </TableCell>
+                      <TableCell>
+                        {c.nps_categoria ? <Badge variant="outline" className={npsConfig[c.nps_categoria]?.bgClass}>{c.ultimo_nps}</Badge> : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell>{c.media_csat != null ? c.media_csat.toFixed(1) : '—'}</TableCell>
+                      {isTokeniza ? (
+                        <>
+                          <TableCell className="font-medium">R$ {(tm?.total_investido ?? 0).toLocaleString('pt-BR')}</TableCell>
+                          <TableCell className="text-sm">R$ {(tm?.ticket_medio ?? 0).toLocaleString('pt-BR')}</TableCell>
+                          <TableCell className="text-xs">
+                            {tm?.ultimo_investimento ? (
+                              <div>
+                                <span>{format(new Date(tm.ultimo_investimento), 'dd/MM/yy', { locale: ptBR })}</span>
+                                {tm.dias_sem_investir != null && tm.dias_sem_investir > 90 && (
+                                  <Badge variant="outline" className={
+                                    tm.dias_sem_investir > 365 ? 'bg-red-100 text-red-800 ml-1' :
+                                    tm.dias_sem_investir > 180 ? 'bg-orange-100 text-orange-800 ml-1' :
+                                    'bg-yellow-100 text-yellow-800 ml-1'
+                                  }>
+                                    {tm.dias_sem_investir}d
+                                  </Badge>
+                                )}
+                              </div>
+                            ) : '—'}
+                          </TableCell>
+                        </>
+                      ) : (
+                        <>
+                          <TableCell className="font-medium">R$ {(c.valor_mrr ?? 0).toLocaleString('pt-BR')}</TableCell>
+                          <TableCell>
+                            {(c.risco_churn_pct ?? 0) > 0 ? (
+                              <Badge variant="outline" className={
+                                (c.risco_churn_pct ?? 0) > 70 ? 'bg-red-100 text-red-800' :
+                                (c.risco_churn_pct ?? 0) > 40 ? 'bg-orange-100 text-orange-800' :
+                                'bg-yellow-100 text-yellow-800'
+                              }>
+                                {c.risco_churn_pct}%
+                              </Badge>
+                            ) : <span className="text-muted-foreground text-xs">—</span>}
+                          </TableCell>
+                          <TableCell className="text-xs text-muted-foreground">
+                            {c.ultimo_contato_em ? format(new Date(c.ultimo_contato_em), 'dd/MM/yy', { locale: ptBR }) : '—'}
+                          </TableCell>
+                          <TableCell className="text-xs">
+                            {c.proxima_renovacao ? format(new Date(c.proxima_renovacao), 'dd/MM/yy', { locale: ptBR }) : '—'}
+                          </TableCell>
+                        </>
+                      )}
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </CardContent>

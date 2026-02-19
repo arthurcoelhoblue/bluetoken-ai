@@ -159,6 +159,11 @@ export interface CSCustomerFilters {
   contrato_status?: CSContractStatus;
   renovacao_de?: string;
   renovacao_ate?: string;
+  // Tokeniza-specific filters
+  investimento_de?: string;
+  investimento_ate?: string;
+  oferta_nome?: string;
+  dias_inativo_min?: number;
 }
 
 // Metrics
@@ -169,7 +174,28 @@ export interface CSMetrics {
   clientes_em_risco: number;
   renovacoes_30_dias: number;
   churn_rate: number;
+  // Tokeniza-specific
+  inativos_90d?: number;
+  total_investido?: number;
+  ticket_medio?: number;
 }
+
+// Tokeniza investment metrics per customer
+export interface CSTokenizaCustomerMetrics {
+  customer_id: string;
+  total_investido: number;
+  qtd_investimentos: number;
+  ticket_medio: number;
+  ultimo_investimento: string | null;
+  dias_sem_investir: number | null;
+}
+
+// Inactivity tier config
+export const inactivityTierConfig = {
+  90: { label: '> 90 dias', bgClass: 'bg-yellow-100 text-yellow-800' },
+  180: { label: '> 180 dias', bgClass: 'bg-orange-100 text-orange-800' },
+  365: { label: '> 365 dias (Churn)', bgClass: 'bg-red-100 text-red-800' },
+} as const;
 
 // Health score color helpers
 export const healthStatusConfig: Record<CSHealthStatus, { label: string; color: string; bgClass: string }> = {

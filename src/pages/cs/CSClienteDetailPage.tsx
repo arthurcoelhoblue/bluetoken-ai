@@ -29,6 +29,8 @@ import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 import { CSContractForm } from '@/components/cs/CSContractForm';
 import { CSRenovacaoTab } from '@/components/cs/CSRenovacaoTab';
+import { CSAportesTab } from '@/components/cs/CSAportesTab';
+import { useCSTokenizaMetrics } from '@/hooks/useCSTokenizaMetrics';
 
 // Icons for timeline items
 const TIMELINE_ICONS: Record<string, React.ReactNode> = {
@@ -46,6 +48,38 @@ interface TimelineItem {
   date: string;
   badge?: string;
   badgeVariant?: 'default' | 'secondary' | 'destructive' | 'outline';
+}
+
+function DetailSidebarMetrics({ customer }: { customer: any }) {
+  const isTokeniza = customer.empresa === 'TOKENIZA';
+  const { data: metricsMap } = useCSTokenizaMetrics(isTokeniza ? [customer.id] : undefined);
+  const tm = isTokeniza ? metricsMap?.get(customer.id) : null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2"><CardTitle className="text-sm">Métricas</CardTitle></CardHeader>
+      <CardContent className="space-y-2 text-sm">
+        {isTokeniza ? (
+          <>
+            <div className="flex justify-between"><span className="text-muted-foreground">Total Investido</span><span className="font-medium">R$ {(tm?.total_investido ?? 0).toLocaleString('pt-BR')}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Ticket Médio</span><span className="font-medium">R$ {(tm?.ticket_medio ?? 0).toLocaleString('pt-BR')}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Investimentos</span><span>{tm?.qtd_investimentos ?? 0}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Último Aporte</span><span>{tm?.ultimo_investimento ? format(new Date(tm.ultimo_investimento), 'dd/MM/yy') : '—'}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Dias s/ Investir</span><span>{tm?.dias_sem_investir ?? '—'}</span></div>
+          </>
+        ) : (
+          <>
+            <div className="flex justify-between"><span className="text-muted-foreground">MRR</span><span className="font-medium">R$ {customer.valor_mrr?.toLocaleString('pt-BR')}</span></div>
+            <div className="flex justify-between"><span className="text-muted-foreground">Renovação</span><span>{customer.proxima_renovacao ? format(new Date(customer.proxima_renovacao), 'dd/MM/yy') : '—'}</span></div>
+          </>
+        )}
+        <div className="flex justify-between"><span className="text-muted-foreground">NPS</span>{customer.nps_categoria ? <Badge className={npsConfig[customer.nps_categoria]?.bgClass}>{customer.ultimo_nps}</Badge> : <span>—</span>}</div>
+        <div className="flex justify-between"><span className="text-muted-foreground">CSAT Médio</span><span>{customer.media_csat?.toFixed(1) ?? '—'}</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">Risco Churn</span><span>{customer.risco_churn_pct}%</span></div>
+        <div className="flex justify-between"><span className="text-muted-foreground">1º Ganho</span><span>{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yy') : '—'}</span></div>
+      </CardContent>
+    </Card>
+  );
 }
 
 export default function CSClienteDetailPage() {
@@ -202,17 +236,7 @@ export default function CSClienteDetailPage() {
                 </Badge>
               </CardContent>
             </Card>
-            <Card>
-              <CardHeader className="pb-2"><CardTitle className="text-sm">Métricas</CardTitle></CardHeader>
-              <CardContent className="space-y-2 text-sm">
-                <div className="flex justify-between"><span className="text-muted-foreground">MRR</span><span className="font-medium">R$ {customer.valor_mrr?.toLocaleString('pt-BR')}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">NPS</span>{customer.nps_categoria ? <Badge className={npsConfig[customer.nps_categoria]?.bgClass}>{customer.ultimo_nps}</Badge> : <span>—</span>}</div>
-                <div className="flex justify-between"><span className="text-muted-foreground">CSAT Médio</span><span>{customer.media_csat?.toFixed(1) ?? '—'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Risco Churn</span><span>{customer.risco_churn_pct}%</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">Renovação</span><span>{customer.proxima_renovacao ? format(new Date(customer.proxima_renovacao), 'dd/MM/yy') : '—'}</span></div>
-                <div className="flex justify-between"><span className="text-muted-foreground">1º Ganho</span><span>{customer.data_primeiro_ganho ? format(new Date(customer.data_primeiro_ganho), 'dd/MM/yy') : '—'}</span></div>
-              </CardContent>
-            </Card>
+            <DetailSidebarMetrics customer={customer} />
           </div>
 
           {/* Main */}
@@ -223,7 +247,7 @@ export default function CSClienteDetailPage() {
                 <TabsTrigger value="contratos">{customer.empresa === 'TOKENIZA' ? 'Investimentos' : 'Contratos'}</TabsTrigger>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
                 <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
-                <TabsTrigger value="renovacao">Renovação</TabsTrigger>
+                <TabsTrigger value="renovacao">{customer.empresa === 'TOKENIZA' ? 'Aportes' : 'Renovação'}</TabsTrigger>
                 <TabsTrigger value="incidencias">Incidências</TabsTrigger>
                 <TabsTrigger value="health-log">Health</TabsTrigger>
                 <TabsTrigger value="notas">Notas</TabsTrigger>
@@ -335,16 +359,20 @@ export default function CSClienteDetailPage() {
                 ))}
               </TabsContent>
 
-              {/* Renovação */}
+              {/* Renovação / Aportes */}
               <TabsContent value="renovacao" className="mt-4">
-                <CSRenovacaoTab
-                  customerId={customer.id}
-                  contactId={customer.contact_id}
-                  empresa={customer.empresa}
-                  dataPrimeiroGanho={customer.data_primeiro_ganho}
-                  proximaRenovacao={customer.proxima_renovacao}
-                  riscoChurnPct={customer.risco_churn_pct}
-                />
+                {customer.empresa === 'TOKENIZA' ? (
+                  <CSAportesTab customerId={customer.id} empresa={customer.empresa} />
+                ) : (
+                  <CSRenovacaoTab
+                    customerId={customer.id}
+                    contactId={customer.contact_id}
+                    empresa={customer.empresa}
+                    dataPrimeiroGanho={customer.data_primeiro_ganho}
+                    proximaRenovacao={customer.proxima_renovacao}
+                    riscoChurnPct={customer.risco_churn_pct}
+                  />
+                )}
               </TabsContent>
 
               {/* Incidências */}

@@ -1,6 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCSRevenueForecast } from '@/hooks/useCSRevenueForecast';
 import { useRevenueForecastEdge } from '@/hooks/useRevenueForecastEdge';
+import { useCompany } from '@/contexts/CompanyContext';
 import { DollarSign, TrendingDown, TrendingUp, Activity } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +11,8 @@ const COLORS = ['hsl(var(--chart-2))', 'hsl(var(--chart-4))', 'hsl(var(--chart-5
 const fmt = (v: number) => `R$ ${v.toLocaleString('pt-BR')}`;
 
 export function CSRevenueCard() {
+  const { activeCompanies } = useCompany();
+  const isTokenizaOnly = activeCompanies.length === 1 && activeCompanies[0] === 'TOKENIZA';
   const { data: localData } = useCSRevenueForecast();
   const { data: edgeData } = useRevenueForecastEdge();
 
@@ -30,7 +33,7 @@ export function CSRevenueCard() {
       <CardHeader className="pb-3">
         <CardTitle className="text-base flex items-center gap-2">
           <DollarSign className="h-4 w-4 text-chart-2" />
-          Projeção de Receita
+          {isTokenizaOnly ? 'Volume Investido' : 'Projeção de Receita'}
           {hasEdgeForecast && <Badge variant="outline" className="text-[10px] px-1.5 py-0">IA</Badge>}
         </CardTitle>
       </CardHeader>
@@ -38,12 +41,12 @@ export function CSRevenueCard() {
         {/* KPIs principais */}
         <div className="grid grid-cols-3 gap-3 text-center">
           <div>
-            <p className="text-xs text-muted-foreground">MRR Atual</p>
+            <p className="text-xs text-muted-foreground">{isTokenizaOnly ? 'Volume Total' : 'MRR Atual'}</p>
             <p className="text-lg font-bold">{fmt(edgeData?.mrr_total ?? localData?.mrrTotal ?? 0)}</p>
           </div>
           <div>
             <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-              <TrendingUp className="h-3 w-3" /> Projetado
+              <TrendingUp className="h-3 w-3" /> {isTokenizaOnly ? 'Retido' : 'Projetado'}
             </p>
             <p className="text-lg font-bold text-chart-2">
               {fmt(edgeData?.mrr_retained ?? localData?.mrrProjetado ?? 0)}
@@ -51,7 +54,7 @@ export function CSRevenueCard() {
           </div>
           <div>
             <p className="text-xs text-muted-foreground flex items-center justify-center gap-1">
-              <TrendingDown className="h-3 w-3" /> Em Risco
+              <TrendingDown className="h-3 w-3" /> {isTokenizaOnly ? 'Em Risco' : 'Em Risco'}
             </p>
             <p className="text-lg font-bold text-destructive">
               {fmt(edgeData ? (edgeData.mrr_total - edgeData.mrr_retained) : (localData?.mrrEmRisco ?? 0))}
