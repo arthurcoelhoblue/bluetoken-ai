@@ -299,7 +299,8 @@ Deno.serve(async (req) => {
           );
 
           // ---- UPSERT TOKENIZA INVESTMENTS AS CS_CONTRACTS ----
-          if (empresa === 'TOKENIZA' && lead.tokeniza_investimentos && Array.isArray(lead.tokeniza_investimentos)) {
+          const investimentos = lead.dados_tokeniza?.investimentos;
+          if (empresa === 'TOKENIZA' && investimentos && Array.isArray(investimentos)) {
             const { data: csCustomer } = await supabase
               .from('cs_customers')
               .select('id')
@@ -308,7 +309,7 @@ Deno.serve(async (req) => {
               .maybeSingle();
 
             if (csCustomer) {
-              for (const inv of lead.tokeniza_investimentos) {
+              for (const inv of investimentos) {
                 const invDate = new Date(inv.data);
                 const anoFiscal = isNaN(invDate.getTime()) ? new Date().getFullYear() : invDate.getFullYear();
                 const statusMap: Record<string, string> = { FINISHED: 'ATIVO', PAID: 'ATIVO', PENDING: 'PENDENTE', CANCELLED: 'CANCELADO' };
@@ -329,7 +330,7 @@ Deno.serve(async (req) => {
                   { onConflict: 'customer_id,ano_fiscal,oferta_id' }
                 );
               }
-              log.info(`${lead.tokeniza_investimentos.length} investimentos upserted para contato ${contact.id}`);
+              log.info(`${investimentos.length} investimentos upserted para contato ${contact.id}`);
             }
           }
 
