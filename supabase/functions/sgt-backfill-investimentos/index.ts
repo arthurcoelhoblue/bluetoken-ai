@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const log = createLogger('sgt-backfill-investimentos');
 
 const SGT_API_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api';
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 5;
 const SETTINGS_CATEGORY = 'sgt-sync';
 const SETTINGS_KEY = 'backfill-investimentos-offset';
 
@@ -178,6 +178,17 @@ Deno.serve(async (req) => {
         if (!lead) {
           sem_dados++;
           continue;
+        }
+
+        // DEBUG: log structure for first 3 contacts
+        if (detalhes.length < 3) {
+          log.info(`DEBUG lead keys para ${contact.nome}`, {
+            lead_keys: Object.keys(lead),
+            has_dados_tokeniza: !!lead.dados_tokeniza,
+            dados_tokeniza_keys: lead.dados_tokeniza ? Object.keys(lead.dados_tokeniza) : null,
+            has_investimentos_direct: !!lead.investimentos,
+            has_tokeniza_investimentos: !!lead.tokeniza_investimentos,
+          });
         }
 
         // Extract investimentos from dados_tokeniza
