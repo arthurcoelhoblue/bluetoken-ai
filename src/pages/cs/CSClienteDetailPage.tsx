@@ -243,12 +243,14 @@ export default function CSClienteDetailPage() {
           {/* Main */}
           <div className="lg:col-span-3">
             <Tabs defaultValue="visao-geral">
-              <TabsList className="grid grid-cols-8 w-full">
+              <TabsList className={`grid w-full ${customer.empresa === 'TOKENIZA' ? 'grid-cols-7' : 'grid-cols-8'}`}>
                 <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
                 <TabsTrigger value="contratos">{customer.empresa === 'TOKENIZA' ? 'Investimentos' : 'Contratos'}</TabsTrigger>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
                 <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
-                <TabsTrigger value="renovacao">{customer.empresa === 'TOKENIZA' ? 'Aportes' : 'Renovação'}</TabsTrigger>
+                {customer.empresa !== 'TOKENIZA' && (
+                  <TabsTrigger value="renovacao">Renovação</TabsTrigger>
+                )}
                 <TabsTrigger value="incidencias">Incidências</TabsTrigger>
                 <TabsTrigger value="health-log">Health</TabsTrigger>
                 <TabsTrigger value="notas">Notas</TabsTrigger>
@@ -279,38 +281,42 @@ export default function CSClienteDetailPage() {
 
               {/* Contratos / Investimentos */}
               <TabsContent value="contratos" className="mt-4 space-y-4">
-                {customer.empresa !== 'TOKENIZA' && (
-                  <CSContractForm customerId={customer.id} empresa={customer.empresa} />
+                {customer.empresa === 'TOKENIZA' ? (
+                  <CSAportesTab customerId={customer.id} empresa={customer.empresa} />
+                ) : (
+                  <>
+                    <CSContractForm customerId={customer.id} empresa={customer.empresa} />
+                    {contracts?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum contrato registrado</p>}
+                    {contracts?.map(ct => (
+                      <Card key={ct.id}>
+                        <CardContent className="pt-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center font-bold text-sm">
+                                {ct.ano_fiscal}
+                              </div>
+                              <div>
+                                <p className="font-medium text-sm">{ct.oferta_nome || ct.plano || 'Sem plano'}</p>
+                                {ct.tipo && <Badge variant="outline" className="text-[10px] mt-0.5">{ct.tipo}</Badge>}
+                                <p className="text-xs text-muted-foreground">
+                                  {ct.data_contratacao ? format(new Date(ct.data_contratacao), 'dd/MM/yyyy') : '—'}
+                                  {ct.data_vencimento ? ` → ${format(new Date(ct.data_vencimento), 'dd/MM/yyyy')}` : ''}
+                                </p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="font-medium text-sm">R$ {ct.valor?.toLocaleString('pt-BR') ?? '0'}</span>
+                              <Badge className={contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.bgClass || ''}>
+                                {contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.label || ct.status}
+                              </Badge>
+                            </div>
+                          </div>
+                          {ct.notas && <p className="text-xs text-muted-foreground mt-2">{ct.notas}</p>}
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </>
                 )}
-                {contracts?.length === 0 && <p className="text-sm text-muted-foreground">{customer.empresa === 'TOKENIZA' ? 'Nenhum investimento registrado' : 'Nenhum contrato registrado'}</p>}
-                {contracts?.map(ct => (
-                  <Card key={ct.id}>
-                    <CardContent className="pt-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-lg bg-muted flex items-center justify-center font-bold text-sm">
-                            {ct.ano_fiscal}
-                          </div>
-                          <div>
-                            <p className="font-medium text-sm">{ct.oferta_nome || ct.plano || 'Sem plano'}</p>
-                            {ct.tipo && <Badge variant="outline" className="text-[10px] mt-0.5">{ct.tipo}</Badge>}
-                            <p className="text-xs text-muted-foreground">
-                              {ct.data_contratacao ? format(new Date(ct.data_contratacao), 'dd/MM/yyyy') : '—'}
-                              {ct.data_vencimento ? ` → ${format(new Date(ct.data_vencimento), 'dd/MM/yyyy')}` : ''}
-                            </p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <span className="font-medium text-sm">R$ {ct.valor?.toLocaleString('pt-BR') ?? '0'}</span>
-                          <Badge className={contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.bgClass || ''}>
-                            {contractStatusConfig[ct.status as keyof typeof contractStatusConfig]?.label || ct.status}
-                          </Badge>
-                        </div>
-                      </div>
-                      {ct.notas && <p className="text-xs text-muted-foreground mt-2">{ct.notas}</p>}
-                    </CardContent>
-                  </Card>
-                ))}
               </TabsContent>
 
               {/* Pesquisas */}
@@ -360,11 +366,9 @@ export default function CSClienteDetailPage() {
                 ))}
               </TabsContent>
 
-              {/* Renovação / Aportes */}
-              <TabsContent value="renovacao" className="mt-4">
-                {customer.empresa === 'TOKENIZA' ? (
-                  <CSAportesTab customerId={customer.id} empresa={customer.empresa} />
-                ) : (
+              {/* Renovação — apenas para Blue */}
+              {customer.empresa !== 'TOKENIZA' && (
+                <TabsContent value="renovacao" className="mt-4">
                   <CSRenovacaoTab
                     customerId={customer.id}
                     contactId={customer.contact_id}
@@ -373,8 +377,8 @@ export default function CSClienteDetailPage() {
                     proximaRenovacao={customer.proxima_renovacao}
                     riscoChurnPct={customer.risco_churn_pct}
                   />
-                )}
-              </TabsContent>
+                </TabsContent>
+              )}
 
               {/* Incidências */}
               <TabsContent value="incidencias" className="mt-4 space-y-4">
