@@ -57,6 +57,15 @@ export interface DadosLead {
   tipo_lead?: 'INVESTIDOR' | 'CAPTADOR';
 }
 
+export interface InvestimentoTokeniza {
+  oferta_nome: string;
+  oferta_id: string;
+  valor: number;
+  data: string;
+  status: string;
+  tipo: string;
+}
+
 export interface DadosTokeniza {
   valor_investido?: number;
   qtd_investimentos?: number;
@@ -65,6 +74,7 @@ export interface DadosTokeniza {
   projetos?: string[];
   carrinho_abandonado?: boolean;
   valor_carrinho?: number;
+  investimentos?: InvestimentoTokeniza[];
 }
 
 export interface DadosBlue {

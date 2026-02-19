@@ -317,6 +317,42 @@ Deno.serve(async (req) => {
             { onConflict: 'contact_id,empresa' }
           );
 
+          // ---- UPSERT TOKENIZA INVESTMENTS AS CS_CONTRACTS ----
+          if (empresa === 'TOKENIZA' && lead.tokeniza_investimentos && Array.isArray(lead.tokeniza_investimentos)) {
+            // Get cs_customer id
+            const { data: csCustomer } = await supabase
+              .from('cs_customers')
+              .select('id')
+              .eq('contact_id', contact.id)
+              .eq('empresa', 'TOKENIZA')
+              .maybeSingle();
+
+            if (csCustomer) {
+              for (const inv of lead.tokeniza_investimentos) {
+                const invDate = new Date(inv.data);
+                const anoFiscal = isNaN(invDate.getTime()) ? new Date().getFullYear() : invDate.getFullYear();
+                const statusMap: Record<string, string> = { FINISHED: 'ATIVO', PAID: 'ATIVO', PENDING: 'PENDENTE', CANCELLED: 'CANCELADO' };
+                await supabase.from('cs_contracts').upsert(
+                  {
+                    customer_id: csCustomer.id,
+                    empresa: 'TOKENIZA',
+                    ano_fiscal: anoFiscal,
+                    plano: inv.oferta_nome || 'Investimento',
+                    oferta_id: inv.oferta_id,
+                    oferta_nome: inv.oferta_nome,
+                    tipo: inv.tipo || 'crowdfunding',
+                    valor: inv.valor || 0,
+                    data_contratacao: inv.data || null,
+                    status: statusMap[(inv.status || '').toUpperCase()] || 'ATIVO',
+                    notas: 'Importado do SGT',
+                  },
+                  { onConflict: 'customer_id,ano_fiscal,oferta_id' }
+                );
+              }
+              log.info(`${lead.tokeniza_investimentos.length} investimentos upserted para contato ${contact.id}`);
+            }
+          }
+
           synced++;
           details.push({
             contact_id: contact.id,

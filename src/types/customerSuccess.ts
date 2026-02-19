@@ -132,6 +132,9 @@ export interface CSContract {
   status: CSContractStatus;
   renovado_em: string | null;
   notas: string | null;
+  oferta_id: string | null;
+  oferta_nome: string | null;
+  tipo: string | null;
   created_at: string;
   updated_at: string;
 }

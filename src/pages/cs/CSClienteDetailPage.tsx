@@ -220,7 +220,7 @@ export default function CSClienteDetailPage() {
             <Tabs defaultValue="visao-geral">
               <TabsList className="grid grid-cols-8 w-full">
                 <TabsTrigger value="visao-geral">Visão Geral</TabsTrigger>
-                <TabsTrigger value="contratos">Contratos</TabsTrigger>
+                <TabsTrigger value="contratos">{customer.empresa === 'TOKENIZA' ? 'Investimentos' : 'Contratos'}</TabsTrigger>
                 <TabsTrigger value="pesquisas">Pesquisas</TabsTrigger>
                 <TabsTrigger value="deals" onClick={loadDeals}>Deals</TabsTrigger>
                 <TabsTrigger value="renovacao">Renovação</TabsTrigger>
@@ -252,10 +252,12 @@ export default function CSClienteDetailPage() {
                 )}
               </TabsContent>
 
-              {/* Contratos por Ano Fiscal */}
+              {/* Contratos / Investimentos */}
               <TabsContent value="contratos" className="mt-4 space-y-4">
-                <CSContractForm customerId={customer.id} empresa={customer.empresa} />
-                {contracts?.length === 0 && <p className="text-sm text-muted-foreground">Nenhum contrato registrado</p>}
+                {customer.empresa !== 'TOKENIZA' && (
+                  <CSContractForm customerId={customer.id} empresa={customer.empresa} />
+                )}
+                {contracts?.length === 0 && <p className="text-sm text-muted-foreground">{customer.empresa === 'TOKENIZA' ? 'Nenhum investimento registrado' : 'Nenhum contrato registrado'}</p>}
                 {contracts?.map(ct => (
                   <Card key={ct.id}>
                     <CardContent className="pt-4">
@@ -265,7 +267,8 @@ export default function CSClienteDetailPage() {
                             {ct.ano_fiscal}
                           </div>
                           <div>
-                            <p className="font-medium text-sm">{ct.plano || 'Sem plano'}</p>
+                            <p className="font-medium text-sm">{ct.oferta_nome || ct.plano || 'Sem plano'}</p>
+                            {ct.tipo && <Badge variant="outline" className="text-[10px] mt-0.5">{ct.tipo}</Badge>}
                             <p className="text-xs text-muted-foreground">
                               {ct.data_contratacao ? format(new Date(ct.data_contratacao), 'dd/MM/yyyy') : '—'}
                               {ct.data_vencimento ? ` → ${format(new Date(ct.data_vencimento), 'dd/MM/yyyy')}` : ''}

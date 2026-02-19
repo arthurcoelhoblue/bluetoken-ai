@@ -304,6 +304,7 @@ export function normalizeSGTEvent(payload: SGTPayload): LeadNormalizado {
       projetos: dados_tokeniza.projetos ?? [],
       carrinho_abandonado: dados_tokeniza.carrinho_abandonado ?? false,
       valor_carrinho: dados_tokeniza.valor_carrinho ?? 0,
+      investimentos: dados_tokeniza.investimentos ?? [],
     };
   } else if (empresa === 'BLUE' && dados_blue) {
     dadosEmpresa = {
