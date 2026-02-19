@@ -3,10 +3,11 @@ import { PageShell } from '@/components/layout/PageShell';
 import { useCSMetrics } from '@/hooks/useCSMetrics';
 import { useCSIncidents } from '@/hooks/useCSIncidents';
 import { useCSCustomers } from '@/hooks/useCSCustomers';
+import { useCompany } from '@/contexts/CompanyContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { HeartPulse, Users, AlertCircle, CalendarClock, TrendingUp, ShieldAlert, AlertTriangle } from 'lucide-react';
+import { HeartPulse, Users, AlertCircle, CalendarClock, TrendingUp, ShieldAlert, AlertTriangle, Clock } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { healthStatusConfig } from '@/types/customerSuccess';
 import { CSRevenueCard } from '@/components/cs/CSRevenueCard';
@@ -16,6 +17,8 @@ import { CSDailyBriefingCard } from '@/components/cs/CSDailyBriefingCard';
 
 export default function CSDashboardPage() {
   const navigate = useNavigate();
+  const { activeCompanies } = useCompany();
+  const isTokenizaOnly = activeCompanies.length === 1 && activeCompanies[0] === 'TOKENIZA';
   const { data: metrics, isLoading } = useCSMetrics();
   const { data: incidents } = useCSIncidents(undefined, 'ABERTA');
   const { data: riskyCustomers } = useCSCustomers({ health_status: 'CRITICO', is_active: true });
@@ -32,7 +35,7 @@ export default function CSDashboardPage() {
     { label: 'Health Médio', value: metrics?.health_medio ?? 0, icon: HeartPulse, color: 'text-chart-2', suffix: '/100' },
     { label: 'NPS Médio', value: metrics?.nps_medio ?? 0, icon: TrendingUp, color: 'text-chart-4' },
     { label: 'Em Risco', value: metrics?.clientes_em_risco ?? 0, icon: ShieldAlert, color: 'text-destructive' },
-    { label: 'Renovações 30d', value: metrics?.renovacoes_30_dias ?? 0, icon: CalendarClock, color: 'text-chart-5' },
+    { label: isTokenizaOnly ? 'Inativos >90d' : 'Renovações 30d', value: isTokenizaOnly ? (metrics?.inativos_90d ?? 0) : (metrics?.renovacoes_30_dias ?? 0), icon: isTokenizaOnly ? Clock : CalendarClock, color: 'text-chart-5' },
     { label: 'Incidências Abertas', value: incidents?.length ?? 0, icon: AlertCircle, color: 'text-orange-500' },
   ];
 
@@ -87,7 +90,7 @@ export default function CSDashboardPage() {
                 >
                   <div>
                     <p className="font-medium text-sm">{c.contact?.nome || 'Cliente'}</p>
-                    <p className="text-xs text-muted-foreground">MRR: R$ {c.valor_mrr?.toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">{isTokenizaOnly ? `Total: R$ ${(c.valor_mrr ?? 0).toLocaleString('pt-BR')}` : `MRR: R$ ${c.valor_mrr?.toLocaleString('pt-BR')}`}</p>
                   </div>
                   <Badge variant="outline" className={
                     (c.risco_churn_pct ?? 0) > 70 ? 'bg-red-100 text-red-800' :
@@ -121,7 +124,7 @@ export default function CSDashboardPage() {
                 >
                   <div>
                     <p className="font-medium text-sm">{c.contact?.nome || 'Cliente'}</p>
-                    <p className="text-xs text-muted-foreground">MRR: R$ {c.valor_mrr?.toLocaleString('pt-BR')}</p>
+                    <p className="text-xs text-muted-foreground">{isTokenizaOnly ? `Total: R$ ${(c.valor_mrr ?? 0).toLocaleString('pt-BR')}` : `MRR: R$ ${c.valor_mrr?.toLocaleString('pt-BR')}`}</p>
                   </div>
                   <Badge className={healthStatusConfig[c.health_status]?.bgClass}>{c.health_score}</Badge>
                 </div>
