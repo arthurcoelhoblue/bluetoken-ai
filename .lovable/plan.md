@@ -1,63 +1,56 @@
 
-# Fundir abas "Investimentos" e "Aportes" para clientes Tokeniza
+# Resolver Nomes de Ofertas Ausentes nos Investimentos Tokeniza
 
-## O que existe hoje
+## Diagnóstico
 
-Para clientes **Tokeniza**, o detalhe do cliente tem 8 abas:
+Há **614 investimentos** onde `oferta_nome` foi gravado com o próprio `oferta_id` (UUID), e **63** sem nome algum. Isso afeta diversas ofertas históricas (principalmente de 2024), onde o SGT não retornava o campo `oferta_nome` preenchido nas versões antigas da API.
 
-```text
-Visão Geral | Investimentos | Pesquisas | Deals | Aportes | Incidências | Health | Notas
-```
-
-- **Investimentos** (tab `contratos`): lista os contratos `crowdfunding` com oferta, data, valor e status — mas sem KPIs
-- **Aportes** (tab `renovacao`): mostra KPIs (Total Investido, Ticket Médio, Quantidade, Último Aporte) + alerta de inatividade + a mesma lista de contratos embaixo
-
-Para clientes **Blue**, a aba `renovacao` continua sendo "Renovação" (regra de negócio diferente — elegibilidade, vencimento de contrato, etc.) e **não é afetada pela mudança**.
+O investimento do Ronaldo de 21/01/2025 (R$ 10.000, oferta `62288bba-d90a-11ef-aaa1-06aff79fa023`) é um desses casos.
 
 ## O que será feito
 
-### 1. Eliminar a aba "Aportes" para Tokeniza
+### 1. Tela de Mapeamento de Ofertas (nova página de administração)
 
-A tab `renovacao` com o label "Aportes" será removida do `TabsList` para clientes Tokeniza. Clientes Blue continuam com "Renovação" normalmente.
+Criar uma nova aba/seção em Configurações de CS (ou acessível via menu Admin) chamada **"Ofertas Tokeniza"**, que exibirá:
 
-### 2. Enriquecer a aba "Investimentos" com os KPIs e alerta
+- Lista de todas as ofertas com `oferta_nome = oferta_id` (sem nome real), com:
+  - `oferta_id`
+  - Qtd de clientes afetados
+  - Volume total
+  - Período (datas)
+  - Campo de input para digitar o nome correto
 
-O conteúdo da aba `contratos` (que hoje só mostra a lista) vai incorporar o que estava nos "Aportes":
+- Botão **"Salvar e Aplicar"** que executa um `UPDATE` em massa em `cs_contracts` para todos os registros com aquele `oferta_id`
 
-**Estrutura final da aba "Investimentos" para Tokeniza:**
-```text
-┌─────────────────────────────────────────────────────┐
-│  KPIs: Total Investido | Ticket Médio | Qtd | Último │
-├─────────────────────────────────────────────────────┤
-│  [Alerta de inatividade se aplicável]               │
-├─────────────────────────────────────────────────────┤
-│  Lista detalhada de investimentos (timeline)        │
-└─────────────────────────────────────────────────────┘
-```
+### 2. Correção visual imediata no `CSAportesTab`
+
+Enquanto não há nome mapeado, em vez de exibir o UUID bruto, exibir:
+- `"Oferta ID: 62288b…"` (truncado) com badge `Sem nome`
+
+Isso melhora imediatamente a legibilidade sem precisar esperar o mapeamento.
 
 ### 3. Arquivos alterados
 
-- **`src/pages/cs/CSClienteDetailPage.tsx`**:
-  - Remover o `TabsTrigger` e `TabsContent` de `renovacao` para Tokeniza (mas mantê-los para Blue)
-  - Para Tokeniza, a aba `contratos` passa a renderizar `<CSAportesTab>` (que já tem KPIs + lista completa)
-  - Para Blue, a aba `contratos` continua como está (lista de contratos) e `renovacao` continua sendo `<CSRenovacaoTab>`
+**`src/components/cs/CSAportesTab.tsx`**:
+- Função auxiliar `displayNomeOferta(ct)`:
+  - Se `oferta_nome` for igual a `oferta_id` ou for UUID puro → exibe `"Oferta sem nome"` + badge com ID truncado
+  - Caso contrário → exibe o nome normalmente
 
-- **`src/components/cs/CSAportesTab.tsx`**:
-  - O componente já contém KPIs + alerta + lista completa — está pronto para ser a aba unificada
-  - Nenhuma mudança de lógica necessária, apenas passará a ocupar o espaço da aba `contratos` para Tokeniza
+**`src/pages/admin/CSOfertasPage.tsx`** _(novo arquivo)_:
+- Tabela com todas as ofertas sem nome (`oferta_nome = oferta_id`)
+- Cada linha tem um `Input` para digitar o nome correto
+- Botão "Aplicar" por linha executa `UPDATE cs_contracts SET oferta_nome = ?, plano = ? WHERE oferta_id = ?`
+- Usa `useQuery` + `useMutation` do TanStack Query
 
-### Resultado
+**`src/hooks/useCSOfertaMapping.ts`** _(novo arquivo)_:
+- `useCSOfertasSemNome()` → busca todas as ofertas distintas onde `oferta_nome = oferta_id`
+- `useUpdateOfertaNome()` → mutation para aplicar o nome por `oferta_id` em massa
 
-```text
-Antes (Tokeniza):
-Visão Geral | Investimentos | Pesquisas | Deals | Aportes | Incidências | Health | Notas
-                 ↑ só lista         ↑ KPIs + lista (redundante)
+**Rota e navegação**:
+- Adicionar rota `/cs/admin/ofertas` no router
+- Adicionar link no menu de CS (visível para admins)
 
-Depois (Tokeniza):
-Visão Geral | Investimentos | Pesquisas | Deals | Incidências | Health | Notas
-                 ↑ KPIs + alerta + lista completa
+## Resultado imediato
 
-Blue: sem alteração
-```
-
-O número de abas cai de 8 para 7 para clientes Tokeniza, eliminando a redundância sem perder nenhuma informação.
+- O investimento do Ronaldo de 21/01/2025 passará a exibir `"Oferta sem nome [62288b…]"` em vez do UUID completo
+- Você poderá abrir a tela de mapeamento e digitar o nome correto (ex: "Renda Fixa Tokeniza Jan/25"), e todos os 614 contratos afetados serão corrigidos com um clique por oferta
