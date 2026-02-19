@@ -51,6 +51,7 @@ export function useCSMetrics() {
             .from('cs_contracts')
             .select('customer_id, valor, data_contratacao')
             .eq('empresa', 'TOKENIZA')
+            .eq('tipo', 'crowdfunding')
             .in('customer_id', tokenizaCustomerIds);
 
           const now = new Date();
