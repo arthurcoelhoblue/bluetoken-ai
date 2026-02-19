@@ -1,56 +1,75 @@
 
-# Resolver Nomes de Ofertas Ausentes nos Investimentos Tokeniza
+# Integrar Mapeamento de Ofertas Tokeniza na Tela de Pendências
 
-## Diagnóstico
+## Contexto
 
-Há **614 investimentos** onde `oferta_nome` foi gravado com o próprio `oferta_id` (UUID), e **63** sem nome algum. Isso afeta diversas ofertas históricas (principalmente de 2024), onde o SGT não retornava o campo `oferta_nome` preenchido nas versões antigas da API.
+Existem **55 ofertas distintas** sem nome na base, totalizando **614 contratos** de **78 clientes** e **R$ 1.044.814** em volume. A tela de mapeamento já foi criada em `/cs/admin/ofertas`, mas ela está isolada no menu Admin, exigindo que a colaboradora saiba onde encontrá-la.
 
-O investimento do Ronaldo de 21/01/2025 (R$ 10.000, oferta `62288bba-d90a-11ef-aaa1-06aff79fa023`) é um desses casos.
+A ideia é incluir essas 55 ofertas diretamente na tela de **Pendências do Gestor** (`/pendencias`), seguindo o mesmo padrão visual dos cards de "Deals sem Vendedor" e "Divergências de Perda" que já existem — com um card por oferta, campo de input para o nome e botão "Aplicar".
+
+## Como funciona a lógica atual de Pendências
+
+`PendenciasPerda.tsx` já agrega múltiplas fontes de pendências:
+- `useLossPendencies()` → divergências de perda
+- `useFaqPendencies()` → FAQs aguardando aprovação
+- `useOrphanDeals()` → deals sem vendedor
+
+Cada fonte retorna uma lista; a página soma os totais e exibe seções separadas. O badge no menu (`WorkbenchPage`) mostra o total consolidado de pendências.
 
 ## O que será feito
 
-### 1. Tela de Mapeamento de Ofertas (nova página de administração)
+### 1. Adicionar seção "Ofertas Tokeniza sem nome" em `PendenciasPerda.tsx`
 
-Criar uma nova aba/seção em Configurações de CS (ou acessível via menu Admin) chamada **"Ofertas Tokeniza"**, que exibirá:
+Importar `useCSOfertasSemNome` e `useUpdateOfertaNome` (hooks já existem) e adicionar:
+- Uma nova seção no final da lista de pendências, com header e ícone de `Tag`
+- Um card por oferta com: ID truncado, período, qtd de clientes, volume total, input para nome, botão "Aplicar"
+- Ao aplicar: `UPDATE` em massa + card desaparece da lista (revalidação automática via `invalidateQueries`)
+- Badge de total de pendências inclui as ofertas sem nome no contador
 
-- Lista de todas as ofertas com `oferta_nome = oferta_id` (sem nome real), com:
-  - `oferta_id`
-  - Qtd de clientes afetados
-  - Volume total
-  - Período (datas)
-  - Campo de input para digitar o nome correto
+### 2. Atualizar o contador de pendências no Workbench
 
-- Botão **"Salvar e Aplicar"** que executa um `UPDATE` em massa em `cs_contracts` para todos os registros com aquele `oferta_id`
-
-### 2. Correção visual imediata no `CSAportesTab`
-
-Enquanto não há nome mapeado, em vez de exibir o UUID bruto, exibir:
-- `"Oferta ID: 62288b…"` (truncado) com badge `Sem nome`
-
-Isso melhora imediatamente a legibilidade sem precisar esperar o mapeamento.
+`WorkbenchPage.tsx` usa `useLossPendencyCount()` para exibir o badge. Será necessário atualizar essa contagem para incluir as ofertas sem nome (ou criar um hook de contagem consolidada).
 
 ### 3. Arquivos alterados
 
-**`src/components/cs/CSAportesTab.tsx`**:
-- Função auxiliar `displayNomeOferta(ct)`:
-  - Se `oferta_nome` for igual a `oferta_id` ou for UUID puro → exibe `"Oferta sem nome"` + badge com ID truncado
-  - Caso contrário → exibe o nome normalmente
+**`src/pages/admin/PendenciasPerda.tsx`**:
+- Importar `useCSOfertasSemNome`, `useUpdateOfertaNome` e ícones necessários (`Tag`, `Input`)
+- Adicionar componente `OfertaSemNomeCard` seguindo o padrão dos outros cards
+- Incluir no cálculo `totalPendencies`
+- Renderizar nova seção "Ofertas Tokeniza sem nome (55)" no corpo da página
 
-**`src/pages/admin/CSOfertasPage.tsx`** _(novo arquivo)_:
-- Tabela com todas as ofertas sem nome (`oferta_nome = oferta_id`)
-- Cada linha tem um `Input` para digitar o nome correto
-- Botão "Aplicar" por linha executa `UPDATE cs_contracts SET oferta_nome = ?, plano = ? WHERE oferta_id = ?`
-- Usa `useQuery` + `useMutation` do TanStack Query
+**`src/pages/WorkbenchPage.tsx`** (opcional, se quisermos o contador atualizado):
+- Incluir contagem de ofertas sem nome no badge de pendências
 
-**`src/hooks/useCSOfertaMapping.ts`** _(novo arquivo)_:
-- `useCSOfertasSemNome()` → busca todas as ofertas distintas onde `oferta_nome = oferta_id`
-- `useUpdateOfertaNome()` → mutation para aplicar o nome por `oferta_id` em massa
+### Resultado visual na página de Pendências
 
-**Rota e navegação**:
-- Adicionar rota `/cs/admin/ofertas` no router
-- Adicionar link no menu de CS (visível para admins)
+```text
+┌─────────────────────────────────────────────────────┐
+│ ⚠ Pendências do Gestor                              │
+├─────────────────────────────────────────────────────┤
+│ 👤 Deals sem Vendedor (N)                           │
+│   [cards existentes...]                             │
+├─────────────────────────────────────────────────────┤
+│ ❓ FAQs pendentes (N)                               │
+│   [cards existentes...]                             │
+├─────────────────────────────────────────────────────┤
+│ 🏷 Ofertas Tokeniza sem nome (55)                   │
+│  ┌──────────────────────────────────────────────┐   │
+│  │ ID: aca33ec2…  Mar/24 – Abr/24              │   │
+│  │ 42 clientes · R$ 108.206                    │   │
+│  │ [__________________________] [Aplicar]      │   │
+│  └──────────────────────────────────────────────┘   │
+│  [... outros 54 cards ...]                          │
+└─────────────────────────────────────────────────────┘
+```
 
-## Resultado imediato
+### Fluxo para a colaboradora
 
-- O investimento do Ronaldo de 21/01/2025 passará a exibir `"Oferta sem nome [62288b…]"` em vez do UUID completo
-- Você poderá abrir a tela de mapeamento e digitar o nome correto (ex: "Renda Fixa Tokeniza Jan/25"), e todos os 614 contratos afetados serão corrigidos com um clique por oferta
+1. Acessa `/pendencias` normalmente
+2. Rola até a seção "Ofertas Tokeniza sem nome"
+3. Vê o ID truncado + período + impacto (clientes e volume)
+4. Digita o nome correto (ex: "Renda Fixa Tokeniza Mar/24") e clica "Aplicar"
+5. O card some imediatamente; todos os 42 investidores daquela oferta ficam corrigidos na base
+6. Repete para as demais ofertas — em média ~10 minutos para resolver as 55
+
+A tela de `/cs/admin/ofertas` pode ser mantida como alternativa avançada (com tabela densa para processar tudo de uma vez), mas o fluxo principal passará pelas Pendências.
