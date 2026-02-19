@@ -1,54 +1,63 @@
 
+# Fundir abas "Investimentos" e "Aportes" para clientes Tokeniza
 
-# Corrigir contratos sem tipo e garantir que clientes sempre apareçam
+## O que existe hoje
 
-## Problema
+Para clientes **Tokeniza**, o detalhe do cliente tem 8 abas:
 
-1. 63 contratos Tokeniza tem `tipo = null` — provavelmente sao crowdfunding mas vieram sem classificacao do SGT
-2. Com o filtro `tipo = 'crowdfunding'` aplicado, clientes cujos contratos tem `tipo = null` aparecem sem investimentos ou somem das metricas
-3. O cliente `ebsdesouza@yahoo.com.br` tem 1 contrato com `tipo = null` e possivelmente ~15 investimentos que nao foram sincronizados
-
-## Solucao
-
-### Passo 1: Corrigir dados existentes (migracao SQL)
-
-Atualizar os 63 contratos Tokeniza com `tipo = null` para `tipo = 'crowdfunding'`:
-
-```sql
-UPDATE cs_contracts
-SET tipo = 'crowdfunding', updated_at = now()
-WHERE empresa = 'TOKENIZA' AND tipo IS NULL;
+```text
+Visão Geral | Investimentos | Pesquisas | Deals | Aportes | Incidências | Health | Notas
 ```
 
-Isso garante que todos os contratos ja importados sejam considerados nas metricas.
+- **Investimentos** (tab `contratos`): lista os contratos `crowdfunding` com oferta, data, valor e status — mas sem KPIs
+- **Aportes** (tab `renovacao`): mostra KPIs (Total Investido, Ticket Médio, Quantidade, Último Aporte) + alerta de inatividade + a mesma lista de contratos embaixo
 
-### Passo 2: Recalcular `data_primeiro_ganho`
+Para clientes **Blue**, a aba `renovacao` continua sendo "Renovação" (regra de negócio diferente — elegibilidade, vencimento de contrato, etc.) e **não é afetada pela mudança**.
 
-Apos corrigir o tipo, recalcular a data do primeiro investimento para os clientes afetados:
+## O que será feito
 
-```sql
-UPDATE cs_customers SET data_primeiro_ganho = sub.first_date
-FROM (
-  SELECT customer_id, MIN(data_contratacao)::timestamptz AS first_date
-  FROM cs_contracts
-  WHERE tipo = 'crowdfunding'
-  GROUP BY customer_id
-) sub
-WHERE cs_customers.id = sub.customer_id
-AND cs_customers.empresa = 'TOKENIZA';
+### 1. Eliminar a aba "Aportes" para Tokeniza
+
+A tab `renovacao` com o label "Aportes" será removida do `TabsList` para clientes Tokeniza. Clientes Blue continuam com "Renovação" normalmente.
+
+### 2. Enriquecer a aba "Investimentos" com os KPIs e alerta
+
+O conteúdo da aba `contratos` (que hoje só mostra a lista) vai incorporar o que estava nos "Aportes":
+
+**Estrutura final da aba "Investimentos" para Tokeniza:**
+```text
+┌─────────────────────────────────────────────────────┐
+│  KPIs: Total Investido | Ticket Médio | Qtd | Último │
+├─────────────────────────────────────────────────────┤
+│  [Alerta de inatividade se aplicável]               │
+├─────────────────────────────────────────────────────┤
+│  Lista detalhada de investimentos (timeline)        │
+└─────────────────────────────────────────────────────┘
 ```
 
-### Passo 3: Garantir default na sincronizacao futura
+### 3. Arquivos alterados
 
-Verificar o edge function de sincronizacao SGT (`sgt-sync` ou similar) para garantir que novos contratos Tokeniza recebam `tipo = 'crowdfunding'` como default quando o tipo nao vier preenchido da API.
+- **`src/pages/cs/CSClienteDetailPage.tsx`**:
+  - Remover o `TabsTrigger` e `TabsContent` de `renovacao` para Tokeniza (mas mantê-los para Blue)
+  - Para Tokeniza, a aba `contratos` passa a renderizar `<CSAportesTab>` (que já tem KPIs + lista completa)
+  - Para Blue, a aba `contratos` continua como está (lista de contratos) e `renovacao` continua sendo `<CSRenovacaoTab>`
 
-### Resultado esperado
+- **`src/components/cs/CSAportesTab.tsx`**:
+  - O componente já contém KPIs + alerta + lista completa — está pronto para ser a aba unificada
+  - Nenhuma mudança de lógica necessária, apenas passará a ocupar o espaço da aba `contratos` para Tokeniza
 
-- Os 63 contratos passam a ser contabilizados como crowdfunding
-- O cliente Barbosa de Souza volta a aparecer com seu investimento na listagem
-- Novos contratos sincronizados sem tipo serao classificados corretamente
-- Nenhum cliente "some" da interface por falta de classificacao
+### Resultado
 
-### Nota sobre os ~15 investimentos
+```text
+Antes (Tokeniza):
+Visão Geral | Investimentos | Pesquisas | Deals | Aportes | Incidências | Health | Notas
+                 ↑ só lista         ↑ KPIs + lista (redundante)
 
-O cliente `ebsdesouza@yahoo.com.br` tem apenas 1 contrato registrado no banco. Se ele tem ~15 investimentos na plataforma Tokeniza, esses registros ainda nao foram sincronizados do SGT. Isso e um problema de importacao/sync separado — posso investigar apos esta correcao.
+Depois (Tokeniza):
+Visão Geral | Investimentos | Pesquisas | Deals | Incidências | Health | Notas
+                 ↑ KPIs + alerta + lista completa
+
+Blue: sem alteração
+```
+
+O número de abas cai de 8 para 7 para clientes Tokeniza, eliminando a redundância sem perder nenhuma informação.
