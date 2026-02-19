@@ -2,7 +2,6 @@ import { getCorsHeaders, handleCorsOptions } from '../_shared/cors.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { cleanContactName } from '../_shared/name-sanitizer.ts';
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const log = createLogger('sgt-import-clientes');
 

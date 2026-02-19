@@ -137,3 +137,6 @@ verify_jwt = false
 
 [functions.sdr-proactive-outreach]
 verify_jwt = false
+
+[functions.cs-backfill-contracts]
+verify_jwt = false
