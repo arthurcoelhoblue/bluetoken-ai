@@ -182,12 +182,13 @@ Deno.serve(async (req) => {
 
         // DEBUG: log structure for first 3 contacts
         if (detalhes.length < 3) {
-          log.info(`DEBUG lead keys para ${contact.nome}`, {
-            lead_keys: Object.keys(lead),
-            has_dados_tokeniza: !!lead.dados_tokeniza,
-            dados_tokeniza_keys: lead.dados_tokeniza ? Object.keys(lead.dados_tokeniza) : null,
-            has_investimentos_direct: !!lead.investimentos,
-            has_tokeniza_investimentos: !!lead.tokeniza_investimentos,
+          log.info(`DEBUG lead tokeniza data para ${contact.nome}`, {
+            tokeniza_projetos: lead.tokeniza_projetos,
+            tokeniza_projetos_type: typeof lead.tokeniza_projetos,
+            tokeniza_investidor: lead.tokeniza_investidor,
+            tokeniza_qtd_investimentos: lead.tokeniza_qtd_investimentos,
+            tokeniza_valor_investido: lead.tokeniza_valor_investido,
+            tokeniza_ultimo_investimento: lead.tokeniza_ultimo_investimento,
           });
         }
 
