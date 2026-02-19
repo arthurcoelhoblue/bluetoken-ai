@@ -5,12 +5,12 @@ import type { CSCustomer, CSCustomerFilters } from '@/types/customerSuccess';
 
 const PAGE_SIZE = 25;
 
-export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
+export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0, search = '') {
   const { activeCompanies, activeCompany } = useCompany();
   const empresa = filters.empresa || null;
 
   return useQuery({
-    queryKey: ['cs-customers', empresa || activeCompanies, filters, page],
+    queryKey: ['cs-customers', empresa || activeCompanies, filters, page, search],
     queryFn: async () => {
       // Contract-based filters (both Blue and Tokeniza)
       const needsContractFilter = !!(
@@ -82,6 +82,21 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
         }
       }
 
+      // If searching by name/email, first resolve matching contact IDs
+      let searchContactIds: string[] | null = null;
+      if (search && search.length >= 2) {
+        const term = `%${search}%`;
+        const { data: matchedContacts } = await supabase
+          .from('contacts')
+          .select('id')
+          .or(`nome.ilike.${term},email.ilike.${term}`)
+          .in('empresa', (empresa ? [empresa] : activeCompanies) as ('AXIA' | 'BLUE' | 'MPUPPE' | 'TOKENIZA')[]);
+        searchContactIds = (matchedContacts ?? []).map(c => c.id);
+        if (searchContactIds.length === 0) {
+          return { data: [] as CSCustomer[], count: 0, pageSize: PAGE_SIZE };
+        }
+      }
+
       let query = supabase
         .from('cs_customers')
         .select(`
@@ -103,6 +118,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
       if (filters.renovacao_de) query = query.gte('proxima_renovacao', filters.renovacao_de);
       if (filters.renovacao_ate) query = query.lte('proxima_renovacao', filters.renovacao_ate);
       if (contractCustomerIds) query = query.in('id', contractCustomerIds);
+      if (searchContactIds) query = query.in('contact_id', searchContactIds);
 
       const from = page * PAGE_SIZE;
       const to = from + PAGE_SIZE - 1;
