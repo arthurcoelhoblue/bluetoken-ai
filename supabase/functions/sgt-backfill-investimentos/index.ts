@@ -5,7 +5,7 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const log = createLogger('sgt-backfill-investimentos');
 
 const SGT_API_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api';
-const BATCH_SIZE = 10;
+const BATCH_SIZE = 50;
 const SETTINGS_CATEGORY = 'sgt-sync';
 const SETTINGS_KEY = 'backfill-investimentos-offset';
 
@@ -20,6 +20,38 @@ async function saveOffset(supabase: any, offset: number) {
     },
     { onConflict: 'category,key' }
   );
+}
+
+/** Fetch all rows from a query, paginating to bypass 1000-row limit */
+async function fetchAllRows(
+  supabase: any,
+  table: string,
+  selectCols: string,
+  filters: Record<string, any>,
+  orderCol = 'created_at'
+): Promise<any[]> {
+  const PAGE = 1000;
+  const all: any[] = [];
+  let offset = 0;
+  let hasMore = true;
+
+  while (hasMore) {
+    let q = supabase.from(table).select(selectCols).order(orderCol, { ascending: true }).range(offset, offset + PAGE - 1);
+    for (const [key, val] of Object.entries(filters)) {
+      if (val === true || val === false) q = q.eq(key, val);
+      else q = q.eq(key, val);
+    }
+    const { data, error } = await q;
+    if (error) throw error;
+    if (data && data.length > 0) {
+      all.push(...data);
+      offset += PAGE;
+      hasMore = data.length === PAGE;
+    } else {
+      hasMore = false;
+    }
+  }
+  return all;
 }
 
 Deno.serve(async (req) => {
@@ -65,22 +97,13 @@ Deno.serve(async (req) => {
       }
     } catch { /* no body */ }
 
-    // Fetch Tokeniza customers that have NO detailed contracts (oferta_id IS NOT NULL)
-    // We get all active Tokeniza customers and filter out those that already have detailed contracts
-    const { data: allCustomers, error: fetchErr } = await supabase
-      .from('cs_customers')
-      .select('id, contact_id')
-      .eq('empresa', 'TOKENIZA')
-      .eq('is_active', true)
-      .order('created_at', { ascending: true });
-
-    if (fetchErr) {
-      log.error('Erro ao buscar customers', { error: fetchErr.message });
-      return new Response(JSON.stringify({ error: fetchErr.message }), {
-        status: 500,
-        headers: { ...cors, 'Content-Type': 'application/json' },
-      });
-    }
+    // Fetch ALL Tokeniza customers (paginated to bypass 1000-row limit)
+    const allCustomers = await fetchAllRows(
+      supabase,
+      'cs_customers',
+      'id, contact_id',
+      { empresa: 'TOKENIZA', is_active: true }
+    );
 
     if (!allCustomers || allCustomers.length === 0) {
       return new Response(JSON.stringify({ message: 'Nenhum customer Tokeniza encontrado', total: 0 }), {
@@ -89,23 +112,49 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Find customers that have at least one contract with oferta_id NOT NULL (already backfilled)
-    const { data: alreadyDone } = await supabase
-      .from('cs_contracts')
-      .select('customer_id')
-      .eq('empresa', 'TOKENIZA')
-      .not('oferta_id', 'is', null);
+    // Find customers that already have detailed contracts (paginated)
+    const alreadyDoneRows = await fetchAllRows(
+      supabase,
+      'cs_contracts',
+      'customer_id',
+      { empresa: 'TOKENIZA' }
+    );
+    // Filter only those with oferta_id NOT NULL — fetchAllRows can't do .not() easily,
+    // so we fetch all and filter in JS (oferta_id will be present in data)
+    // Actually let's do a dedicated query for this
+    const doneCustomerIds = new Set<string>();
+    {
+      let page = 0;
+      const PAGE = 1000;
+      let hasMore = true;
+      while (hasMore) {
+        const { data } = await supabase
+          .from('cs_contracts')
+          .select('customer_id')
+          .eq('empresa', 'TOKENIZA')
+          .not('oferta_id', 'is', null)
+          .range(page, page + PAGE - 1);
+        if (data && data.length > 0) {
+          data.forEach((r: any) => doneCustomerIds.add(r.customer_id));
+          page += PAGE;
+          hasMore = data.length === PAGE;
+        } else {
+          hasMore = false;
+        }
+      }
+    }
 
-    const doneSet = new Set((alreadyDone || []).map((r: any) => r.customer_id));
-    const pendingCustomers = allCustomers.filter((c: any) => !doneSet.has(c.id));
+    const pendingCustomers = allCustomers.filter((c: any) => !doneCustomerIds.has(c.id));
 
     const total = pendingCustomers.length;
-    log.info(`Total pendentes: ${total}, offset: ${offset}`);
+    log.info(`Total customers: ${allCustomers.length}, já processados: ${doneCustomerIds.size}, pendentes: ${total}, offset: ${offset}`);
 
     if (offset >= total) {
       await saveOffset(supabase, 0);
       return new Response(JSON.stringify({
         message: 'Backfill completo! Todos os customers já foram processados.',
+        total_customers: allCustomers.length,
+        total_com_investimentos: doneCustomerIds.size,
         total,
         processados: 0,
         offset: 0,
@@ -120,92 +169,53 @@ Deno.serve(async (req) => {
     let investimentos_total = 0;
     let errors = 0;
     let sem_dados = 0;
-    const detalhes: any[] = [];
+
+    const statusMap: Record<string, string> = {
+      FINISHED: 'ATIVO',
+      PAID: 'ATIVO',
+      PENDING: 'PENDENTE',
+      CANCELLED: 'CANCELADO',
+    };
 
     for (const customer of batch) {
       try {
-        // Get contact info
         const { data: contact } = await supabase
           .from('contacts')
           .select('id, email, telefone, nome')
           .eq('id', customer.contact_id)
           .maybeSingle();
 
-        if (!contact) {
-          log.warn(`Contact não encontrado para customer ${customer.id}`);
-          errors++;
-          continue;
-        }
+        if (!contact) { errors++; continue; }
 
-        // Build search payload
         const payload: Record<string, string> = {};
-        if (contact.email) {
-          payload.email = contact.email;
-        } else if (contact.telefone) {
-          payload.telefone = contact.telefone;
-        } else {
-          log.warn(`Contact ${contact.id} sem email/telefone`);
-          sem_dados++;
-          continue;
-        }
+        if (contact.email) payload.email = contact.email;
+        else if (contact.telefone) payload.telefone = contact.telefone;
+        else { sem_dados++; continue; }
 
-        // Call SGT API
         const sgtResponse = await fetch(SGT_API_URL, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': sgtApiKey,
-          },
+          headers: { 'Content-Type': 'application/json', 'x-api-key': sgtApiKey },
           body: JSON.stringify(payload),
         });
 
-        if (!sgtResponse.ok) {
-          log.warn(`SGT retornou ${sgtResponse.status} para contact ${contact.id}`);
-          errors++;
-          continue;
-        }
+        if (!sgtResponse.ok) { errors++; continue; }
 
         const sgtData = await sgtResponse.json();
 
-        // Unwrap lead
-        let lead: any = null;
-        if (sgtData?.found && sgtData?.lead) {
-          lead = sgtData.lead;
-        } else if (Array.isArray(sgtData) && sgtData.length > 0) {
-          lead = sgtData[0]?.lead ?? sgtData[0];
-        }
-
-        if (!lead) {
-          sem_dados++;
-          continue;
-        }
-
-        // dados_tokeniza is at root level of sgtData, NOT inside lead
-        const dadosTokeniza = sgtData.dados_tokeniza;
-
-        // Extract investimentos from dados_tokeniza (root level)
-        const investimentos = dadosTokeniza?.investimentos;
+        // dados_tokeniza is at root level
+        const investimentos = sgtData?.dados_tokeniza?.investimentos;
         if (!investimentos || !Array.isArray(investimentos) || investimentos.length === 0) {
           sem_dados++;
-          detalhes.push({ contact_id: contact.id, nome: contact.nome, status: 'sem_investimentos' });
           continue;
         }
 
-        // Delete old contracts without oferta_id for this customer
+        // Delete old contracts without oferta_id
         await supabase
           .from('cs_contracts')
           .delete()
           .eq('customer_id', customer.id)
           .eq('empresa', 'TOKENIZA')
           .is('oferta_id', null);
-
-        // Upsert each investment
-        const statusMap: Record<string, string> = {
-          FINISHED: 'ATIVO',
-          PAID: 'ATIVO',
-          PENDING: 'PENDENTE',
-          CANCELLED: 'CANCELADO',
-        };
 
         for (const inv of investimentos) {
           const invDate = new Date(inv.data);
@@ -231,12 +241,6 @@ Deno.serve(async (req) => {
 
         investimentos_total += investimentos.length;
         processados++;
-        detalhes.push({
-          contact_id: contact.id,
-          nome: contact.nome,
-          investimentos: investimentos.length,
-        });
-
         log.info(`${investimentos.length} investimentos para ${contact.nome} (customer ${customer.id})`);
       } catch (err) {
         log.error(`Erro processando customer ${customer.id}`, { error: String(err) });
@@ -244,7 +248,6 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Save next offset
     const nextOffset = offset + batch.length;
     await saveOffset(supabase, nextOffset >= total ? 0 : nextOffset);
 
@@ -253,12 +256,12 @@ Deno.serve(async (req) => {
       investimentos_total,
       errors,
       sem_dados,
+      total_customers: allCustomers.length,
       total_pendentes: total,
       batch_size: batch.length,
       offset_atual: offset,
       proximo_offset: nextOffset >= total ? 0 : nextOffset,
       backfill_completo: nextOffset >= total,
-      detalhes,
       timestamp: new Date().toISOString(),
     };
 
