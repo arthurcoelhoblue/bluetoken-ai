@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { PageShell } from '@/components/layout/PageShell';
-import { AlertTriangle, Check, Bot, User, Shield, HelpCircle, UserX } from 'lucide-react';
+import { AlertTriangle, Check, Bot, User, Shield, HelpCircle, UserX, Tag } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -9,11 +9,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Input } from '@/components/ui/input';
 import { toast } from 'sonner';
 import { useLossPendencies, useResolveLoss, type LossPendency } from '@/hooks/useLossPendencies';
 import { useLossCategories } from '@/hooks/useDeals';
 import { useFaqPendencies, useResolveFaq } from '@/hooks/useKnowledgeFaq';
 import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/useOrphanDeals';
+import { useCSOfertasSemNome, useUpdateOfertaNome, type CSOfertaSemNome } from '@/hooks/useCSOfertaMapping';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { KnowledgeFaq } from '@/types/knowledge';
@@ -236,15 +238,74 @@ function OrphanDealCard({ deal, onDealClick }: { deal: OrphanDeal; onDealClick?:
   );
 }
 
+// --- Oferta Sem Nome Card ---
+function OfertaSemNomeCard({ oferta }: { oferta: CSOfertaSemNome }) {
+  const updateNome = useUpdateOfertaNome();
+  const [nome, setNome] = useState('');
+
+  const formatPeriodo = (min: string | null, max: string | null) => {
+    if (!min && !max) return '—';
+    const fmt = (d: string) => new Date(d).toLocaleDateString('pt-BR', { month: 'short', year: '2-digit' });
+    if (min && max && min !== max) return `${fmt(min)} – ${fmt(max)}`;
+    return fmt(min ?? max!);
+  };
+
+  const handleAplicar = () => {
+    if (!nome.trim()) { toast.error('Informe o nome da oferta'); return; }
+    updateNome.mutate(
+      { oferta_id: oferta.oferta_id, nome: nome.trim() },
+      { onSuccess: () => { toast.success('Nome aplicado com sucesso!'); setNome(''); } }
+    );
+  };
+
+  return (
+    <Card className="border-muted">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between">
+          <div>
+            <CardTitle className="text-base font-mono text-sm">
+              ID: {oferta.oferta_id.slice(0, 8)}…
+            </CardTitle>
+            <p className="text-sm text-muted-foreground mt-1">
+              {formatPeriodo(oferta.data_min, oferta.data_max)} • {oferta.qtd_clientes} cliente{oferta.qtd_clientes !== 1 ? 's' : ''} • {oferta.qtd_contratos} investimento{oferta.qtd_contratos !== 1 ? 's' : ''}
+            </p>
+          </div>
+          <Badge variant="outline" className="bg-muted/50 text-muted-foreground border-muted shrink-0">
+            <Tag className="h-3 w-3 mr-1" />Sem nome
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm font-medium mb-3">
+          Volume: <span className="text-foreground">R$ {oferta.volume_total.toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</span>
+        </p>
+        <div className="flex items-center gap-2">
+          <Input
+            value={nome}
+            onChange={e => setNome(e.target.value)}
+            placeholder='Ex: Renda Fixa Tokeniza Mar/24'
+            className="flex-1"
+            onKeyDown={e => { if (e.key === 'Enter') handleAplicar(); }}
+          />
+          <Button size="sm" onClick={handleAplicar} disabled={updateNome.isPending || !nome.trim()}>
+            Aplicar
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // --- Main Page ---
 export default function PendenciasPerda() {
   const { data: lossPendencies = [], isLoading: loadingLoss } = useLossPendencies();
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
   const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
+  const { data: ofertasSemNome = [], isLoading: loadingOfertas } = useCSOfertasSemNome();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
-  const isLoading = loadingLoss || loadingFaq || loadingOrphan;
-  const totalPendencies = lossPendencies.length + faqPendencies.length + orphanDeals.length;
+  const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas;
+  const totalPendencies = lossPendencies.length + faqPendencies.length + orphanDeals.length + ofertasSemNome.length;
 
   return (
     <AppLayout>
@@ -282,6 +343,15 @@ export default function PendenciasPerda() {
             {lossPendencies.length > 0 && (
               <div className="space-y-3">
                 {lossPendencies.map(p => <PendencyCard key={p.id} pendency={p} />)}
+              </div>
+            )}
+            {ofertasSemNome.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Tag className="h-5 w-5 text-primary" />
+                  Ofertas Tokeniza sem nome ({ofertasSemNome.length})
+                </h2>
+                {ofertasSemNome.map(o => <OfertaSemNomeCard key={o.oferta_id} oferta={o} />)}
               </div>
             )}
           </>

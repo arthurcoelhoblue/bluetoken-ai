@@ -15,6 +15,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToggleTaskActivity } from '@/hooks/useDealDetail';
 import { useLossPendencyCount } from '@/hooks/useLossPendencies';
+import { useCSOfertasSemNome } from '@/hooks/useCSOfertaMapping';
 import { useCanView } from '@/hooks/useScreenPermissions';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -67,7 +68,9 @@ function WorkbenchContent() {
   const { data: pipelines, isLoading: loadingPipelines } = useWorkbenchPipelineSummary();
   const { data: recentDeals, isLoading: loadingRecent } = useWorkbenchRecentDeals();
   const toggleTask = useToggleTaskActivity();
-  const pendencyCount = useLossPendencyCount();
+  const lossPendencyCount = useLossPendencyCount();
+  const { data: ofertasSemNome = [] } = useCSOfertasSemNome();
+  const pendencyCount = lossPendencyCount + ofertasSemNome.length;
   const canViewPendencias = useCanView('pendencias_gestor');
 
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
