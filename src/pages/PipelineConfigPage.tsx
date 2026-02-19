@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Settings, Plus, Trash2, GripVertical, Clock, Zap } from 'lucide-react';
 import { AutoRulesTab } from '@/components/pipeline/AutoRulesTab';
 import { usePipelines } from '@/hooks/usePipelines';
-import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage } from '@/hooks/usePipelineConfig';
+import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage, useDuplicatePipeline } from '@/hooks/usePipelineConfig';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -32,6 +32,7 @@ function PipelineConfigContent() {
   const createPipeline = useCreatePipeline();
   const updatePipeline = useUpdatePipeline();
   const deletePipeline = useDeletePipeline();
+  const duplicatePipeline = useDuplicatePipeline();
   const createStage = useCreateStage();
   const updateStage = useUpdateStage();
   const deleteStage = useDeleteStage();
@@ -40,6 +41,7 @@ function PipelineConfigContent() {
   const [newName, setNewName] = useState('');
   const [newEmpresa, setNewEmpresa] = useState<'BLUE' | 'TOKENIZA'>('BLUE');
   const [newTipo, setNewTipo] = useState('COMERCIAL');
+  const [cloneFromId, setCloneFromId] = useState<string | null>(null);
   const [newStageDialogOpen, setNewStageDialogOpen] = useState<string | null>(null);
   const [newStageName, setNewStageName] = useState('');
 
@@ -50,9 +52,14 @@ function PipelineConfigContent() {
   const handleCreatePipeline = async () => {
     if (!newName.trim()) return;
     try {
-      await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo });
-      toast.success('Pipeline criado');
+      if (cloneFromId) {
+        await duplicatePipeline.mutateAsync({ sourceId: cloneFromId, newName: newName.trim(), newEmpresa: newEmpresa });
+      } else {
+        await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo });
+      }
+      toast.success(cloneFromId ? 'Pipeline clonado com sucesso' : 'Pipeline criado');
       setNewName('');
+      setCloneFromId(null);
       setNewDialogOpen(false);
     } catch (e: unknown) {
       toast.error((e as Error).message);
@@ -136,7 +143,16 @@ function PipelineConfigContent() {
                     <SelectItem value="CUSTOM">Custom</SelectItem>
                   </SelectContent>
                 </Select>
-                <Button onClick={handleCreatePipeline} className="w-full" disabled={createPipeline.isPending}>Criar</Button>
+                <Select value={cloneFromId ?? '_none'} onValueChange={v => setCloneFromId(v === '_none' ? null : v)}>
+                  <SelectTrigger><SelectValue placeholder="Clonar de (opcional)" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="_none">Nenhum (vazio)</SelectItem>
+                    {(pipelines ?? []).map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.nome} ({p.empresa})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button onClick={handleCreatePipeline} className="w-full" disabled={createPipeline.isPending || duplicatePipeline.isPending}>Criar</Button>
               </div>
             </DialogContent>
           </Dialog>
