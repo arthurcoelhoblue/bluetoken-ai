@@ -25,6 +25,10 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
 
       if (needsContractFilter) {
         let cq = supabase.from('cs_contracts').select('customer_id');
+        // For Tokeniza filters, only consider crowdfunding contracts
+        if (filters.investimento_de || filters.investimento_ate || filters.oferta_nome) {
+          cq = cq.eq('tipo', 'crowdfunding');
+        }
         if (filters.ano_fiscal) cq = cq.eq('ano_fiscal', filters.ano_fiscal);
         if (filters.contrato_status) cq = cq.eq('status', filters.contrato_status);
         if (filters.investimento_de) cq = cq.gte('data_contratacao', filters.investimento_de);
@@ -43,11 +47,12 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0) {
         cutoffDate.setDate(cutoffDate.getDate() - filters.dias_inativo_min!);
         const cutoff = cutoffDate.toISOString().split('T')[0];
 
-        // Get all Tokeniza contracts, group by customer to find max date
+        // Get all Tokeniza crowdfunding contracts, group by customer to find max date
         const { data: allContracts } = await supabase
           .from('cs_contracts')
           .select('customer_id, data_contratacao')
           .eq('empresa', 'TOKENIZA')
+          .eq('tipo', 'crowdfunding')
           .not('data_contratacao', 'is', null);
 
         const lastInvestMap = new Map<string, string>();
