@@ -1,36 +1,67 @@
 
+# Reset do import + Carga retroativa de contratos
 
-# Clonar pipeline existente ao criar um novo
+## 1. Disparar reset do import com sanitizacao
 
-## O que muda
+O `sgt-import-clientes` ja aceita `reset_offset: true` no body. Basta invocar a funcao com esse parametro para reprocessar todos os contatos com a sanitizacao de nomes ativa.
 
-No dialog "Novo Pipeline", adicionar um campo opcional **"Clonar de"** com um dropdown listando os pipelines existentes. Quando selecionado, o novo pipeline sera criado com todas as stages copiadas do pipeline de origem (nomes, cores, SLA, posicoes, flags won/lost).
+**Acao**: Invocar a edge function diretamente apos o deploy. Nao precisa de codigo novo — a logica de reset ja existe.
 
-## Como funciona
+**Fix necessario**: O arquivo `sgt-import-clientes/index.ts` tem um import duplicado na linha 4-5 (`import { createClient }` aparece duas vezes). Isso sera corrigido antes do deploy.
 
-1. O usuario clica em "Novo Funil"
-2. Preenche nome, empresa e tipo normalmente
-3. Opcionalmente seleciona um pipeline existente no campo "Clonar de"
-4. Ao clicar "Criar":
-   - Se nenhum clone selecionado: cria pipeline vazio (comportamento atual)
-   - Se clone selecionado: usa o hook `useDuplicatePipeline` que ja existe no codigo para copiar pipeline + stages
+## 2. Edge function dedicada: `cs-backfill-contracts`
 
-## Detalhes tecnicos
+Criar uma nova edge function que percorre todos os `cs_customers` e gera contratos retroativos baseados em `data_primeiro_ganho` e `valor_mrr`.
 
-### Arquivo: `src/pages/PipelineConfigPage.tsx`
+**Logica:**
 
-- Adicionar estado `cloneFromId` (string | null)
-- Adicionar `<Select>` opcional "Clonar de" no dialog, listando `pipelines` existentes com nome + empresa
-- No `handleCreatePipeline`:
-  - Se `cloneFromId` preenchido, chamar `duplicatePipeline.mutateAsync({ sourceId: cloneFromId, newName, newEmpresa })`
-  - Senao, manter fluxo atual com `createPipeline.mutateAsync`
-- Importar `useDuplicatePipeline` do hook existente
+Para cada cs_customer com `data_primeiro_ganho` preenchido:
+1. Verificar se ja tem contrato em `cs_contracts` — se sim, pular
+2. Criar contrato com:
+   - `ano_fiscal` = ano de `data_primeiro_ganho`
+   - `valor` = `valor_mrr` do cliente
+   - `data_contratacao` = `data_primeiro_ganho`
+   - `data_vencimento` = `data_primeiro_ganho` + 12 meses
+   - `status` = se vencimento < hoje → 'VENCIDO', senao → 'ATIVO'
+3. Calcular `proxima_renovacao` = `data_primeiro_ganho` + 9 meses
+4. Atualizar `cs_customers.proxima_renovacao`
 
-### Arquivo: `src/hooks/usePipelineConfig.ts`
+**Processamento em lote**: 100 clientes por execucao com persistencia de offset (mesmo padrao do import).
 
-- Ajustar `useDuplicatePipeline` para tambem copiar o campo `tipo` do pipeline de origem (atualmente so copia `descricao`)
+**Resultados esperados**: 449 contratos criados, 449 clientes com `proxima_renovacao` preenchido.
 
-### Arquivo: `src/types/customFields.ts`
+## Secao tecnica
 
-- Nenhuma alteracao necessaria, `PipelineFormData` ja tem campo `tipo`
+### Arquivo: `supabase/functions/cs-backfill-contracts/index.ts` (NOVO)
 
+```text
+Fluxo:
+1. Ler offset de system_settings (category: 'cs-backfill', key: 'contracts-offset')
+2. Buscar cs_customers com data_primeiro_ganho NOT NULL, range(offset, offset+99)
+3. Para cada:
+   a. Checar se ja existe cs_contract para esse customer_id
+   b. Se nao: INSERT cs_contracts com dados calculados
+   c. UPDATE cs_customers.proxima_renovacao
+4. Salvar proximo offset
+5. Retornar { processed, created, skipped, next_offset, ciclo_completo }
+```
+
+### Arquivo: `supabase/config.toml`
+
+Adicionar:
+```
+[functions.cs-backfill-contracts]
+verify_jwt = false
+```
+
+### Arquivo: `supabase/functions/sgt-import-clientes/index.ts`
+
+- Remover import duplicado da linha 5
+
+### Execucao
+
+Apos deploy:
+1. Chamar `sgt-import-clientes` com `{ "reset_offset": true }` — reprocessa nomes
+2. Chamar `cs-backfill-contracts` repetidamente ate `ciclo_completo: true` — gera contratos retroativos
+
+Ambas as chamadas podem ser feitas pela interface de teste de edge functions.
