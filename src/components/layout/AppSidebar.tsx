@@ -36,6 +36,7 @@ import { useAuth } from '@/contexts/AuthContext';
   Users,
   AlertCircle,
   Shield,
+  Tag,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -116,6 +117,7 @@ const navGroups: NavGroup[] = [
       { title: 'Pesquisas', url: '/cs/pesquisas', icon: ClipboardList, screenKey: 'cs_pesquisas' },
       { title: 'Incidências', url: '/cs/incidencias', icon: AlertCircle, screenKey: 'cs_incidencias' },
       { title: 'Playbooks', url: '/cs/playbooks', icon: BookOpen, screenKey: 'cs_playbooks' },
+      { title: 'Ofertas Tokeniza', url: '/cs/admin/ofertas', icon: Tag, screenKey: 'cs_ofertas_admin' },
     ],
   },
   {
