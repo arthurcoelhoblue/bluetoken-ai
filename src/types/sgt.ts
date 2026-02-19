@@ -72,6 +72,15 @@ export interface DadosLead {
 // ========================================
 // Dados Tokeniza (dados_tokeniza)
 // ========================================
+export interface InvestimentoTokeniza {
+  oferta_nome: string;
+  oferta_id: string;
+  valor: number;
+  data: string;
+  status: string;
+  tipo: string;
+}
+
 export interface DadosTokeniza {
   valor_investido?: number;
   qtd_investimentos?: number;
@@ -84,6 +93,9 @@ export interface DadosTokeniza {
   // Carrinho abandonado
   carrinho_abandonado?: boolean;
   valor_carrinho?: number;
+
+  // Detalhamento individual de investimentos
+  investimentos?: InvestimentoTokeniza[];
 }
 
 // ========================================

@@ -1632,9 +1632,12 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           notas: string | null
+          oferta_id: string | null
+          oferta_nome: string | null
           plano: string
           renovado_em: string | null
           status: string
+          tipo: string | null
           updated_at: string
           valor: number
         }
@@ -1647,9 +1650,12 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           notas?: string | null
+          oferta_id?: string | null
+          oferta_nome?: string | null
           plano?: string
           renovado_em?: string | null
           status?: string
+          tipo?: string | null
           updated_at?: string
           valor?: number
         }
@@ -1662,9 +1668,12 @@ export type Database = {
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           notas?: string | null
+          oferta_id?: string | null
+          oferta_nome?: string | null
           plano?: string
           renovado_em?: string | null
           status?: string
+          tipo?: string | null
           updated_at?: string
           valor?: number
         }
