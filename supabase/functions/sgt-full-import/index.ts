@@ -181,6 +181,8 @@ async function processLead(supabase: any, lead: any, empresa: string, now: strin
     if (existingContact) {
       contactId = existingContact.id;
     } else if (email) {
+      // Busca por email NA MESMA EMPRESA — evita criar duplicatas em imports repetidos
+      // (o mesmo lead do SGT pode ter lead_ids diferentes entre runs, por isso não basta buscar por legacy_lead_id)
       const { data: emailContact } = await supabase
         .from('contacts')
         .select('id')
@@ -190,7 +192,27 @@ async function processLead(supabase: any, lead: any, empresa: string, now: strin
 
       if (emailContact) {
         contactId = emailContact.id;
-        await supabase.from('contacts').update({ legacy_lead_id: leadId, updated_at: now }).eq('id', contactId);
+        // Vincula o legacy_lead_id ao contact existente para evitar criação de duplicata futura
+        await supabase
+          .from('contacts')
+          .update({ legacy_lead_id: leadId, updated_at: now })
+          .eq('id', contactId);
+      } else if (telefone) {
+        // Fallback: busca por telefone na mesma empresa antes de criar novo contact
+        const { data: phoneContact } = await supabase
+          .from('contacts')
+          .select('id')
+          .eq('telefone', telefone)
+          .eq('empresa', empresa)
+          .maybeSingle();
+
+        if (phoneContact) {
+          contactId = phoneContact.id;
+          await supabase
+            .from('contacts')
+            .update({ legacy_lead_id: leadId, email: email || undefined, updated_at: now })
+            .eq('id', contactId);
+        }
       }
     }
 
