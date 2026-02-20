@@ -93,6 +93,7 @@ serve(async (req) => {
               empresa: customer.empresa,
               maxTokens: 200,
               supabase,
+              model: 'gemini-flash',
             });
             if (aiResult.content) motivo = aiResult.content;
           }

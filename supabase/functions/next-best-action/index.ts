@@ -125,6 +125,7 @@ Sem markdown, sem explicação, apenas o JSON.`;
       userId: user_id,
       maxTokens: 1500,
       supabase,
+      model: 'gemini-flash',
     });
 
     let acoes: NBAAction[] = [];

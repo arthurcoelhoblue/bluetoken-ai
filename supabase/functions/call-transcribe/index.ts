@@ -53,6 +53,7 @@ Deno.serve(async (req) => {
       empresa: call.empresa,
       maxTokens: 1024,
       supabase,
+      model: 'gemini-flash',
     });
 
     let analysis: { summary?: string; sentiment?: string; action_items?: string[] };

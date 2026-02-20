@@ -86,6 +86,7 @@ Deno.serve(async (req) => {
         functionName: 'deal-loss-analysis',
         maxTokens: 2000,
         supabase,
+        model: 'gemini-flash',
       });
 
       let analysis: Record<string, unknown> = {};
@@ -124,6 +125,7 @@ Deno.serve(async (req) => {
       functionName: 'deal-loss-analysis',
       maxTokens: 500,
       supabase,
+      model: 'gemini-flash',
     });
 
     let categoria_ia = 'OUTRO';

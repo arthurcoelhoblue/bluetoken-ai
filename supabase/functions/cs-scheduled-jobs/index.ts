@@ -49,6 +49,7 @@ async function handleDailyBriefing(supabase: ReturnType<typeof createServiceClie
       temperature: 0.4,
       maxTokens: 1000,
       supabase,
+      model: 'gemini-flash',
     });
 
     if (aiResult.content) {
@@ -212,6 +213,7 @@ async function handleTrendingTopics(supabase: ReturnType<typeof createServiceCli
       functionName: 'cs-scheduled-jobs/trending-topics',
       empresa,
       supabase,
+      model: 'gemini-flash',
     });
 
     let result = { topics: [], wordCloud: [] };

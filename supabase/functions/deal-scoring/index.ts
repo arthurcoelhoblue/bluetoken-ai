@@ -184,6 +184,7 @@ serve(async (req) => {
             functionName: 'deal-scoring',
             maxTokens: 100,
             supabase,
+            model: 'gemini-flash',
           });
           if (aiResult.content) proximaAcao = aiResult.content;
         }

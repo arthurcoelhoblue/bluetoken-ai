@@ -208,6 +208,7 @@ serve(async (req) => {
       promptVersionId: selectedPromptVersionId || undefined,
       supabase,
       messages,
+      model: 'gemini-flash',
     });
 
     let content = aiResult.content;
