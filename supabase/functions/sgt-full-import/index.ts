@@ -16,12 +16,17 @@ const SETTINGS_CATEGORY = 'sgt-full-import';
 // ========================================
 function isClienteElegivel(lead: any, empresa: string): boolean {
   if (empresa === 'BLUE') {
+    // plano_ativo: cliente tem assinatura ativa
     if (lead.plano_ativo === true) return true;
+    // venda_realizada: venda confirmada, mesmo sem plano ativo ainda
     if (lead.venda_realizada === true) return true;
+    // stage_atual: estágios que indicam cliente convertido
     const stage = (lead.stage_atual || '').toLowerCase();
-    if (stage === 'vendido' || stage === 'cliente') return true;
+    const stagesCliente = ['vendido', 'cliente', 'implantação', 'implantacao', 'ativo', 'whatsapp'];
+    if (stagesCliente.some(s => stage.includes(s))) return true;
+    // cliente_status
     const status = (lead.cliente_status || '').toLowerCase();
-    if (status.includes('ativo')) return true;
+    if (status === 'cliente' || status.includes('ativo')) return true;
     return false;
   }
   if (empresa === 'TOKENIZA') {
