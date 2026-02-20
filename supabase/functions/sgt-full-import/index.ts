@@ -5,9 +5,9 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 
 const log = createLogger('sgt-full-import');
 
-// The only SGT endpoint that exists — per-lead lookup by email or phone
-const SGT_API_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/buscar-lead-api';
-const BATCH_SIZE = 50; // smaller batches since each lead = 1 HTTP call to SGT
+// New bulk endpoint — returns up to 500 clients per call
+const SGT_LIST_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/listar-clientes-api';
+const BATCH_SIZE = 500;
 const SETTINGS_CATEGORY = 'sgt-full-import';
 
 // ========================================
@@ -25,7 +25,6 @@ function isClienteElegivel(lead: any, empresa: string): boolean {
   }
   if (empresa === 'TOKENIZA') {
     if (lead.tokeniza_investidor === true) return true;
-    // Must have at least one PAID or FINISHED investment
     const investimentos = lead.dados_tokeniza?.investimentos || lead.investimentos || [];
     if (Array.isArray(investimentos)) {
       const temInvestimentoRealizado = investimentos.some((inv: any) => {
@@ -98,12 +97,192 @@ async function saveOffset(supabase: any, empresa: string, offset: number) {
 }
 
 // ========================================
+// Process a single lead into local DB
+// ========================================
+async function processLead(supabase: any, lead: any, empresa: string, now: string): Promise<{
+  novoContato: boolean;
+  novoCsCustomer: boolean;
+  novosContratos: number;
+  ignorado: boolean;
+  erro: boolean;
+}> {
+  const result = { novoContato: false, novoCsCustomer: false, novosContratos: 0, ignorado: false, erro: false };
+
+  try {
+    const leadId = lead.lead_id || lead.id;
+    if (!leadId) { result.ignorado = true; return result; }
+
+    const email = lead.email || null;
+    const telefone = lead.telefone || null;
+
+    if (!email && !telefone) { result.ignorado = true; return result; }
+
+    const { name: nomeLimpo } = cleanContactName(lead.nome || `Lead ${leadId}`);
+
+    // ---- 1. Upsert lead_contacts ----
+    await supabase.from('lead_contacts').upsert(
+      {
+        lead_id: leadId,
+        empresa,
+        nome: nomeLimpo,
+        email,
+        telefone,
+        updated_at: now,
+      },
+      { onConflict: 'lead_id,empresa', ignoreDuplicates: false }
+    );
+
+    // ---- 2. Upsert contacts ----
+    let contactId: string | null = null;
+
+    const { data: existingContact } = await supabase
+      .from('contacts')
+      .select('id, is_cliente')
+      .eq('legacy_lead_id', leadId)
+      .maybeSingle();
+
+    if (existingContact) {
+      contactId = existingContact.id;
+    } else if (email) {
+      const { data: emailContact } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('email', email)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      if (emailContact) {
+        contactId = emailContact.id;
+        await supabase.from('contacts').update({ legacy_lead_id: leadId, updated_at: now }).eq('id', contactId);
+      }
+    }
+
+    if (!contactId) {
+      const { data: newContact, error: insertErr } = await supabase
+        .from('contacts')
+        .insert({
+          legacy_lead_id: leadId,
+          empresa,
+          nome: nomeLimpo,
+          email,
+          telefone,
+          is_active: true,
+          is_cliente: true,
+          canal_origem: 'SGT',
+          tipo: 'CLIENTE',
+          linkedin_cargo: lead.linkedin_cargo || null,
+          linkedin_empresa: lead.linkedin_empresa || null,
+          linkedin_setor: lead.linkedin_setor || null,
+          linkedin_senioridade: lead.linkedin_senioridade || null,
+          linkedin_url: lead.linkedin_url || null,
+          score_marketing: lead.score_temperatura || null,
+        })
+        .select('id')
+        .single();
+
+      if (insertErr) {
+        log.warn(`Erro ao inserir contato lead ${leadId}`, { error: insertErr.message });
+        result.erro = true;
+        return result;
+      }
+
+      contactId = newContact.id;
+      result.novoContato = true;
+    }
+
+    if (!contactId) { result.ignorado = true; return result; }
+
+    // ---- Enrich contact ----
+    const contactEnrich: Record<string, any> = { is_cliente: true, updated_at: now };
+    if (lead.linkedin_cargo) contactEnrich.linkedin_cargo = lead.linkedin_cargo;
+    if (lead.linkedin_empresa) contactEnrich.linkedin_empresa = lead.linkedin_empresa;
+    if (lead.linkedin_setor) contactEnrich.linkedin_setor = lead.linkedin_setor;
+    if (lead.linkedin_senioridade) contactEnrich.linkedin_senioridade = lead.linkedin_senioridade;
+    if (lead.linkedin_url) contactEnrich.linkedin_url = lead.linkedin_url;
+    if (lead.score_temperatura != null) contactEnrich.score_marketing = lead.score_temperatura;
+    await supabase.from('contacts').update(contactEnrich).eq('id', contactId);
+
+    // ---- 3. Upsert cs_customers ----
+    const sgtExtras = buildSgtExtras(lead);
+    const tags = buildClienteTags(lead, empresa);
+    const investimentos = lead.dados_tokeniza?.investimentos || lead.investimentos || [];
+    const valorMrr = lead.valor_venda
+      || (empresa === 'TOKENIZA' && lead.tokeniza_valor_investido ? lead.tokeniza_valor_investido : null)
+      || 0;
+    const dataPrimeiroGanho = lead.data_venda || lead.data_primeiro_investimento || now;
+
+    const { data: existingCs } = await supabase
+      .from('cs_customers')
+      .select('id')
+      .eq('contact_id', contactId)
+      .eq('empresa', empresa)
+      .maybeSingle();
+
+    result.novoCsCustomer = !existingCs;
+
+    const { data: csCustomer } = await supabase.from('cs_customers').upsert(
+      {
+        contact_id: contactId,
+        empresa,
+        is_active: true,
+        valor_mrr: valorMrr,
+        data_primeiro_ganho: dataPrimeiroGanho,
+        tags,
+        sgt_dados_extras: sgtExtras,
+        sgt_last_sync_at: now,
+      },
+      { onConflict: 'contact_id,empresa' }
+    ).select('id').single();
+
+    // ---- 4. Tokeniza: upsert cs_contracts per investment ----
+    if (empresa === 'TOKENIZA' && csCustomer && Array.isArray(investimentos) && investimentos.length > 0) {
+      const statusMap: Record<string, string> = {
+        FINISHED: 'ATIVO',
+        PAID: 'ATIVO',
+        PENDING: 'PENDENTE',
+        CANCELLED: 'CANCELADO',
+      };
+
+      for (const inv of investimentos) {
+        const invStatus = (inv.status || '').toUpperCase();
+        if (invStatus !== 'PAID' && invStatus !== 'FINISHED') continue;
+
+        const invDate = new Date(inv.data || inv.data_investimento || '');
+        const anoFiscal = isNaN(invDate.getTime()) ? new Date().getFullYear() : invDate.getFullYear();
+
+        const { error: contractErr } = await supabase.from('cs_contracts').upsert(
+          {
+            customer_id: csCustomer.id,
+            empresa: 'TOKENIZA',
+            ano_fiscal: anoFiscal,
+            plano: inv.oferta_nome || 'Investimento',
+            oferta_id: inv.oferta_id || inv.id || null,
+            oferta_nome: inv.oferta_nome || null,
+            tipo: (inv.tipo && inv.tipo.trim()) ? inv.tipo.trim().toLowerCase() : 'crowdfunding',
+            valor: inv.valor || 0,
+            data_contratacao: inv.data || inv.data_investimento || null,
+            status: statusMap[invStatus] || 'ATIVO',
+            notas: 'Importado via sgt-full-import',
+          },
+          { onConflict: 'customer_id,ano_fiscal,oferta_id' }
+        );
+
+        if (!contractErr) result.novosContratos++;
+      }
+    }
+  } catch (err) {
+    log.error('Erro processando lead', { error: String(err) });
+    result.erro = true;
+  }
+
+  return result;
+}
+
+// ========================================
 // Main handler
 // ========================================
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return handleCorsOptions(req);
-  }
+  if (req.method === 'OPTIONS') return handleCorsOptions(req);
 
   const cors = getCorsHeaders(req);
 
@@ -156,66 +335,58 @@ Deno.serve(async (req) => {
       }
     }
 
-    if (manualOffset !== null) {
-      offset = manualOffset;
-    }
+    if (manualOffset !== null) offset = manualOffset;
 
-    log.info(`Iniciando import ${empresa} — offset ${offset}, batch ${BATCH_SIZE}`);
+    log.info(`Iniciando import ${empresa} — offset ${offset}, batch ${BATCH_SIZE} via listar-clientes-api`);
 
-    // ---- Fetch lead_contacts for this empresa (these are ALL leads that ever touched the SGT) ----
-    // We paginate over lead_contacts by empresa, and for each one check if there's already a cs_customer.
-    // If not, we call SGT to get full data, verify if they qualify, and create the cs_customer.
-    const { data: leadContacts, error: fetchErr } = await supabase
-      .from('lead_contacts')
-      .select('lead_id, empresa, email, telefone, nome')
-      .eq('empresa', empresa)
-      .not('email', 'is', null)  // need email or telefone to call SGT
-      .order('created_at', { ascending: true })
-      .range(offset, offset + BATCH_SIZE - 1);
+    // ---- Call SGT listar-clientes-api ----
+    const sgtResponse = await fetch(SGT_LIST_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': sgtApiKey,
+      },
+      body: JSON.stringify({ empresa, limit: BATCH_SIZE, offset }),
+    });
 
-    if (fetchErr) {
-      log.error('Erro ao buscar lead_contacts', { error: fetchErr.message });
-      return new Response(JSON.stringify({ error: fetchErr.message }), {
-        status: 500,
+    if (!sgtResponse.ok) {
+      const details = await sgtResponse.text();
+      log.error(`SGT error ${sgtResponse.status}`, { details });
+      return new Response(JSON.stringify({ error: `SGT error ${sgtResponse.status}`, details }), {
+        status: 502,
         headers: { ...cors, 'Content-Type': 'application/json' },
       });
     }
 
-    // ---- Cycle complete? ----
-    if (!leadContacts || leadContacts.length === 0) {
-      // Try leads with telefone only (no email)
-      const { data: telefoneLCs } = await supabase
-        .from('lead_contacts')
-        .select('lead_id, empresa, email, telefone, nome')
-        .eq('empresa', empresa)
-        .is('email', null)
-        .not('telefone', 'is', null)
-        .order('created_at', { ascending: true })
-        .range(0, 9);
+    const sgtData = await sgtResponse.json();
 
-      if (!telefoneLCs || telefoneLCs.length === 0) {
-        await saveOffset(supabase, empresa, 0);
-        return new Response(JSON.stringify({
-          processados: 0,
-          novos_contatos: 0,
-          novos_cs_customers: 0,
-          novos_contratos: 0,
-          ignorados: 0,
-          erros: 0,
-          proximo_offset: 0,
-          ciclo_completo: true,
-          empresa,
-          timestamp: new Date().toISOString(),
-        }), {
-          status: 200,
-          headers: { ...cors, 'Content-Type': 'application/json' },
-        });
-      }
+    // Support both { clientes: [...] } and { data: [...] } shapes
+    const clientes: any[] = sgtData.clientes || sgtData.data || sgtData.leads || [];
+    const total: number = sgtData.total ?? clientes.length;
+    const hasMore: boolean = sgtData.has_more ?? (clientes.length === BATCH_SIZE);
+
+    log.info(`SGT retornou ${clientes.length} clientes (total: ${total}, has_more: ${hasMore})`);
+
+    if (clientes.length === 0) {
+      await saveOffset(supabase, empresa, 0);
+      return new Response(JSON.stringify({
+        processados: 0,
+        novos_contatos: 0,
+        novos_cs_customers: 0,
+        novos_contratos: 0,
+        ignorados: 0,
+        erros: 0,
+        proximo_offset: 0,
+        ciclo_completo: true,
+        empresa,
+        timestamp: new Date().toISOString(),
+      }), {
+        status: 200,
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      });
     }
 
-    log.info(`Processando ${leadContacts?.length ?? 0} lead_contacts da ${empresa} (offset ${offset})`);
-
-    // ---- Process each lead ----
+    // ---- Process each client ----
     let novosContatos = 0;
     let novosCsCustomers = 0;
     let novosContratos = 0;
@@ -223,249 +394,36 @@ Deno.serve(async (req) => {
     let erros = 0;
     const now = new Date().toISOString();
 
-    for (const lc of (leadContacts || [])) {
-      try {
-        const leadId = lc.lead_id;
-        const identifier = lc.email || lc.telefone;
+    for (const cliente of clientes) {
+      // Qualify first — skip non-clients early
+      if (!isClienteElegivel(cliente, empresa)) {
+        ignorados++;
+        continue;
+      }
 
-        if (!identifier) {
-          ignorados++;
-          continue;
-        }
-
-        // ---- Call SGT buscar-lead-api to get full lead data ----
-        const payload: Record<string, string> = {};
-        if (lc.email) payload.email = lc.email;
-        else if (lc.telefone) payload.telefone = lc.telefone;
-
-        const sgtResponse = await fetch(SGT_API_URL, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'x-api-key': sgtApiKey,
-          },
-          body: JSON.stringify(payload),
-        });
-
-        if (!sgtResponse.ok) {
-          log.warn(`SGT ${sgtResponse.status} para lead ${leadId}`);
-          erros++;
-          continue;
-        }
-
-        const sgtData = await sgtResponse.json();
-
-        // Unwrap: API returns { found, lead } or { found: false }
-        if (!sgtData?.found || !sgtData?.lead) {
-          ignorados++;
-          continue;
-        }
-
-        // The top-level response may also carry dados_tokeniza at root level
-        const lead = {
-          ...sgtData.lead,
-          // Merge root-level tokeniza data if present (per memory note about API structure)
-          dados_tokeniza: sgtData.dados_tokeniza || sgtData.lead?.dados_tokeniza,
-          investimentos: sgtData.investimentos || sgtData.lead?.investimentos,
-        };
-
-        // ---- Qualification check ----
-        if (!isClienteElegivel(lead, empresa)) {
-          ignorados++;
-          continue;
-        }
-
-        const email = lead.email || lc.email || null;
-        const telefone = lead.telefone || lc.telefone || null;
-        const { name: nomeLimpo } = cleanContactName(lead.nome || lc.nome || `Lead ${leadId}`);
-
-        // ---- 1. Upsert lead_contacts (update with latest data) ----
-        await supabase.from('lead_contacts').upsert(
-          {
-            lead_id: leadId,
-            empresa: empresa,
-            nome: nomeLimpo,
-            email,
-            telefone,
-            updated_at: now,
-          },
-          { onConflict: 'lead_id,empresa', ignoreDuplicates: false }
-        );
-
-        // ---- 2. Upsert contacts (keyed by legacy_lead_id) ----
-        let contactId: string | null = null;
-
-        // Try to find existing contact by legacy_lead_id first
-        const { data: existingContact } = await supabase
-          .from('contacts')
-          .select('id, is_cliente, tags')
-          .eq('legacy_lead_id', leadId)
-          .maybeSingle();
-
-        if (existingContact) {
-          contactId = existingContact.id;
-        } else {
-          // Try by email within same empresa
-          if (email) {
-            const { data: emailContact } = await supabase
-              .from('contacts')
-              .select('id, is_cliente, tags')
-              .eq('email', email)
-              .eq('empresa', empresa)
-              .maybeSingle();
-            if (emailContact) {
-              contactId = emailContact.id;
-              // Link legacy_lead_id
-              await supabase.from('contacts').update({ legacy_lead_id: leadId, updated_at: now }).eq('id', contactId);
-            }
-          }
-
-          if (!contactId) {
-            // Create new contact
-            const { data: newContact, error: insertErr } = await supabase
-              .from('contacts')
-              .insert({
-                legacy_lead_id: leadId,
-                empresa: empresa,
-                nome: nomeLimpo,
-                email,
-                telefone,
-                is_active: true,
-                is_cliente: true,
-                canal_origem: 'SGT',
-                tipo: 'CLIENTE',
-                linkedin_cargo: lead.linkedin_cargo || null,
-                linkedin_empresa: lead.linkedin_empresa || null,
-                linkedin_setor: lead.linkedin_setor || null,
-                linkedin_senioridade: lead.linkedin_senioridade || null,
-                linkedin_url: lead.linkedin_url || null,
-                score_marketing: lead.score_temperatura || null,
-              })
-              .select('id')
-              .single();
-
-            if (insertErr) {
-              log.warn(`Erro ao inserir contato para lead ${leadId}`, { error: insertErr.message });
-              erros++;
-              continue;
-            }
-
-            contactId = newContact.id;
-            novosContatos++;
-          }
-        }
-
-        if (!contactId) {
-          ignorados++;
-          continue;
-        }
-
-        // ---- Update contact enrichment data ----
-        const contactEnrich: Record<string, any> = {
-          is_cliente: true,
-          updated_at: now,
-        };
-        if (lead.linkedin_cargo) contactEnrich.linkedin_cargo = lead.linkedin_cargo;
-        if (lead.linkedin_empresa) contactEnrich.linkedin_empresa = lead.linkedin_empresa;
-        if (lead.linkedin_setor) contactEnrich.linkedin_setor = lead.linkedin_setor;
-        if (lead.linkedin_senioridade) contactEnrich.linkedin_senioridade = lead.linkedin_senioridade;
-        if (lead.linkedin_url) contactEnrich.linkedin_url = lead.linkedin_url;
-        if (lead.score_temperatura != null) contactEnrich.score_marketing = lead.score_temperatura;
-
-        await supabase.from('contacts').update(contactEnrich).eq('id', contactId);
-
-        // ---- 3. Upsert cs_customers ----
-        const sgtExtras = buildSgtExtras(lead);
-        const tags = buildClienteTags(lead, empresa);
-
-        const investimentos = lead.dados_tokeniza?.investimentos || lead.investimentos || [];
-        const valorMrr = lead.valor_venda
-          || (empresa === 'TOKENIZA' && lead.tokeniza_valor_investido ? lead.tokeniza_valor_investido : null)
-          || 0;
-        const dataPrimeiroGanho = lead.data_venda || lead.data_primeiro_investimento || now;
-
-        // Check if cs_customer already existed
-        const { data: existingCs } = await supabase
-          .from('cs_customers')
-          .select('id')
-          .eq('contact_id', contactId)
-          .eq('empresa', empresa)
-          .maybeSingle();
-
-        const isNewCs = !existingCs;
-
-        const { data: csCustomer } = await supabase.from('cs_customers').upsert(
-          {
-            contact_id: contactId,
-            empresa,
-            is_active: true,
-            valor_mrr: valorMrr,
-            data_primeiro_ganho: dataPrimeiroGanho,
-            tags,
-            sgt_dados_extras: sgtExtras,
-            sgt_last_sync_at: now,
-          },
-          { onConflict: 'contact_id,empresa' }
-        ).select('id').single();
-
-        if (isNewCs) novosCsCustomers++;
-
-        // ---- 4. Tokeniza: upsert cs_contracts for each investment ----
-        if (empresa === 'TOKENIZA' && csCustomer && Array.isArray(investimentos) && investimentos.length > 0) {
-          const statusMap: Record<string, string> = {
-            FINISHED: 'ATIVO',
-            PAID: 'ATIVO',
-            PENDING: 'PENDENTE',
-            CANCELLED: 'CANCELADO',
-          };
-
-          for (const inv of investimentos) {
-            const invStatus = (inv.status || '').toUpperCase();
-            // Only import real investments
-            if (invStatus !== 'PAID' && invStatus !== 'FINISHED') continue;
-
-            const invDate = new Date(inv.data || inv.data_investimento || '');
-            const anoFiscal = isNaN(invDate.getTime()) ? new Date().getFullYear() : invDate.getFullYear();
-
-            const { error: contractErr } = await supabase.from('cs_contracts').upsert(
-              {
-                customer_id: csCustomer.id,
-                empresa: 'TOKENIZA',
-                ano_fiscal: anoFiscal,
-                plano: inv.oferta_nome || 'Investimento',
-                oferta_id: inv.oferta_id || inv.id || null,
-                oferta_nome: inv.oferta_nome || null,
-                tipo: (inv.tipo && inv.tipo.trim()) ? inv.tipo.trim().toLowerCase() : 'crowdfunding',
-                valor: inv.valor || 0,
-                data_contratacao: inv.data || inv.data_investimento || null,
-                status: statusMap[invStatus] || 'ATIVO',
-                notas: 'Importado via sgt-full-import',
-              },
-              { onConflict: 'customer_id,ano_fiscal,oferta_id' }
-            );
-
-            if (!contractErr) novosContratos++;
-          }
-        }
-      } catch (itemErr) {
-        log.error(`Erro processando lead_contact`, { error: String(itemErr) });
-        erros++;
+      const r = await processLead(supabase, cliente, empresa, now);
+      if (r.ignorado) ignorados++;
+      else if (r.erro) erros++;
+      else {
+        if (r.novoContato) novosContatos++;
+        if (r.novoCsCustomer) novosCsCustomers++;
+        novosContratos += r.novosContratos;
       }
     }
 
     // ---- Save next offset ----
-    const count = leadContacts?.length ?? 0;
-    const cicloCompleto = count < BATCH_SIZE;
+    const cicloCompleto = !hasMore;
     const nextOffset = cicloCompleto ? 0 : offset + BATCH_SIZE;
     await saveOffset(supabase, empresa, nextOffset);
 
     const result = {
-      processados: count,
+      processados: clientes.length,
       novos_contatos: novosContatos,
       novos_cs_customers: novosCsCustomers,
       novos_contratos: novosContratos,
       ignorados,
       erros,
+      total_sgt: total,
       offset_atual: offset,
       proximo_offset: nextOffset,
       ciclo_completo: cicloCompleto,
