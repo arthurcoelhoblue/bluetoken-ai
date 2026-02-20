@@ -1,112 +1,59 @@
 
-# Reativar Integração Blue Chat com Secrets Separadas por Empresa
+# Verificação automática de conexão Blue Chat + abertura do diálogo em caso de erro
 
-## Diagnóstico do problema
+## Contexto atual
 
-Ao inspecionar o banco de dados, confirmei o estado atual:
+As API Keys já estão salvas no banco para TOKENIZA e BLUE. O fluxo atual exige que o admin clique manualmente em "Configurar" no card do Blue Chat. O usuário quer que ao abrir a aba de Canais (Integrações), o sistema já verifique se a conexão está OK e, se não estiver, abra automaticamente o diálogo de configuração.
 
-```
-system_settings (category = 'integrations'):
-- key: bluechat_tokeniza  → { api_url: "...", enabled: true }  ← SEM api_key!
-- key: bluechat_blue      → { api_url: "...", enabled: true }  ← SEM api_key!
-- key: bluechat           → { api_url: "...", enabled: true }  ← legado, SEM api_key!
-```
+## O que será feito
 
-```
-secrets de ambiente:
-- BLUECHAT_API_KEY  → uma única chave genérica (fallback)
-```
+### 1. Teste automático de conexão ao montar o componente `IntegrationsTab`
 
-O fluxo atual quando o Blue Chat envia uma mensagem é:
-1. `validateAuth` (sync): tenta validar com `BLUECHAT_API_KEY` do env. Se não bater, rejeita com 401.
-2. `validateAuthAsync` (por empresa): busca `api_key` de `system_settings` → não encontra → cai novamente em `BLUECHAT_API_KEY` → mesmo problema.
+Ao carregar a aba de integrações (quando as `settings` estiverem disponíveis), o componente vai:
 
-**Resultado**: o webhook rejeita chamadas da Tokeniza e da Blue com 401, pois cada uma tem sua própria secret que não é a genérica do env.
+- Verificar se existe `api_key` salva no banco para **TOKENIZA** e **BLUE** (lendo `bluechat_tokeniza` e `bluechat_blue` das settings)
+- Chamar `checkHealth("bluechat")` para testar a conectividade real com a edge function `integration-health-check`
+- Se o health check retornar `offline` ou `error`, abrir automaticamente o `BlueChatConfigDialog`
+- Exibir um toast informando o motivo da abertura automática
 
-## Solução — 3 partes
+### 2. Lógica de decisão para abrir o diálogo
 
-### Parte 1: Salvar as API Keys separadas no banco (ação do admin)
+O diálogo será aberto automaticamente se qualquer uma dessas condições for verdadeira:
+- A `api_key` da TOKENIZA **não** está salva no banco
+- A `api_key` da BLUE **não** está salva no banco
+- O health check retornar status diferente de `"online"`
 
-O diálogo `BlueChatConfigDialog` já está construído e funciona. Ele salva `api_key` por empresa em `system_settings`. O admin precisa:
-1. Abrir Configurações → Integrações → Blue Chat → botão "Configurar"
-2. Aba TOKENIZA: colar a API Key específica da Tokeniza → Salvar
-3. Aba BLUE: colar a API Key específica da Blue → Salvar
+Se tudo estiver OK, exibir um toast de sucesso discreto e não abrir o diálogo.
 
-Isso resolve o problema principal. Porém, há uma falha de código que ainda pode bloquear.
+### 3. Estado visual no card do Blue Chat
 
-### Parte 2: Corrigir a validação sync do webhook (código)
-
-O problema está em `validateAuth` (sync) em `bluechat-inbound/auth.ts`:
-
-```typescript
-// COMPORTAMENTO ATUAL (problema):
-export function validateAuth(req: Request): { valid: boolean } {
-  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
-  if (!bluechatApiKey) {
-    return { valid: true }; // passa — OK
-  }
-  // Se BLUECHAT_API_KEY existe no env E a request vem com
-  // a key da Tokeniza (diferente), vai rejeitar aqui com 401
-  // antes mesmo de chegar na validação assíncrona por empresa!
-  if (token && token.trim() === bluechatApiKey.trim()) {
-    return { valid: true };
-  }
-  return { valid: false }; // BLOQUEIO PREMATURO
-}
-```
-
-A correção: quando há um `BLUECHAT_API_KEY` no env mas o token não bate, **não rejeitar imediatamente** — deixar passar para a validação assíncrona por empresa que tem as keys corretas.
-
-**`supabase/functions/bluechat-inbound/auth.ts`** — função `validateAuth`:
-
-```typescript
-// CORREÇÃO:
-export function validateAuth(req: Request): { valid: boolean } {
-  const authHeader = req.headers.get('Authorization');
-  const apiKeyHeader = req.headers.get('X-API-Key');
-  const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
-
-  if (!token) {
-    log.warn('Nenhum token recebido');
-    return { valid: false };
-  }
-  
-  // Sempre passa para a validação assíncrona por empresa.
-  // A validação definitiva ocorre em validateAuthAsync.
-  return { valid: true };
-}
-```
-
-A validação real já está correta em `validateAuthAsync` — ela busca a key por empresa no banco, e se não tiver, cai no env. Uma vez que as keys sejam salvas no banco por empresa, tudo funciona.
-
-### Parte 3: Adicionar campos de instrução no diálogo (UX)
-
-No `BlueChatConfigDialog`, o campo de Webhook URL é o mesmo para todas as empresas, mas a autenticação é separada. Adicionar uma nota explicando que **o campo `context.empresa`** no payload do Blue Chat identifica a empresa, e que cada empresa deve configurar o webhook com sua própria API Key como secret de autenticação.
-
-Também adicionar o campo **"Empresa para identificação"** (read-only) mostrando o valor exato que deve constar no `context.empresa` do payload (`TOKENIZA`, `BLUE`, etc.) para que o mapeamento funcione corretamente.
+Adicionar no `CompanyChannelCard` um indicador de status de saúde (badge verde/vermelho) para que o usuário veja visualmente se a conexão está ativa, sem precisar clicar em "Testar".
 
 ## Arquivos alterados
 
-### Código
-- **`supabase/functions/bluechat-inbound/auth.ts`**: simplificar `validateAuth` para sempre passar o token (a validação real é feita assincronamente por empresa em `validateAuthAsync`)
+### `src/components/settings/IntegrationsTab.tsx`
 
-### Interface
-- **`src/components/settings/BlueChatConfigDialog.tsx`**: adicionar campo read-only com o valor de `context.empresa` para cada aba, para guiar a configuração no lado do Blue Chat
+- Adicionar `useEffect` que roda quando `settings` estiver carregado
+- Verificar presença de `api_key` nas settings de bluechat por empresa
+- Chamar health check e, se falhar, chamar `setBlueChatDialogOpen(true)` + exibir toast explicativo
+- Passar o status do health check para o `CompanyChannelCard` via prop
 
-## Ação necessária do admin após o deploy
+### `src/components/settings/CompanyChannelCard.tsx`
 
-Depois da correção de código, o admin deve:
+- Aceitar prop opcional `healthStatus?: HealthCheckResult`
+- Exibir badge de status (verde = online, vermelho = offline/erro, cinza = não verificado) ao lado do botão "Configurar"
 
-1. Ir em **Configurações → Integrações → Blue Chat → Configurar**
-2. Aba **TOKENIZA**: colar a API Key da Tokeniza no campo "API Key (TOKENIZA)" → **Salvar**
-3. Aba **BLUE**: colar a API Key da Blue no campo "API Key (BLUE)" → **Salvar**
+## Detalhes técnicos
 
-As keys ficam salvas no banco (criptografadas) e são usadas automaticamente para autenticar e para fazer callbacks de resposta para cada empresa.
+O efeito de verificação automática roda **uma única vez** após o carregamento das settings (usando `useRef` para evitar repetição). O hook `useIntegrationHealth` já é importado em `IntegrationsTab`, portanto não há nova dependência a adicionar.
 
-## Por que a solução em 3 partes?
+A lógica é:
+```
+useEffect para verificar settings carregadas
+  → se settings tem bluechat_tokeniza e bluechat_blue com api_key → health check
+  → se alguma api_key está faltando → abrir diálogo direto (sem health check)
+  → se health check falha → abrir diálogo + toast de aviso
+  → se health check OK → toast de sucesso discreto
+```
 
-- Parte 1 (banco) resolve o problema de secrets no lado do callback (envio de respostas)
-- Parte 2 (código) resolve o problema de autenticação no webhook de entrada
-- Parte 3 (UX) evita que o admin configure o lado do Blue Chat com o `context.empresa` errado
-
-Sem a Parte 2, mesmo com as keys no banco, a validação sync ainda rejetaria chamadas cujo token não bate com `BLUECHAT_API_KEY` do env.
+O fluxo não bloqueia o carregamento da página nem exibe loading adicional — é transparente ao usuário.
