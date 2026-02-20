@@ -93,6 +93,7 @@ ${transcript.substring(0, 8000)}`;
       empresa: contactEmpresa,
       maxTokens: 2000,
       supabase,
+      model: 'gemini-flash',
     });
 
     if (!aiResult.content) return new Response(JSON.stringify({ error: 'AI processing failed' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

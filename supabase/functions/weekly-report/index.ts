@@ -58,6 +58,7 @@ Deno.serve(async (req) => {
         temperature: 0.4,
         maxTokens: 600,
         supabase,
+        model: 'gemini-flash',
       });
 
       const narrative = aiResult.content || `Semana encerrada com ${context.deals_ganhos} deals ganhos (R$ ${(ganhoValor / 100).toFixed(0)}) e ${context.deals_perdidos} perdidos. Pipeline: ${context.pipeline_aberto} deals abertos (R$ ${(pipelineValor / 100).toFixed(0)}). ${context.cs_em_risco} clientes em risco CS. ${context.atividades_semana} atividades registradas.`;

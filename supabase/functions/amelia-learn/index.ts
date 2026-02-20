@@ -113,6 +113,7 @@ serve(async (req) => {
             functionName: 'amelia-learn',
             empresa,
             supabase,
+            model: 'gemini-flash',
           });
 
           let args: { sequences: Array<{ events: string[]; match_pct: number; window_days: number; description: string }> } = { sequences: [] };
@@ -147,6 +148,7 @@ serve(async (req) => {
             functionName: 'amelia-learn',
             empresa,
             supabase,
+            model: 'gemini-flash',
           });
 
           let args: { sequences: Array<{ events: string[]; match_pct: number; window_days: number; description: string }> } = { sequences: [] };

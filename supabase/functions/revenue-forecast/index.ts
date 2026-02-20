@@ -108,6 +108,7 @@ serve(async (req) => {
         empresa: targetEmpresa,
         maxTokens: 1000,
         supabase,
+        model: 'gemini-flash',
       });
 
       if (aiResult.content) {

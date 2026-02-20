@@ -476,6 +476,7 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     maxTokens: 1500,
     promptVersionId: selectedPromptVersionId || undefined,
     supabase,
+    model: 'gemini-flash',
   });
 
   let result: ClassifierResult | null = null;

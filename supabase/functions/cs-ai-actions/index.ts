@@ -45,6 +45,7 @@ async function handleSuggestNote(supabase: ReturnType<typeof createServiceClient
     temperature: 0.3,
     maxTokens: 300,
     supabase,
+    model: 'gemini-flash',
   });
 
   return new Response(JSON.stringify({ sugestao: aiResult.content || 'Não foi possível gerar sugestão no momento.' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });

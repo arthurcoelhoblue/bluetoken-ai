@@ -264,6 +264,7 @@ serve(async (req) => {
       userId,
       maxTokens: 1500,
       supabase,
+      model: 'gemini-flash',
     });
 
     if (!aiResult.content) {
