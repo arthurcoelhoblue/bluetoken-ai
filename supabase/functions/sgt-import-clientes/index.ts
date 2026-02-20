@@ -15,7 +15,10 @@ const SETTINGS_KEY = 'import-clientes-offset';
 // ========================================
 function isCliente(lead: any, empresa: string): boolean {
   if (lead.venda_realizada === true) return true;
-  if (lead.stage_atual === 'Cliente') return true;
+  // Blue: also matches 'Vendido' stage (previously missed) and plano_ativo
+  const stage = (lead.stage_atual || '').toLowerCase();
+  if (stage === 'cliente' || stage === 'vendido') return true;
+  if (empresa === 'BLUE' && lead.plano_ativo === true) return true;
   if (empresa === 'TOKENIZA' && lead.tokeniza_investidor === true) return true;
   const status = (lead.cliente_status || '').toLowerCase();
   if (status.includes('ativo') || status.includes('cliente')) return true;

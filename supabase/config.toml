@@ -140,3 +140,7 @@ verify_jwt = false
 
 [functions.cs-backfill-contracts]
 verify_jwt = false
+
+[functions.sgt-full-import]
+verify_jwt = false
+
