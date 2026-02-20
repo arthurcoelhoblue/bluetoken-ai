@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { CalendarIcon, ChevronLeft, ChevronRight, Search, Users, X } from 'lucide-react';
 import { healthStatusConfig, npsConfig, inactivityTierConfig, type CSHealthStatus, type CSCustomerFilters, type CSContractStatus } from '@/types/customerSuccess';
 import { CSCustomerCreateDialog } from '@/components/cs/CSCustomerCreateDialog';
+import { SGTSyncDialog } from '@/components/cs/SGTSyncDialog';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { cn } from '@/lib/utils';
@@ -93,7 +94,10 @@ export default function CSClientesPage() {
     <AppLayout>
     <div className="flex-1 overflow-auto">
       <PageShell icon={Users} title="Clientes CS" description="Lista de clientes no módulo de Sucesso do Cliente">
-        <CSCustomerCreateDialog />
+        <div className="flex items-center gap-2">
+          <SGTSyncDialog />
+          <CSCustomerCreateDialog />
+        </div>
       </PageShell>
 
       <div className="px-6 pb-6 space-y-4">
