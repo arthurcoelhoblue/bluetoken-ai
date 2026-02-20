@@ -170,49 +170,63 @@ async function processLead(supabase: any, lead: any, empresa: string, now: strin
     );
 
     // ---- 2. Upsert contacts ----
+    // IMPORTANT: a mesma pessoa pode aparecer com lead_ids diferentes no SGT
+    // (múltiplos cadastros, opt-ins distintos). A hierarquia de busca é:
+    //   1. legacy_lead_id  → match exato e seguro
+    //   2. email + empresa → mesmo cliente com lead_id diferente
+    //   3. telefone + empresa → fallback se sem email
+    // Apenas se nenhum match, cria novo contact.
     let contactId: string | null = null;
 
-    const { data: existingContact } = await supabase
+    // 1. Busca por legacy_lead_id
+    const { data: existingByLeadId } = await supabase
       .from('contacts')
-      .select('id, is_cliente')
+      .select('id')
       .eq('legacy_lead_id', leadId)
       .maybeSingle();
 
-    if (existingContact) {
-      contactId = existingContact.id;
-    } else if (email) {
-      // Busca por email NA MESMA EMPRESA — evita criar duplicatas em imports repetidos
-      // (o mesmo lead do SGT pode ter lead_ids diferentes entre runs, por isso não basta buscar por legacy_lead_id)
-      const { data: emailContact } = await supabase
+    if (existingByLeadId) {
+      contactId = existingByLeadId.id;
+    }
+
+    // 2. Busca por email + empresa (antes de qualquer insert)
+    if (!contactId && email) {
+      const { data: existingByEmail } = await supabase
         .from('contacts')
         .select('id')
         .eq('email', email)
         .eq('empresa', empresa)
         .maybeSingle();
 
-      if (emailContact) {
-        contactId = emailContact.id;
-        // Vincula o legacy_lead_id ao contact existente para evitar criação de duplicata futura
+      if (existingByEmail) {
+        contactId = existingByEmail.id;
+        // Vincula o legacy_lead_id ao contact existente para evitar duplicata futura
         await supabase
           .from('contacts')
           .update({ legacy_lead_id: leadId, updated_at: now })
           .eq('id', contactId);
-      } else if (telefone) {
-        // Fallback: busca por telefone na mesma empresa antes de criar novo contact
-        const { data: phoneContact } = await supabase
-          .from('contacts')
-          .select('id')
-          .eq('telefone', telefone)
-          .eq('empresa', empresa)
-          .maybeSingle();
+      }
+    }
 
-        if (phoneContact) {
-          contactId = phoneContact.id;
-          await supabase
-            .from('contacts')
-            .update({ legacy_lead_id: leadId, email: email || undefined, updated_at: now })
-            .eq('id', contactId);
-        }
+    // 3. Fallback: busca por telefone + empresa
+    if (!contactId && telefone) {
+      const { data: existingByPhone } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('telefone', telefone)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      if (existingByPhone) {
+        contactId = existingByPhone.id;
+        await supabase
+          .from('contacts')
+          .update({
+            legacy_lead_id: leadId,
+            ...(email ? { email } : {}),
+            updated_at: now,
+          })
+          .eq('id', contactId);
       }
     }
 
