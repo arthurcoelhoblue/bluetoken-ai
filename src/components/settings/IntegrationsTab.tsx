@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
 import { IntegrationCard } from "./IntegrationCard";
 import { CompanyChannelCard } from "./CompanyChannelCard";
 import { BlueChatConfigDialog } from "./BlueChatConfigDialog";
@@ -6,7 +6,7 @@ import { WhatsAppInlineDetails } from "./WhatsAppInlineDetails";
 import { EmailInlineDetails } from "./EmailInlineDetails";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
-import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
+import { useIntegrationHealth, HealthCheckResult } from "@/hooks/useIntegrationHealth";
 import {
   Dialog,
   DialogContent,
@@ -29,9 +29,49 @@ export function IntegrationsTab() {
   const [selectedIntegration, setSelectedIntegration] = useState<string | null>(null);
   const [blueChatDialogOpen, setBlueChatDialogOpen] = useState(false);
   const [testingIntegration, setTestingIntegration] = useState<string | null>(null);
+  const [blueChatHealthStatus, setBlueChatHealthStatus] = useState<HealthCheckResult | undefined>(undefined);
+  const autoCheckDoneRef = useRef(false);
 
   const globalIntegrations = INTEGRATIONS.filter((i) => !i.perCompany);
   const perCompanyIntegrations = INTEGRATIONS.filter((i) => i.perCompany);
+
+  // Auto health check for Blue Chat on first settings load
+  useEffect(() => {
+    if (isLoading || !settings || autoCheckDoneRef.current) return;
+    autoCheckDoneRef.current = true;
+
+    // Only TOKENIZA and BLUE are required; MPUPPE and AXIA are optional
+    const REQUIRED_BLUECHAT_KEYS = ["bluechat_tokeniza", "bluechat_blue"];
+    const getValue = (key: string, field: string) => {
+      const s = settings.find((s) => s.key === key);
+      return (s?.value as Record<string, unknown>)?.[field] as string | undefined;
+    };
+
+    const missingKey = REQUIRED_BLUECHAT_KEYS.some((k) => !getValue(k, "api_key") || !getValue(k, "api_url"));
+
+    if (missingKey) {
+      toast.warning("Configuração incompleta do Blue Chat", {
+        description: "Uma ou mais empresas estão sem API Key ou URL configurada.",
+      });
+      setBlueChatDialogOpen(true);
+      setBlueChatHealthStatus({ status: "offline", message: "Configuração incompleta" });
+      return;
+    }
+
+    checkHealth("bluechat").then((result) => {
+      setBlueChatHealthStatus(result);
+      if (result.status !== "online") {
+        toast.error("Blue Chat offline", {
+          description: result.message || "Verifique as configurações de conexão.",
+        });
+        setBlueChatDialogOpen(true);
+      } else {
+        toast.success("Blue Chat online", {
+          description: result.latencyMs ? `Latência: ${result.latencyMs}ms` : "Conexão OK",
+        });
+      }
+    });
+  }, [isLoading, settings, checkHealth]);
 
   const getIntegrationConfig = (key: string): IntegrationConfig | null => {
     const setting = settings?.find((s) => s.key === key);
@@ -127,6 +167,7 @@ export function IntegrationsTab() {
               <CompanyChannelCard
                 key={integration.id}
                 integration={integration}
+                healthStatus={integration.id === 'bluechat' ? blueChatHealthStatus : undefined}
                 onConfigure={() => {
                   if (integration.id === 'bluechat') {
                     setBlueChatDialogOpen(true);

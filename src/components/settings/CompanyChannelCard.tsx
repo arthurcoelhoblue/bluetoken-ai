@@ -17,6 +17,9 @@ import {
   X,
   AlertTriangle,
   Loader2,
+  Wifi,
+  WifiOff,
+  HelpCircle,
 } from "lucide-react";
 import { IntegrationInfo } from "@/types/settings";
 import {
@@ -24,6 +27,7 @@ import {
   type EmpresaTipo,
   type ChannelType,
 } from "@/hooks/useIntegrationCompanyConfig";
+import { HealthCheckResult } from "@/hooks/useIntegrationHealth";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Send,
@@ -35,16 +39,51 @@ const EMPRESAS: EmpresaTipo[] = ["TOKENIZA", "BLUE"];
 interface CompanyChannelCardProps {
   integration: IntegrationInfo;
   onConfigure: () => void;
+  healthStatus?: HealthCheckResult;
 }
 
 export function CompanyChannelCard({
   integration,
   onConfigure,
+  healthStatus,
 }: CompanyChannelCardProps) {
   const { getConfig, toggleConfig } = useIntegrationCompanyConfig();
   const Icon = iconMap[integration.icon] || Settings;
   const channel = integration.id as ChannelType;
   const hasSecrets = integration.secrets.length > 0;
+
+  const getHealthBadge = () => {
+    if (!healthStatus) {
+      return (
+        <Badge variant="outline" className="text-xs gap-1">
+          <HelpCircle className="h-3 w-3" />
+          Não verificado
+        </Badge>
+      );
+    }
+    if (healthStatus.status === "checking") {
+      return (
+        <Badge variant="outline" className="text-xs gap-1">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Verificando...
+        </Badge>
+      );
+    }
+    if (healthStatus.status === "online") {
+      return (
+        <Badge variant="outline" className="text-xs gap-1 border-green-500/40 bg-green-500/10 text-green-700 dark:text-green-400">
+          <Wifi className="h-3 w-3" />
+          Online{healthStatus.latencyMs ? ` (${healthStatus.latencyMs}ms)` : ""}
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-xs gap-1 border-destructive/40 bg-destructive/10 text-destructive">
+        <WifiOff className="h-3 w-3" />
+        {healthStatus.status === "offline" ? "Offline" : "Erro"}
+      </Badge>
+    );
+  };
 
   return (
     <Card className="relative col-span-1 md:col-span-2 lg:col-span-3">
@@ -61,12 +100,15 @@ export function CompanyChannelCard({
               </CardDescription>
             </div>
           </div>
-          {hasSecrets && (
-            <Button variant="outline" size="sm" onClick={onConfigure}>
-              <Settings className="mr-1 h-3 w-3" />
-              Configurar
-            </Button>
-          )}
+          <div className="flex items-center gap-2">
+            {integration.id === 'bluechat' && getHealthBadge()}
+            {hasSecrets && (
+              <Button variant="outline" size="sm" onClick={onConfigure}>
+                <Settings className="mr-1 h-3 w-3" />
+                Configurar
+              </Button>
+            )}
+          </div>
         </div>
       </CardHeader>
       <CardContent className="pt-0">
