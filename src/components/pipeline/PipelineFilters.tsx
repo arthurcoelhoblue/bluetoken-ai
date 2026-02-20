@@ -1,6 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
-import { Plus } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Plus, Bot } from 'lucide-react';
 import type { PipelineWithStages } from '@/types/deal';
 
 interface OwnerOption {
@@ -22,6 +23,8 @@ interface PipelineFiltersProps {
   onTagChange: (t: string) => void;
   availableTags: string[];
   ownerDisabled?: boolean;
+  etiquetaIA: boolean;
+  onEtiquetaIAChange: (v: boolean) => void;
 }
 
 export function PipelineFilters({
@@ -38,6 +41,8 @@ export function PipelineFilters({
   onTagChange,
   availableTags,
   ownerDisabled,
+  etiquetaIA,
+  onEtiquetaIAChange,
 }: PipelineFiltersProps) {
   return (
     <div className="flex items-center gap-3 flex-wrap">
@@ -95,6 +100,21 @@ export function PipelineFilters({
           </SelectContent>
         </Select>
       )}
+
+      {/* Atendimento IA quick filter */}
+      <Button
+        variant={etiquetaIA ? 'default' : 'outline'}
+        size="sm"
+        className="gap-1.5"
+        onClick={() => onEtiquetaIAChange(!etiquetaIA)}
+        title="Filtrar deals em atendimento pela Amélia IA"
+      >
+        <Bot className="h-3.5 w-3.5" />
+        Atendimento IA
+        {etiquetaIA && (
+          <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">ativo</Badge>
+        )}
+      </Button>
 
       <div className="ml-auto">
         <Button onClick={onNewDeal} size="sm">

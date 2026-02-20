@@ -8,12 +8,13 @@ interface UseDealsOptions {
   ownerId?: string;
   temperatura?: string;
   tag?: string;
+  etiqueta?: string;
   page?: number;
 }
 
 const PAGE_SIZE = 50;
 
-export function useDeals({ pipelineId, ownerId, temperatura, tag, page = 0 }: UseDealsOptions) {
+export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page = 0 }: UseDealsOptions) {
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -41,7 +42,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, page = 0 }: Us
   }, [pipelineId, qc]);
 
   return useQuery({
-    queryKey: ['deals', pipelineId, ownerId, temperatura, tag, page],
+    queryKey: ['deals', pipelineId, ownerId, temperatura, tag, etiqueta, page],
     enabled: !!pipelineId,
     queryFn: async (): Promise<{ data: DealWithRelations[]; count: number }> => {
       let query = supabase
@@ -57,6 +58,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, page = 0 }: Us
       if (ownerId) query = query.eq('owner_id', ownerId);
       if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
       if (tag) query = query.contains('tags', [tag]);
+      if (etiqueta) query = query.eq('etiqueta', etiqueta);
 
       query = query.order('posicao_kanban', { ascending: true });
 
