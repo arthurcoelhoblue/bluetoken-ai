@@ -265,7 +265,7 @@ function OfertaSemNomeCard({ oferta }: { oferta: CSOfertaSemNome }) {
         <div className="flex items-start justify-between">
           <div>
             <CardTitle className="text-base font-mono text-sm">
-              ID: {oferta.oferta_id.slice(0, 8)}…
+              ID: {oferta.oferta_id}
             </CardTitle>
             <p className="text-sm text-muted-foreground mt-1">
               {formatPeriodo(oferta.data_min, oferta.data_max)} • {oferta.qtd_clientes} cliente{oferta.qtd_clientes !== 1 ? 's' : ''} • {oferta.qtd_contratos} investimento{oferta.qtd_contratos !== 1 ? 's' : ''}
