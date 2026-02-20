@@ -1,47 +1,95 @@
 
-# Adaptar `sgt-full-import` para usar o novo endpoint `listar-clientes-api`
+# Diagnóstico e Correção do SGT Full Import
 
-## O que muda
+## Resumo dos Problemas Encontrados
 
-A situação atual é que `sgt-full-import` faz **1 chamada HTTP ao SGT por contato** — isso significa 755 chamadas para a Blue e 1049 para a Tokeniza. Com o novo endpoint `listar-clientes-api` do SGT, que retorna até 500 clientes por chamada com paginação, isso cai para **~2 chamadas para a Blue** e **~3 para a Tokeniza**. Exatamente o mesmo ganho que o time do SGT mencionou (de ~3.100 chamadas para ~10).
+Há 3 problemas distintos em paralelo:
 
-## Mudanças no `sgt-full-import/index.ts`
+### Problema 1 — BLUE: Timeout (context canceled)
+A edge function `sgt-full-import` para BLUE está levando mais de 30 segundos, causando timeout. Os logs de edge mostram que nenhuma chamada BLUE foi concluída com sucesso — apenas TOKENIZA tem registros recentes. O `context canceled` do curl confirma: a função é cancelada antes de retornar.
 
-### 1. Trocar a URL e o modelo de iteração
+**Causa raiz**: O endpoint SGT `listar-clientes-api` para BLUE provavelmente inclui um join com `cliente_notion` que é lento. Com 755 clientes + join externo, a chamada excede 30s (limite padrão das edge functions).
 
-**Antes (fluxo atual — ineficiente):**
+**Solução**: Reduzir o `BATCH_SIZE` de 500 para 100 apenas para BLUE, e adicionar um timeout explícito de 25s na chamada fetch ao SGT, retornando um erro controlado ao invés de deixar cancelar.
+
+### Problema 2 — TOKENIZA: 100% dos clientes sendo ignorados
+Os logs mostram `ignorados: 500` em todos os batches da Tokeniza (2.351 registros processados, 0 aproveitados). O `isClienteElegivel` retorna `false` para todos.
+
+**Causa raiz**: O endpoint `listar-clientes-api` foi criado pelo time do SGT mas os campos que a função espera não batem com o que é entregue. Especificamente:
+- `tokeniza_investidor` pode não vir como campo raiz (pode ser `dados_tokeniza.investidor`)
+- `dados_tokeniza.investimentos` pode ser `investimentos` na raiz
+- Não temos visibilidade do schema exato da resposta
+
+**Solução**: Adicionar logging detalhado do primeiro cliente de cada batch para inspecionar o schema real. Depois ampliar o `isClienteElegivel` para cobrir variações de campo.
+
+### Problema 3 — Interface: erro de BLUE quebra o fluxo completo
+Na sessão replay anterior, o erro de BLUE fez a sincronização pular para TOKENIZA com estatísticas zeradas. O `SGTSyncDialog` não trata erros de timeout adequadamente — mostra "erro na chamada" e para.
+
+**Solução**: Melhorar o tratamento de erros no dialog para mostrar detalhes do timeout e permitir retry por empresa.
+
+---
+
+## O que será feito
+
+### 1. Corrigir `sgt-full-import/index.ts`
+
+**a. Timeout explícito no fetch ao SGT:**
+```typescript
+const controller = new AbortController();
+const timeout = setTimeout(() => controller.abort(), 25000); // 25s max
+
+const sgtResponse = await fetch(SGT_LIST_URL, {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json', 'x-api-key': sgtApiKey },
+  body: JSON.stringify({ empresa, limit: BATCH_SIZE, offset }),
+  signal: controller.signal,
+});
+clearTimeout(timeout);
 ```
-query local lead_contacts (50 registros)
-  → para cada um: POST buscar-lead-api (email ou telefone)
-  → qualificação
-  → upsert
+
+**b. Batch size dinâmico por empresa:**
+```typescript
+const BATCH_SIZE_BLUE = 100;     // join com cliente_notion é mais lento
+const BATCH_SIZE_TOKENIZA = 500; // dados planos, mais rápido
+const batchSize = empresa === 'BLUE' ? BATCH_SIZE_BLUE : BATCH_SIZE_TOKENIZA;
 ```
 
-**Depois (novo fluxo — direto):**
+**c. Log do schema do primeiro cliente recebido:**
+```typescript
+if (clientes.length > 0) {
+  log.info('Sample lead schema', { 
+    keys: Object.keys(clientes[0]),
+    tokeniza_fields: {
+      tokeniza_investidor: clientes[0].tokeniza_investidor,
+      has_dados_tokeniza: !!clientes[0].dados_tokeniza,
+      dados_tokeniza_keys: clientes[0].dados_tokeniza ? Object.keys(clientes[0].dados_tokeniza) : [],
+      plano_ativo: clientes[0].plano_ativo,
+      stage_atual: clientes[0].stage_atual,
+    }
+  });
+}
 ```
-POST listar-clientes-api { empresa, limit: 500, offset }
-  → retorna array de clientes já filtrados + dados_tokeniza aninhados
-  → qualificação (mantida igual)
-  → upsert (mantido igual)
+
+**d. Ampliar `isClienteElegivel` para cobrir mais variações de campo:**
+```typescript
+if (empresa === 'TOKENIZA') {
+  if (lead.tokeniza_investidor === true) return true;
+  if (lead.is_investidor === true) return true;
+  if (lead.dados_tokeniza?.investidor === true) return true;
+  
+  // Check investimentos in multiple locations
+  const investimentos = 
+    lead.dados_tokeniza?.investimentos || 
+    lead.investimentos || 
+    lead.dados_tokeniza?.aportes ||
+    [];
+  // ... rest of check
+}
 ```
 
-### 2. Estrutura da resposta esperada do novo endpoint
+### 2. Nenhuma mudança na UI necessária agora
 
-O SGT mencionou que o endpoint:
-- Retorna até **500 clientes por chamada** com paginação
-- Inclui `plano_ativo` **já calculado** (Blue)
-- Faz join com `cliente_notion` para Blue
-- Retorna objeto `dados_tokeniza` **aninhado** para Tokeniza (igual ao `buscar-lead-api`)
-
-A resposta provavelmente é `{ clientes: [...], total: N, has_more: bool }` ou similar. A lógica de `isClienteElegivel` e os upserts em cascata **não mudam** — só muda de onde vêm os dados.
-
-### 3. Remoção da dependência de `lead_contacts`
-
-A iteração sobre `lead_contacts` local desaparece completamente. O novo loop é direto contra o SGT com offset controlado pelo mesmo mecanismo de `system_settings` que já existe.
-
-### 4. Batch size ajustado
-
-De `50` para `500` (limite do novo endpoint). Isso significa que cada chamada à edge function processa 10x mais dados.
+O problema da UI (erro de BLUE quebra fluxo) vai ser resolvido indiretamente: quando BLUE funcionar sem timeout, o fluxo completo vai rodar. Deixamos a UI como está por enquanto.
 
 ---
 
@@ -49,33 +97,20 @@ De `50` para `500` (limite do novo endpoint). Isso significa que cada chamada à
 
 | Arquivo | Mudança |
 |---|---|
-| `supabase/functions/sgt-full-import/index.ts` | Trocar `buscar-lead-api` por `listar-clientes-api`, remover loop sobre `lead_contacts`, ajustar parser da resposta |
-
-Nenhum outro arquivo muda — a UI (`SGTSyncDialog.tsx`), a qualificação (`isClienteElegivel`), os upserts e o sistema de offset permanecem intactos.
+| `supabase/functions/sgt-full-import/index.ts` | Timeout fetch 25s, batch size dinâmico (100 para BLUE / 500 para TOKENIZA), logs de schema, `isClienteElegivel` mais robusto |
 
 ---
 
-## Detalhe técnico: tratamento da resposta
+## Sequência após o deploy
 
-O novo endpoint retorna os clientes já enriquecidos. Para garantir compatibilidade com a estrutura que o código já espera, o parser vai normalizar:
-
-```typescript
-// Resposta do listar-clientes-api:
-// { clientes: [...], total: 1804, has_more: true }
-//
-// Cada cliente segue o mesmo schema do buscar-lead-api:
-// { lead_id, nome, email, telefone, plano_ativo, dados_tokeniza: { investimentos: [...] }, ... }
-```
-
-O campo `dados_tokeniza.investimentos` já vem aninhado — exatamente como o código atual espera.
+1. Deploy da função corrigida
+2. Chamar via UI com "Sincronizar com SGT" 
+3. Verificar logs da função para ver o schema real dos clientes
+4. Se necessário, ajustar campo-alvo do `isClienteElegivel` baseado no schema observado
+5. Rodar novamente para completar o import
 
 ---
 
-## Estimativa após a mudança
+## Por que TOKENIZA teve 2.351 registros mas esperávamos 1.049?
 
-| | Antes | Depois |
-|---|---|---|
-| Blue (755 clientes) | 755 chamadas HTTP ao SGT | ~2 chamadas |
-| Tokeniza (1049 clientes) | 1049 chamadas HTTP ao SGT | ~3 chamadas |
-| Tempo estimado total | ~15-20 minutos | ~30-60 segundos |
-
+O endpoint `listar-clientes-api` provavelmente retorna **todos os leads da Tokeniza** (não só investidores), e o filtro `apenas_clientes` não está sendo aplicado — ou o SGT está retornando todos e esperando que o CRM filtre. Isso confirma que o `isClienteElegivel` precisa funcionar corretamente para que o filtro seja aplicado do lado do CRM.
