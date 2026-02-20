@@ -7,7 +7,8 @@ const log = createLogger('sgt-full-import');
 
 // New bulk endpoint — returns up to 500 clients per call
 const SGT_LIST_URL = 'https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/listar-clientes-api';
-const BATCH_SIZE = 500;
+const BATCH_SIZE_BLUE = 50;      // join com cliente_notion é mais lento + processamento com upserts
+const BATCH_SIZE_TOKENIZA = 50;  // 50 registros para garantir processamento dentro do limite de 30s
 const SETTINGS_CATEGORY = 'sgt-full-import';
 
 // ========================================
@@ -24,9 +25,26 @@ function isClienteElegivel(lead: any, empresa: string): boolean {
     return false;
   }
   if (empresa === 'TOKENIZA') {
+    // Check flag in multiple possible locations
     if (lead.tokeniza_investidor === true) return true;
-    const investimentos = lead.dados_tokeniza?.investimentos || lead.investimentos || [];
-    if (Array.isArray(investimentos)) {
+    if (lead.is_investidor === true) return true;
+    if (lead.dados_tokeniza?.investidor === true) return true;
+
+    // O endpoint listar-clientes-api retorna dados_tokeniza com campos AGREGADOS (não array de investimentos)
+    // O indicador real de investidor é qtd_investimentos > 0 ou valor_investido > 0
+    const qtdInvestimentos = lead.dados_tokeniza?.qtd_investimentos ?? 0;
+    const valorInvestido = lead.dados_tokeniza?.valor_investido ?? 0;
+    if (qtdInvestimentos > 0) return true;
+    if (valorInvestido > 0) return true;
+
+    // Fallback: array de investimentos (formato buscar-lead-api individual)
+    const investimentos =
+      lead.dados_tokeniza?.investimentos ||
+      lead.investimentos ||
+      lead.dados_tokeniza?.aportes ||
+      lead.aportes ||
+      [];
+    if (Array.isArray(investimentos) && investimentos.length > 0) {
       const temInvestimentoRealizado = investimentos.some((inv: any) => {
         const s = (inv.status || '').toUpperCase();
         return s === 'PAID' || s === 'FINISHED';
@@ -43,6 +61,7 @@ function isClienteElegivel(lead: any, empresa: string): boolean {
 // ========================================
 function buildSgtExtras(lead: any): Record<string, any> {
   const extras: Record<string, any> = {};
+  // Campos raiz legados
   if (lead.tokeniza_valor_investido != null) extras.tokeniza_valor_investido = lead.tokeniza_valor_investido;
   if (lead.tokeniza_qtd_investimentos != null) extras.tokeniza_qtd_investimentos = lead.tokeniza_qtd_investimentos;
   if (lead.tokeniza_projetos) extras.tokeniza_projetos = lead.tokeniza_projetos;
@@ -57,6 +76,16 @@ function buildSgtExtras(lead: any): Record<string, any> {
   if (lead.plano_atual) extras.plano_atual = lead.plano_atual;
   if (lead.plano_ativo != null) extras.plano_ativo = lead.plano_ativo;
   if (lead.stage_atual) extras.stage_atual = lead.stage_atual;
+  // Campos agregados do listar-clientes-api (dados_tokeniza aninhado)
+  if (lead.dados_tokeniza) {
+    const dt = lead.dados_tokeniza;
+    if (dt.valor_investido != null) extras.tokeniza_valor_investido = dt.valor_investido;
+    if (dt.qtd_investimentos != null) extras.tokeniza_qtd_investimentos = dt.qtd_investimentos;
+    if (dt.projetos) extras.tokeniza_projetos = dt.projetos;
+    if (dt.ultimo_investimento_em) extras.tokeniza_ultimo_investimento_em = dt.ultimo_investimento_em;
+    if (dt.carrinho_abandonado != null) extras.tokeniza_carrinho_abandonado = dt.carrinho_abandonado;
+    if (dt.valor_carrinho != null) extras.tokeniza_valor_carrinho = dt.valor_carrinho;
+  }
   return extras;
 }
 
@@ -67,10 +96,13 @@ function buildClienteTags(lead: any, empresa: string): string[] {
   const tags: string[] = ['sgt-cliente', 'sgt-full-import'];
   if (empresa === 'TOKENIZA') {
     tags.push('tokeniza-investidor');
-    if (lead.tokeniza_projetos && Array.isArray(lead.tokeniza_projetos)) {
-      lead.tokeniza_projetos.forEach((p: string) => tags.push(`projeto:${p}`));
+    // Projetos: pode estar em dados_tokeniza.projetos (listar) ou tokeniza_projetos (buscar)
+    const projetos = lead.dados_tokeniza?.projetos || lead.tokeniza_projetos || [];
+    if (Array.isArray(projetos)) {
+      projetos.forEach((p: string) => tags.push(`projeto:${p}`));
     }
-    if (lead.tokeniza_qtd_investimentos) tags.push(`investimentos:${lead.tokeniza_qtd_investimentos}`);
+    const qtd = lead.dados_tokeniza?.qtd_investimentos || lead.tokeniza_qtd_investimentos;
+    if (qtd) tags.push(`investimentos:${qtd}`);
   }
   if (empresa === 'BLUE') {
     tags.push('blue-cliente');
@@ -205,9 +237,11 @@ async function processLead(supabase: any, lead: any, empresa: string, now: strin
     // ---- 3. Upsert cs_customers ----
     const sgtExtras = buildSgtExtras(lead);
     const tags = buildClienteTags(lead, empresa);
+    // Investimentos: array detalhado (buscar-lead-api) ou vazio (listar-clientes-api usa dados agregados)
     const investimentos = lead.dados_tokeniza?.investimentos || lead.investimentos || [];
+    // MRR: usa valor_venda para BLUE; para TOKENIZA usa valor_investido do objeto dados_tokeniza agregado
     const valorMrr = lead.valor_venda
-      || (empresa === 'TOKENIZA' && lead.tokeniza_valor_investido ? lead.tokeniza_valor_investido : null)
+      || (empresa === 'TOKENIZA' ? (lead.dados_tokeniza?.valor_investido || lead.tokeniza_valor_investido || null) : null)
       || 0;
     const dataPrimeiroGanho = lead.data_venda || lead.data_primeiro_investimento || now;
 
@@ -320,6 +354,9 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ---- Batch size dinâmico por empresa ----
+    const batchSize = empresa === 'BLUE' ? BATCH_SIZE_BLUE : BATCH_SIZE_TOKENIZA;
+
     // ---- Load offset ----
     let offset = 0;
     if (!resetOffset) {
@@ -337,17 +374,37 @@ Deno.serve(async (req) => {
 
     if (manualOffset !== null) offset = manualOffset;
 
-    log.info(`Iniciando import ${empresa} — offset ${offset}, batch ${BATCH_SIZE} via listar-clientes-api`);
+    log.info(`Iniciando import ${empresa} — offset ${offset}, batch ${batchSize} via listar-clientes-api`);
 
-    // ---- Call SGT listar-clientes-api ----
-    const sgtResponse = await fetch(SGT_LIST_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': sgtApiKey,
-      },
-      body: JSON.stringify({ empresa, limit: BATCH_SIZE, offset }),
-    });
+    // ---- Call SGT listar-clientes-api com timeout de 25s ----
+    const controller = new AbortController();
+    const fetchTimeout = setTimeout(() => controller.abort(), 25000);
+
+    let sgtResponse: Response;
+    try {
+      sgtResponse = await fetch(SGT_LIST_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': sgtApiKey,
+        },
+        body: JSON.stringify({ empresa, limit: batchSize, offset }),
+        signal: controller.signal,
+      });
+    } catch (fetchErr) {
+      const isTimeout = String(fetchErr).includes('abort') || String(fetchErr).includes('AbortError');
+      log.error(`SGT fetch ${isTimeout ? 'timeout (25s)' : 'error'}`, { error: String(fetchErr), empresa, batchSize, offset });
+      return new Response(JSON.stringify({
+        error: isTimeout ? `SGT timeout após 25s — tente com batch menor ou verifique o SGT` : `SGT fetch error`,
+        details: String(fetchErr),
+        empresa,
+      }), {
+        status: 504,
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      });
+    } finally {
+      clearTimeout(fetchTimeout);
+    }
 
     if (!sgtResponse.ok) {
       const details = await sgtResponse.text();
@@ -363,9 +420,32 @@ Deno.serve(async (req) => {
     // Support both { clientes: [...] } and { data: [...] } shapes
     const clientes: any[] = sgtData.clientes || sgtData.data || sgtData.leads || [];
     const total: number = sgtData.total ?? clientes.length;
-    const hasMore: boolean = sgtData.has_more ?? (clientes.length === BATCH_SIZE);
+    const hasMore: boolean = sgtData.has_more ?? (clientes.length === batchSize);
 
-    log.info(`SGT retornou ${clientes.length} clientes (total: ${total}, has_more: ${hasMore})`);
+    log.info(`SGT retornou ${clientes.length} clientes (total: ${total}, has_more: ${hasMore}, batchSize: ${batchSize})`);
+
+    // ---- Log schema do primeiro cliente para diagnóstico de campos ----
+    if (clientes.length > 0) {
+      const sample = clientes[0];
+      log.info('Sample lead schema', {
+        empresa,
+        keys: Object.keys(sample),
+        tokeniza_fields: {
+          tokeniza_investidor: sample.tokeniza_investidor,
+          is_investidor: sample.is_investidor,
+          has_dados_tokeniza: !!sample.dados_tokeniza,
+          dados_tokeniza_keys: sample.dados_tokeniza ? Object.keys(sample.dados_tokeniza) : [],
+          investimentos_root_count: Array.isArray(sample.investimentos) ? sample.investimentos.length : 'N/A',
+          dados_tokeniza_investimentos_count: Array.isArray(sample.dados_tokeniza?.investimentos) ? sample.dados_tokeniza.investimentos.length : 'N/A',
+        },
+        blue_fields: {
+          plano_ativo: sample.plano_ativo,
+          stage_atual: sample.stage_atual,
+          cliente_status: sample.cliente_status,
+          venda_realizada: sample.venda_realizada,
+        },
+      });
+    }
 
     if (clientes.length === 0) {
       await saveOffset(supabase, empresa, 0);
@@ -413,7 +493,7 @@ Deno.serve(async (req) => {
 
     // ---- Save next offset ----
     const cicloCompleto = !hasMore;
-    const nextOffset = cicloCompleto ? 0 : offset + BATCH_SIZE;
+    const nextOffset = cicloCompleto ? 0 : offset + batchSize;
     await saveOffset(supabase, empresa, nextOffset);
 
     const result = {
