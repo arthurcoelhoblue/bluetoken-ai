@@ -139,8 +139,10 @@ async function checkBlueChat(): Promise<HealthCheckResult> {
     if (!testedUrl) return { status: "error", message: "URL da API não configurada. Configure em Integrações → Blue Chat." };
 
     const start = Date.now();
-    const healthEndpoints = [`${testedUrl.replace(/\/$/, "")}/health`, `${testedUrl.replace(/\/$/, "")}/api/health`, testedUrl];
+    const baseUrl = testedUrl.replace(/\/$/, "");
 
+    // 1. Try GET health endpoints first
+    const healthEndpoints = [`${baseUrl}/health`, `${baseUrl}/api/health`];
     for (const endpoint of healthEndpoints) {
       try {
         const response = await fetch(endpoint, { method: "GET", headers: { "X-API-Key": testedKey!, "Content-Type": "application/json" } });
@@ -149,6 +151,31 @@ async function checkBlueChat(): Promise<HealthCheckResult> {
         }
       } catch { /* next */ }
     }
+
+    // 2. Probe via POST to the configured URL (external-ai endpoint expects POST)
+    // A 400/422 means the API is reachable and rejecting the empty payload — that's OK
+    try {
+      const probeResponse = await fetch(baseUrl, {
+        method: "POST",
+        headers: { "X-API-Key": testedKey!, "Authorization": `Bearer ${testedKey}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ ticket_id: "", message: "" }),
+      });
+      const latencyMs = Date.now() - start;
+      if (probeResponse.status === 400 || probeResponse.status === 422 || probeResponse.status === 404) {
+        return { status: "online", latencyMs, message: "API validada via probe POST", details: { method: "probe-post", statusCode: probeResponse.status } };
+      }
+      if (probeResponse.status === 401 || probeResponse.status === 403) {
+        return { status: "error", message: "API Key inválida ou sem permissão", latencyMs, details: { statusCode: probeResponse.status } };
+      }
+      if (probeResponse.ok) {
+        return { status: "online", latencyMs, details: { method: "probe-post", statusCode: probeResponse.status } };
+      }
+      if (probeResponse.status >= 500) {
+        return { status: "offline", message: `Servidor Blue Chat com erro (${probeResponse.status})`, latencyMs };
+      }
+      // Any other 4xx — API is reachable
+      return { status: "online", latencyMs, message: `API acessível (status ${probeResponse.status})`, details: { method: "probe-post" } };
+    } catch { /* network error */ }
 
     return { status: "offline", message: "Não foi possível conectar à API do Blue Chat", latencyMs: Date.now() - start, details: { apiUrl: testedUrl } };
   } catch (error) {
