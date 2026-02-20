@@ -192,6 +192,35 @@ export function BlueChatConfigDialog({ open, onOpenChange }: BlueChatConfigDialo
           </p>
         </div>
 
+        {/* Empresa identifier (read-only) */}
+        <div className="space-y-2">
+          <Label className="text-sm font-medium">
+            Identificador da empresa no payload (<code>context.empresa</code>)
+          </Label>
+          <div className="flex gap-2">
+            <Input
+              value={empresa}
+              readOnly
+              className="font-mono text-xs bg-muted text-muted-foreground"
+            />
+            <Button variant="outline" size="icon" onClick={() => copyToClipboard(empresa)}>
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Configure o Blue Chat para enviar este valor exato no campo <code>context.empresa</code> de cada webhook.
+          </p>
+        </div>
+
+        {/* Auth note */}
+        <Alert className="border-yellow-500/30 bg-yellow-500/5">
+          <AlertTriangle className="h-4 w-4 text-yellow-600" />
+          <AlertDescription className="text-xs">
+            <strong>Autenticação separada por empresa:</strong> Configure a API Key abaixo como o header{" "}
+            <code>Authorization: Bearer &lt;api_key&gt;</code> no Blue Chat para esta empresa. Cada empresa deve usar sua própria key.
+          </AlertDescription>
+        </Alert>
+
         {/* API URL */}
         <div className="space-y-2">
           <Label htmlFor={`api-url-${empresa}`} className="text-sm font-medium">

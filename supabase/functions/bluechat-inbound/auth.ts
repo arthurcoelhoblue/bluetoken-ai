@@ -48,26 +48,24 @@ export async function validateAuthAsync(
 }
 
 /**
- * Legacy sync validation (kept for backward compat, uses env only).
+ * Legacy sync validation (kept for backward compat).
+ * IMPORTANT: Only checks if a token is present. The actual secret validation
+ * is always done asynchronously in validateAuthAsync (per-company lookup).
+ * This avoids rejecting requests with company-specific keys when BLUECHAT_API_KEY
+ * env var exists but holds a different (generic) value.
  */
 export function validateAuth(req: Request): { valid: boolean } {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
-
-  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
-
-  if (!bluechatApiKey) {
-    // If no env key, we can't validate synchronously — caller should use validateAuthAsync
-    log.warn('BLUECHAT_API_KEY não configurada no env, tentando validação assíncrona');
-    return { valid: true }; // Allow through, async validation will handle it
-  }
-
   const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
 
-  if (token && token.trim() === bluechatApiKey.trim()) {
-    return { valid: true };
+  if (!token) {
+    log.warn('Nenhum token recebido na requisição Blue Chat');
+    return { valid: false };
   }
 
-  log.warn('Token inválido para Blue Chat (sync)');
-  return { valid: false };
+  // Always pass through — the real validation is done in validateAuthAsync
+  // which checks per-company api_key stored in system_settings first,
+  // then falls back to BLUECHAT_API_KEY env.
+  return { valid: true };
 }
