@@ -28,7 +28,22 @@ function getCopilotContext(pathname: string, empresa: string): { type: CopilotCo
 function loadPosition(): { x: number; y: number } | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const pos = JSON.parse(raw);
+      // Validate that saved position is within current viewport bounds
+      if (
+        typeof pos.x === 'number' &&
+        typeof pos.y === 'number' &&
+        pos.x >= 0 &&
+        pos.y >= 0 &&
+        pos.x <= window.innerWidth - FAB_SIZE &&
+        pos.y <= window.innerHeight - FAB_SIZE
+      ) {
+        return pos;
+      }
+      // Invalid position – clear it so we fall back to default
+      localStorage.removeItem(STORAGE_KEY);
+    }
   } catch { /* ignore – corrupt localStorage */ }
   return null;
 }
@@ -64,7 +79,13 @@ export function CopilotFab() {
   // Drag state
   const [position, setPosition] = useState<{ x: number; y: number }>(() => {
     const saved = loadPosition();
-    return saved ?? { x: window.innerWidth - FAB_SIZE - 24, y: window.innerHeight - FAB_SIZE - 24 };
+    const defaultPos = { x: window.innerWidth - FAB_SIZE - 24, y: window.innerHeight - FAB_SIZE - 24 };
+    if (!saved) return defaultPos;
+    // Extra clamp in case viewport shrank since last save
+    return {
+      x: Math.max(0, Math.min(saved.x, window.innerWidth - FAB_SIZE)),
+      y: Math.max(0, Math.min(saved.y, window.innerHeight - FAB_SIZE)),
+    };
   });
   const isDraggingRef = useRef(false);
   const dragStartRef = useRef({ px: 0, py: 0, sx: 0, sy: 0 });
