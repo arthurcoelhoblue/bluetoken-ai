@@ -1,112 +1,110 @@
 
-# Migração para gemini-3-flash-preview via Google API própria
+# Importação Completa de Clientes SGT → CRM (755 Blue + 1049 Tokeniza)
 
-## Ajustes em relação ao plano anterior
+## Diagnóstico do Gap
 
-Com base nas suas definições:
+Situação atual:
+- Blue: 755 clientes no SGT → apenas 212 no CRM (faltam 543)
+- Tokeniza: 1049 investidores no SGT → apenas 250 no CRM (faltam 799)
 
-- `copilot-chat` sai do Grupo A e entra no Grupo B (migra para Gemini Flash)
-- Nenhuma função usa a Lovable AI Gateway — a própria API do Google (GOOGLE_API_KEY) já está configurada no projeto
-- Grupo A (mantém Claude): apenas `sdr-response-generator`, `sdr-proactive-outreach` e `amelia-mass-action`
-- Grupo B (migra para Gemini Flash): 17 funções — incluindo `copilot-chat`
+**Por que faltam tantos?** Dois problemas combinados:
 
-## Como funciona a sua API própria
+1. **Lógica de detecção invertida**: O `sgt-import-clientes` atual itera sobre contatos que JÁ EXISTEM no CRM e busca cada um no SGT. Clientes que existem no SGT mas nunca entraram no CRM como leads são invisíveis para essa função.
 
-O projeto já usa a Google AI API diretamente em `_shared/ai-provider.ts`, chamando `https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateContent` com a `GOOGLE_API_KEY`. A mudança é simplesmente trocar o modelo de `gemini-3-pro-preview` para `gemini-3-flash-preview` **somente quando a função pedir**.
+2. **`isCliente()` não captura a Blue corretamente**: A função verifica `stage_atual === 'Cliente'`, mas a Blue usa o stage `'Vendido'`. Isso faz com que centenas de clientes Blue passem pela verificação sem serem reconhecidos como clientes.
 
-Não é necessário nenhum segredo novo — a `GOOGLE_API_KEY` já existe no projeto.
+**A solução correta**: Em vez de "CRM busca SGT", inverter para "SGT lista → CRM importa". O SGT tem um endpoint `listar-clientes-api` que retorna todos os clientes paginados por empresa, o que permite uma varredura completa independente de o contato já existir no CRM.
 
-## Estratégia de implementação
+---
 
-### Arquivo central: `_shared/ai-provider.ts`
+## O que será feito
 
-Adicionar parâmetro opcional `model?: 'gemini-flash'` na interface `CallAIOptions`. Quando esse parâmetro estiver presente, a cadeia de chamada muda:
+### 1. Nova Edge Function: `sgt-full-import` (substitui a lógica do `sgt-import-clientes`)
 
-**Sem `model: 'gemini-flash'`** (comportamento atual — Claude → Gemini Pro → GPT-4o):
-```
-Claude Sonnet 4.6 → Gemini Pro → GPT-4o
-```
+Ao invés de varrer os contatos do CRM, esta função:
 
-**Com `model: 'gemini-flash'`** (novo comportamento para Grupo B):
-```
-Gemini Flash (google propria) → Claude → Gemini Pro → GPT-4o
-```
+1. Chama o endpoint `listar-clientes-api` do SGT com `empresa + offset`
+2. Para cada cliente retornado pelo SGT, executa em cascata:
+   - **Upsert `lead_contacts`** (pela bridge `legacy_lead_id`) 
+   - **Upsert `contacts`** (pelo `legacy_lead_id` como chave)
+   - **Upsert `cs_customers`** (por `contact_id + empresa`)
+   - Para Tokeniza: **Upsert `cs_contracts`** com cada investimento
+3. Salva o offset em `system_settings` para continuar em chamadas subsequentes
+4. Retorna estatísticas do batch processado
 
-O Gemini Flash entra como **primeira tentativa**. Se falhar por qualquer motivo, cai normalmente para Claude → Gemini Pro → GPT-4o (fallback de segurança preservado).
+**Critério de inclusão** (regras clarificadas com você):
+- **Blue**: inclui se `plano_ativo = true` OU `cliente_status = 'ativo'` OU `venda_realizada = true` OU `stage_atual IN ('Vendido', 'Cliente')`
+- **Tokeniza**: inclui se `tokeniza_investidor = true` OU tem ao menos 1 investimento com status `PAID/FINISHED`
 
-### Custo na COST_TABLE
+**Critério de exclusão** (jogar no lixo):
+- Blue sem plano contratado
+- Tokeniza sem nenhum investimento realizado
 
-Adicionar entrada para o novo modelo:
+### 2. Corrigir `isCliente()` nos arquivos existentes
+
+Atualizar a função `isCliente()` em `sgt-import-clientes/index.ts` e `sgt-sync-clientes/index.ts` para incluir o stage `'Vendido'` da Blue:
+
 ```typescript
-'gemini-3-flash-preview': { input: 0.075 / 1_000_000, output: 0.30 / 1_000_000 },
+// ANTES (errado):
+if (lead.stage_atual === 'Cliente') return true;
+
+// DEPOIS (correto):
+if (lead.stage_atual === 'Cliente' || lead.stage_atual === 'Vendido') return true;
+if (empresa === 'BLUE' && lead.plano_ativo === true) return true;
 ```
 
-Isso garante que a telemetria na página `/admin/ai-costs` registre corretamente o custo do Gemini Flash separado do Gemini Pro.
+### 3. Botão na UI `/cs/clientes` para disparar o import
+
+Adicionar na página de clientes CS um botão "Sincronizar com SGT" (visível apenas para admins) que dispara a nova função. O botão mostra progresso: quantos foram processados, quantos novos foram criados, offset atual.
 
 ---
 
 ## Arquivos alterados
 
-### 1. `supabase/functions/_shared/ai-provider.ts`
-
-- Adicionar `model?: 'gemini-flash'` em `CallAIOptions`
-- Adicionar `'gemini-3-flash-preview'` no `COST_TABLE`
-- Inserir bloco **antes do Claude**: se `model === 'gemini-flash'` E `GOOGLE_API_KEY` existe, chama `gemini-3-flash-preview:generateContent`. Se retornar conteúdo, usa esse resultado e **pula** Claude/Gemini Pro/GPT-4o (exceto se falhar — aí cai para a cadeia normal)
-
-### 2. `src/lib/sdr-logic.ts`
-
-- Adicionar `'gemini-3-flash-preview'` no `COST_TABLE` exportado para que os testes de custo cubram o novo modelo
-
-### 3. Funções do Grupo B — adicionar `model: 'gemini-flash'` na chamada `callAI()`
-
-17 funções recebem a flag. Apenas o argumento `model: 'gemini-flash'` é adicionado, sem mais nenhuma alteração de lógica:
-
-| Função | Arquivo |
+| Arquivo | Ação |
 |---|---|
-| `copilot-chat` | `supabase/functions/copilot-chat/index.ts` |
-| `copilot-proactive` | `supabase/functions/copilot-proactive/index.ts` |
-| `sdr-intent-classifier` | `supabase/functions/sdr-ia-interpret/intent-classifier.ts` |
-| `deal-scoring` | `supabase/functions/deal-scoring/index.ts` |
-| `deal-loss-analysis` | `supabase/functions/deal-loss-analysis/index.ts` |
-| `deal-context-summary` | `supabase/functions/deal-context-summary/index.ts` |
-| `cs-health-calculator` | `supabase/functions/cs-health-calculator/index.ts` |
-| `cs-scheduled-jobs` | `supabase/functions/cs-scheduled-jobs/index.ts` |
-| `cs-ai-actions` | `supabase/functions/cs-ai-actions/index.ts` |
-| `call-transcribe` | `supabase/functions/call-transcribe/index.ts` |
-| `call-coach` | `supabase/functions/call-coach/index.ts` |
-| `weekly-report` | `supabase/functions/weekly-report/index.ts` |
-| `icp-learner` | `supabase/functions/icp-learner/index.ts` |
-| `next-best-action` | `supabase/functions/next-best-action/index.ts` |
-| `revenue-forecast` | `supabase/functions/revenue-forecast/index.ts` |
-| `faq-auto-review` | `supabase/functions/faq-auto-review/index.ts` |
-| `amelia-learn` | `supabase/functions/amelia-learn/index.ts` |
+| `supabase/functions/sgt-full-import/index.ts` | Novo — função de importação baseada em listagem SGT |
+| `supabase/functions/sgt-import-clientes/index.ts` | Corrigir `isCliente()`: adicionar `'Vendido'` e `plano_ativo` |
+| `supabase/functions/sgt-sync-clientes/index.ts` | Corrigir `isCliente()`: mesma correção |
+| `src/components/cs/CSCustomersPage.tsx` (ou equivalente) | Adicionar botão "Sincronizar com SGT" com feedback de progresso |
+| `supabase/config.toml` | Registrar nova função `sgt-full-import` |
 
 ---
 
-## Funções que NÃO recebem a flag (mantêm Claude como primário)
+## Fluxo da nova função `sgt-full-import`
 
-| Função | Motivo |
-|---|---|
-| `sdr-ia-interpret/response-generator.ts` | Gera resposta enviada ao lead — qualidade máxima |
-| `sdr-proactive-outreach` | Mensagem de abordagem enviada ao lead — primeira impressão |
-| `amelia-mass-action` | Campanhas enviadas diretamente para leads |
+```text
+POST /functions/v1/sgt-full-import
+  { empresa: 'BLUE' | 'TOKENIZA', reset_offset?: true }
 
----
-
-## Impacto de custo estimado
-
-| Modelo | Input | Output |
-|---|---|---|
-| Claude Sonnet 4.6 | $3.00/M | $15.00/M |
-| Gemini Pro Preview | $1.25/M | $10.00/M |
-| Gemini Flash Preview | **$0.075/M** | **$0.30/M** |
-
-Redução estimada de **94% no custo** das 17 funções migradas vs. Claude, e **~94% vs.** Gemini Pro.
+  1. Carrega offset de system_settings (categoria: 'sgt-full-import', key: empresa)
+  2. Chama SGT: GET listar-clientes-api?empresa=BLUE&limit=200&offset=N
+  3. Para cada cliente no resultado:
+       a. Upsert contacts (legacy_lead_id = lead_id)
+       b. Upsert cs_customers (contact_id + empresa)
+       c. Se TOKENIZA: upsert cada investimento em cs_contracts
+  4. Salva próximo offset
+  5. Retorna { processados, novos_contatos, novos_cs_customers, novos_contratos, proximo_offset, ciclo_completo }
+```
 
 ---
 
-## Zero risco para as conversas com leads
+## Execução
 
-As 3 funções do Grupo A não são alteradas. O fallback automático garante que, mesmo que o Gemini Flash falhe, o sistema usa Claude → Gemini Pro → GPT-4o automaticamente. Nenhuma função fica sem resposta.
+Para cobrir os 755 + 1049 = 1804 clientes em batches de 200:
+- Blue: ~4 chamadas para cobrir os 755 clientes
+- Tokeniza: ~6 chamadas para cobrir os 1049 clientes
 
-A telemetria em `ai_usage_log` registrará `model: 'gemini-3-flash-preview'` e `provider: 'gemini'`, visível na página de Custos IA que você está vendo agora.
+O botão na UI executa em loop automático até `ciclo_completo = true`.
+
+---
+
+## Impacto esperado
+
+| Empresa | Antes | Depois | Novos |
+|---|---|---|---|
+| Blue | 212 | ~755 | +543 |
+| Tokeniza | 250 | ~1049 | +799 |
+| **Total** | **462** | **~1804** | **+1342** |
+
+Clientes sem plano (Blue) ou sem investimento realizado (Tokeniza) não serão importados, conforme solicitado.
