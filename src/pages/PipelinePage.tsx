@@ -68,6 +68,7 @@ function PipelineContent() {
   // For vendedores, force owner filter to themselves
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
+  const [etiquetaIA, setEtiquetaIA] = useState(false);
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
@@ -108,6 +109,7 @@ function PipelineContent() {
     ownerId: effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
     temperatura: temperatura !== 'all' ? temperatura : undefined,
     tag: tag !== 'all' ? tag : undefined,
+    etiqueta: etiquetaIA ? 'Atendimento IA' : undefined,
     page: -1, // Fetch all (up to 500) for Kanban
   });
   
@@ -145,6 +147,8 @@ function PipelineContent() {
             onTagChange={setTag}
             availableTags={availableTags}
             ownerDisabled={ownerFilterDisabled}
+            etiquetaIA={etiquetaIA}
+            onEtiquetaIAChange={setEtiquetaIA}
           />
 
           <div className="flex-1 min-h-0 flex flex-col">
