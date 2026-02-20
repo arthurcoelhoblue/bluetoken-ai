@@ -1,116 +1,96 @@
 
-# Diagnóstico e Correção do SGT Full Import
+# Limpeza de Duplicatas Tokeniza — Plano Cirúrgico
 
-## Resumo dos Problemas Encontrados
+## O que os dados mostram
 
-Há 3 problemas distintos em paralelo:
+A investigação revelou a causa raiz e o escopo exato do problema:
 
-### Problema 1 — BLUE: Timeout (context canceled)
-A edge function `sgt-full-import` para BLUE está levando mais de 30 segundos, causando timeout. Os logs de edge mostram que nenhuma chamada BLUE foi concluída com sucesso — apenas TOKENIZA tem registros recentes. O `context canceled` do curl confirma: a função é cancelada antes de retornar.
+**Causa raiz**: O `sgt-full-import` nas execuções de hoje (20/02) criou novos `contacts` com `legacy_lead_id` diferentes para pessoas que já existiam no banco — porque o SGT retornou os mesmos clientes com IDs de lead distintos (provavelmente múltiplos cadastros do mesmo investidor no SGT). A lógica de busca por email que devia evitar isso não funcionou a tempo.
 
-**Causa raiz**: O endpoint SGT `listar-clientes-api` para BLUE provavelmente inclui um join com `cliente_notion` que é lento. Com 755 clientes + join externo, a chamada excede 30s (limite padrão das edge functions).
+**Divisão dos dados:**
 
-**Solução**: Reduzir o `BATCH_SIZE` de 500 para 100 apenas para BLUE, e adicionar um timeout explícito de 25s na chamada fetch ao SGT, retornando um erro controlado ao invés de deixar cancelar.
+| Grupo | Contacts | CS Customers | Contratos detalhados | Origem |
+|---|---|---|---|---|
+| **MANTER** (criados antes de 20/02) | 191 | 191 | 1.827 | Histórico legítimo |
+| **EXCLUIR** (criados em 20/02) | 1.704 | 1.704 | 18 (1 pessoa, migrar primeiro) | Duplicatas de hoje |
 
-### Problema 2 — TOKENIZA: 100% dos clientes sendo ignorados
-Os logs mostram `ignorados: 500` em todos os batches da Tokeniza (2.351 registros processados, 0 aproveitados). O `isClienteElegivel` retorna `false` para todos.
-
-**Causa raiz**: O endpoint `listar-clientes-api` foi criado pelo time do SGT mas os campos que a função espera não batem com o que é entregue. Especificamente:
-- `tokeniza_investidor` pode não vir como campo raiz (pode ser `dados_tokeniza.investidor`)
-- `dados_tokeniza.investimentos` pode ser `investimentos` na raiz
-- Não temos visibilidade do schema exato da resposta
-
-**Solução**: Adicionar logging detalhado do primeiro cliente de cada batch para inspecionar o schema real. Depois ampliar o `isClienteElegivel` para cobrir variações de campo.
-
-### Problema 3 — Interface: erro de BLUE quebra o fluxo completo
-Na sessão replay anterior, o erro de BLUE fez a sincronização pular para TOKENIZA com estatísticas zeradas. O `SGTSyncDialog` não trata erros de timeout adequadamente — mostra "erro na chamada" e para.
-
-**Solução**: Melhorar o tratamento de erros no dialog para mostrar detalhes do timeout e permitir retry por empresa.
-
----
+**Os 18 contratos criados hoje** pertencem todos ao `wesleymfernandes@gmail.com` — que NÃO tem registro antigo (é novo). Esses 18 contratos devem ser migrados para o cs_customer mais antigo criado hoje com seu email.
 
 ## O que será feito
 
-### 1. Corrigir `sgt-full-import/index.ts`
+### Passo 1 — Migrar os 18 contratos de wesleymfernandes
 
-**a. Timeout explícito no fetch ao SGT:**
-```typescript
-const controller = new AbortController();
-const timeout = setTimeout(() => controller.abort(), 25000); // 25s max
+O contact `wesleymfernandes@gmail.com` foi criado hoje e tem 18 contratos. Antes de excluir, os contratos são migrados para o cs_customer mais antigo (menor `created_at`) desse email, e os outros cs_customers/contacts duplicados dele são excluídos.
 
-const sgtResponse = await fetch(SGT_LIST_URL, {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json', 'x-api-key': sgtApiKey },
-  body: JSON.stringify({ empresa, limit: BATCH_SIZE, offset }),
-  signal: controller.signal,
-});
-clearTimeout(timeout);
+```sql
+-- Pegar o cs_customer mais antigo do wesleymfernandes
+WITH primary_cs AS (
+  SELECT cs.id as primary_cs_id
+  FROM contacts c
+  JOIN cs_customers cs ON cs.contact_id = c.id
+  WHERE cs.empresa = 'TOKENIZA' AND c.email = 'wesleymfernandes@gmail.com'
+  ORDER BY c.created_at ASC
+  LIMIT 1
+)
+UPDATE cs_contracts
+SET customer_id = (SELECT primary_cs_id FROM primary_cs)
+WHERE customer_id IN (
+  SELECT cs.id FROM contacts c
+  JOIN cs_customers cs ON cs.contact_id = c.id
+  WHERE cs.empresa = 'TOKENIZA' AND c.email = 'wesleymfernandes@gmail.com'
+    AND cs.id != (SELECT primary_cs_id FROM primary_cs)
+);
 ```
 
-**b. Batch size dinâmico por empresa:**
-```typescript
-const BATCH_SIZE_BLUE = 100;     // join com cliente_notion é mais lento
-const BATCH_SIZE_TOKENIZA = 500; // dados planos, mais rápido
-const batchSize = empresa === 'BLUE' ? BATCH_SIZE_BLUE : BATCH_SIZE_TOKENIZA;
+### Passo 2 — Excluir os cs_customers duplicados criados hoje
+
+Remove todos os `cs_customers` de contacts criados em 20/02, **exceto** o cs_customer com contratos (o do wesleymfernandes após a migração).
+
+```sql
+DELETE FROM cs_customers
+WHERE id IN (
+  SELECT cs.id
+  FROM contacts c
+  JOIN cs_customers cs ON cs.contact_id = c.id
+  LEFT JOIN cs_contracts cc ON cc.customer_id = cs.id
+  WHERE cs.empresa = 'TOKENIZA'
+    AND DATE(c.created_at) = '2026-02-20'
+    AND cc.id IS NULL -- sem contratos
+);
 ```
 
-**c. Log do schema do primeiro cliente recebido:**
-```typescript
-if (clientes.length > 0) {
-  log.info('Sample lead schema', { 
-    keys: Object.keys(clientes[0]),
-    tokeniza_fields: {
-      tokeniza_investidor: clientes[0].tokeniza_investidor,
-      has_dados_tokeniza: !!clientes[0].dados_tokeniza,
-      dados_tokeniza_keys: clientes[0].dados_tokeniza ? Object.keys(clientes[0].dados_tokeniza) : [],
-      plano_ativo: clientes[0].plano_ativo,
-      stage_atual: clientes[0].stage_atual,
-    }
-  });
-}
+### Passo 3 — Excluir os contacts duplicados criados hoje
+
+Remove os 1.704 contacts de hoje que não têm mais cs_customers vinculados.
+
+```sql
+DELETE FROM contacts
+WHERE empresa = 'TOKENIZA'
+  AND DATE(created_at) = '2026-02-20'
+  AND id NOT IN (SELECT contact_id FROM cs_customers WHERE empresa = 'TOKENIZA');
 ```
 
-**d. Ampliar `isClienteElegivel` para cobrir mais variações de campo:**
-```typescript
-if (empresa === 'TOKENIZA') {
-  if (lead.tokeniza_investidor === true) return true;
-  if (lead.is_investidor === true) return true;
-  if (lead.dados_tokeniza?.investidor === true) return true;
-  
-  // Check investimentos in multiple locations
-  const investimentos = 
-    lead.dados_tokeniza?.investimentos || 
-    lead.investimentos || 
-    lead.dados_tokeniza?.aportes ||
-    [];
-  // ... rest of check
-}
-```
+### Passo 4 — Corrigir o sgt-full-import para evitar recorrência
 
-### 2. Nenhuma mudança na UI necessária agora
+O problema ocorreu porque o import usava `legacy_lead_id` como chave primária de deduplicação, mas o SGT retornou o mesmo investidor com múltiplos `lead_ids` diferentes. A correção é garantir que a busca por email seja feita **antes** de tentar inserir, e que o upsert use `email + empresa` como chave de deduplicação no nível do banco.
 
-O problema da UI (erro de BLUE quebra fluxo) vai ser resolvido indiretamente: quando BLUE funcionar sem timeout, o fluxo completo vai rodar. Deixamos a UI como está por enquanto.
+Ajuste na lógica de `processLead`:
+- Antes de qualquer INSERT em `contacts`, buscar por `email + empresa` primeiro
+- Se encontrar, atualizar o `legacy_lead_id` do existente e pular criação
+- Não criar novo contact se email já existir na mesma empresa
 
----
+## Resultado esperado após a limpeza
 
-## Arquivos alterados
+| Métrica | Antes | Depois |
+|---|---|---|
+| CS Customers Tokeniza | 1.895 | ~192 únicos |
+| Contratos detalhados | 1.845 | 1.845 (intactos) |
+| Contacts Tokeniza duplicados | 2.180 | 0 |
 
-| Arquivo | Mudança |
-|---|---|
-| `supabase/functions/sgt-full-import/index.ts` | Timeout fetch 25s, batch size dinâmico (100 para BLUE / 500 para TOKENIZA), logs de schema, `isClienteElegivel` mais robusto |
+## Importante sobre os contratos existentes
 
----
+Os **1.827 contratos dos registros antigos** (criados entre 13-19/02) **não serão tocados**. São os dados reais de investimento dos clientes Tokeniza, vindos do backfill anterior, e ficam intactos.
 
-## Sequência após o deploy
+## Sobre "excluir tudo e reimportar"
 
-1. Deploy da função corrigida
-2. Chamar via UI com "Sincronizar com SGT" 
-3. Verificar logs da função para ver o schema real dos clientes
-4. Se necessário, ajustar campo-alvo do `isClienteElegivel` baseado no schema observado
-5. Rodar novamente para completar o import
-
----
-
-## Por que TOKENIZA teve 2.351 registros mas esperávamos 1.049?
-
-O endpoint `listar-clientes-api` provavelmente retorna **todos os leads da Tokeniza** (não só investidores), e o filtro `apenas_clientes` não está sendo aplicado — ou o SGT está retornando todos e esperando que o CRM filtre. Isso confirma que o `isClienteElegivel` precisa funcionar corretamente para que o filtro seja aplicado do lado do CRM.
+Não é necessário nem recomendado. Motivo: excluir tudo destruiria os 1.845 contratos detalhados que foram importados via backfill individual (buscar-lead-api), que são dados valiosos que o `sgt-full-import` em massa **não consegue mais recuperar** (o endpoint bulk só retorna totais agregados, não o histórico por oferta). A abordagem cirúrgica preserva esses dados.
