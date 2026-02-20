@@ -1,77 +1,112 @@
 
-# Estado atual da integração Blue Chat vs. o que o novo modelo exige
+# Reativar Integração Blue Chat com Secrets Separadas por Empresa
 
-## O que já está construído (e funciona)
+## Diagnóstico do problema
 
-A integração com o Blue Chat já é substancialmente mais avançada do que parece. Veja o que existe:
+Ao inspecionar o banco de dados, confirmei o estado atual:
 
-### Modo passivo (inbound) — COMPLETO
-A `bluechat-inbound` já recebe mensagens do Blue Chat via webhook, resolve o lead pelo telefone, cria leads/deals automaticamente, chama a Amélia (SDR IA Interpret), e devolve a resposta de volta ao Blue Chat via callback API. Escalação e resolução de ticket também estão implementadas.
-
-### Modo ativo (outbound SDR) — PARCIALMENTE COMPLETO
-- `sdr-proactive-outreach`: edge function dedicada que **abre uma nova conversa no Blue Chat** (`POST /conversations`), gera uma mensagem personalizada com IA, envia via Blue Chat API, e registra tudo no banco. Ela já funciona como SDR ativo.
-- `cadence-runner`: quando o canal da empresa é `BLUECHAT`, já chama `dispararViaBluechat()`, que verifica se existe conversa aberta, e se não existir **abre uma nova** automaticamente e envia o template da cadência.
-- `bluechat-proxy`: proxy frontend com ações `list-agents`, `transfer-ticket`, `open-conversation`, `send-message`, `get-frontend-url` — tudo que o painel precisa para agir sobre o Blue Chat.
-
-### Transferência para vendedor — COMPLETO
-Já existe tanto via `bluechat-proxy` (transferência manual pelo painel) quanto via callback automático da `bluechat-inbound` quando a Amélia detecta que o lead é um SQL e sinaliza `ESCALATE`.
-
----
-
-## O que falta ou precisa de atenção
-
-Mesmo com toda essa base, há **3 lacunas reais** para o novo modelo funcionar de ponta a ponta:
-
-### 1. Não há interface no painel para disparar a Amélia em modo SDR ativo sobre um lead do pipeline
-
-A `sdr-proactive-outreach` existe, mas só pode ser chamada via API/cron. Não há botão no DealCard, no painel de conversas, ou em qualquer lugar do frontend para um vendedor clicar em "Abrir conversa no Blue Chat via Amélia" para um lead específico do pipeline.
-
-### 2. A flag de canal (`integration_company_config`) precisa estar configurada como `bluechat` para que as cadências fluam pelo Blue Chat
-
-Isso é configuração de banco, não de código — mas precisa ser documentado e verificado. Se a flag não estiver ativa, o `cadence-runner` continua tentando mandar pelo WhatsApp direto (`DIRECT`), ignorando o Blue Chat.
-
-### 3. Não há tela de visibilidade de "conversas ativas da Amélia no Blue Chat" dentro do painel
-
-Quando a Amélia abre uma conversa proativamente, o vendedor vê no Blue Chat, mas dentro do CRM/pipeline não há uma visão centralizada mostrando "esses N leads estão sendo abordados pela Amélia agora". O `etiqueta: 'Atendimento IA'` existe no deal, mas não há filtro visual dedicado para isso no pipeline.
-
----
-
-## Diagnóstico resumido
-
-```text
-Funcionalidade                               Status
-──────────────────────────────────────────── ─────────────────────
-Receber msgs do Blue Chat + responder (IA)   ✅ Completo
-Criar lead + deal automaticamente (inbound)  ✅ Completo  
-Escalação para humano (ESCALATE → transfer)  ✅ Completo
-Encerramento de ticket (RESOLVE)             ✅ Completo
-Abrir conversa nova proativamente (API)      ✅ Completo (edge function)
-Cadências fluindo pelo Blue Chat             ✅ Completo (se canal = BLUECHAT)
-Transferência manual pelo painel             ✅ Completo (bluechat-proxy)
-Deep link para abrir conversa no Blue Chat   ✅ Completo (ConversationPanel)
-
-Botão "Abordar via Amélia" no pipeline/deal  ❌ Falta UI
-Visão de "Leads em atendimento IA" no CRM    ❌ Falta (só etiqueta no kanban)
+```
+system_settings (category = 'integrations'):
+- key: bluechat_tokeniza  → { api_url: "...", enabled: true }  ← SEM api_key!
+- key: bluechat_blue      → { api_url: "...", enabled: true }  ← SEM api_key!
+- key: bluechat           → { api_url: "...", enabled: true }  ← legado, SEM api_key!
 ```
 
----
+```
+secrets de ambiente:
+- BLUECHAT_API_KEY  → uma única chave genérica (fallback)
+```
 
-## O que precisa ser feito
+O fluxo atual quando o Blue Chat envia uma mensagem é:
+1. `validateAuth` (sync): tenta validar com `BLUECHAT_API_KEY` do env. Se não bater, rejeita com 401.
+2. `validateAuthAsync` (por empresa): busca `api_key` de `system_settings` → não encontra → cai novamente em `BLUECHAT_API_KEY` → mesmo problema.
 
-### Prioridade alta: Botão "Abordar via Amélia" no painel
+**Resultado**: o webhook rejeita chamadas da Tokeniza e da Blue com 401, pois cada uma tem sua própria secret que não é a genérica do env.
 
-Adicionar no `DealCard` ou na tela de detalhes do deal/lead um botão que chame `sdr-proactive-outreach` com o `lead_id` e `empresa` do lead atual. O resultado (link direto para a conversa no Blue Chat) pode abrir em nova aba.
+## Solução — 3 partes
 
-**Onde colocar**: na `ConversationTakeoverBar` ou como ação rápida no `DealCard` (somente visível quando canal = BLUECHAT e modo = SDR_IA e sem conversa ativa ainda).
+### Parte 1: Salvar as API Keys separadas no banco (ação do admin)
 
-### Prioridade média: Filtro "Atendimento IA" no Kanban
+O diálogo `BlueChatConfigDialog` já está construído e funciona. Ele salva `api_key` por empresa em `system_settings`. O admin precisa:
+1. Abrir Configurações → Integrações → Blue Chat → botão "Configurar"
+2. Aba TOKENIZA: colar a API Key específica da Tokeniza → Salvar
+3. Aba BLUE: colar a API Key específica da Blue → Salvar
 
-O campo `etiqueta = 'Atendimento IA'` já é setado pela `sdr-proactive-outreach`. Adicionar um filtro rápido no Kanban para exibir só esses deals já daria visibilidade completa.
+Isso resolve o problema principal. Porém, há uma falha de código que ainda pode bloquear.
 
----
+### Parte 2: Corrigir a validação sync do webhook (código)
 
-## O que NÃO precisa ser refeito
+O problema está em `validateAuth` (sync) em `bluechat-inbound/auth.ts`:
 
-A arquitetura do Blue Chat como canal principal está pronta. Não há necessidade de "preparar" a integração — ela já existe. O que falta é apenas a **superfície de acionamento manual no frontend** e uma **visão de pipeline dos leads em atendimento IA**.
+```typescript
+// COMPORTAMENTO ATUAL (problema):
+export function validateAuth(req: Request): { valid: boolean } {
+  const bluechatApiKey = getOptionalEnv('BLUECHAT_API_KEY');
+  if (!bluechatApiKey) {
+    return { valid: true }; // passa — OK
+  }
+  // Se BLUECHAT_API_KEY existe no env E a request vem com
+  // a key da Tokeniza (diferente), vai rejeitar aqui com 401
+  // antes mesmo de chegar na validação assíncrona por empresa!
+  if (token && token.trim() === bluechatApiKey.trim()) {
+    return { valid: true };
+  }
+  return { valid: false }; // BLOQUEIO PREMATURO
+}
+```
 
-Posso implementar o botão "Abordar via Amélia" na tela de detalhes do deal/lead e o filtro de Kanban se quiser prosseguir.
+A correção: quando há um `BLUECHAT_API_KEY` no env mas o token não bate, **não rejeitar imediatamente** — deixar passar para a validação assíncrona por empresa que tem as keys corretas.
+
+**`supabase/functions/bluechat-inbound/auth.ts`** — função `validateAuth`:
+
+```typescript
+// CORREÇÃO:
+export function validateAuth(req: Request): { valid: boolean } {
+  const authHeader = req.headers.get('Authorization');
+  const apiKeyHeader = req.headers.get('X-API-Key');
+  const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
+
+  if (!token) {
+    log.warn('Nenhum token recebido');
+    return { valid: false };
+  }
+  
+  // Sempre passa para a validação assíncrona por empresa.
+  // A validação definitiva ocorre em validateAuthAsync.
+  return { valid: true };
+}
+```
+
+A validação real já está correta em `validateAuthAsync` — ela busca a key por empresa no banco, e se não tiver, cai no env. Uma vez que as keys sejam salvas no banco por empresa, tudo funciona.
+
+### Parte 3: Adicionar campos de instrução no diálogo (UX)
+
+No `BlueChatConfigDialog`, o campo de Webhook URL é o mesmo para todas as empresas, mas a autenticação é separada. Adicionar uma nota explicando que **o campo `context.empresa`** no payload do Blue Chat identifica a empresa, e que cada empresa deve configurar o webhook com sua própria API Key como secret de autenticação.
+
+Também adicionar o campo **"Empresa para identificação"** (read-only) mostrando o valor exato que deve constar no `context.empresa` do payload (`TOKENIZA`, `BLUE`, etc.) para que o mapeamento funcione corretamente.
+
+## Arquivos alterados
+
+### Código
+- **`supabase/functions/bluechat-inbound/auth.ts`**: simplificar `validateAuth` para sempre passar o token (a validação real é feita assincronamente por empresa em `validateAuthAsync`)
+
+### Interface
+- **`src/components/settings/BlueChatConfigDialog.tsx`**: adicionar campo read-only com o valor de `context.empresa` para cada aba, para guiar a configuração no lado do Blue Chat
+
+## Ação necessária do admin após o deploy
+
+Depois da correção de código, o admin deve:
+
+1. Ir em **Configurações → Integrações → Blue Chat → Configurar**
+2. Aba **TOKENIZA**: colar a API Key da Tokeniza no campo "API Key (TOKENIZA)" → **Salvar**
+3. Aba **BLUE**: colar a API Key da Blue no campo "API Key (BLUE)" → **Salvar**
+
+As keys ficam salvas no banco (criptografadas) e são usadas automaticamente para autenticar e para fazer callbacks de resposta para cada empresa.
+
+## Por que a solução em 3 partes?
+
+- Parte 1 (banco) resolve o problema de secrets no lado do callback (envio de respostas)
+- Parte 2 (código) resolve o problema de autenticação no webhook de entrada
+- Parte 3 (UX) evita que o admin configure o lado do Blue Chat com o `context.empresa` errado
+
+Sem a Parte 2, mesmo com as keys no banco, a validação sync ainda rejetaria chamadas cujo token não bate com `BLUECHAT_API_KEY` do env.
