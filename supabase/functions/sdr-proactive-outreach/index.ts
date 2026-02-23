@@ -333,106 +333,48 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Check if there's an existing conversation_id in framework_data
+    // 6. Build message payload and send via POST /messages
+    // The Blue Chat API only exposes POST /messages — no /conversations endpoint.
+    // When we include `phone`, Blue Chat auto-creates the conversation if needed.
     const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
     let conversationId: string | null = (fwData.bluechat_conversation_id as string) || null;
     let messageId: string | null = null;
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
-    // 6a. If no conversation or no ticket, open a new one via POST /conversations
-    // This always returns a fresh ticket_id
-    if (!conversationId || !ticketId) {
-      try {
-        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            phone,
-            contact_name: lead.nome || lead.primeiro_nome,
-            channel: "whatsapp",
-            source: "AMELIA",
-          }),
-        });
+    const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
-        const openText = await openRes.text();
-        console.log("Blue Chat open-conversation response:", openRes.status, openText);
-
-        if (!openRes.ok) {
-          console.error("Blue Chat open-conversation error:", openRes.status, openText);
-          return jsonResponse(
-            { error: "Failed to open conversation in Blue Chat", detail: openText },
-            req,
-            openRes.status
-          );
-        }
-
-        const openData = JSON.parse(openText || "{}");
-        conversationId = openData?.conversation_id || openData?.conversationId || openData?.id || conversationId;
-        ticketId = openData?.ticket_id || openData?.ticketId || openData?.ticket?.id || null;
-      } catch (err) {
-        console.error("open-conversation fetch error:", err);
-        return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
-      }
-    }
-
-    if (!conversationId) {
-      return jsonResponse({ error: "Could not obtain Blue Chat conversation ID" }, req, 500);
-    }
-
-    // 6b. If still no ticketId, try POST /tickets to create one
-    if (!ticketId) {
-      try {
-        const ticketRes = await fetch(`${bcConfig.baseUrl}/tickets`, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            conversation_id: conversationId,
-            source: "AMELIA_SDR",
-          }),
-        });
-        const ticketText = await ticketRes.text();
-        console.log("Blue Chat create-ticket response:", ticketRes.status, ticketText);
-        if (ticketRes.ok) {
-          const ticketData = JSON.parse(ticketText || "{}");
-          ticketId = ticketData?.ticket_id || ticketData?.ticketId || ticketData?.id || null;
-        }
-      } catch (e) {
-        console.warn("Failed to create ticket:", e);
-      }
-    }
-
-    // 6c. Last resort: send without ticketId and let Blue Chat auto-create
-    console.log(`Proceeding with conversationId=${conversationId}, ticketId=${ticketId}`);
-
-    // 6d. Send message via POST /messages
     try {
       const messagePayload: Record<string, unknown> = {
-        conversation_id: conversationId,
         content: greetingMessage,
         source: "AMELIA_SDR",
-        phone,
+        phone, // always include phone so Blue Chat can find/create conversation
       };
+      if (conversationId) messagePayload.conversation_id = conversationId;
       if (ticketId) messagePayload.ticketId = ticketId;
 
-      const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
+      console.log("Sending to Blue Chat:", messagesUrl, JSON.stringify(messagePayload));
+
+      const sendRes = await fetch(messagesUrl, {
         method: "POST",
         headers: bcHeaders,
         body: JSON.stringify(messagePayload),
       });
 
+      const sendText = await sendRes.text();
+      console.log("Blue Chat /messages response:", sendRes.status, sendText);
+
       if (!sendRes.ok) {
-        const errText = await sendRes.text();
-        console.error("Blue Chat send-message error:", sendRes.status, errText);
         return jsonResponse(
-          { error: "Failed to send message via Blue Chat", detail: errText },
+          { error: "Failed to send message via Blue Chat", detail: sendText },
           req,
           sendRes.status
         );
       }
 
-      const sendData = await sendRes.json().catch(() => ({}));
+      const sendData = JSON.parse(sendText || "{}");
       messageId = sendData?.message_id || sendData?.id || null;
-      if (!ticketId) ticketId = sendData?.ticket_id || null;
+      conversationId = sendData?.conversation_id || sendData?.conversationId || conversationId;
+      ticketId = sendData?.ticket_id || sendData?.ticketId || ticketId;
     } catch (err) {
       console.error("send-message fetch error:", err);
       return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
