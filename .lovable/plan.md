@@ -1,96 +1,164 @@
 
-# Limpeza de Duplicatas Tokeniza — Plano Cirúrgico
 
-## O que os dados mostram
+# Integração SGT 11/10 — Plano de Implementação
 
-A investigação revelou a causa raiz e o escopo exato do problema:
+## Resumo
 
-**Causa raiz**: O `sgt-full-import` nas execuções de hoje (20/02) criou novos `contacts` com `legacy_lead_id` diferentes para pessoas que já existiam no banco — porque o SGT retornou os mesmos clientes com IDs de lead distintos (provavelmente múltiplos cadastros do mesmo investidor no SGT). A lógica de busca por email que devia evitar isso não funcionou a tempo.
+Consolidar 6 funções SGT redundantes em 3 funções limpas, eliminar codigo morto, centralizar deduplicação e garantir dados completos para Tokeniza (investimentos detalhados) e Blue (planos/status).
 
-**Divisão dos dados:**
+## Estado Atual — O Que Existe
 
-| Grupo | Contacts | CS Customers | Contratos detalhados | Origem |
-|---|---|---|---|---|
-| **MANTER** (criados antes de 20/02) | 191 | 191 | 1.827 | Histórico legítimo |
-| **EXCLUIR** (criados em 20/02) | 1.704 | 1.704 | 18 (1 pessoa, migrar primeiro) | Duplicatas de hoje |
+| Funcao | Linhas | Endpoint SGT usado | Problema |
+|---|---|---|---|
+| `sgt-webhook` (565 linhas, 7 modulos) | Recebe push do SGT | N/A (recebe) | Dedup por `pessoa_id`, nao por email+empresa |
+| `sgt-full-import` (568 linhas) | Bulk: `listar-clientes-api` | Dados agregados, sem investimentos individuais | Causou 1.700 duplicatas |
+| `sgt-sync-clientes` (400 linhas) | Individual: `buscar-lead-api` | 1 HTTP/contato, N+1 | Codigo quase identico ao import |
+| `sgt-import-clientes` (405 linhas) | Individual: `buscar-lead-api` | 1 HTTP/contato, N+1 | Clone do sync |
+| `sgt-backfill-investimentos` (281 linhas) | Individual: `buscar-lead-api` | 1 HTTP/customer, so Tokeniza | Funciona mas e separado |
+| `sgt-buscar-lead` (104 linhas) | Individual: `buscar-lead-api` | Proxy para frontend | OK, manter como esta |
 
-**Os 18 contratos criados hoje** pertencem todos ao `wesleymfernandes@gmail.com` — que NÃO tem registro antigo (é novo). Esses 18 contratos devem ser migrados para o cs_customer mais antigo criado hoje com seu email.
+**Frontend**: `SGTSyncDialog.tsx` chama `sgt-full-import`
 
-## O que será feito
+## Endpoints do SGT (confirmado lendo o projeto)
 
-### Passo 1 — Migrar os 18 contratos de wesleymfernandes
+### `listar-clientes-api` (POST)
+- Input: `{ empresa, limit (max 500), offset, apenas_clientes }`
+- Output: `{ total, clientes: [{ lead_id, nome, email, telefone, dados_tokeniza: { valor_investido, qtd_investimentos, projetos... } }] }`
+- **NAO retorna investimentos individuais** (so totais agregados)
 
-O contact `wesleymfernandes@gmail.com` foi criado hoje e tem 18 contratos. Antes de excluir, os contratos são migrados para o cs_customer mais antigo (menor `created_at`) desse email, e os outros cs_customers/contacts duplicados dele são excluídos.
+### `buscar-lead-api` (POST)
+- Input: `{ email }` ou `{ telefone }`
+- Output: `{ found, lead: {...}, dados_tokeniza: { investimentos: [{ oferta_nome, oferta_id, valor, data, status, tipo }] } }`
+- **Retorna investimentos individuais** (crowdfunding + vendas)
 
-```sql
--- Pegar o cs_customer mais antigo do wesleymfernandes
-WITH primary_cs AS (
-  SELECT cs.id as primary_cs_id
-  FROM contacts c
-  JOIN cs_customers cs ON cs.contact_id = c.id
-  WHERE cs.empresa = 'TOKENIZA' AND c.email = 'wesleymfernandes@gmail.com'
-  ORDER BY c.created_at ASC
-  LIMIT 1
-)
-UPDATE cs_contracts
-SET customer_id = (SELECT primary_cs_id FROM primary_cs)
-WHERE customer_id IN (
-  SELECT cs.id FROM contacts c
-  JOIN cs_customers cs ON cs.contact_id = c.id
-  WHERE cs.empresa = 'TOKENIZA' AND c.email = 'wesleymfernandes@gmail.com'
-    AND cs.id != (SELECT primary_cs_id FROM primary_cs)
-);
+## Arquitetura Final — 3 Funcoes
+
+```text
+SGT (Sistema de Trafego)
+    |                    |                    |
+  [PUSH]            [PULL bulk]        [PULL individual]
+    |                    |                    |
+    v                    v                    v
+sgt-webhook         sgt-sync            sgt-buscar-lead
+(existente,      (NOVA consolidada)     (existente,
+ ajuste dedup)    2 fases internas       sem mudanca)
+    |                    |                    |
+    +--- _shared/contact-dedup.ts ---+       |
+                     |                        |
+              contacts / cs_customers / cs_contracts
 ```
 
-### Passo 2 — Excluir os cs_customers duplicados criados hoje
+## Passos de Implementacao
 
-Remove todos os `cs_customers` de contacts criados em 20/02, **exceto** o cs_customer com contratos (o do wesleymfernandes após a migração).
+### Passo 1 — Criar `_shared/contact-dedup.ts`
 
-```sql
-DELETE FROM cs_customers
-WHERE id IN (
-  SELECT cs.id
-  FROM contacts c
-  JOIN cs_customers cs ON cs.contact_id = c.id
-  LEFT JOIN cs_contracts cc ON cc.customer_id = cs.id
-  WHERE cs.empresa = 'TOKENIZA'
-    AND DATE(c.created_at) = '2026-02-20'
-    AND cc.id IS NULL -- sem contratos
-);
+Modulo compartilhado com funcao `findOrCreateContact()`:
+- Hierarquia: `legacy_lead_id` -> `email + empresa` -> `telefone + empresa`
+- Se encontrado por email/telefone, atualiza `legacy_lead_id` no existente
+- So cria novo contact se nenhum match
+- Retorna `{ contactId, isNew, wasUpdated }`
+
+Tambem inclui: `upsertCsCustomer()` e `upsertTokenizaContracts()` — logica que hoje esta duplicada em 4 funcoes.
+
+### Passo 2 — Criar `sgt-sync/index.ts` (funcao consolidada)
+
+Aceita no body:
+```json
+{
+  "empresa": "BLUE" | "TOKENIZA",
+  "fase": "BULK" | "DETALHE" | null,
+  "reset_offset": true | false
+}
 ```
 
-### Passo 3 — Excluir os contacts duplicados criados hoje
+**Fase BULK** (usa `listar-clientes-api`):
+- Pagina com offset persistido em `system_settings`
+- Para cada cliente retornado: `findOrCreateContact()` + upsert `cs_customer` com dados agregados
+- Pula clientes nao elegiveis (`isClienteElegivel()`)
+- Para Blue: ja inclui dados de plano, status, valor_venda
+- Para Tokeniza: inclui totais agregados (valor_investido, qtd, projetos)
 
-Remove os 1.704 contacts de hoje que não têm mais cs_customers vinculados.
+**Fase DETALHE** (usa `buscar-lead-api`, so Tokeniza):
+- Busca `cs_customers` da Tokeniza que **nao tem `cs_contracts` com `oferta_id` preenchido**
+- Para cada um, chama `buscar-lead-api` por email
+- Extrai `dados_tokeniza.investimentos` da resposta (array detalhado)
+- Upsert em `cs_contracts` com `oferta_id`, `oferta_nome`, `valor`, `data`, `tipo`
+- Offset separado em `system_settings`
 
-```sql
-DELETE FROM contacts
-WHERE empresa = 'TOKENIZA'
-  AND DATE(created_at) = '2026-02-20'
-  AND id NOT IN (SELECT contact_id FROM cs_customers WHERE empresa = 'TOKENIZA');
-```
+**Sem fase especificada**: executa BULK primeiro, depois DETALHE
 
-### Passo 4 — Corrigir o sgt-full-import para evitar recorrência
+Reutiliza de `sgt-full-import`:
+- `isClienteElegivel()` — logica de qualificacao
+- `buildSgtExtras()` — montagem de dados extras
+- `buildClienteTags()` — tags de CS
 
-O problema ocorreu porque o import usava `legacy_lead_id` como chave primária de deduplicação, mas o SGT retornou o mesmo investidor com múltiplos `lead_ids` diferentes. A correção é garantir que a busca por email seja feita **antes** de tentar inserir, e que o upsert use `email + empresa` como chave de deduplicação no nível do banco.
+### Passo 3 — Atualizar `sgt-webhook` para usar `contact-dedup.ts`
 
-Ajuste na lógica de `processLead`:
-- Antes de qualquer INSERT em `contacts`, buscar por `email + empresa` primeiro
-- Se encontrar, atualizar o `legacy_lead_id` do existente e pular criação
-- Não criar novo contact se email já existir na mesma empresa
+Na secao "AUTO-CRIACAO / MERGE DE CONTATO CRM" (linhas 218-260), substituir a logica inline por `findOrCreateContact()` do modulo compartilhado. Isso garante que o webhook tambem use email+empresa como chave primaria de dedup, nao apenas `pessoa_id`.
 
-## Resultado esperado após a limpeza
+### Passo 4 — Atualizar `SGTSyncDialog.tsx`
 
-| Métrica | Antes | Depois |
+- Trocar chamada de `sgt-full-import` para `sgt-sync`
+- Manter mesma interface visual (progress, stats por empresa)
+- Adicionar opcao de rodar so fase BULK ou BULK+DETALHE
+
+### Passo 5 — Excluir funcoes obsoletas
+
+Remover completamente os diretorios:
+- `supabase/functions/sgt-full-import/` (568 linhas)
+- `supabase/functions/sgt-sync-clientes/` (400 linhas)
+- `supabase/functions/sgt-import-clientes/` (405 linhas)
+- `supabase/functions/sgt-backfill-investimentos/` (281 linhas)
+
+Remover do `supabase/config.toml`:
+- `[functions.sgt-full-import]`
+- `[functions.sgt-sync-clientes]`
+- `[functions.sgt-import-clientes]`
+
+Remover deploy das funcoes excluidas via `delete_edge_functions`.
+
+Adicionar ao `config.toml`:
+- `[functions.sgt-sync]` com `verify_jwt = false`
+
+### Passo 6 — Limpar `cs-backfill-contracts`
+
+Verificar se `cs-backfill-contracts` tem referencias ao `sgt-backfill-investimentos` e atualizar se necessario (provavelmente independente).
+
+## Codigo Eliminado vs Preservado
+
+| Item | Acao | Linhas |
 |---|---|---|
-| CS Customers Tokeniza | 1.895 | ~192 únicos |
-| Contratos detalhados | 1.845 | 1.845 (intactos) |
-| Contacts Tokeniza duplicados | 2.180 | 0 |
+| `sgt-full-import/index.ts` | EXCLUIR | 568 linhas removidas |
+| `sgt-sync-clientes/index.ts` | EXCLUIR | 400 linhas removidas |
+| `sgt-import-clientes/index.ts` | EXCLUIR | 405 linhas removidas |
+| `sgt-backfill-investimentos/index.ts` | EXCLUIR | 281 linhas removidas |
+| `_shared/contact-dedup.ts` | CRIAR | ~150 linhas (logica consolidada) |
+| `sgt-sync/index.ts` | CRIAR | ~350 linhas (2 fases, reutiliza shared) |
+| `sgt-webhook/index.ts` | AJUSTAR | ~10 linhas alteradas (import + uso dedup) |
+| `SGTSyncDialog.tsx` | AJUSTAR | ~5 linhas (trocar nome funcao) |
+| `config.toml` | AJUSTAR | remover 3 entries, adicionar 1 |
 
-## Importante sobre os contratos existentes
+**Saldo liquido**: -1.654 linhas de codigo redundante eliminadas, +500 linhas de codigo limpo e consolidado.
 
-Os **1.827 contratos dos registros antigos** (criados entre 13-19/02) **não serão tocados**. São os dados reais de investimento dos clientes Tokeniza, vindos do backfill anterior, e ficam intactos.
+## Dados Essenciais Garantidos
 
-## Sobre "excluir tudo e reimportar"
+**Tokeniza** (via Fase BULK + Fase DETALHE):
+- Valor total investido, qtd investimentos, projetos (bulk)
+- Cada investimento individual com oferta_nome, oferta_id, valor, data, status, tipo (detalhe)
+- Carrinho abandonado, valor carrinho (bulk)
+- LinkedIn, score temperatura (bulk)
 
-Não é necessário nem recomendado. Motivo: excluir tudo destruiria os 1.845 contratos detalhados que foram importados via backfill individual (buscar-lead-api), que são dados valiosos que o `sgt-full-import` em massa **não consegue mais recuperar** (o endpoint bulk só retorna totais agregados, não o histórico por oferta). A abordagem cirúrgica preserva esses dados.
+**Blue** (via Fase BULK apenas):
+- Plano ativo, plano atual (via Notion join no SGT)
+- Status cliente, stage atual
+- Valor venda, data venda
+- Organizacao
+
+## Reducao de Trafego
+
+| Cenario | Antes | Depois |
+|---|---|---|
+| 1.000 clientes Tokeniza | 1.000 HTTP individuais | ~20 bulk + ~200 individuais (so os sem contrato) |
+| Re-sync periodico | 1.000+ toda vez | ~20 bulk + 0 individuais (ja detalhados) |
+| 750 clientes Blue | 750 HTTP individuais | ~15 bulk + 0 extras |
+
