@@ -304,13 +304,21 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
         for (const [k, v] of Object.entries(obj as Record<string, unknown>)) r[k.toLowerCase()] = v;
         return r;
       };
+      // Remove null/undefined values to prevent overwriting real data
+      const stripNulls = (obj: Record<string, unknown>): Record<string, unknown> => {
+        const result: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (v !== null && v !== undefined) result[k] = v;
+        }
+        return result;
+      };
       const existing = conversation_state?.framework_data as Record<string, unknown> || {};
       const fu = frameworks_atualizados as Record<string, unknown>;
       stateUpdates.framework_data = {
         ...existing,  // preserve bluechat_conversation_id, ia_null_count, etc.
-        gpct: { ...(normalize(existing.gpct || existing.GPCT)), ...(normalize(fu.gpct || fu.GPCT)) },
-        bant: { ...(normalize(existing.bant || existing.BANT)), ...(normalize(fu.bant || fu.BANT)) },
-        spin: { ...(normalize(existing.spin || existing.SPIN)), ...(normalize(fu.spin || fu.SPIN)) },
+        gpct: { ...(normalize(existing.gpct || existing.GPCT)), ...stripNulls(normalize(fu.gpct || fu.GPCT)) },
+        bant: { ...(normalize(existing.bant || existing.BANT)), ...stripNulls(normalize(fu.bant || fu.BANT)) },
+        spin: { ...(normalize(existing.spin || existing.SPIN)), ...stripNulls(normalize(fu.spin || fu.SPIN)) },
       };
     }
 
@@ -328,10 +336,11 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
     if (ultima_pergunta_id) stateUpdates.ultima_pergunta_id = ultima_pergunta_id;
 
     if (Object.keys(stateUpdates).length > 0) {
-      await supabase.from('lead_conversation_state').upsert({
-        lead_id, empresa, canal: 'WHATSAPP', ...stateUpdates,
-        ultimo_contato_em: new Date().toISOString(), updated_at: new Date().toISOString(),
-      }, { onConflict: 'lead_id,empresa' });
+      await supabase.from('lead_conversation_state').update({
+        ...stateUpdates,
+        ultimo_contato_em: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }).eq('lead_id', lead_id).eq('empresa', empresa);
     }
   }
 
