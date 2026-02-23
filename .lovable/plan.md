@@ -1,96 +1,79 @@
 
 
-# Dar vida aos e-mails da cadencia
+# Corrigir integração Blue Chat (Inbound + Outbound)
 
-## Problema
+## Problemas identificados
 
-Os e-mails enviados pela Amelia chegam como texto puro com `<br>` no lugar de quebras de linha. Sem cores, sem logo, sem estrutura visual -- parece um rascunho, nao um e-mail profissional.
+1. **Inbound (Blue Chat -> Amelia)**: 8 chamadas, 0 sucesso
+   - 4x HTTP 401: Blue Chat nao envia token de autenticacao
+   - 4x HTTP 400: Payload nao passa na validacao Zod (formato diferente do esperado)
 
-## Solucao
+2. **Outbound (Amelia -> Blue Chat)**: Endpoint `/conversations` retorna 404, `/messages` exige `ticketId`
 
-Criar um wrapper HTML profissional no `cadence-runner` que envolve o conteudo do template antes de enviar ao `email-send`. O wrapper sera responsivo, compativel com clientes de e-mail (Gmail, Outlook, Apple Mail) e alinhado com a identidade visual de cada empresa (Blue e Tokeniza).
+## Plano de correcao
 
-## Design do template
+### Etapa 1: Adicionar logging do payload bruto no inbound
 
-```text
-+---------------------------------------------+
-|  [Logo Blue / Tokeniza]                      |
-+---------------------------------------------+
-|                                              |
-|  Ola Arthur,                                 |
-|                                              |
-|  Sou a Amelia, da Blue...                    |
-|                                              |
-|  **O que fazemos:** ...                      |
-|  **Por que a Blue?** ...                     |
-|                                              |
-|  [ Agendar conversa ]  <-- botao CTA         |
-|                                              |
-+---------------------------------------------+
-|  Amelia | SDR Blue                           |
-|  grupoblue.com.br                            |
-+---------------------------------------------+
+Antes da validacao Zod, logar o payload bruto recebido para entender exatamente o formato que o Blue Chat esta enviando. Isso e critico para ajustar o schema.
+
+**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
+
+- Antes do `blueChatSchema.safeParse(rawPayload)`, adicionar:
+```
+log.info('Payload bruto recebido', { 
+  keys: Object.keys(rawPayload), 
+  raw: JSON.stringify(rawPayload).substring(0, 500) 
+});
 ```
 
-## Detalhes tecnicos
-
-### 1. Criar modulo de template HTML
-
-**Novo arquivo**: `supabase/functions/_shared/email-template.ts`
-
-Funcao `wrapEmailHtml(content, empresa, leadNome?)` que:
-- Recebe o conteudo em texto/markdown e a empresa
-- Converte `**texto**` para `<strong>texto</strong>`
-- Converte bullet points (`•` ou `- `) em lista HTML
-- Envolve tudo em um template HTML inline-styled (email-safe)
-- Aplica cores da marca:
-  - **Blue**: azul escuro `#1a365d`, accent `#2b6cb0`
-  - **Tokeniza**: verde/dourado da marca
-- Inclui header com nome da empresa estilizado
-- Inclui footer com assinatura da Amelia e links
-- Layout responsivo via tabelas (compatibilidade email)
-
-### 2. Alterar cadence-runner
-
-**Arquivo**: `supabase/functions/cadence-runner/index.ts` (linhas 348-370)
-
-Substituir a conversao simples:
+- No bloco de erro do Zod, logar o payload que falhou:
 ```
-html: htmlBody.replace(/\n/g, '<br>')
+log.error('Validacao Zod falhou', { 
+  errors: parsed.error.errors, 
+  payloadKeys: Object.keys(rawPayload),
+  rawPreview: JSON.stringify(rawPayload).substring(0, 300)
+});
 ```
 
-Por:
+### Etapa 2: Flexibilizar autenticacao para debug
+
+As 4 chamadas 401 mostram que o Blue Chat nao envia token. Precisamos verificar se ha um outro header sendo usado (ex: `x-webhook-secret`, query param, etc).
+
+**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
+
+- Logar todos os headers recebidos quando a autenticacao falha:
 ```
-html: wrapEmailHtml(htmlBody, empresa)
+log.warn('Headers recebidos', { 
+  headers: Object.fromEntries(req.headers.entries()),
+  hasAuth: !!req.headers.get('Authorization'),
+  hasApiKey: !!req.headers.get('X-API-Key'),
+});
 ```
 
-O `text` continua sendo o conteudo puro (para clientes que nao suportam HTML).
+### Etapa 3: Corrigir outbound (Amelia -> Blue Chat)
 
-### 3. Estrutura do HTML
+O endpoint `/api/external-ai/conversations` nao existe no Blue Chat. Conforme a memoria do projeto, o protocolo correto e enviar sempre via `POST /messages` com `phone` obrigatorio e `ticketId` quando disponivel.
 
-O template usara:
-- **Tabelas inline-styled** (padrao para email, sem CSS externo)
-- **Fundo branco** no body (compatibilidade dark mode)
-- **Largura maxima** de 600px centralizada
-- **Header**: barra colorida com nome da empresa
-- **Body**: conteudo com tipografia limpa (font-family: Arial, sans-serif)
-- **Negrito**: parsing de `**texto**` para `<strong>`
-- **Listas**: parsing de linhas com `•` para `<ul><li>`
-- **Footer**: assinatura estilizada, separador, links discretos
-- **Botao CTA** opcional quando detectar convite de agendamento
+**Arquivo**: `supabase/functions/sdr-proactive-outreach/index.ts`
 
-### 4. Template de teste existente
+- Remover a tentativa de chamar `/conversations` (retorna 404)
+- Enviar direto para `/messages` com `phone` como identificador primario
+- Incluir `ticketId` do `framework_data` quando disponivel, mas nao falhar se ausente
 
-O template `BLUE_EMAIL_TESTE` ja usa HTML basico (`<h1>`, `<p>`). O wrapper detectara se o conteudo ja e HTML (comeca com `<`) e, nesse caso, aplicara apenas o envelope externo sem re-processar o conteudo.
+### Etapa 4: Deploy e teste
 
-## Arquivos
+1. Deploy das edge functions corrigidas
+2. Disparar um teste manual no `bluechat-inbound` com o token correto para confirmar que o fluxo funciona
+3. Verificar logs para capturar o proximo payload real do Blue Chat
+
+## Arquivos alterados
 
 | Arquivo | Acao |
 |---------|------|
-| `supabase/functions/_shared/email-template.ts` | Novo -- wrapper HTML |
-| `supabase/functions/cadence-runner/index.ts` | Alterar -- usar wrapper |
+| `supabase/functions/bluechat-inbound/index.ts` | Adicionar logging de payload bruto e headers |
+| `supabase/functions/sdr-proactive-outreach/index.ts` | Remover fallback `/conversations`, enviar direto via `/messages` |
 
-## Resultado
+## Resultado esperado
 
-Os e-mails da Amelia chegarao com visual profissional, cores da marca, tipografia limpa e estrutura clara -- sem alterar nenhum conteudo dos templates existentes no banco.
+Apos o deploy, os proximos payloads do Blue Chat serao logados com detalhe suficiente para ajustar o schema. O outbound deixara de tentar um endpoint inexistente.
 
