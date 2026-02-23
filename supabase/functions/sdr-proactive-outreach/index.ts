@@ -364,8 +364,9 @@ Deno.serve(async (req) => {
         }
 
         const openData = await openRes.json().catch(() => ({}));
-        conversationId = openData?.conversation_id || openData?.id || null;
-        ticketId = openData?.ticket_id || null;
+        console.log("Blue Chat open-conversation response:", JSON.stringify(openData));
+        conversationId = openData?.conversation_id || openData?.conversationId || openData?.id || null;
+        ticketId = openData?.ticket_id || openData?.ticketId || null;
       } catch (err) {
         console.error("open-conversation fetch error:", err);
         return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
@@ -376,7 +377,29 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Could not obtain Blue Chat conversation ID" }, req, 500);
     }
 
-    // 6b. Send message to the conversation via POST /conversations/{id}/messages
+    // 6b. If no ticketId yet, try to get it from the conversation
+    if (!ticketId && conversationId) {
+      try {
+        const convRes = await fetch(`${bcConfig.baseUrl}/conversations/${conversationId}`, {
+          method: "GET",
+          headers: bcHeaders,
+        });
+        if (convRes.ok) {
+          const convData = await convRes.json().catch(() => ({}));
+          console.log("Blue Chat conversation detail:", JSON.stringify(convData));
+          ticketId = convData?.ticket_id || convData?.ticketId || convData?.ticket?.id || null;
+        }
+      } catch (e) {
+        console.warn("Failed to fetch conversation details for ticketId:", e);
+      }
+    }
+
+    if (!ticketId) {
+      console.error("Could not obtain ticketId for Blue Chat message");
+      return jsonResponse({ error: "Could not obtain Blue Chat ticketId" }, req, 500);
+    }
+
+    // 6c. Send message via POST /messages
     try {
       const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
         method: "POST",
