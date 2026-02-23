@@ -92,6 +92,34 @@ export function useToggleCadenceAtivo() {
   });
 }
 
+export function useDeactivateCadence() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, pausarRuns }: { id: string; pausarRuns: boolean }) => {
+      const { error: cadErr } = await supabase
+        .from('cadences')
+        .update({ ativo: false })
+        .eq('id', id);
+      if (cadErr) throw cadErr;
+
+      if (pausarRuns) {
+        const { error: runErr } = await supabase
+          .from('lead_cadence_runs')
+          .update({ status: 'PAUSADA' as CadenceRunStatus, next_run_at: null })
+          .eq('cadence_id', id)
+          .eq('status', 'ATIVA');
+        if (runErr) throw runErr;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cadences'] });
+      qc.invalidateQueries({ queryKey: ['cadencias-crm-view'] });
+      qc.invalidateQueries({ queryKey: ['cadence-runs'] });
+      qc.invalidateQueries({ queryKey: ['cadence-next-actions'] });
+    },
+  });
+}
+
 export function useCadenciasCRMView() {
   return useQuery({
     queryKey: ['cadencias-crm-view'],
