@@ -47,6 +47,8 @@ function useCurrentUserIsVendedor() {
   });
 }
 
+const PIPELINE_STORAGE_PREFIX = 'bluecrm-last-pipeline-';
+
 function PipelineContent() {
   const { trackPageView } = useAnalyticsEvents();
   
@@ -87,17 +89,23 @@ function PipelineContent() {
   const effectiveOwnerId = (isVendedor && !isAdmin && user?.id) ? user.id : ownerId;
   const ownerFilterDisabled = isVendedor && !isAdmin;
 
+  const handlePipelineChange = (id: string) => {
+    setSelectedPipelineId(id);
+    localStorage.setItem(`${PIPELINE_STORAGE_PREFIX}${activeCompany}`, id);
+  };
+
   useEffect(() => {
     if (pipelines && pipelines.length > 0) {
-      const defaultPipeline = pipelines.find(p => p.is_default) ?? pipelines[0];
-      setSelectedPipelineId(defaultPipeline.id);
+      const savedId = localStorage.getItem(`${PIPELINE_STORAGE_PREFIX}${activeCompany}`);
+      const savedPipeline = savedId ? pipelines.find(p => p.id === savedId) : null;
+      const fallback = pipelines.find(p => p.is_default) ?? pipelines[0];
+      setSelectedPipelineId(savedPipeline?.id ?? fallback.id);
     } else {
       setSelectedPipelineId(null);
     }
-  }, [pipelines]);
+  }, [pipelines, activeCompany]);
 
   useEffect(() => {
-    setSelectedPipelineId(null);
     setTemperatura('all');
     setTag('all');
   }, [activeCompany]);
@@ -136,7 +144,7 @@ function PipelineContent() {
           <PipelineFilters
             pipelines={pipelines}
             selectedPipelineId={selectedPipelineId}
-            onPipelineChange={setSelectedPipelineId}
+            onPipelineChange={handlePipelineChange}
             temperatura={temperatura}
             onTemperaturaChange={setTemperatura}
             ownerId={effectiveOwnerId}
