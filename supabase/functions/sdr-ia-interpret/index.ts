@@ -123,8 +123,8 @@ serve(async (req) => {
     }
 
     // Check manual mode
-    const convState = parsedContext.conversationState;
-    const isManualMode = (convState as Record<string, unknown> | null)?.modo === 'MANUAL';
+    const convStateRaw = parsedContext.conversationState;
+    const isManualMode = (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
     if (isManualMode && source !== 'BLUECHAT') {
       log.info('Manual mode — interpreting but suppressing response');
     }

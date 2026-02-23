@@ -18,7 +18,7 @@ import { validateAuth, validateAuthAsync } from "./auth.ts";
 import { normalizePhone, extractFirstName, findLeadByPhone, createLead } from "./contact-resolver.ts";
 import { parseTriageSummary, enrichLeadFromTriage } from "./triage.ts";
 import { saveInboundMessage } from "./message-handler.ts";
-import { callSdrIaInterpret } from "./sdr-bridge.ts";
+import { callSdrIaInterpret, type SdrIaResult } from "./sdr-bridge.ts";
 import { sendResponseToBluechat } from "./callback.ts";
 import { maybeCreateCSIncident } from "./cs-incident-bridge.ts";
 
@@ -451,7 +451,18 @@ serve(async (req) => {
     }
 
     // 6. Chamar SDR IA para interpretar
-    const iaResult = await callSdrIaInterpret(savedMessage.messageId, triageSummary);
+    const sdrResponse = await callSdrIaInterpret(savedMessage.messageId, triageSummary);
+    
+    // Extract result or handle infra failure
+    let iaResult: SdrIaResult | null = null;
+    let isInfraFailure = false;
+    
+    if (sdrResponse.ok) {
+      iaResult = sdrResponse.data;
+    } else {
+      isInfraFailure = sdrResponse.error.kind === 'infra_unavailable' || sdrResponse.error.kind === 'timeout';
+      log.error('SDR IA falha estruturada', { kind: sdrResponse.error.kind, status: sdrResponse.error.status, message: sdrResponse.error.message, leadId: leadContact.lead_id });
+    }
 
     // Detectar intenção de encerramento da conversa
     const closingKeywords = ['obrigado', 'obrigada', 'valeu', 'até mais', 'tchau', 'era isso', 'resolvido', 'era só isso', 'muito obrigado', 'muito obrigada', 'falou', 'flw', 'vlw', 'brigado', 'brigada'];
@@ -509,36 +520,71 @@ serve(async (req) => {
     let departamentoDestino: string = iaResult?.departamento_destino || 'Comercial';
 
     if (!iaResult) {
-      // IA retornou null (falha total)
-      const { data: stateForNull } = await supabase
-        .from('lead_conversation_state')
-        .select('framework_data')
-        .eq('lead_id', leadContact.lead_id)
-        .eq('empresa', empresa)
-        .maybeSingle();
-
-      const fwData = (stateForNull?.framework_data as Record<string, unknown>) || {};
-      const iaNullCount = (typeof fwData.ia_null_count === 'number' ? fwData.ia_null_count : 0) + 1;
-
-      if (iaNullCount >= 3) {
-        action = 'ESCALATE';
-        responseText = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
-        departamentoDestino = 'Comercial';
-        log.info(`IA null ${iaNullCount}x consecutivas → ESCALATE`);
-        await supabase
+      if (isInfraFailure) {
+        // INFRA FAILURE: Don't loop with "não entendi" — check if we already notified recently
+        const { data: stateForInfra } = await supabase
           .from('lead_conversation_state')
-          .update({ framework_data: { ...fwData, ia_null_count: 0 } })
+          .select('framework_data')
           .eq('lead_id', leadContact.lead_id)
-          .eq('empresa', empresa);
+          .eq('empresa', empresa)
+          .maybeSingle();
+
+        const fwData = (stateForInfra?.framework_data as Record<string, unknown>) || {};
+        const unavailableUntil = fwData.sdr_unavailable_until as string | undefined;
+        const now = new Date();
+
+        if (unavailableUntil && new Date(unavailableUntil) > now) {
+          // Already notified recently — stay silent, don't spam
+          log.info('Infra indisponível mas já notificado recentemente — silenciando');
+          action = 'QUALIFY_ONLY';
+          responseText = null;
+        } else {
+          // First infra failure in this window: send polite message + escalate once
+          action = 'ESCALATE';
+          responseText = 'Estou com uma instabilidade momentânea, mas já estou escalando para a equipe te atender! 🙏';
+          departamentoDestino = 'Comercial';
+          log.info('Infra indisponível → ESCALATE único + cooldown 10min');
+
+          // Set cooldown (10 minutes)
+          const cooldownUntil = new Date(now.getTime() + 10 * 60 * 1000).toISOString();
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwData, sdr_unavailable_until: cooldownUntil } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+        }
       } else {
-        action = 'RESPOND';
-        responseText = 'Desculpa, pode repetir ou dar mais detalhes? Quero entender direitinho pra te ajudar!';
-        log.info(`IA null (${iaNullCount}/3) → pergunta de continuidade`);
-        await supabase
+        // CLIENT ERROR or unknown: use existing anti-limbo logic
+        const { data: stateForNull } = await supabase
           .from('lead_conversation_state')
-          .update({ framework_data: { ...fwData, ia_null_count: iaNullCount } })
+          .select('framework_data')
           .eq('lead_id', leadContact.lead_id)
-          .eq('empresa', empresa);
+          .eq('empresa', empresa)
+          .maybeSingle();
+
+        const fwData = (stateForNull?.framework_data as Record<string, unknown>) || {};
+        const iaNullCount = (typeof fwData.ia_null_count === 'number' ? fwData.ia_null_count : 0) + 1;
+
+        if (iaNullCount >= 3) {
+          action = 'ESCALATE';
+          responseText = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
+          departamentoDestino = 'Comercial';
+          log.info(`IA null ${iaNullCount}x consecutivas → ESCALATE`);
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwData, ia_null_count: 0 } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+        } else {
+          action = 'RESPOND';
+          responseText = 'Desculpa, pode repetir ou dar mais detalhes? Quero entender direitinho pra te ajudar!';
+          log.info(`IA null (${iaNullCount}/3) → pergunta de continuidade`);
+          await supabase
+            .from('lead_conversation_state')
+            .update({ framework_data: { ...fwData, ia_null_count: iaNullCount } })
+            .eq('lead_id', leadContact.lead_id)
+            .eq('empresa', empresa);
+        }
       }
     } else if (isConversationEnding) {
       // ia_null_count é controlado pelo sdr-ia-interpret; não resetar aqui para evitar corrida/loop

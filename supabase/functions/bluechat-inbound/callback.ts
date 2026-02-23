@@ -155,18 +155,32 @@ export async function sendResponseToBluechat(
     // 2. Se ação é ESCALATE, transferir o ticket para humano
     if (data.action === 'ESCALATE' && data.ticket_id) {
       const transferUrl = `${baseUrl}/tickets/${data.ticket_id}/transfer`;
-      log.info('Transferindo ticket', { url: transferUrl, department: data.department || 'Comercial' });
+      const dept = data.department || 'Comercial';
+      log.info('Transferindo ticket', { url: transferUrl, department: dept });
+
+      // Buscar departmentId mapeado da configuração por empresa
+      let toDepartmentId: string | null = null;
+      const deptMapSetting = settingValue?.department_map as Record<string, string> | undefined;
+      if (deptMapSetting && deptMapSetting[dept]) {
+        toDepartmentId = deptMapSetting[dept];
+      }
+
+      const transferBody: Record<string, unknown> = {
+        reason: 'Lead qualificado - escalar para closer',
+        source: 'AMELIA_SDR',
+        department: dept,
+      };
+      // Include toDepartmentId if available (required by Blue Chat API)
+      if (toDepartmentId) {
+        transferBody.toDepartmentId = toDepartmentId;
+      }
 
       const transferResponse = await fetchWithRetry(
         transferUrl,
         {
           method: 'POST',
           headers,
-          body: JSON.stringify({
-            reason: 'Lead qualificado - escalar para closer',
-            source: 'AMELIA_SDR',
-            department: data.department || 'Comercial',
-          }),
+          body: JSON.stringify(transferBody),
         },
         2,
         'POST /tickets/transfer'
@@ -175,7 +189,7 @@ export async function sendResponseToBluechat(
       if (!transferResponse.ok) {
         await logResponseError(transferResponse, 'POST /tickets/transfer');
       } else {
-        log.info('Ticket transferido com sucesso', { department: data.department || 'Comercial' });
+        log.info('Ticket transferido com sucesso', { department: dept, toDepartmentId });
       }
     }
 
