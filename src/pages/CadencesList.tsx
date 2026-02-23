@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useCadences, useCadenciasCRMView, useCadenceStageTriggers, useCreateStageTrigger, useDeleteStageTrigger } from '@/hooks/useCadences';
+import { useCadences, useCadenciasCRMView, useCadenceStageTriggers, useCreateStageTrigger, useDeleteStageTrigger, useToggleCadenceAtivo } from '@/hooks/useCadences';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import {
   EMPRESA_LABELS,
@@ -17,6 +17,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -64,6 +65,7 @@ function CadencesListContent() {
 
   const { data: cadences, isLoading, error } = useCadences(filters);
   const { data: crmStats } = useCadenciasCRMView();
+  const toggleAtivo = useToggleCadenceAtivo();
 
   // Build map of CRM stats by cadence id
   const crmMap = new Map<string, { deals_ativos: number; deals_completados: number }>();
@@ -264,9 +266,24 @@ function CadencesListContent() {
                                 </TableCell>
                                 <TableCell>{CANAL_LABELS[cadence.canal_principal]}</TableCell>
                                 <TableCell>
-                                  <Badge className={cadence.ativo ? 'bg-success text-success-foreground' : 'bg-muted text-muted-foreground'}>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      toggleAtivo.mutate({ id: cadence.id, ativo: !cadence.ativo });
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                                      cadence.ativo
+                                        ? 'bg-success/15 text-success hover:bg-success/25'
+                                        : 'bg-destructive/15 text-destructive hover:bg-destructive/25'
+                                    }`}
+                                  >
+                                    <Switch
+                                      checked={cadence.ativo}
+                                      className="scale-75 pointer-events-none"
+                                      tabIndex={-1}
+                                    />
                                     {cadence.ativo ? 'Ativo' : 'Inativo'}
-                                  </Badge>
+                                  </button>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {cadence.runs_ativas > 0 ? (
