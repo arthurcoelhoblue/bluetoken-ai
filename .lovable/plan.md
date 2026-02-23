@@ -1,141 +1,73 @@
 
 
-# Corrigir autenticacao inbound do Blue Chat (x-webhook-signature)
+# Corrigir escalacao prematura da Amelia para humano
 
-## Problema
+## Diagnostico
 
-As mensagens do Arthur (e de todos os leads) estao chegando ao `bluechat-inbound`, mas sao rejeitadas com 401 porque o Blue Chat autentica via `x-webhook-signature` (HMAC SHA256 do body), e o nosso `auth.ts` so aceita `Authorization: Bearer` ou `X-API-Key`.
+Analisando os dados dos ultimos 13 dias (desde 10/fev), a Amelia escalou para humano **49 vezes**. Dessas:
 
-Evidencia dos logs:
-- 4+ requests rejeitados entre 20:07:32 e 20:07:45
-- Todos com `x-webhook-signature: 1e572ebd2dbd56eff133b68ea1d1cd697fb37701a7bca2a263f91e02f7242541`
-- Todos com `hasAuth: false, hasApiKey: false`
+| Intent | Escalacoes | Problema |
+|--------|-----------|----------|
+| NAO_ENTENDI | 20 | **IA nao conseguiu classificar a mensagem e escalou na primeira falha** |
+| OUTRO | 9 | **IA classificou como generico e escalou sem tentar qualificar** |
+| SOLICITACAO_CONTATO | 17 | Correto na maioria dos casos |
+| AGENDAMENTO_REUNIAO | 3 | Correto |
 
-## Correcao
+**29 das 49 escalacoes (59%) sao prematuras** — a Amelia desiste rapido demais quando nao entende a mensagem.
 
-### Arquivo: `supabase/functions/bluechat-inbound/auth.ts`
+## Causa raiz
 
-Alterar `validateAuth` (sync) para aceitar `x-webhook-signature` como metodo valido de autenticacao. Quando presente, marcar como "pendente validacao HMAC" e deixar passar para o `validateAuthAsync`.
+No arquivo `supabase/functions/sdr-ia-interpret/index.ts`, linhas 164-175:
 
-Alterar `validateAuthAsync` para:
-1. Se houver `x-webhook-signature`, ler o body do request clonado
-2. Calcular HMAC-SHA256 do body usando o `webhook_secret` da empresa (de `system_settings`) ou fallback para env `BLUECHAT_API_KEY`
-3. Comparar o hash calculado com o `x-webhook-signature` recebido
-4. Se bater, autenticar com sucesso
-
-### Arquivo: `supabase/functions/bluechat-inbound/index.ts`
-
-Alterar a chamada de autenticacao para passar o body raw ao `validateAuthAsync` (necessario para calcular HMAC). O request ja e clonado na linha 56 (`const clonedReq = req.clone()`), entao basta usar esse clone para extrair o body raw.
-
-## Mudancas especificas
-
-### auth.ts - validateAuth (sync)
-
-```typescript
-export function validateAuth(req: Request): { valid: boolean } {
-  const authHeader = req.headers.get('Authorization');
-  const apiKeyHeader = req.headers.get('X-API-Key');
-  const webhookSignature = req.headers.get('x-webhook-signature');
-  const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
-
-  if (!token && !webhookSignature) {
-    log.warn('Nenhum token recebido na requisição Blue Chat');
-    return { valid: false };
+```text
+if (source === 'BLUECHAT' && classifierResult.intent === 'NAO_ENTENDI') {
+  const hasContext = (parsedContext.historico || []).length >= 2;
+  if (!hasContext) {
+    // Primeira mensagem: tenta saudacao (OK)
+  } else {
+    // 2+ mensagens: ESCALA IMEDIATAMENTE (PROBLEMA)
+    classifierResult.acao = 'ESCALAR_HUMANO';
   }
-
-  return { valid: true };
 }
 ```
 
-### auth.ts - validateAuthAsync
+O problema: **basta ter 2 mensagens no historico para a Amelia escalar na primeira falha de compreensao**. Nao ha contador de tentativas — qualquer `NAO_ENTENDI` com contexto vira escalacao imediata.
 
-Adicionar logica HMAC:
+Alem disso, a IA as vezes classifica mensagens normais como `OUTRO` com confidence 1.0 e a logica nao tenta reclassificar.
 
-```typescript
-export async function validateAuthAsync(
-  req: Request,
-  supabase: SupabaseClient,
-  empresa: string,
-): Promise<{ valid: boolean }> {
-  const authHeader = req.headers.get('Authorization');
-  const apiKeyHeader = req.headers.get('X-API-Key');
-  const webhookSignature = req.headers.get('x-webhook-signature');
-  const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
+## Correcao proposta
 
-  // Metodo 1: Token direto (Authorization/X-API-Key)
-  if (token) {
-    const expectedSecret = await resolveBluechatWebhookSecret(supabase, empresa);
-    if (expectedSecret && token.trim() === expectedSecret.trim()) {
-      return { valid: true };
-    }
-    const envKey = getOptionalEnv('BLUECHAT_API_KEY');
-    if (envKey && token.trim() === envKey.trim()) {
-      return { valid: true };
-    }
-  }
+### 1. Implementar contador de falhas consecutivas (`ia_null_count`)
 
-  // Metodo 2: HMAC signature (x-webhook-signature)
-  if (webhookSignature) {
-    const bodyText = await req.text();
-    const secret = await resolveBluechatWebhookSecret(supabase, empresa)
-      || getOptionalEnv('BLUECHAT_API_KEY');
+Usar o campo `ia_null_count` que ja existe no `framework_data` para contar falhas consecutivas. So escalar apos **3 falhas seguidas** (politica anti-limbo documentada).
 
-    if (secret) {
-      const encoder = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw', encoder.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-      );
-      const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(bodyText));
-      const computed = Array.from(new Uint8Array(signature))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
+### 2. Alterar logica anti-limbo no index.ts
 
-      if (computed === webhookSignature) {
-        log.info('Autenticação HMAC validada com sucesso', { empresa });
-        return { valid: true };
-      }
-      log.warn('HMAC signature não confere', { empresa });
-    }
-  }
-
-  // Nenhum metodo valido
-  if (token) {
-    log.warn('Token inválido para Blue Chat', { empresa });
-  }
-  return { valid: false };
-}
+```text
+Antes:  NAO_ENTENDI + 2 msgs historico -> ESCALAR_HUMANO
+Depois: NAO_ENTENDI -> incrementar ia_null_count
+         ia_null_count < 3 -> pedir esclarecimento (ENVIAR_RESPOSTA_AUTOMATICA)
+         ia_null_count >= 3 -> ESCALAR_HUMANO
 ```
 
-### index.ts - Passar body raw para validateAuthAsync
+### 3. Resetar contador quando a IA entende
 
-O `clonedReq` (linha 56) ja existe. O problema e que na linha 59, o body do `req` original ja foi consumido com `req.json()`. Para o HMAC, precisamos do body raw. Solucao: clonar o request uma segunda vez antes de consumir o body, ou ler o body como text primeiro e depois parsear.
+Quando o intent NAO e `NAO_ENTENDI` nem `OUTRO`, resetar `ia_null_count` para 0 no `framework_data`.
 
-Abordagem mais limpa: ler body como text, parsear como JSON, e passar o text raw para auth:
+### 4. Tratar intent `OUTRO` como segunda chance
 
-```typescript
-// Linha 56-59 alterado:
-const bodyText = await req.text();
-let rawPayload: unknown;
-try {
-  rawPayload = JSON.parse(bodyText);
-} catch {
-  return new Response(
-    JSON.stringify({ error: 'Invalid JSON' }),
-    { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-  );
-}
-```
-
-E na chamada de `validateAuthAsync`, passar `bodyText` como parametro adicional.
-
-## Resultado esperado
-
-Apos o deploy, os webhooks do Blue Chat serao autenticados via HMAC signature e as mensagens do Arthur (e de todos os leads) serao processadas normalmente pela Amelia.
+Quando a IA retorna `OUTRO` com acao `ESCALAR_HUMANO`, converter para `ENVIAR_RESPOSTA_AUTOMATICA` se `ia_null_count < 3`, gerando uma pergunta de esclarecimento em vez de transferir.
 
 ## Arquivos alterados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/bluechat-inbound/auth.ts` | Aceitar `x-webhook-signature` no sync e validar HMAC no async |
-| `supabase/functions/bluechat-inbound/index.ts` | Ler body como text para disponibilizar ao HMAC, ajustar chamada de auth |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Reescrever logica anti-limbo (linhas 164-175) para usar ia_null_count com threshold de 3 |
+| `supabase/functions/sdr-ia-interpret/action-executor.ts` | Adicionar logica para incrementar/resetar ia_null_count no framework_data |
+
+## Resultado esperado
+
+- A Amelia vai tentar esclarecer ate 2 vezes antes de escalar ("Nao entendi bem, pode reformular?" / "Ainda nao consegui entender, vou pedir ajuda")
+- Reducao estimada de ~60% nas escalacoes prematuras (de 29 para ~10)
+- Leads como Arthur vao continuar sendo qualificados em vez de serem transferidos na primeira duvida
 
