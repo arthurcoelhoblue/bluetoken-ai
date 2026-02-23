@@ -437,6 +437,35 @@ Deno.serve(async (req) => {
     let messageId: string | null = null;
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
+    // 6b. If no conversation/ticket exists, open one proactively (same as cadence-runner)
+    if (!conversationId && !ticketId) {
+      console.log("No existing Blue Chat conversation, opening new one for phone:", phone);
+      try {
+        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify({
+            phone,
+            contact_name: lead.nome || lead.primeiro_nome || undefined,
+            channel: "whatsapp",
+            source: "AMELIA_SDR",
+          }),
+        });
+        const openText = await openRes.text();
+        console.log("Blue Chat /conversations response:", openRes.status, openText);
+        if (openRes.ok) {
+          const openData = JSON.parse(openText || "{}");
+          conversationId = openData?.conversation_id || openData?.id || null;
+          ticketId = openData?.ticket_id || null;
+          console.log("Opened Blue Chat conversation:", { conversationId, ticketId });
+        } else {
+          console.warn("Failed to open Blue Chat conversation:", openRes.status, openText);
+        }
+      } catch (err) {
+        console.warn("Error opening Blue Chat conversation:", err);
+      }
+    }
+
     // Send directly via /messages with phone as primary identifier
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
