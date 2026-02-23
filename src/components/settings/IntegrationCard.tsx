@@ -96,7 +96,7 @@ export function IntegrationCard({
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="relative">
+      <Card className="relative h-full flex flex-col">
         <CardHeader className="pb-3">
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-3">
@@ -120,7 +120,7 @@ export function IntegrationCard({
             />
           </div>
         </CardHeader>
-        <CardContent className="pt-0">
+        <CardContent className="pt-0 mt-auto">
           <div className="flex items-center justify-between gap-2 flex-wrap">
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               <Badge
@@ -174,7 +174,7 @@ export function IntegrationCard({
                   Testar
                 </Button>
               )}
-              {hasDetails && (
+              {hasDetails && !hasConfigPage && (
                 <CollapsibleTrigger asChild>
                   <Button variant="outline" size="sm">
                     <ChevronDown className={`mr-1 h-3 w-3 transition-transform ${isOpen ? "rotate-180" : ""}`} />
@@ -191,7 +191,7 @@ export function IntegrationCard({
             </div>
           </div>
 
-          {hasDetails && (
+          {hasDetails && !hasConfigPage && (
             <CollapsibleContent>
               {children}
             </CollapsibleContent>
