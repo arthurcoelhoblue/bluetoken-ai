@@ -383,6 +383,7 @@ Deno.serve(async (req) => {
         headers: bcHeaders,
         body: JSON.stringify({
           conversation_id: conversationId,
+          ticketId: ticketId,
           content: greetingMessage,
           source: "AMELIA_SDR",
         }),
