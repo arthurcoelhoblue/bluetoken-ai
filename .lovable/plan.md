@@ -1,41 +1,106 @@
 
-# Corrigir feedback do teste de e-mail
+# Conectar configuracoes SMTP do frontend ao backend
 
 ## Problema
 
-Quando o "Modo Teste" esta ativo, a edge function `email-send` simula o envio sem conectar ao SMTP. Ela retorna `success: true` com um `messageId` falso (`test-{timestamp}`). O frontend exibe "E-mail de teste enviado!" sem informar que foi apenas uma simulacao -- dando a impressao de que o SMTP esta funcionando mesmo sem senha configurada.
+A edge function `email-send` le as configuracoes SMTP de variaveis de ambiente (secrets): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Ela **ignora completamente** a tabela `system_settings` onde o frontend salva `smtp_config`.
+
+Resultado: o usuario altera host, porta, remetente, limites na tela, os valores sao salvos no banco, mas o envio de e-mail continua usando os valores fixos dos secrets.
+
+A unica configuracao que funciona corretamente e o `modo_teste`, que ja e lido do banco pela edge function.
+
+## Diagnostico detalhado
+
+| Campo frontend | Salva em `system_settings`? | Lido pela edge function? |
+|---|---|---|
+| host | Sim | Nao (usa secret SMTP_HOST) |
+| port | Sim | Nao (usa secret SMTP_PORT) |
+| encryption | Sim | Nao |
+| from_name | Sim | Nao |
+| from_email | Sim | Nao (usa secret SMTP_FROM) |
+| reply_to | Sim | Nao |
+| max_per_day | Sim | Nao |
+| interval_seconds | Sim | Nao |
+| modo_teste.ativo | Sim | **Sim** |
+| modo_teste.email_teste | Sim | **Sim** |
 
 ## Solucao
 
-### 1. Edge function: retornar flag `simulated` na resposta
+Alterar a edge function `email-send` para ler `smtp_config` do banco de dados, usando os secrets apenas como **fallback** para credenciais (usuario e senha, que nao devem ficar no banco).
 
-Alterar `supabase/functions/email-send/index.ts` para incluir `simulated: true` no JSON de resposta quando o modo teste esta ativo:
+### 1. Edge function: ler smtp_config do banco
 
-```json
-{ "success": true, "messageId": "test-...", "simulated": true }
+Apos o trecho que ja busca `modo_teste`, adicionar uma query para buscar `smtp_config`:
+
+```typescript
+const { data: smtpDbConfig } = await supabase
+  .from('system_settings')
+  .select('value')
+  .eq('category', 'email')
+  .eq('key', 'smtp_config')
+  .single();
+
+const dbSmtp = smtpDbConfig?.value as {
+  host?: string;
+  port?: number;
+  encryption?: string;
+  from_name?: string;
+  from_email?: string;
+  reply_to?: string;
+  max_per_day?: number;
+  interval_seconds?: number;
+} | null;
 ```
 
-### 2. Frontend: diferenciar envio real de simulado
+### 2. Prioridade de configuracao
 
-Alterar `src/pages/EmailSmtpConfigPage.tsx`:
+Usar valores do banco com fallback para secrets:
 
-- Ler o campo `simulated` da resposta da edge function
-- Se `simulated === true`, exibir toast de aviso (amarelo): **"Envio simulado (modo teste ativo)"** com descricao "Nenhum e-mail foi enviado de fato. Desative o modo teste para enviar de verdade."
-- Se `simulated === false/undefined`, manter o toast verde de sucesso atual
+```
+host       -> dbSmtp.host       || SMTP_HOST (secret)
+port       -> dbSmtp.port       || SMTP_PORT (secret)
+from_email -> dbSmtp.from_email || SMTP_FROM (secret)
+from_name  -> dbSmtp.from_name  || "Blue CRM"
+reply_to   -> dbSmtp.reply_to   || (vazio)
+user       -> SMTP_USER (sempre secret)
+pass       -> SMTP_PASS (sempre secret)
+```
 
-### 3. Validacao pre-envio no frontend
+Credenciais (user/pass) continuam exclusivamente nos secrets por seguranca.
 
-Antes de chamar a edge function, verificar se os campos essenciais do SMTP estao preenchidos (host e porta). Se estiverem vazios, exibir toast de erro: **"Configure o SMTP antes de enviar"** e nao fazer a chamada.
+### 3. Aplicar from_name e reply_to no envio
 
-Isso nao valida a senha (que e um secret do backend), mas ja evita envios quando a config minima nao existe.
+Atualmente a edge function monta o header `From:` usando apenas `SMTP_FROM`. Alterar para incluir `from_name`:
+
+```
+From: "Blue CRM" <noreply@empresa.com>
+```
+
+E adicionar header `Reply-To` quando configurado.
+
+### 4. Validacao de limite diario (max_per_day)
+
+Antes de enviar, contar quantos e-mails OUTBOUND foram enviados hoje na tabela `lead_messages` e comparar com `max_per_day`. Se excedido, retornar erro.
+
+### 5. Validacao de intervalo (interval_seconds)
+
+Verificar o timestamp do ultimo envio e comparar com `interval_seconds`. Se muito recente, retornar erro ou aguardar.
 
 ## Arquivos alterados
 
-- `supabase/functions/email-send/index.ts` -- adicionar `simulated: true` na resposta do modo teste
-- `src/pages/EmailSmtpConfigPage.tsx` -- diferenciar toast por tipo de resposta e adicionar validacao pre-envio
+- `supabase/functions/email-send/index.ts` -- ler smtp_config do banco, aplicar from_name/reply_to, validar limites
+
+## O que NAO muda
+
+- `src/pages/EmailSmtpConfigPage.tsx` -- frontend ja salva corretamente no banco
+- `src/hooks/useSystemSettings.ts` -- hook ja funciona com upsert
+- Secrets SMTP_USER e SMTP_PASS -- continuam sendo a unica fonte de credenciais
+- `modo_teste` -- ja funciona corretamente
 
 ## Resultado esperado
 
-- Com modo teste ativo: toast amarelo "Envio simulado" 
-- Com modo teste desativado e SMTP configurado: toast verde "E-mail enviado"
-- Sem SMTP configurado: toast vermelho "Configure o SMTP antes de enviar"
+- Alterar host/porta na tela reflete imediatamente no proximo envio
+- Alterar remetente (nome e email) aparece no header do e-mail
+- Reply-To e configurado quando preenchido
+- Limite diario bloqueia envios excessivos
+- Intervalo minimo e respeitado entre envios consecutivos
