@@ -1,6 +1,6 @@
 // ========================================
 // sdr-proactive-outreach — Amélia proactive SDR outreach via Blue Chat
-// Opens a conversation, generates a personalized greeting, sends it, and records everything.
+// Opens a conversation, generates a personalized greeting with deep context, sends it, and records everything.
 // ========================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -47,7 +47,6 @@ async function resolveBlueChat(
   }
   if (!apiUrl) return null;
 
-  // API key per empresa from settings, fallback to env
   let apiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
   if (!apiKey) {
     apiKey = getOptionalEnv("BLUECHAT_API_KEY") || undefined;
@@ -55,6 +54,182 @@ async function resolveBlueChat(
   if (!apiKey) return null;
 
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };
+}
+
+// ── context loading ──
+
+interface DeepContext {
+  messages: Array<{ direcao: string; conteudo: string; created_at: string }>;
+  convState: Record<string, unknown> | null;
+  classification: Record<string, unknown> | null;
+  deal: Record<string, unknown> | null;
+  sgtEvents: Array<Record<string, unknown>>;
+  learnings: Array<Record<string, unknown>>;
+}
+
+async function loadDeepContext(
+  supabase: ReturnType<typeof createClient>,
+  leadId: string,
+  empresa: string
+): Promise<DeepContext> {
+  // All queries in parallel
+  const [msgRes, convRes, classRes, contactRes, sgtRes, learningsRes] = await Promise.all([
+    // 1. Last 20 messages
+    supabase
+      .from("lead_messages")
+      .select("direcao, conteudo, created_at")
+      .eq("lead_id", leadId)
+      .eq("empresa", empresa)
+      .order("created_at", { ascending: false })
+      .limit(20),
+    // 2. Conversation state
+    supabase
+      .from("lead_conversation_state")
+      .select("estado_funil, framework_ativo, framework_data, perfil_disc, modo")
+      .eq("lead_id", leadId)
+      .eq("empresa", empresa)
+      .maybeSingle(),
+    // 3. Classification
+    supabase
+      .from("lead_classifications")
+      .select("temperatura, perfil_investidor, icp_score, tipo_lead")
+      .eq("lead_id", leadId)
+      .eq("empresa", empresa)
+      .maybeSingle(),
+    // 4. Contact (to find deal)
+    supabase
+      .from("contacts")
+      .select("id")
+      .eq("legacy_lead_id", leadId)
+      .eq("empresa", empresa as "BLUE" | "TOKENIZA")
+      .maybeSingle(),
+    // 5. SGT events (last 5)
+    supabase
+      .from("sgt_events")
+      .select("tipo, descricao, created_at")
+      .eq("lead_id", leadId)
+      .eq("empresa", empresa)
+      .order("created_at", { ascending: false })
+      .limit(5),
+    // 6. Validated learnings
+    supabase
+      .from("amelia_learnings")
+      .select("titulo, descricao, categoria")
+      .eq("empresa", empresa)
+      .eq("status", "VALIDADO")
+      .order("created_at", { ascending: false })
+      .limit(5),
+  ]);
+
+  // Load deal if contact exists
+  let deal: Record<string, unknown> | null = null;
+  if (contactRes.data?.id) {
+    const { data: dealData } = await supabase
+      .from("deals")
+      .select("titulo, valor, temperatura, status, stage_id, pipeline_stages(nome)")
+      .eq("contact_id", contactRes.data.id)
+      .eq("status", "ABERTO")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (dealData) {
+      deal = dealData as Record<string, unknown>;
+    }
+  }
+
+  return {
+    messages: (msgRes.data ?? []).reverse() as DeepContext["messages"],
+    convState: convRes.data as Record<string, unknown> | null,
+    classification: classRes.data as Record<string, unknown> | null,
+    deal,
+    sgtEvents: (sgtRes.data ?? []) as Array<Record<string, unknown>>,
+    learnings: (learningsRes.data ?? []) as Array<Record<string, unknown>>,
+  };
+}
+
+// ── prompt builder ──
+
+function buildContextualPrompt(
+  lead: Record<string, unknown>,
+  ctx: DeepContext,
+  empresa: string,
+  objetivo?: string
+): { system: string; user: string } {
+  const firstName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
+  const empresaLabel = empresa === "BLUE" ? "Blue Consult" : empresa === "TOKENIZA" ? "Tokeniza" : empresa;
+
+  // Extract framework data
+  const fw = ctx.convState?.framework_data as Record<string, unknown> | undefined;
+  const estadoFunil = (ctx.convState?.estado_funil as string) || "DESCONHECIDO";
+  const frameworkAtivo = (ctx.convState?.framework_ativo as string) || "NONE";
+  const perfilDisc = (ctx.convState?.perfil_disc as string) || "não identificado";
+  const temp = (ctx.classification?.temperatura as string) || "MORNO";
+  const perfilInvestidor = (ctx.classification?.perfil_investidor as string) || "";
+
+  // Build message history snippet (last 5)
+  const lastMessages = ctx.messages.slice(-5);
+  const historyText = lastMessages.length > 0
+    ? lastMessages.map(m => `[${m.direcao}] ${(m.conteudo || "").substring(0, 100)}`).join("\n")
+    : "Nenhuma conversa anterior.";
+
+  // Deal info
+  let dealText = "Sem deal ativo.";
+  if (ctx.deal) {
+    const stageName = (ctx.deal.pipeline_stages as Record<string, unknown>)?.nome || "?";
+    dealText = `${ctx.deal.titulo} — Estágio: ${stageName} — R$${ctx.deal.valor || 0}`;
+  }
+
+  // SGT events
+  const sgtText = ctx.sgtEvents.length > 0
+    ? ctx.sgtEvents.map(e => `${e.tipo}: ${(e.descricao as string || "").substring(0, 60)}`).join("; ")
+    : "Sem eventos SGT recentes.";
+
+  // Framework progress
+  let frameworkText = "Nenhum framework iniciado.";
+  if (fw && frameworkAtivo !== "NONE") {
+    if (frameworkAtivo === "SPIN") {
+      frameworkText = `SPIN — S:${fw.S ? "✓" : "?"} P:${fw.P ? "✓" : "?"} I:${fw.I ? "✓" : "?"} N:${fw.N ? "✓" : "?"}`;
+    } else if (frameworkAtivo === "GPCT") {
+      frameworkText = `GPCT — G:${fw.G ? "✓" : "?"} P:${fw.P ? "✓" : "?"} C:${fw.C ? "✓" : "?"} T:${fw.T ? "✓" : "?"}`;
+    } else if (frameworkAtivo === "BANT") {
+      frameworkText = `BANT — B:${fw.B ? "✓" : "?"} A:${fw.A ? "✓" : "?"} N:${fw.N ? "✓" : "?"} T:${fw.T ? "✓" : "?"}`;
+    } else {
+      frameworkText = `${frameworkAtivo}: ${JSON.stringify(fw).substring(0, 120)}`;
+    }
+  }
+
+  // Learnings
+  const learningsText = ctx.learnings.length > 0
+    ? ctx.learnings.map(l => `- ${l.titulo}`).join("\n")
+    : "";
+
+  const system = `Você é a Amélia, SDR da ${empresaLabel}. Personalidade: informal mas profissional, empática, objetiva.
+Analise TODO o contexto fornecido e gere UMA mensagem de abordagem.
+Regras:
+- Se já houve conversa anterior, retome naturalmente referenciando algo específico
+- Se tem framework de qualificação incompleto, avance na qualificação com a próxima pergunta natural
+- Adapte o tom ao perfil DISC do lead (${perfilDisc})
+- Use no máximo 1 emoji
+- Nunca use elogios genéricos como "prazer em conhecê-lo"
+- Seja direta e humana
+- Máximo 250 caracteres
+- Objetivo: ${objetivo || "qualificar e avançar a conversa"}
+${learningsText ? `\nAprendizados validados:\n${learningsText}` : ""}`;
+
+  const user = `LEAD: ${firstName}
+TEMPERATURA: ${temp}
+PERFIL: ${perfilInvestidor || "não classificado"}
+ESTADO_FUNIL: ${estadoFunil}
+FRAMEWORK: ${frameworkText}
+DEAL: ${dealText}
+HISTORICO (últimas ${lastMessages.length} msgs):
+${historyText}
+SGT: ${sgtText}
+OBJETIVO: ${objetivo || "qualificar e avançar conversa"}
+
+Responda APENAS com o texto da mensagem, sem aspas.`;
+
+  return { system, user };
 }
 
 // ── main ──
@@ -65,17 +240,18 @@ Deno.serve(async (req) => {
   const serviceClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_SERVICE_ROLE_KEY);
 
   try {
-    // Auth — accept service_role or authenticated user
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return jsonResponse({ error: "Unauthorized" }, req, 401);
     }
 
     const body = await req.json().catch(() => ({}));
-    const { lead_id, empresa, motivo } = body as {
+    const { lead_id, empresa, motivo, objetivo, bypass_rate_limit } = body as {
       lead_id?: string;
       empresa?: string;
       motivo?: string;
+      objetivo?: string;
+      bypass_rate_limit?: boolean;
     };
 
     if (!lead_id || !empresa) {
@@ -99,45 +275,37 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Lead has no phone number" }, req, 400);
     }
 
-    // 2. Rate-limit: check last OUTBOUND message in 24h
-    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-    const { data: recentOutbound } = await serviceClient
-      .from("lead_messages")
-      .select("id")
-      .eq("lead_id", lead_id)
-      .eq("empresa", empresa)
-      .eq("direcao", "OUTBOUND")
-      .gte("created_at", twentyFourHoursAgo)
-      .limit(1);
+    // 2. Rate-limit (skip if bypass_rate_limit=true — manual trigger by seller)
+    if (!bypass_rate_limit) {
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+      const { data: recentOutbound } = await serviceClient
+        .from("lead_messages")
+        .select("id")
+        .eq("lead_id", lead_id)
+        .eq("empresa", empresa)
+        .eq("direcao", "OUTBOUND")
+        .gte("created_at", twentyFourHoursAgo)
+        .limit(1);
 
-    if (recentOutbound && recentOutbound.length > 0) {
-      return jsonResponse(
-        { error: "Lead already contacted in the last 24h", rate_limited: true },
-        req,
-        429
-      );
+      if (recentOutbound && recentOutbound.length > 0) {
+        return jsonResponse(
+          { error: "Lead already contacted in the last 24h", rate_limited: true },
+          req,
+          429
+        );
+      }
     }
 
-    // 3. Fetch classification context
-    const { data: classification } = await serviceClient
-      .from("lead_classifications")
-      .select("temperatura, perfil_investidor")
-      .eq("lead_id", lead_id)
-      .eq("empresa", empresa)
-      .maybeSingle();
+    // 3. Load deep context in parallel
+    const ctx = await loadDeepContext(serviceClient, lead_id, empresa);
 
-    // 4. Generate greeting via AI
-    const firstName = lead.primeiro_nome || lead.nome?.split(" ")[0] || "Lead";
-    const empresaLabel = empresa === "BLUE" ? "Blue Consult" : "Tokeniza";
-    const temp = classification?.temperatura || "MORNO";
-
-    const systemPrompt = `Você é a Amélia, SDR da ${empresaLabel}. Personalidade: informal mas profissional, empática, objetiva. Use no máximo 1 emoji. Nunca use elogios genéricos como "prazer em conhecê-lo". Seja direta e humana.`;
-
-    const userPrompt = `Gere UMA ÚNICA mensagem curta de primeiro contato para o lead "${firstName}".
-Contexto: ${motivo || "MQL cadastrado"}.
-Temperatura: ${temp}.
-Objetivo: descobrir a necessidade do lead e iniciar qualificação.
-Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
+    // 4. Generate contextual message via AI
+    const { system: systemPrompt, user: userPrompt } = buildContextualPrompt(
+      lead as unknown as Record<string, unknown>,
+      ctx,
+      empresa,
+      objetivo || motivo
+    );
 
     const aiResult = await callAI({
       system: systemPrompt,
@@ -145,7 +313,7 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
       functionName: "sdr-proactive-outreach",
       empresa,
       temperature: 0.7,
-      maxTokens: 200,
+      maxTokens: 300,
       supabase: serviceClient,
     });
 
@@ -175,7 +343,7 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
         headers: bcHeaders,
         body: JSON.stringify({
           phone,
-          contact_name: lead.nome || firstName,
+          contact_name: lead.nome || lead.primeiro_nome,
           channel: "whatsapp",
           source: "AMELIA",
         }),
@@ -222,7 +390,6 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
       if (!sendRes.ok) {
         const errText = await sendRes.text();
         console.error("Blue Chat send-message error:", sendRes.status, errText);
-        // Conversation opened but message failed — still record what we can
       } else {
         const sendData = await sendRes.json().catch(() => ({}));
         messageId = sendData?.id || sendData?.message_id || null;
@@ -245,8 +412,14 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
         bluechat_message_id: messageId,
         bluechat_ticket_id: ticketId,
         proactive_outreach: true,
-        motivo: motivo || "MQL cadastrado",
+        motivo: objetivo || motivo || "abordagem proativa",
         ai_model: aiResult.model,
+        context_depth: {
+          messages: ctx.messages.length,
+          has_deal: !!ctx.deal,
+          framework: ctx.convState?.framework_ativo || "NONE",
+          sgt_events: ctx.sgtEvents.length,
+        },
       },
     }).select("id").maybeSingle();
 
@@ -256,17 +429,20 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
         lead_id,
         empresa,
         canal: "WHATSAPP",
-        estado_funil: "SAUDACAO",
-        framework_ativo: "SPIN",
+        estado_funil: (ctx.convState?.estado_funil as string) || "SAUDACAO",
+        framework_ativo: (ctx.convState?.framework_ativo as string) || "SPIN",
         modo: "SDR_IA",
-        framework_data: { bluechat_conversation_id: conversationId },
+        framework_data: {
+          ...(ctx.convState?.framework_data as Record<string, unknown> || {}),
+          bluechat_conversation_id: conversationId,
+        },
         ultimo_contato_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "lead_id,empresa" }
     );
 
-    // 10. Update deal if exists (set owner to Amélia bot + etiqueta)
+    // 10. Update deal if exists
     let dealUpdated = false;
     const { data: contact } = await serviceClient
       .from("contacts")
@@ -275,7 +451,7 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
       .maybeSingle();
 
     if (contact?.id) {
-      const { data: deal } = await serviceClient
+      const { data: dealRow } = await serviceClient
         .from("deals")
         .select("id")
         .eq("contact_id", contact.id)
@@ -284,17 +460,17 @@ Máximo 200 caracteres. Responda APENAS com o texto da mensagem, sem aspas.`;
         .limit(1)
         .maybeSingle();
 
-      if (deal?.id) {
+      if (dealRow?.id) {
         await serviceClient
           .from("deals")
           .update({ etiqueta: "Atendimento IA", updated_at: new Date().toISOString() })
-          .eq("id", deal.id);
+          .eq("id", dealRow.id);
         dealUpdated = true;
       }
     }
 
     console.log(
-      `[sdr-proactive-outreach] ✅ ${empresa} lead=${lead_id} conv=${conversationId} msg="${greetingMessage.substring(0, 50)}..."`
+      `[sdr-proactive-outreach] ✅ ${empresa} lead=${lead_id} conv=${conversationId} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
     );
 
     return jsonResponse(
