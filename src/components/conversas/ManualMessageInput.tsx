@@ -2,10 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, AlertCircle, ExternalLink, Bot, Loader2 } from 'lucide-react';
+import { Send, AlertCircle, Bot, Loader2 } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
-import { buildBluechatDeepLink } from '@/utils/bluechat';
+
 import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
 import { toast } from 'sonner';
@@ -157,7 +157,7 @@ export function ManualMessageInput({
 
   // ── Blue Chat mode: Abordar via Amelia + link secundário + envio manual ──
   if (isBluechat) {
-    const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
+    
 
     return (
       <>
@@ -177,17 +177,6 @@ export function ManualMessageInput({
             {isCallingAmelia ? 'Amélia está analisando...' : 'Abordar via Amélia'}
           </Button>
 
-          {deepLink && (
-            <a
-              href={deepLink}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              <ExternalLink className="h-3 w-3" />
-              Ver no Blue Chat
-            </a>
-          )}
 
           <div className="flex items-end gap-2">
             <Textarea
