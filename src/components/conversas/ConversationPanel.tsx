@@ -67,7 +67,8 @@ export function ConversationPanel({
       });
   }, [leadId, empresa]);
 
-  const bluechatDeepLink = isBluechat ? buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId) : null;
+  // Use phone-based deep link (more reliable than conversation ID link)
+  const bluechatDeepLink = isBluechat ? buildBluechatDeepLink(empresa, telefone || '') : null;
 
   return (
     <div className="space-y-3">
