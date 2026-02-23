@@ -53,7 +53,8 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page
           pipeline_stages:stage_id(id, nome, cor, is_won, is_lost),
           owner:owner_id(id, nome, email, avatar_url)
         `, { count: 'exact' })
-        .eq('pipeline_id', pipelineId!);
+        .eq('pipeline_id', pipelineId!)
+        .eq('status', 'ABERTO');
 
       if (ownerId) query = query.eq('owner_id', ownerId);
       if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
