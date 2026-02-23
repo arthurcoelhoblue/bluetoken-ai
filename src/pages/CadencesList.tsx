@@ -265,25 +265,18 @@ function CadencesListContent() {
                                   </Badge>
                                 </TableCell>
                                 <TableCell>{CANAL_LABELS[cadence.canal_principal]}</TableCell>
-                                <TableCell>
-                                  <button
+                                <TableCell className="w-[60px]">
+                                  <div
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       toggleAtivo.mutate({ id: cadence.id, ativo: !cadence.ativo });
                                     }}
-                                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                                      cadence.ativo
-                                        ? 'bg-success/15 text-success hover:bg-success/25'
-                                        : 'bg-destructive/15 text-destructive hover:bg-destructive/25'
-                                    }`}
                                   >
                                     <Switch
                                       checked={cadence.ativo}
-                                      className="scale-75 pointer-events-none"
-                                      tabIndex={-1}
+                                      className="data-[state=checked]:bg-success data-[state=unchecked]:bg-destructive"
                                     />
-                                    {cadence.ativo ? 'Ativo' : 'Inativo'}
-                                  </button>
+                                  </div>
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {cadence.runs_ativas > 0 ? (
