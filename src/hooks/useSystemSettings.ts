@@ -41,13 +41,13 @@ export function useSystemSettings(category?: string) {
       
       const { error } = await supabase
         .from("system_settings")
-        .update({
+        .upsert({
+          category,
+          key,
           value: value as unknown as Json,
           updated_at: new Date().toISOString(),
           updated_by: userData.user?.id,
-        })
-        .eq("category", category)
-        .eq("key", key);
+        }, { onConflict: "category,key" });
 
       if (error) throw error;
     },
