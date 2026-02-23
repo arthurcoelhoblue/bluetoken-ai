@@ -541,23 +541,7 @@ serve(async (req) => {
           .eq('empresa', empresa);
       }
     } else if (isConversationEnding) {
-      // Resetar contador de falhas
-      try {
-        const { data: stateForReset } = await supabase
-          .from('lead_conversation_state')
-          .select('framework_data')
-          .eq('lead_id', leadContact.lead_id)
-          .eq('empresa', empresa)
-          .maybeSingle();
-        const fwReset = (stateForReset?.framework_data as Record<string, unknown>) || {};
-        if (fwReset.ia_null_count && (fwReset.ia_null_count as number) > 0) {
-          await supabase
-            .from('lead_conversation_state')
-            .update({ framework_data: { ...fwReset, ia_null_count: 0 } })
-            .eq('lead_id', leadContact.lead_id)
-            .eq('empresa', empresa);
-        }
-      } catch (_) { /* non-critical */ }
+      // ia_null_count é controlado pelo sdr-ia-interpret; não resetar aqui para evitar corrida/loop
       action = 'RESOLVE';
     } else if (iaResult.escalation?.needed) {
       action = 'ESCALATE';
@@ -566,24 +550,8 @@ serve(async (req) => {
         log.info('ESCALATE sem responseText → mensagem padrão');
       }
     } else if (responseText) {
+      // ia_null_count é controlado pelo sdr-ia-interpret; não resetar aqui
       action = 'RESPOND';
-      // Resetar contador de falhas
-      try {
-        const { data: stateForReset2 } = await supabase
-          .from('lead_conversation_state')
-          .select('framework_data')
-          .eq('lead_id', leadContact.lead_id)
-          .eq('empresa', empresa)
-          .maybeSingle();
-        const fwReset2 = (stateForReset2?.framework_data as Record<string, unknown>) || {};
-        if (fwReset2.ia_null_count && (fwReset2.ia_null_count as number) > 0) {
-          await supabase
-            .from('lead_conversation_state')
-            .update({ framework_data: { ...fwReset2, ia_null_count: 0 } })
-            .eq('lead_id', leadContact.lead_id)
-            .eq('empresa', empresa);
-        }
-      } catch (_) { /* non-critical */ }
     } else {
       // ANTI-LIMBO: IA respondeu mas sem texto
       const { count: msgCount } = await supabase

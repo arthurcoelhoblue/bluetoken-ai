@@ -298,12 +298,45 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
     }
 
     if (frameworks_atualizados) {
-      const normalize = (obj: unknown): Record<string, unknown> => {
-        if (!obj || typeof obj !== 'object') return {};
-        const r: Record<string, unknown> = {};
-        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) r[k.toLowerCase()] = v;
-        return r;
+      const normalizeKey = (rawKey: string): string => rawKey
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+
+      const aliases: Record<'spin' | 'gpct' | 'bant', Record<string, string>> = {
+        spin: {
+          s: 's', situacao: 's', contexto: 's',
+          p: 'p', problema: 'p', dor: 'p', dificuldade: 'p',
+          i: 'i', implicacao: 'i', impacto: 'i', risco: 'i',
+          n: 'n', necessidade: 'n', necessidade_solucao: 'n', need_payoff: 'n', solucao: 'n',
+        },
+        gpct: {
+          g: 'g', goals: 'g', goal: 'g', objetivo: 'g', objetivos: 'g',
+          p: 'p', plans: 'p', plan: 'p', plano: 'p',
+          c: 'c', challenge: 'c', challenges: 'c', desafio: 'c', desafios: 'c',
+          t: 't', timeline: 't', prazo: 't', tempo: 't',
+        },
+        bant: {
+          b: 'b', budget: 'b', orcamento: 'b',
+          a: 'a', authority: 'a', decisor: 'a',
+          n: 'n', need: 'n', necessidade: 'n',
+          t: 't', timing: 't', prazo: 't', tempo: 't',
+        },
       };
+
+      const normalizeFramework = (obj: unknown, framework: 'spin' | 'gpct' | 'bant'): Record<string, unknown> => {
+        if (!obj || typeof obj !== 'object') return {};
+        const result: Record<string, unknown> = {};
+        const map = aliases[framework];
+        for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+          const canonical = map[normalizeKey(k)] || normalizeKey(k);
+          result[canonical] = v;
+        }
+        return result;
+      };
+
       // Remove null/undefined values to prevent overwriting real data
       const stripNulls = (obj: Record<string, unknown>): Record<string, unknown> => {
         const result: Record<string, unknown> = {};
@@ -312,13 +345,23 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
         }
         return result;
       };
+
       const existing = conversation_state?.framework_data as Record<string, unknown> || {};
       const fu = frameworks_atualizados as Record<string, unknown>;
       stateUpdates.framework_data = {
         ...existing,  // preserve bluechat_conversation_id, ia_null_count, etc.
-        gpct: { ...(normalize(existing.gpct || existing.GPCT)), ...stripNulls(normalize(fu.gpct || fu.GPCT)) },
-        bant: { ...(normalize(existing.bant || existing.BANT)), ...stripNulls(normalize(fu.bant || fu.BANT)) },
-        spin: { ...(normalize(existing.spin || existing.SPIN)), ...stripNulls(normalize(fu.spin || fu.SPIN)) },
+        gpct: {
+          ...normalizeFramework(existing.gpct || existing.GPCT, 'gpct'),
+          ...stripNulls(normalizeFramework(fu.gpct || fu.GPCT, 'gpct')),
+        },
+        bant: {
+          ...normalizeFramework(existing.bant || existing.BANT, 'bant'),
+          ...stripNulls(normalizeFramework(fu.bant || fu.BANT, 'bant')),
+        },
+        spin: {
+          ...normalizeFramework(existing.spin || existing.SPIN, 'spin'),
+          ...stripNulls(normalizeFramework(fu.spin || fu.SPIN, 'spin')),
+        },
       };
     }
 
