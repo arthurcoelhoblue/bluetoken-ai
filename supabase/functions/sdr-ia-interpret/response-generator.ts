@@ -43,7 +43,7 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
   if (!resposta) return '';
   let cleaned = resposta;
   const patterns = [
-    /^(Perfeito|Entendi|Entendido|Excelente|Ótimo|Ótima|Legal|Maravilha|Show|Certo|Claro|Com certeza|Que bom|Beleza|Fantástico|Incrível|Sensacional|Bacana|Perfeita|Entendida)[!.]?\s*/i,
+    /^(Perfeito|Entendi|Entendido|Excelente|Ótimo|Ótima|Legal|Maravilha|Show|Certo|Claro|Com certeza|Que bom|Beleza|Fantástico|Incrível|Sensacional|Bacana|Perfeita|Entendida)[,;!.]?\s*/i,
     /^(Perfeito|Entendi|Entendido|Com certeza|Que bom|Excelente|Ótimo|Ótima|Claro|Certo|Legal|Maravilha|Beleza),?\s+\w+[!.]?\s*/i,
     /^(Olá|Oi|Hey|Eai|E aí),?\s+\w+[!.]?\s*/i,
     /^(Bom dia|Boa tarde|Boa noite),?\s+\w+[!.]?\s*/i,
