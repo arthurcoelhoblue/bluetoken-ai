@@ -65,6 +65,7 @@ export async function sendResponseToBluechat(
     resolution?: { summary: string; reason: string };
     empresa: EmpresaTipo;
     department?: string | null;
+    phone?: string;
   }
 ): Promise<void> {
   try {
@@ -135,8 +136,10 @@ export async function sendResponseToBluechat(
         headers,
         body: JSON.stringify({
           conversation_id: data.conversation_id,
+          ticketId: data.ticket_id || data.conversation_id,
           content: data.text,
           source: 'AMELIA_SDR',
+          phone: data.phone,
         }),
       },
       2,
