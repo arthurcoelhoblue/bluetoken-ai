@@ -191,21 +191,23 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── send-message ── (Send message via Blue Chat conversation)
+  // ── send-message ── (Send message via Blue Chat POST /messages)
   if (action === "send-message") {
-    const { conversation_id, content } = body as { conversation_id?: string; content?: string };
-    if (!conversation_id || !content) {
-      return jsonResponse({ error: "Missing conversation_id or content" }, 400);
+    const { conversation_id, content, phone } = body as { conversation_id?: string; content?: string; phone?: string };
+    if (!content || (!conversation_id && !phone)) {
+      return jsonResponse({ error: "Missing content, and need conversation_id or phone" }, 400);
     }
 
     try {
-      const res = await fetch(`${config.baseUrl}/conversations/${conversation_id}/messages`, {
+      const res = await fetch(`${config.baseUrl}/messages`, {
         method: "POST",
         headers,
         body: JSON.stringify({
           content,
           type: "text",
-          source: "AMELIA",
+          source: "AMELIA_SDR",
+          ...(conversation_id ? { ticketId: conversation_id } : {}),
+          ...(phone ? { phone } : {}),
         }),
       });
 
