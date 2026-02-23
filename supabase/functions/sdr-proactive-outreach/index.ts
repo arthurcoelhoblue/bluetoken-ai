@@ -459,10 +459,71 @@ Deno.serve(async (req) => {
       console.log("Using conversationId as ticketId fallback:", ticketId);
     }
 
-    // 6b. If no conversation/ticket exists, we send with phone only — Blue Chat auto-creates the ticket.
-    // The old /conversations endpoint doesn't exist, so we skip it entirely.
+    // 6b. If no conversation/ticket exists, create a ticket first via POST /tickets
+    if (!ticketId && !conversationId) {
+      const ticketsUrl = `${bcConfig.baseUrl}/tickets`;
+      const contactName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
+      const ticketPayload = {
+        phone,
+        contact_name: contactName,
+        channel: "whatsapp",
+        source: "AMELIA_SDR",
+      };
 
-    // Send directly via /messages with phone as primary identifier
+      console.log("Creating Blue Chat ticket:", ticketsUrl, JSON.stringify(ticketPayload));
+
+      try {
+        const ticketRes = await fetch(ticketsUrl, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify(ticketPayload),
+        });
+
+        const ticketText = await ticketRes.text();
+        console.log("Blue Chat /tickets response:", ticketRes.status, ticketText);
+
+        if (ticketRes.ok) {
+          const ticketData = JSON.parse(ticketText || "{}");
+          ticketId =
+            ticketData?.ticket_id ||
+            ticketData?.ticketId ||
+            ticketData?.id ||
+            ticketData?.ticket?.id ||
+            null;
+          conversationId =
+            ticketData?.conversation_id ||
+            ticketData?.conversationId ||
+            ticketData?.conversation?.id ||
+            null;
+
+          // Fallback: use one as the other if only one is returned
+          if (conversationId && !ticketId) ticketId = conversationId;
+          if (ticketId && !conversationId) conversationId = ticketId;
+
+          console.log("Ticket created successfully:", { ticketId, conversationId });
+        } else {
+          console.warn("Failed to create ticket:", ticketRes.status, ticketText);
+          // Don't fail yet — try sending with phone-only as last resort
+        }
+      } catch (err) {
+        console.error("Ticket creation fetch error:", err);
+      }
+    }
+
+    // If still no ticketId after all attempts, return clear error
+    if (!ticketId) {
+      return jsonResponse(
+        {
+          error: "Não foi possível criar ticket no Blue Chat. Este contato precisa iniciar uma conversa via WhatsApp primeiro para ser abordado pela Amélia.",
+          no_ticket: true,
+          phone,
+        },
+        req,
+        400
+      );
+    }
+
+    // Send message via /messages with ticketId guaranteed
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
     try {
@@ -471,9 +532,8 @@ Deno.serve(async (req) => {
         source: "AMELIA_SDR",
         phone,
         type: "TEXT",
+        ticketId,
       };
-      // Include ticketId and conversationId only if we have them
-      if (ticketId) messagePayload.ticketId = ticketId;
       if (conversationId) messagePayload.conversation_id = conversationId;
 
       console.log("Sending to Blue Chat:", messagesUrl, JSON.stringify(messagePayload));
