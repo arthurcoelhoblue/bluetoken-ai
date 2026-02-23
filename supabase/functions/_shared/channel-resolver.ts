@@ -46,6 +46,30 @@ export async function resolveBluechatApiKey(
 }
 
 /**
+ * Resolve the Blue Chat webhook secret for validating inbound requests.
+ * 1. Tries webhook_secret from system_settings JSON
+ * 2. Falls back to BLUECHAT_API_KEY env var
+ */
+export async function resolveBluechatWebhookSecret(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<string | null> {
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
+  const { data } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
+
+  const secret = (data?.value as Record<string, unknown>)?.webhook_secret as string | undefined;
+  if (secret) return secret;
+
+  // Fallback to env (backward compatibility)
+  return getOptionalEnv('BLUECHAT_API_KEY') || null;
+}
+
+/**
  * Resolve which channel is active for a given empresa.
  * Returns 'BLUECHAT' if bluechat is enabled in integration_company_config,
  * otherwise 'DIRECT' (mensageria / whatsapp-send).
