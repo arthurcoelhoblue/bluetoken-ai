@@ -1,164 +1,99 @@
 
 
-# Integração SGT 11/10 — Plano de Implementação
+# Correção: Autenticação Blue Chat Inbound
 
-## Resumo
+## Problema Identificado
 
-Consolidar 6 funções SGT redundantes em 3 funções limpas, eliminar codigo morto, centralizar deduplicação e garantir dados completos para Tokeniza (investimentos detalhados) e Blue (planos/status).
+Existem **duas credenciais distintas** na integração com o Blue Chat, mas o sistema está usando a errada para validar chamadas inbound:
 
-## Estado Atual — O Que Existe
-
-| Funcao | Linhas | Endpoint SGT usado | Problema |
+| Credencial | Valor | Propósito | Quem usa |
 |---|---|---|---|
-| `sgt-webhook` (565 linhas, 7 modulos) | Recebe push do SGT | N/A (recebe) | Dedup por `pessoa_id`, nao por email+empresa |
-| `sgt-full-import` (568 linhas) | Bulk: `listar-clientes-api` | Dados agregados, sem investimentos individuais | Causou 1.700 duplicatas |
-| `sgt-sync-clientes` (400 linhas) | Individual: `buscar-lead-api` | 1 HTTP/contato, N+1 | Codigo quase identico ao import |
-| `sgt-import-clientes` (405 linhas) | Individual: `buscar-lead-api` | 1 HTTP/contato, N+1 | Clone do sync |
-| `sgt-backfill-investimentos` (281 linhas) | Individual: `buscar-lead-api` | 1 HTTP/customer, so Tokeniza | Funciona mas e separado |
-| `sgt-buscar-lead` (104 linhas) | Individual: `buscar-lead-api` | Proxy para frontend | OK, manter como esta |
+| **API Key** | `b1f80d0e...` | Chamar a API do Blue Chat (enviar respostas) | Amélia -> Blue Chat (outbound) |
+| **Secret** | `JIKLSFhof...` | Blue Chat se autenticar ao chamar nosso webhook | Blue Chat -> Amélia (inbound) |
 
-**Frontend**: `SGTSyncDialog.tsx` chama `sgt-full-import`
+**O que acontece hoje**: Quando o Blue Chat chama `/bluechat-inbound` com o header `Authorization: Bearer JIKLSFhof...`, o `auth.ts` compara esse token contra `api_key` do `system_settings` (`b1f80d0e...`). Os valores nao batem e retorna **401 Unauthorized**.
 
-## Endpoints do SGT (confirmado lendo o projeto)
+Em resumo: o sistema compara a **secret inbound** contra a **API key outbound** -- nunca vai bater.
 
-### `listar-clientes-api` (POST)
-- Input: `{ empresa, limit (max 500), offset, apenas_clientes }`
-- Output: `{ total, clientes: [{ lead_id, nome, email, telefone, dados_tokeniza: { valor_investido, qtd_investimentos, projetos... } }] }`
-- **NAO retorna investimentos individuais** (so totais agregados)
+## Dados atuais no `system_settings` (bluechat_blue)
 
-### `buscar-lead-api` (POST)
-- Input: `{ email }` ou `{ telefone }`
-- Output: `{ found, lead: {...}, dados_tokeniza: { investimentos: [{ oferta_nome, oferta_id, valor, data, status, tipo }] } }`
-- **Retorna investimentos individuais** (crowdfunding + vendas)
-
-## Arquitetura Final — 3 Funcoes
-
-```text
-SGT (Sistema de Trafego)
-    |                    |                    |
-  [PUSH]            [PULL bulk]        [PULL individual]
-    |                    |                    |
-    v                    v                    v
-sgt-webhook         sgt-sync            sgt-buscar-lead
-(existente,      (NOVA consolidada)     (existente,
- ajuste dedup)    2 fases internas       sem mudanca)
-    |                    |                    |
-    +--- _shared/contact-dedup.ts ---+       |
-                     |                        |
-              contacts / cs_customers / cs_contracts
-```
-
-## Passos de Implementacao
-
-### Passo 1 — Criar `_shared/contact-dedup.ts`
-
-Modulo compartilhado com funcao `findOrCreateContact()`:
-- Hierarquia: `legacy_lead_id` -> `email + empresa` -> `telefone + empresa`
-- Se encontrado por email/telefone, atualiza `legacy_lead_id` no existente
-- So cria novo contact se nenhum match
-- Retorna `{ contactId, isNew, wasUpdated }`
-
-Tambem inclui: `upsertCsCustomer()` e `upsertTokenizaContracts()` — logica que hoje esta duplicada em 4 funcoes.
-
-### Passo 2 — Criar `sgt-sync/index.ts` (funcao consolidada)
-
-Aceita no body:
 ```json
 {
-  "empresa": "BLUE" | "TOKENIZA",
-  "fase": "BULK" | "DETALHE" | null,
-  "reset_offset": true | false
+  "api_key": "b1f80d0e778082041ed4245008d2e15c5b12c2acbfb4a7e9ce6314e7535f7132",
+  "api_url": "https://chat.grupoblue.com.br/api/external-ai",
+  "enabled": true
 }
 ```
 
-**Fase BULK** (usa `listar-clientes-api`):
-- Pagina com offset persistido em `system_settings`
-- Para cada cliente retornado: `findOrCreateContact()` + upsert `cs_customer` com dados agregados
-- Pula clientes nao elegiveis (`isClienteElegivel()`)
-- Para Blue: ja inclui dados de plano, status, valor_venda
-- Para Tokeniza: inclui totais agregados (valor_investido, qtd, projetos)
+Falta o campo `webhook_secret` para validar chamadas inbound.
 
-**Fase DETALHE** (usa `buscar-lead-api`, so Tokeniza):
-- Busca `cs_customers` da Tokeniza que **nao tem `cs_contracts` com `oferta_id` preenchido**
-- Para cada um, chama `buscar-lead-api` por email
-- Extrai `dados_tokeniza.investimentos` da resposta (array detalhado)
-- Upsert em `cs_contracts` com `oferta_id`, `oferta_nome`, `valor`, `data`, `tipo`
-- Offset separado em `system_settings`
+## Correção
 
-**Sem fase especificada**: executa BULK primeiro, depois DETALHE
+### Passo 1 — Adicionar `webhook_secret` ao `system_settings` da BLUE
 
-Reutiliza de `sgt-full-import`:
-- `isClienteElegivel()` — logica de qualificacao
-- `buildSgtExtras()` — montagem de dados extras
-- `buildClienteTags()` — tags de CS
+Atualizar o JSON value de `bluechat_blue` para incluir a secret de validacao:
 
-### Passo 3 — Atualizar `sgt-webhook` para usar `contact-dedup.ts`
+```json
+{
+  "api_key": "b1f80d0e778082041ed4245008d2e15c5b12c2acbfb4a7e9ce6314e7535f7132",
+  "api_url": "https://chat.grupoblue.com.br/api/external-ai",
+  "webhook_secret": "JIKLSFhofjhalosfSA7W8PR9UFEAUOJIF54702a",
+  "enabled": true
+}
+```
 
-Na secao "AUTO-CRIACAO / MERGE DE CONTATO CRM" (linhas 218-260), substituir a logica inline por `findOrCreateContact()` do modulo compartilhado. Isso garante que o webhook tambem use email+empresa como chave primaria de dedup, nao apenas `pessoa_id`.
+### Passo 2 — Atualizar `_shared/channel-resolver.ts`
 
-### Passo 4 — Atualizar `SGTSyncDialog.tsx`
+Adicionar funcao `resolveBluechatWebhookSecret()` que busca `value->>'webhook_secret'` em vez de `value->>'api_key'`:
 
-- Trocar chamada de `sgt-full-import` para `sgt-sync`
-- Manter mesma interface visual (progress, stats por empresa)
-- Adicionar opcao de rodar so fase BULK ou BULK+DETALHE
+```typescript
+export async function resolveBluechatWebhookSecret(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<string | null> {
+  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
+  const { data } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
 
-### Passo 5 — Excluir funcoes obsoletas
+  const secret = data?.value?.webhook_secret;
+  if (secret) return secret;
 
-Remover completamente os diretorios:
-- `supabase/functions/sgt-full-import/` (568 linhas)
-- `supabase/functions/sgt-sync-clientes/` (400 linhas)
-- `supabase/functions/sgt-import-clientes/` (405 linhas)
-- `supabase/functions/sgt-backfill-investimentos/` (281 linhas)
+  // Fallback: env BLUECHAT_API_KEY
+  return getOptionalEnv('BLUECHAT_API_KEY') || null;
+}
+```
 
-Remover do `supabase/config.toml`:
-- `[functions.sgt-full-import]`
-- `[functions.sgt-sync-clientes]`
-- `[functions.sgt-import-clientes]`
+### Passo 3 — Atualizar `bluechat-inbound/auth.ts`
 
-Remover deploy das funcoes excluidas via `delete_edge_functions`.
+`validateAuthAsync` passa a usar `resolveBluechatWebhookSecret()` em vez de `resolveBluechatApiKey()`:
 
-Adicionar ao `config.toml`:
-- `[functions.sgt-sync]` com `verify_jwt = false`
+```typescript
+import { resolveBluechatWebhookSecret } from "../_shared/channel-resolver.ts";
 
-### Passo 6 — Limpar `cs-backfill-contracts`
+export async function validateAuthAsync(req, supabase, empresa) {
+  // ... extrair token do header (sem mudanca)
+  
+  // Comparar contra webhook_secret (nao api_key)
+  const expectedSecret = await resolveBluechatWebhookSecret(supabase, empresa);
+  
+  if (expectedSecret && token.trim() === expectedSecret.trim()) {
+    return { valid: true };
+  }
+  // ... fallback env (sem mudanca)
+}
+```
 
-Verificar se `cs-backfill-contracts` tem referencias ao `sgt-backfill-investimentos` e atualizar se necessario (provavelmente independente).
+### Passo 4 — Confirmar que `callback.ts` continua usando `api_key`
 
-## Codigo Eliminado vs Preservado
+O `callback.ts` (envio de respostas para o Blue Chat) ja usa `api_key` corretamente no header `X-API-Key`. Nenhuma mudanca necessaria nesse arquivo.
 
-| Item | Acao | Linhas |
-|---|---|---|
-| `sgt-full-import/index.ts` | EXCLUIR | 568 linhas removidas |
-| `sgt-sync-clientes/index.ts` | EXCLUIR | 400 linhas removidas |
-| `sgt-import-clientes/index.ts` | EXCLUIR | 405 linhas removidas |
-| `sgt-backfill-investimentos/index.ts` | EXCLUIR | 281 linhas removidas |
-| `_shared/contact-dedup.ts` | CRIAR | ~150 linhas (logica consolidada) |
-| `sgt-sync/index.ts` | CRIAR | ~350 linhas (2 fases, reutiliza shared) |
-| `sgt-webhook/index.ts` | AJUSTAR | ~10 linhas alteradas (import + uso dedup) |
-| `SGTSyncDialog.tsx` | AJUSTAR | ~5 linhas (trocar nome funcao) |
-| `config.toml` | AJUSTAR | remover 3 entries, adicionar 1 |
+## Resultado
 
-**Saldo liquido**: -1.654 linhas de codigo redundante eliminadas, +500 linhas de codigo limpo e consolidado.
-
-## Dados Essenciais Garantidos
-
-**Tokeniza** (via Fase BULK + Fase DETALHE):
-- Valor total investido, qtd investimentos, projetos (bulk)
-- Cada investimento individual com oferta_nome, oferta_id, valor, data, status, tipo (detalhe)
-- Carrinho abandonado, valor carrinho (bulk)
-- LinkedIn, score temperatura (bulk)
-
-**Blue** (via Fase BULK apenas):
-- Plano ativo, plano atual (via Notion join no SGT)
-- Status cliente, stage atual
-- Valor venda, data venda
-- Organizacao
-
-## Reducao de Trafego
-
-| Cenario | Antes | Depois |
-|---|---|---|
-| 1.000 clientes Tokeniza | 1.000 HTTP individuais | ~20 bulk + ~200 individuais (so os sem contrato) |
-| Re-sync periodico | 1.000+ toda vez | ~20 bulk + 0 individuais (ja detalhados) |
-| 750 clientes Blue | 750 HTTP individuais | ~15 bulk + 0 extras |
+- Blue Chat envia webhook com `Authorization: Bearer JIKLSFhof...` -> validado contra `webhook_secret` -> **200 OK**
+- Amélia responde via callback com `X-API-Key: b1f80d0e...` -> Blue Chat aceita -> **mensagem entregue**
+- Separacao clara entre credenciais inbound (webhook_secret) e outbound (api_key)
 
