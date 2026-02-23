@@ -214,9 +214,10 @@ serve(async (req) => {
     await supabase.from('lead_contacts').update(updateData)
       .eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
 
-    // AUTO-CRIAÇÃO / MERGE DE CONTATO CRM
+    // AUTO-CRIAÇÃO / MERGE DE CONTATO CRM (usa módulo compartilhado de dedup)
     if (pessoaId) {
       try {
+        // Primeiro tenta via pessoa_id (match exato global)
         const { data: existingContact } = await supabase
           .from('contacts')
           .select('id, nome, email, telefone')
@@ -225,21 +226,28 @@ serve(async (req) => {
           .maybeSingle();
 
         if (!existingContact) {
-          const { data: newContact, error: contactError } = await supabase
-            .from('contacts')
-            .insert({
-              pessoa_id: pessoaId, empresa: payload.empresa,
-              nome: leadNormalizado.nome, primeiro_nome: primeiroNome,
+          // Fallback: dedup por email+empresa / telefone+empresa antes de criar
+          const { findOrCreateContact } = await import('../_shared/contact-dedup.ts');
+          try {
+            const { contactId, isNew } = await findOrCreateContact(supabase, {
+              leadId: payload.lead_id,
+              empresa: payload.empresa,
+              nome: leadNormalizado.nome,
               email: leadNormalizado.email || null,
               telefone: sanitization.phoneInfo?.e164 || leadNormalizado.telefone || null,
-              canal_origem: 'SGT', tipo: 'LEAD',
-              tags: ['sgt-inbound'], legacy_lead_id: payload.lead_id,
-              is_active: true, is_cliente: false,
-            })
-            .select('id').single();
-
-          if (contactError) log.error('Erro ao criar contact CRM', { error: contactError.message });
-          else log.info('Contact CRM criado', { contactId: newContact.id });
+            });
+            // Vincular pessoa_id ao contact encontrado/criado
+            await supabase.from('contacts').update({
+              pessoa_id: pessoaId,
+              canal_origem: 'SGT',
+              tags: ['sgt-inbound'],
+              updated_at: new Date().toISOString(),
+            }).eq('id', contactId);
+            if (isNew) log.info('Contact CRM criado via dedup', { contactId });
+            else log.info('Contact CRM encontrado via dedup', { contactId });
+          } catch (dedupErr) {
+            log.error('Erro no dedup de contacts', { error: String(dedupErr) });
+          }
         } else {
           const mergeData: Record<string, unknown> = {};
           if (!existingContact.email && leadNormalizado.email) mergeData.email = leadNormalizado.email;

@@ -126,10 +126,7 @@ verify_jwt = false
 [functions.sgt-buscar-lead]
 verify_jwt = false
 
-[functions.sgt-sync-clientes]
-verify_jwt = false
-
-[functions.sgt-import-clientes]
+[functions.sgt-sync]
 verify_jwt = false
 
 [functions.bluechat-proxy]
@@ -139,8 +136,5 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cs-backfill-contracts]
-verify_jwt = false
-
-[functions.sgt-full-import]
 verify_jwt = false
 
