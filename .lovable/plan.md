@@ -1,106 +1,68 @@
 
-# Conectar configuracoes SMTP do frontend ao backend
+
+# Corrigir campo "Proxima execucao" da cadencia
 
 ## Problema
 
-A edge function `email-send` le as configuracoes SMTP de variaveis de ambiente (secrets): `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`. Ela **ignora completamente** a tabela `system_settings` onde o frontend salva `smtp_config`.
+O campo "Proxima execucao" na pagina LeadDetail mostra o valor `next_run_at` da tabela `lead_cadence_runs`, mas apresenta dois problemas:
 
-Resultado: o usuario altera host, porta, remetente, limites na tela, os valores sao salvos no banco, mas o envio de e-mail continua usando os valores fixos dos secrets.
-
-A unica configuracao que funciona corretamente e o `modo_teste`, que ja e lido do banco pela edge function.
-
-## Diagnostico detalhado
-
-| Campo frontend | Salva em `system_settings`? | Lido pela edge function? |
-|---|---|---|
-| host | Sim | Nao (usa secret SMTP_HOST) |
-| port | Sim | Nao (usa secret SMTP_PORT) |
-| encryption | Sim | Nao |
-| from_name | Sim | Nao |
-| from_email | Sim | Nao (usa secret SMTP_FROM) |
-| reply_to | Sim | Nao |
-| max_per_day | Sim | Nao |
-| interval_seconds | Sim | Nao |
-| modo_teste.ativo | Sim | **Sim** |
-| modo_teste.email_teste | Sim | **Sim** |
+1. **Valor desatualizado**: apos o `cadence-runner` processar o step e atualizar `next_run_at` no banco, a tela nao refaz a query automaticamente -- o usuario continua vendo o horario antigo ate recarregar a pagina.
+2. **Horario no passado**: quando `next_run_at` ja passou mas o runner ainda nao processou (ele roda a cada 15 min via cron), o campo exibe um horario no passado sem nenhuma indicacao visual, parecendo um bug.
 
 ## Solucao
 
-Alterar a edge function `email-send` para ler `smtp_config` do banco de dados, usando os secrets apenas como **fallback** para credenciais (usuario e senha, que nao devem ficar no banco).
+### 1. Auto-refresh periodico no hook `useLeadDetail`
 
-### 1. Edge function: ler smtp_config do banco
+Adicionar `refetchInterval` na query `cadenceRunQuery` para que ela atualize automaticamente a cada 30 segundos enquanto a cadencia estiver ativa:
 
-Apos o trecho que ja busca `modo_teste`, adicionar uma query para buscar `smtp_config`:
+**Arquivo**: `src/hooks/useLeadDetail.ts`
+
+Na query `cadenceRunQuery`, adicionar:
 
 ```typescript
-const { data: smtpDbConfig } = await supabase
-  .from('system_settings')
-  .select('value')
-  .eq('category', 'email')
-  .eq('key', 'smtp_config')
-  .single();
-
-const dbSmtp = smtpDbConfig?.value as {
-  host?: string;
-  port?: number;
-  encryption?: string;
-  from_name?: string;
-  from_email?: string;
-  reply_to?: string;
-  max_per_day?: number;
-  interval_seconds?: number;
-} | null;
+refetchInterval: 30_000, // refetch a cada 30s
 ```
 
-### 2. Prioridade de configuracao
+Isso garante que apos o runner processar, a tela atualiza em no maximo 30 segundos.
 
-Usar valores do banco com fallback para secrets:
+### 2. Indicacao visual quando horario ja passou
 
+**Arquivo**: `src/pages/LeadDetail.tsx` (linhas 343-352)
+
+Alterar a renderizacao do campo para verificar se `next_run_at` esta no passado:
+
+- Se `next_run_at` esta no **futuro**: exibir normalmente com `format()` e usar `formatDistanceToNow` como complemento (ex: "23/02 as 18:00 (em 15 min)")
+- Se `next_run_at` esta no **passado**: exibir "Processando..." ou "Aguardando execucao" com um indicador visual (spinner ou texto em cor diferente), sinalizando que o runner ainda nao processou
+
+Exemplo de logica:
+
+```typescript
+const nextRunDate = new Date(cadenceRun.next_run_at);
+const isPast = nextRunDate < new Date();
+
+{isPast ? (
+  <p className="font-medium text-muted-foreground flex items-center gap-1">
+    <Loader2 className="h-3 w-3 animate-spin" />
+    Aguardando execucao...
+  </p>
+) : (
+  <p className="font-medium">
+    {format(nextRunDate, "dd/MM 'as' HH:mm", { locale: ptBR })}
+    <span className="text-muted-foreground text-xs ml-1">
+      ({formatDistanceToNow(nextRunDate, { addSuffix: true, locale: ptBR })})
+    </span>
+  </p>
+)}
 ```
-host       -> dbSmtp.host       || SMTP_HOST (secret)
-port       -> dbSmtp.port       || SMTP_PORT (secret)
-from_email -> dbSmtp.from_email || SMTP_FROM (secret)
-from_name  -> dbSmtp.from_name  || "Blue CRM"
-reply_to   -> dbSmtp.reply_to   || (vazio)
-user       -> SMTP_USER (sempre secret)
-pass       -> SMTP_PASS (sempre secret)
-```
-
-Credenciais (user/pass) continuam exclusivamente nos secrets por seguranca.
-
-### 3. Aplicar from_name e reply_to no envio
-
-Atualmente a edge function monta o header `From:` usando apenas `SMTP_FROM`. Alterar para incluir `from_name`:
-
-```
-From: "Blue CRM" <noreply@empresa.com>
-```
-
-E adicionar header `Reply-To` quando configurado.
-
-### 4. Validacao de limite diario (max_per_day)
-
-Antes de enviar, contar quantos e-mails OUTBOUND foram enviados hoje na tabela `lead_messages` e comparar com `max_per_day`. Se excedido, retornar erro.
-
-### 5. Validacao de intervalo (interval_seconds)
-
-Verificar o timestamp do ultimo envio e comparar com `interval_seconds`. Se muito recente, retornar erro ou aguardar.
 
 ## Arquivos alterados
 
-- `supabase/functions/email-send/index.ts` -- ler smtp_config do banco, aplicar from_name/reply_to, validar limites
-
-## O que NAO muda
-
-- `src/pages/EmailSmtpConfigPage.tsx` -- frontend ja salva corretamente no banco
-- `src/hooks/useSystemSettings.ts` -- hook ja funciona com upsert
-- Secrets SMTP_USER e SMTP_PASS -- continuam sendo a unica fonte de credenciais
-- `modo_teste` -- ja funciona corretamente
+- `src/hooks/useLeadDetail.ts` -- adicionar `refetchInterval: 30_000` na cadenceRunQuery
+- `src/pages/LeadDetail.tsx` -- logica de exibicao com tratamento de horario passado
 
 ## Resultado esperado
 
-- Alterar host/porta na tela reflete imediatamente no proximo envio
-- Alterar remetente (nome e email) aparece no header do e-mail
-- Reply-To e configurado quando preenchido
-- Limite diario bloqueia envios excessivos
-- Intervalo minimo e respeitado entre envios consecutivos
+- O campo atualiza automaticamente a cada 30 segundos
+- Quando o horario ja passou, exibe "Aguardando execucao..." com spinner em vez de um horario no passado
+- Quando o horario e futuro, exibe a data formatada com distancia relativa ("em 15 min")
+
