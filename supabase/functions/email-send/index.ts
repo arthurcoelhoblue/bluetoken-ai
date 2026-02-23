@@ -344,7 +344,8 @@ serve(async (req) => {
         JSON.stringify({
           success: true,
           messageId: fakeMessageId,
-        } as EmailSendResponse),
+          simulated: true,
+        }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }

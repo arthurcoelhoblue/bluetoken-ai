@@ -170,9 +170,15 @@ export default function EmailSmtpConfigPage() {
       toast.error("Informe um e-mail destinatário");
       return;
     }
+    if (!localSmtp.host || !localSmtp.port) {
+      toast.error("Configure o SMTP antes de enviar", {
+        description: "Preencha ao menos o host e a porta do servidor SMTP.",
+      });
+      return;
+    }
     setIsSendingTest(true);
     try {
-      const { error } = await supabase.functions.invoke("email-send", {
+      const { data, error } = await supabase.functions.invoke("email-send", {
         body: {
           to: testRecipient,
           subject: "🧪 Teste de E-mail - Blue CRM",
@@ -180,7 +186,13 @@ export default function EmailSmtpConfigPage() {
         },
       });
       if (error) throw error;
-      toast.success("E-mail de teste enviado!", { description: `Para: ${testRecipient}` });
+      if (data?.simulated) {
+        toast.warning("Envio simulado (modo teste ativo)", {
+          description: "Nenhum e-mail foi enviado de fato. Desative o modo teste para enviar de verdade.",
+        });
+      } else {
+        toast.success("E-mail de teste enviado!", { description: `Para: ${testRecipient}` });
+      }
     } catch (err) {
       toast.error("Erro ao enviar e-mail de teste", {
         description: err instanceof Error ? err.message : "Erro desconhecido",
