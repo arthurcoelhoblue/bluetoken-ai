@@ -378,10 +378,11 @@ Deno.serve(async (req) => {
 
     // 6b. Send message to the conversation via POST /conversations/{id}/messages
     try {
-      const sendRes = await fetch(`${bcConfig.baseUrl}/conversations/${conversationId}/messages`, {
+      const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
         method: "POST",
         headers: bcHeaders,
         body: JSON.stringify({
+          conversation_id: conversationId,
           content: greetingMessage,
           source: "AMELIA_SDR",
         }),
