@@ -334,10 +334,10 @@ Deno.serve(async (req) => {
     };
 
     // 6. Check if there's an existing conversation_id in framework_data
-    let conversationId: string | null =
-      (ctx.convState?.framework_data as Record<string, unknown>)?.bluechat_conversation_id as string | null ?? null;
+    const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
+    let conversationId: string | null = (fwData.bluechat_conversation_id as string) || null;
     let messageId: string | null = null;
-    let ticketId: string | null = null;
+    let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
     // 6a. If no existing conversation, open one via POST /conversations
     if (!conversationId) {
@@ -467,6 +467,7 @@ Deno.serve(async (req) => {
         framework_data: {
           ...(ctx.convState?.framework_data as Record<string, unknown> || {}),
           bluechat_conversation_id: conversationId,
+          bluechat_ticket_id: ticketId,
         },
         ultimo_contato_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
