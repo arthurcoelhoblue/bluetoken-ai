@@ -13,6 +13,7 @@ import { checkWebhookRateLimit, rateLimitResponse } from "../_shared/webhook-rat
 
 import type { BlueChatPayload, BlueChatResponse, LeadContact } from "./types.ts";
 import { blueChatSchema } from "./schemas.ts";
+import { isNativeBlueChat, adaptNativePayload } from "./payload-adapter.ts";
 import { validateAuth, validateAuthAsync } from "./auth.ts";
 import { normalizePhone, extractFirstName, findLeadByPhone, createLead } from "./contact-resolver.ts";
 import { parseTriageSummary, enrichLeadFromTriage } from "./triage.ts";
@@ -55,13 +56,19 @@ serve(async (req) => {
   const clonedReq = req.clone();
 
   try {
-    const rawPayload = await req.json();
+    let rawPayload = await req.json();
 
     // Debug: log raw payload before validation
     log.info('Payload bruto recebido', {
       keys: Object.keys(rawPayload),
       raw: JSON.stringify(rawPayload).substring(0, 500),
     });
+
+    // Adaptar payload nativo do Blue Chat se necessário
+    if (isNativeBlueChat(rawPayload)) {
+      log.info('Payload nativo do Blue Chat detectado, adaptando...', { event: rawPayload.event });
+      rawPayload = adaptNativePayload(rawPayload);
+    }
 
     // Zod validation
     const parsed = blueChatSchema.safeParse(rawPayload);
