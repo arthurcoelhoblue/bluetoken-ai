@@ -68,7 +68,7 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
           </div>
           <div className="flex items-center gap-1">
             {/* "Abordar via Amélia" — visible only when channel is Blue Chat and deal is open */}
-            {isBluechat && !isClosed && (legacyLeadId || contactId) && leadEmpresa && (
+            {isBluechat && !isClosed && ((legacyLeadId && legacyLeadId.trim()) || contactId) && leadEmpresa && (
               <Button
                 variant="ghost"
                 size="icon"
@@ -79,8 +79,8 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
                   try {
                     const { data, error } = await supabase.functions.invoke('sdr-proactive-outreach', {
                       body: {
-                        lead_id: legacyLeadId || undefined,
-                        contact_id: !legacyLeadId ? contactId : undefined,
+                        lead_id: legacyLeadId && legacyLeadId.trim() ? legacyLeadId : undefined,
+                        contact_id: (!legacyLeadId || !legacyLeadId.trim()) ? contactId : undefined,
                         empresa: leadEmpresa,
                         motivo: 'Acionado manualmente pelo painel',
                         bypass_rate_limit: true,
