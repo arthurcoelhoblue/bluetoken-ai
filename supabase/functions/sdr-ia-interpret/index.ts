@@ -173,46 +173,61 @@ serve(async (req) => {
     // Anti-limbo patches — usar ia_null_count com threshold de 3
     const frameworkData = (parsedContext.conversationState as Record<string, unknown>)?.framework_data as Record<string, unknown> || {};
     const iaNullCount = (frameworkData.ia_null_count as number) || 0;
+
+    // Check if classifier flagged this as a contextual short reply (numeral answer to outbound question)
+    const isContextualShortReply = !!(classifierResult as Record<string, unknown>)._isContextualShortReply;
+
     // Improved: OUTRO with high confidence + valid response = progress, not failure
-    const isFailedIntent = classifierResult.intent === 'NAO_ENTENDI'
-      || (classifierResult.intent === 'OUTRO' && (classifierResult.confidence < 0.8 || !classifierResult.resposta_sugerida || classifierResult.resposta_sugerida.length <= 20));
+    const isFailedIntent = !isContextualShortReply && (
+      classifierResult.intent === 'NAO_ENTENDI'
+      || (classifierResult.intent === 'OUTRO' && (classifierResult.confidence < 0.8 || !classifierResult.resposta_sugerida || classifierResult.resposta_sugerida.length <= 20))
+    );
     const ESCALATION_THRESHOLD = 3;
 
     // Check if conversation is advanced enough to skip anti-limbo clarifications
-    const convState = parsedContext.conversationState as Record<string, unknown> || {};
-    const estadoFunil = convState.estado_funil as string || '';
+    const convStateAntiLimbo = parsedContext.conversationState as Record<string, unknown> || {};
+    const estadoFunil = convStateAntiLimbo.estado_funil as string || '';
     const spinData = (frameworkData.spin || frameworkData.SPIN) as Record<string, unknown> || {};
     const spinFilled = !!(spinData.s && spinData.p);
     const isAdvancedFunnel = ['FECHAMENTO', 'NEGOCIACAO', 'PROPOSTA', 'SQL'].includes(estadoFunil);
 
-    if (source === 'BLUECHAT' && isFailedIntent) {
+    // Log decision context for observability
+    log.info('Anti-limbo context', {
+      messageId, leadId: msg.lead_id, estadoFunil, iaNullCount,
+      isContextualShortReply, isFailedIntent, isAdvancedFunnel, spinFilled,
+      intent: classifierResult.intent, confidence: classifierResult.confidence,
+    });
+
+    if (source === 'BLUECHAT' && isContextualShortReply) {
+      // Contextual short reply: treat as progress, decay counter
+      if (iaNullCount > 0) {
+        classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
+      }
+      log.info('Anti-limbo: resposta curta contextual detectada — tratando como progresso', {
+        intent: classifierResult.intent, confidence: classifierResult.confidence,
+      });
+    } else if (source === 'BLUECHAT' && isFailedIntent) {
       const hasContext = (parsedContext.historico || []).length >= 2;
       const newCount = iaNullCount + 1;
 
       // If funnel is advanced and SPIN is filled, force AI response instead of canned "Não entendi"
       if (isAdvancedFunnel && spinFilled && respostaTexto && respostaTexto.length > 20) {
-        // Use the AI-generated response even though confidence is low — we have enough context
         classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
         classifierResult.deve_responder = true;
-        // Decay counter by 1 instead of full reset
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
         log.info('Anti-limbo: funil avançado, usando resposta IA em vez de clarificação', { estadoFunil, iaNullCount, spinFilled });
       } else if (!hasContext && classifierResult.intent === 'NAO_ENTENDI') {
-        // Guardar novo count para o action-executor persistir
         classifierResult._ia_null_count_update = newCount;
-        // Primeira mensagem sem contexto: saudação
         respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
         classifierResult.deve_responder = true;
       } else if (newCount >= ESCALATION_THRESHOLD) {
         classifierResult._ia_null_count_update = newCount;
-        // 3+ falhas consecutivas: agora sim escala
         respostaTexto = respostaTexto || 'Hmm, deixa eu pedir ajuda de alguém da equipe. Já já entram em contato!';
         classifierResult.acao = 'ESCALAR_HUMANO';
         classifierResult.deve_responder = true;
         log.info('Anti-limbo: escalando após 3 falhas consecutivas', { iaNullCount: newCount });
       } else {
         classifierResult._ia_null_count_update = newCount;
-        // Falha 1 ou 2: pedir esclarecimento
         const clarificationMessages = [
           'Não entendi bem. Pode me explicar melhor o que você precisa?',
           'Ainda não consegui entender. Pode reformular de outra forma?',
@@ -223,7 +238,6 @@ serve(async (req) => {
         log.info('Anti-limbo: pedindo esclarecimento', { iaNullCount: newCount });
       }
     } else if (source === 'BLUECHAT' && !isFailedIntent) {
-      // IA entendeu: decay counter by 1 instead of full reset to prevent endless loop
       if (iaNullCount > 0) {
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
         log.info('Anti-limbo: decaying ia_null_count', { previousCount: iaNullCount, newCount: iaNullCount - 1 });
