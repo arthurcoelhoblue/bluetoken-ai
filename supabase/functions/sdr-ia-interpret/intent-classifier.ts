@@ -513,7 +513,7 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     maxTokens: 1500,
     promptVersionId: selectedPromptVersionId || undefined,
     supabase,
-    model: 'gemini-flash',
+    // Uses default provider chain: Claude Sonnet 4.6 → Gemini Pro → GPT-4o
   });
 
   let result: ClassifierResult | null = null;
