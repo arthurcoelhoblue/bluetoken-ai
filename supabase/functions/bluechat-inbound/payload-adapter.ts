@@ -25,6 +25,13 @@ interface BlueChatNativePayload {
     phone: string;
     email?: string | null;
   };
+  message?: {
+    id?: string;
+    content?: string;
+    type?: string;
+    mediaUrl?: string | null;
+    timestamp?: string;
+  };
   conversation?: Array<{
     role: string;
     content: string;
@@ -124,11 +131,14 @@ function mapDepartmentToEmpresa(ticket: BlueChatNativePayload['ticket']): string
 export function adaptNativePayload(raw: Record<string, unknown>): Record<string, unknown> {
   const native = raw as unknown as BlueChatNativePayload;
 
-  const lastMessage = extractLastCustomerMessage(
-    native.conversation,
-    native.summary as string | undefined,
-    native.instruction as string | undefined,
-  );
+  // Prioridade: message.content (mensagem atual) > conversation (histórico)
+  const lastMessage = (native.message?.content?.trim())
+    ? native.message.content.trim()
+    : extractLastCustomerMessage(
+        native.conversation,
+        native.summary as string | undefined,
+        native.instruction as string | undefined,
+      );
 
   const conversationSummary = buildConversationSummary(
     native.conversation,
@@ -140,7 +150,9 @@ export function adaptNativePayload(raw: Record<string, unknown>): Record<string,
   const adapted = {
     conversation_id: native.ticket.id,
     ticket_id: native.ticket.id,
-    message_id: `bc-${native.ticket.id}-${Date.now()}`,
+    message_id: native.message?.id
+      ? `bc-${native.message.id}`
+      : `bc-${native.ticket.id}-${Date.now()}`,
     timestamp: native.timestamp,
     channel: 'WHATSAPP' as const,
     contact: {
