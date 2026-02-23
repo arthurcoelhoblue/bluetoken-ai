@@ -1,103 +1,96 @@
 
-Objetivo
-- Resolver o looping na conversa do Arthur (+351910506655), onde a Amélia “avança” e em seguida volta para mensagens de “não entendi”, mesmo com contexto já construído.
+Resumo do debug profundo (com dados reais da conversa do Arthur)
+- O contexto do Arthur NÃO está perdido.
+  - `lead_conversation_state` do lead `3c6f90e1-194f-4c69-b0d8-e5c3a7ddfaf8` está em `FECHAMENTO`.
+  - `framework_data.spin` está preenchido (`s/p/i/n`) e atualizado.
+- O loop acontece porque a classificação cai repetidamente em fallback determinístico (`OUTRO`, confiança `0.3`) em mensagens que são claras.
+  - Exemplos reais das últimas mensagens:
+    - “Usei 3” → `OUTRO 0.3`, `intent_summary = Classificação determinística`
+    - “Usei 3 exchanges” → `OUTRO 0.3`, `Classificação determinística`
+    - “Mas como vcs coletam os dados das exchanges?” → `OUTRO 0.3`, `Classificação determinística`
+    - “Não, quero entender melhor. Vocês me dão suporte pra eu fazer o IR?” → `OUTRO 0.3`, `Classificação determinística`
+- Em paralelo, há respostas boas intercaladas (`OUTRO 0.98`) — por isso parece que “vai e volta”.
+  - Ex.: “Quero saber como vcs coletam...” teve resposta técnica ótima.
+  - Logo em seguida volta para “Não entendi...”.
 
-Diagnóstico consolidado (baseado no que está no banco e logs)
-1) O contexto do Arthur existe e está preenchido
-- `lead_conversation_state` do lead está em `estado_funil = FECHAMENTO`.
-- `framework_data.spin` está preenchido (`s/p/i/n`) e `ia_null_count = 2`.
-- Portanto, não é “falta de contexto salvo”; é falha de uso do contexto na decisão da próxima resposta.
+Resposta direta à sua pergunta sobre modelo
+- Não é “só o modelo”, mas o modelo está contribuindo.
+- Hoje o `sdr-intent-classifier` força `model: 'gemini-flash'` (resolve para `gemini-3-flash-preview`), e o pipeline depende de JSON estrito em texto livre.
+- Evidência de fragilidade:
+  - Últimas 24h (empresa BLUE): 35 classificações, 14 com `Classificação determinística` (40% de fallback).
+- Conclusão:
+  - O problema principal é contrato de saída frágil (JSON parse) + lógica de fallback/anti-limbo.
+  - O modelo atual amplifica isso por variar mais formato de saída.
 
-2) O looping recente acontece exatamente após resposta curta contextual
-- Sequência observada:
-  - Amélia pergunta preço/plano e “quantas exchanges você usou”.
-  - Arthur responde “Usei 3” / “Usei 3 exchanges”.
-  - Classificador retorna `intent=OUTRO`, `confidence=0.3`, com resposta de clarificação.
-- Isso dispara anti-limbo de clarificação novamente, mesmo sendo resposta válida de continuidade.
+Onde está falhando exatamente (arquivos e pontos)
+1) `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
+- Falha estrutural:
+  - Quando não consegue parsear JSON, cai em:
+    - `intent: 'OUTRO'`
+    - `confidence: 0.3`
+    - `summary: 'Classificação determinística'`
+- Isso está disparando em mensagens normais do Arthur.
+- Bug de lógica na detecção de resposta curta contextual:
+  - O código faz `reverse().find(...)` para achar a “última outbound”.
+  - Como o histórico já vem em ordem decrescente, esse `reverse()` faz pegar a outbound antiga (não a mais recente).
+  - Resultado: override de “Usei 3” não ativa.
 
-3) Problema estrutural adicional que agrava inconsistência
-- Em `bluechat-inbound/index.ts`, há `upsert` em `lead_conversation_state` com `onConflict: 'lead_id,empresa'`.
-- A tabela possui UNIQUE em `(lead_id, empresa, canal)`, então esse `onConflict` é inválido.
-- Isso gera erro SQL recorrente (“no unique or exclusion constraint matching ON CONFLICT”), deixando dados auxiliares (como `bluechat_conversation_id`) desatualizados.
+2) `supabase/functions/sdr-ia-interpret/index.ts`
+- Anti-limbo trata `OUTRO 0.3` como falha e injeta clarificação (“Não entendi...”).
+- Como isso acontece de forma intermitente, gera o padrão de looping percebido na conversa.
 
-4) Risco de perda de mensagens por deduplicação excessiva
-- Há dedupe por conteúdo nos últimos 30s sem escopo por lead/conversa (`eq('conteudo', payload.message.text)` global).
-- Isso pode suprimir mensagens legítimas de leads diferentes com texto igual (“sim”, “ok”, “usei 3”), causando sensação de “sem contexto”.
+3) `supabase/functions/bluechat-inbound/index.ts`
+- Existe dedupe por conteúdo em 30s (escopado por lead).
+- Em cenários de repetição legítima (“Usei 3”, “como assim?”), pode silenciar nova tentativa válida e atrapalhar recuperação de contexto.
 
-Plano de correção (implementação)
-Fase 1 — Corrigir persistência de estado (alta prioridade)
-- Arquivo: `supabase/functions/bluechat-inbound/index.ts`
-- Ajustes:
-  - Remover `upsert(... onConflict: 'lead_id,empresa')` para `lead_conversation_state`.
-  - Trocar por estratégia segura:
-    - `update` por `(lead_id, empresa)` quando existir estado.
-    - fallback `insert` com `canal: 'WHATSAPP'` quando não existir.
-  - Resultado esperado: parar erros SQL de ON CONFLICT e manter `framework_data`/conversation metadata consistentes.
+Plano de correção proposto (implementação)
+Fase 1 — Corrigir a causa principal do “vai e volta” (classificação instável)
+- Arquivo: `sdr-ia-interpret/intent-classifier.ts`
+- Ações:
+  1. Fortalecer parser de saída:
+     - Extração robusta de JSON (não-gulosa/balanceada).
+     - Se parse falhar, fazer “repair pass” controlado (segunda tentativa para retornar JSON válido) antes do fallback 0.3.
+  2. Registrar motivo explícito do fallback (parse_fail, empty_content, schema_invalid) para observabilidade.
+  3. Aplicar validação de schema em runtime antes de aceitar resultado.
 
-Fase 2 — Tornar o classificador robusto para “respostas curtas de continuidade”
-- Arquivo: `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
-- Ajustes:
-  - Incluir regra determinística antes/depois da IA para detectar resposta curta contextual:
-    - quando a última OUTBOUND da Amélia foi pergunta objetiva (ex.: “quantas exchanges”, “quantas operações”, “volume”),
-    - e a INBOUND atual traz número/quantificador curto (“usei 3”, “3 exchanges”, “duas”, “poucas”).
-  - Nesses casos:
-    - não classificar como falha (`OUTRO 0.3`);
-    - forçar intenção útil (ex.: `DUVIDA_PRECO`/`INTERESSE_IR` conforme contexto), `deve_responder=true`;
-    - gerar `resposta_sugerida` de continuidade (sem pedir “pode reformular?”).
-  - Manter compatível com SPIN/BANT/GPCT já normalizados.
+Fase 2 — Corrigir bug da resposta curta contextual
+- Arquivo: `sdr-ia-interpret/intent-classifier.ts`
+- Ações:
+  1. Remover a inversão incorreta na busca da última outbound.
+  2. Garantir que “Usei 3”, “3 exchanges”, “duas”, etc. após pergunta objetiva da Amélia entrem como progresso.
+  3. Marcar `_isContextualShortReply = true` de forma confiável.
 
-Fase 3 — Blindagem do anti-limbo para não punir resposta contextual válida
-- Arquivo: `supabase/functions/sdr-ia-interpret/index.ts`
-- Ajustes:
-  - Antes de aplicar fallback de clarificação, calcular `isContextualShortReply` usando:
-    - mensagem atual curta + presença de numeral/quantificador,
-    - última pergunta outbound recente da Amélia.
-  - Se `isContextualShortReply=true`, tratar como progresso:
-    - não incrementar `ia_null_count`;
-    - preferir resposta de continuidade (mesmo com confiança menor).
-  - Manter escalonamento de 3 falhas reais para casos realmente sem compreensão.
+Fase 3 — Blindar anti-limbo para não punir mensagens claras
+- Arquivo: `sdr-ia-interpret/index.ts`
+- Ações:
+  1. Se houver sinais semânticos claros de dúvida de produto/preço/processo (“como”, “preço”, “suporte”, “exchange”, “IR”), não cair em “não entendi” mesmo se classificação vier fraca.
+  2. Tratar fallback determinístico como “incerteza técnica de parser/modelo”, não como incompreensão do lead.
+  3. Preservar escalonamento apenas para falhas reais consecutivas.
 
-Fase 4 — Corrigir deduplicação para evitar supressão indevida
-- Arquivo: `supabase/functions/bluechat-inbound/index.ts`
-- Ajustes:
-  - Remover ou escopar dedupe por conteúdo:
-    - incluir `lead_id` e `empresa` (ou `conversation_id`) no filtro;
-    - preferir dedupe por `whatsapp_message_id` (já existe no `saveInboundMessage`).
-  - Evitar dedupe global cross-lead por texto idêntico.
+Fase 4 — Ajustar deduplicação para não suprimir retomada legítima
+- Arquivo: `bluechat-inbound/index.ts`
+- Ações:
+  1. Priorizar idempotência por `whatsapp_message_id`.
+  2. Reduzir impacto do dedupe por conteúdo (manter apenas como proteção secundária e mais restrita).
 
-Fase 5 — Observabilidade para fechar o ciclo de debug
-- Arquivos:
-  - `supabase/functions/sdr-ia-interpret/index.ts`
-  - `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
-  - `supabase/functions/bluechat-inbound/index.ts`
-- Logs adicionais:
-  - `messageId`, `lead_id`, `estado_funil`, `ia_null_count`, `isContextualShortReply`,
-  - motivo da decisão (clarificação vs continuidade vs escalação),
-  - identificação da “última pergunta outbound” usada como contexto.
+Fase 5 — Responder sua dúvida de modelo com teste A/B controlado
+- Arquivo: `sdr-ia-interpret/intent-classifier.ts` + `_shared/ai-provider.ts`
+- Ações:
+  1. Rodar canário:
+     - caminho A: atual (Gemini Flash)
+     - caminho B: fallback de maior robustez de formato (ex.: Claude via cadeia já existente)
+  2. Medir:
+     - taxa de `Classificação determinística`
+     - taxa de “Não entendi” indevido
+     - continuidade sem loop por conversa
+  3. Decidir modelo por evidência, não percepção.
 
-Validação (focada no Arthur)
-1) Reproduzir com sequência real:
-- “Antes preciso saber dos preços...”
-- “Usei 3”
-- “Usei 3 exchanges”
+Critérios de sucesso (aceite)
+- Conversa do Arthur não volta para “Não entendi...” após “Usei 3” e após perguntas claras sobre processo.
+- Queda da taxa de `Classificação determinística` para patamar baixo e estável.
+- `ia_null_count` deixa de subir em respostas contextuais válidas.
+- Continuidade de funil em `FECHAMENTO` com respostas técnicas consistentes.
 
-2) Resultado esperado:
-- sem mensagens “Não entendi...” nesses dois últimos passos;
-- resposta de continuidade contextual;
-- `ia_null_count` não sobe indevidamente.
-
-3) Verificações de dados:
-- novos registros em `lead_message_intents` com confiança/intent coerentes;
-- `lead_conversation_state.framework_data` atualizado sem erros de upsert;
-- ausência de novos erros SQL de ON CONFLICT nos logs.
-
-Riscos e mitigação
-- Risco: regras contextuais ficarem específicas demais.
-  - Mitigação: implementar heurística genérica baseada em “última pergunta outbound + resposta curta com numeral”, não hardcode por frase única.
-- Risco: reduzir dedupe e aceitar duplicata real.
-  - Mitigação: manter dedupe por `whatsapp_message_id` como controle primário (idempotência).
-
-Resultado esperado final
-- A Amélia para de “perder a linha” após respostas curtas válidas.
-- Conversa com Arthur continua de forma consultiva sem regressão para loop de clarificação.
-- Estado conversacional passa a ser persistido de forma consistente, sem erro estrutural de conflito.
+Risco principal e mitigação
+- Risco: trocar modelo sem corrigir parser/lógica e manter loop.
+- Mitigação: atacar primeiro parser + detecção contextual + anti-limbo; depois avaliar modelo com A/B e métrica objetiva.
