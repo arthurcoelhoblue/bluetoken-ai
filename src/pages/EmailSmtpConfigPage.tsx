@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Card,
@@ -53,7 +53,7 @@ interface SmtpConfig {
   from_email: string;
   reply_to: string;
   max_per_day: number;
-  interval_minutes: number;
+  interval_seconds: number;
 }
 
 const DEFAULT_SMTP_CONFIG: SmtpConfig = {
@@ -64,7 +64,12 @@ const DEFAULT_SMTP_CONFIG: SmtpConfig = {
   from_email: "",
   reply_to: "",
   max_per_day: 500,
-  interval_minutes: 1,
+  interval_seconds: 30,
+};
+
+const DEFAULT_MODO_TESTE: EmailModoTeste = {
+  ativo: true,
+  email_teste: "admin@grupoblue.com.br",
 };
 
 export default function EmailSmtpConfigPage() {
@@ -75,12 +80,20 @@ export default function EmailSmtpConfigPage() {
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [testRecipient, setTestRecipient] = useState("");
 
-  const modoTeste = getSettingValue<EmailModoTeste>("modo_teste", {
-    ativo: true,
-    email_teste: "admin@grupoblue.com.br",
-  });
-
+  const modoTeste = getSettingValue<EmailModoTeste>("modo_teste", DEFAULT_MODO_TESTE);
   const smtpConfig = getSettingValue<SmtpConfig>("smtp_config", DEFAULT_SMTP_CONFIG);
+
+  // Local state for fluid typing
+  const [localSmtp, setLocalSmtp] = useState<SmtpConfig>(DEFAULT_SMTP_CONFIG);
+  const [localModoTeste, setLocalModoTeste] = useState<EmailModoTeste>(DEFAULT_MODO_TESTE);
+
+  useEffect(() => {
+    setLocalSmtp(smtpConfig);
+  }, [JSON.stringify(smtpConfig)]);
+
+  useEffect(() => {
+    setLocalModoTeste(modoTeste);
+  }, [JSON.stringify(modoTeste)]);
 
   const status = getStatus("email");
 
@@ -105,7 +118,6 @@ export default function EmailSmtpConfigPage() {
       const read = sent.filter((m) => m.estado === "LIDO");
       const errors = sent.filter((m) => m.estado === "ERRO");
 
-      // Stats per week
       const now = new Date();
       const weeklyData = [];
       for (let i = 3; i >= 0; i--) {
@@ -179,27 +191,17 @@ export default function EmailSmtpConfigPage() {
   };
 
   const handleToggleModoTeste = (ativo: boolean) => {
-    updateSetting.mutate({
-      category: "email",
-      key: "modo_teste",
-      value: { ...modoTeste, ativo },
-    });
+    const updated = { ...localModoTeste, ativo };
+    setLocalModoTeste(updated);
+    updateSetting.mutate({ category: "email", key: "modo_teste", value: updated });
   };
 
-  const handleEmailTesteChange = (email_teste: string) => {
-    updateSetting.mutate({
-      category: "email",
-      key: "modo_teste",
-      value: { ...modoTeste, email_teste },
-    });
+  const saveSmtpField = () => {
+    updateSetting.mutate({ category: "email", key: "smtp_config", value: localSmtp as unknown as Record<string, unknown> });
   };
 
-  const handleSmtpConfigChange = (field: keyof SmtpConfig, value: string | number) => {
-    updateSetting.mutate({
-      category: "email",
-      key: "smtp_config",
-      value: { ...smtpConfig, [field]: value },
-    });
+  const saveModoTeste = () => {
+    updateSetting.mutate({ category: "email", key: "modo_teste", value: localModoTeste as unknown as Record<string, unknown> });
   };
 
   if (isLoading) {
@@ -281,9 +283,7 @@ export default function EmailSmtpConfigPage() {
               <Server className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Servidor SMTP</CardTitle>
             </div>
-            <CardDescription>
-              Configurações do servidor de envio
-            </CardDescription>
+            <CardDescription>Configurações do servidor de envio</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -291,8 +291,9 @@ export default function EmailSmtpConfigPage() {
               <Input
                 id="smtp_host"
                 placeholder="smtp.gmail.com"
-                value={smtpConfig.host}
-                onChange={(e) => handleSmtpConfigChange("host", e.target.value)}
+                value={localSmtp.host}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, host: e.target.value }))}
+                onBlur={saveSmtpField}
               />
             </div>
             <div className="grid grid-cols-2 gap-4">
@@ -301,15 +302,20 @@ export default function EmailSmtpConfigPage() {
                 <Input
                   id="smtp_port"
                   type="number"
-                  value={smtpConfig.port}
-                  onChange={(e) => handleSmtpConfigChange("port", parseInt(e.target.value) || 465)}
+                  value={localSmtp.port}
+                  onChange={(e) => setLocalSmtp((s) => ({ ...s, port: parseInt(e.target.value) || 465 }))}
+                  onBlur={saveSmtpField}
                 />
               </div>
               <div className="space-y-2">
                 <Label>Criptografia</Label>
                 <Select
-                  value={smtpConfig.encryption}
-                  onValueChange={(v) => handleSmtpConfigChange("encryption", v)}
+                  value={localSmtp.encryption}
+                  onValueChange={(v) => {
+                    const updated = { ...localSmtp, encryption: v as SmtpConfig["encryption"] };
+                    setLocalSmtp(updated);
+                    updateSetting.mutate({ category: "email", key: "smtp_config", value: updated as unknown as Record<string, unknown> });
+                  }}
                 >
                   <SelectTrigger>
                     <SelectValue />
@@ -336,9 +342,7 @@ export default function EmailSmtpConfigPage() {
               <Send className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Remetente</CardTitle>
             </div>
-            <CardDescription>
-              Identidade do envio de e-mails
-            </CardDescription>
+            <CardDescription>Identidade do envio de e-mails</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -346,8 +350,9 @@ export default function EmailSmtpConfigPage() {
               <Input
                 id="from_name"
                 placeholder="Blue CRM"
-                value={smtpConfig.from_name}
-                onChange={(e) => handleSmtpConfigChange("from_name", e.target.value)}
+                value={localSmtp.from_name}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, from_name: e.target.value }))}
+                onBlur={saveSmtpField}
               />
             </div>
             <div className="space-y-2">
@@ -356,8 +361,9 @@ export default function EmailSmtpConfigPage() {
                 id="from_email"
                 type="email"
                 placeholder="noreply@empresa.com"
-                value={smtpConfig.from_email}
-                onChange={(e) => handleSmtpConfigChange("from_email", e.target.value)}
+                value={localSmtp.from_email}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, from_email: e.target.value }))}
+                onBlur={saveSmtpField}
               />
             </div>
             <div className="space-y-2">
@@ -366,8 +372,9 @@ export default function EmailSmtpConfigPage() {
                 id="reply_to"
                 type="email"
                 placeholder="contato@empresa.com"
-                value={smtpConfig.reply_to}
-                onChange={(e) => handleSmtpConfigChange("reply_to", e.target.value)}
+                value={localSmtp.reply_to}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, reply_to: e.target.value }))}
+                onBlur={saveSmtpField}
               />
             </div>
           </CardContent>
@@ -380,9 +387,7 @@ export default function EmailSmtpConfigPage() {
               <ShieldCheck className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Limites de Envio</CardTitle>
             </div>
-            <CardDescription>
-              Controle de frequência para evitar spam
-            </CardDescription>
+            <CardDescription>Controle de frequência para evitar spam</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
@@ -390,24 +395,22 @@ export default function EmailSmtpConfigPage() {
               <Input
                 id="max_per_day"
                 type="number"
-                value={smtpConfig.max_per_day}
-                onChange={(e) =>
-                  handleSmtpConfigChange("max_per_day", parseInt(e.target.value) || 500)
-                }
+                value={localSmtp.max_per_day}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, max_per_day: parseInt(e.target.value) || 500 }))}
+                onBlur={saveSmtpField}
               />
               <p className="text-xs text-muted-foreground">
                 Limite total de e-mails enviados por dia
               </p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="interval_minutes">Intervalo mínimo (minutos)</Label>
+              <Label htmlFor="interval_seconds">Intervalo mínimo (segundos)</Label>
               <Input
-                id="interval_minutes"
+                id="interval_seconds"
                 type="number"
-                value={smtpConfig.interval_minutes}
-                onChange={(e) =>
-                  handleSmtpConfigChange("interval_minutes", parseInt(e.target.value) || 1)
-                }
+                value={localSmtp.interval_seconds}
+                onChange={(e) => setLocalSmtp((s) => ({ ...s, interval_seconds: parseInt(e.target.value) || 30 }))}
+                onBlur={saveSmtpField}
               />
               <p className="text-xs text-muted-foreground">
                 Tempo mínimo entre envios consecutivos
@@ -423,9 +426,7 @@ export default function EmailSmtpConfigPage() {
               <TestTube className="h-4 w-4 text-muted-foreground" />
               <CardTitle className="text-base">Modo de Teste</CardTitle>
             </div>
-            <CardDescription>
-              Redireciona todos os e-mails para um endereço de teste
-            </CardDescription>
+            <CardDescription>Redireciona todos os e-mails para um endereço de teste</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex items-center justify-between">
@@ -435,16 +436,17 @@ export default function EmailSmtpConfigPage() {
                   Nenhum e-mail real será enviado a leads
                 </p>
               </div>
-              <Switch checked={modoTeste.ativo} onCheckedChange={handleToggleModoTeste} />
+              <Switch checked={localModoTeste.ativo} onCheckedChange={handleToggleModoTeste} />
             </div>
-            {modoTeste.ativo && (
+            {localModoTeste.ativo && (
               <div className="space-y-2">
                 <Label htmlFor="email_teste_full">E-mail de redirecionamento</Label>
                 <Input
                   id="email_teste_full"
                   type="email"
-                  value={modoTeste.email_teste}
-                  onChange={(e) => handleEmailTesteChange(e.target.value)}
+                  value={localModoTeste.email_teste}
+                  onChange={(e) => setLocalModoTeste((s) => ({ ...s, email_teste: e.target.value }))}
+                  onBlur={saveModoTeste}
                   placeholder="admin@empresa.com"
                 />
               </div>
@@ -523,7 +525,6 @@ export default function EmailSmtpConfigPage() {
                 </div>
               </div>
 
-              {/* Weekly breakdown */}
               <div>
                 <p className="mb-2 text-sm font-medium text-muted-foreground">Envios por semana</p>
                 <div className="grid grid-cols-4 gap-2">
