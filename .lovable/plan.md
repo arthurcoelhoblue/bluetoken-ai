@@ -1,79 +1,53 @@
 
 
-# Corrigir integração Blue Chat (Inbound + Outbound)
+# Corrigir RLS de `lead_conversation_state` para permitir takeover
 
-## Problemas identificados
+## Problema
 
-1. **Inbound (Blue Chat -> Amelia)**: 8 chamadas, 0 sucesso
-   - 4x HTTP 401: Blue Chat nao envia token de autenticacao
-   - 4x HTTP 400: Payload nao passa na validacao Zod (formato diferente do esperado)
+A tabela `lead_conversation_state` nao tem policy de UPDATE para usuarios autenticados. Apenas `service_role` e o role `SDR_IA` podem modificar registros. Quando um ADMIN ou VENDEDOR clica em "Devolver a Amelia", o PATCH retorna 204 mas 0 linhas sao atualizadas, deixando o lead permanentemente em modo MANUAL.
 
-2. **Outbound (Amelia -> Blue Chat)**: Endpoint `/conversations` retorna 404, `/messages` exige `ticketId`
+## Correcao
 
-## Plano de correcao
+### Etapa 1: Criar migration com nova RLS policy
 
-### Etapa 1: Adicionar logging do payload bruto no inbound
+Adicionar uma policy que permite UPDATE para usuarios autenticados na propria empresa:
 
-Antes da validacao Zod, logar o payload bruto recebido para entender exatamente o formato que o Blue Chat esta enviando. Isso e critico para ajustar o schema.
-
-**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
-
-- Antes do `blueChatSchema.safeParse(rawPayload)`, adicionar:
-```
-log.info('Payload bruto recebido', { 
-  keys: Object.keys(rawPayload), 
-  raw: JSON.stringify(rawPayload).substring(0, 500) 
-});
-```
-
-- No bloco de erro do Zod, logar o payload que falhou:
-```
-log.error('Validacao Zod falhou', { 
-  errors: parsed.error.errors, 
-  payloadKeys: Object.keys(rawPayload),
-  rawPreview: JSON.stringify(rawPayload).substring(0, 300)
-});
+```sql
+CREATE POLICY "Authenticated users can update conversation_state in own empresa"
+ON public.lead_conversation_state
+FOR UPDATE
+TO authenticated
+USING (
+  (empresa::text = ANY (get_user_empresas(auth.uid())))
+)
+WITH CHECK (
+  (empresa::text = ANY (get_user_empresas(auth.uid())))
+);
 ```
 
-### Etapa 2: Flexibilizar autenticacao para debug
+### Etapa 2: Corrigir o estado do Arthur Coelho manualmente
 
-As 4 chamadas 401 mostram que o Blue Chat nao envia token. Precisamos verificar se ha um outro header sendo usado (ex: `x-webhook-secret`, query param, etc).
+Executar via migration para devolver o lead ao modo SDR_IA (ja que a acao anterior falhou silenciosamente):
 
-**Arquivo**: `supabase/functions/bluechat-inbound/index.ts`
-
-- Logar todos os headers recebidos quando a autenticacao falha:
+```sql
+UPDATE lead_conversation_state
+SET modo = 'SDR_IA',
+    assumido_por = NULL,
+    devolvido_em = NOW(),
+    updated_at = NOW()
+WHERE lead_id = '3c6f90e1-194f-4c69-b0d8-e5c3a7ddfaf8'
+  AND empresa = 'BLUE';
 ```
-log.warn('Headers recebidos', { 
-  headers: Object.fromEntries(req.headers.entries()),
-  hasAuth: !!req.headers.get('Authorization'),
-  hasApiKey: !!req.headers.get('X-API-Key'),
-});
-```
 
-### Etapa 3: Corrigir outbound (Amelia -> Blue Chat)
+### Etapa 3: Verificar se `conversation_takeover_log` tem o mesmo problema
 
-O endpoint `/api/external-ai/conversations` nao existe no Blue Chat. Conforme a memoria do projeto, o protocolo correto e enviar sempre via `POST /messages` com `phone` obrigatorio e `ticketId` quando disponivel.
-
-**Arquivo**: `supabase/functions/sdr-proactive-outreach/index.ts`
-
-- Remover a tentativa de chamar `/conversations` (retorna 404)
-- Enviar direto para `/messages` com `phone` como identificador primario
-- Incluir `ticketId` do `framework_data` quando disponivel, mas nao falhar se ausente
-
-### Etapa 4: Deploy e teste
-
-1. Deploy das edge functions corrigidas
-2. Disparar um teste manual no `bluechat-inbound` com o token correto para confirmar que o fluxo funciona
-3. Verificar logs para capturar o proximo payload real do Blue Chat
+A tabela `conversation_takeover_log` recebeu INSERT com sucesso (201), entao a policy de INSERT ja funciona. Confirmar que nao ha gaps similares.
 
 ## Arquivos alterados
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/functions/bluechat-inbound/index.ts` | Adicionar logging de payload bruto e headers |
-| `supabase/functions/sdr-proactive-outreach/index.ts` | Remover fallback `/conversations`, enviar direto via `/messages` |
+Nenhum arquivo de codigo precisa mudar. O hook `useConversationTakeover` ja faz o PATCH corretamente — o problema e exclusivamente de permissao no banco.
 
 ## Resultado esperado
 
-Apos o deploy, os proximos payloads do Blue Chat serao logados com detalhe suficiente para ajustar o schema. O outbound deixara de tentar um endpoint inexistente.
+Apos a migration, o botao "Devolver a Amelia" vai efetivamente alterar o `modo` para `SDR_IA`, e a Amelia retomara o atendimento automatico quando o lead enviar a proxima mensagem.
 
