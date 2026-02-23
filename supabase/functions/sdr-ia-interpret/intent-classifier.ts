@@ -121,10 +121,47 @@ function inferirPerfilInvestidor(disc: PerfilDISC | null | undefined, mensagem?:
   return null;
 }
 
-function normalizeSubKeys(obj: unknown): FrameworkSubKeys {
+function normalizeKey(rawKey: string): string {
+  return rawKey
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+const FRAMEWORK_ALIASES: Record<'spin' | 'gpct' | 'bant', Record<string, string>> = {
+  spin: {
+    s: 's', situacao: 's', contexto: 's',
+    p: 'p', problema: 'p', dor: 'p', dificuldade: 'p',
+    i: 'i', implicacao: 'i', impacto: 'i', risco: 'i',
+    n: 'n', necessidade: 'n', necessidade_solucao: 'n', need_payoff: 'n', solucao: 'n',
+  },
+  gpct: {
+    g: 'g', goals: 'g', goal: 'g', objetivo: 'g', objetivos: 'g',
+    p: 'p', plans: 'p', plan: 'p', plano: 'p',
+    c: 'c', challenge: 'c', challenges: 'c', desafio: 'c', desafios: 'c',
+    t: 't', timeline: 't', prazo: 't', tempo: 't',
+  },
+  bant: {
+    b: 'b', budget: 'b', orcamento: 'b',
+    a: 'a', authority: 'a', decisor: 'a',
+    n: 'n', need: 'n', necessidade: 'n',
+    t: 't', timing: 't', prazo: 't', tempo: 't',
+  },
+};
+
+function normalizeSubKeys(obj: unknown, framework: 'spin' | 'gpct' | 'bant'): FrameworkSubKeys {
   if (!obj || typeof obj !== 'object') return {};
+  const aliases = FRAMEWORK_ALIASES[framework];
   const result: FrameworkSubKeys = {};
-  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) result[key.toLowerCase()] = value as string | null;
+
+  for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+    const normalized = normalizeKey(key);
+    const canonical = aliases[normalized] || normalized;
+    result[canonical] = value as string | null;
+  }
+
   return result;
 }
 
@@ -132,9 +169,9 @@ function normalizeFrameworkKeys(data: unknown): FrameworkData {
   if (!data || typeof data !== 'object') return {};
   const d = data as Record<string, unknown>;
   return {
-    spin: normalizeSubKeys(d?.spin || d?.SPIN || d?.Spin),
-    gpct: normalizeSubKeys(d?.gpct || d?.GPCT || d?.Gpct),
-    bant: normalizeSubKeys(d?.bant || d?.BANT || d?.Bant),
+    spin: normalizeSubKeys(d?.spin || d?.SPIN || d?.Spin, 'spin'),
+    gpct: normalizeSubKeys(d?.gpct || d?.GPCT || d?.Gpct, 'gpct'),
+    bant: normalizeSubKeys(d?.bant || d?.BANT || d?.Bant, 'bant'),
   };
 }
 

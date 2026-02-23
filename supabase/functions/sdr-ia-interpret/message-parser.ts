@@ -136,7 +136,24 @@ export function detectarLeadProntoParaEscalar(mensagem: string, historico: Histo
   const precoPatterns = ['quanto custa', 'qual o valor', 'qual o preço', 'preço', 'quanto fica', 'quanto é', 'valores'];
   const planoPatterns = ['gold', 'diamond', 'esse plano', 'quero o plano', 'prefiro', 'esse mesmo', 'é esse', 'vou querer'];
 
-  const spin = frameworkData?.spin || {};
+  const rawSpin = (frameworkData?.spin || {}) as Record<string, unknown>;
+  const normalizeKey = (k: string) => k
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  const spinAliases: Record<string, 's' | 'p'> = {
+    s: 's', situacao: 's', contexto: 's',
+    p: 'p', problema: 'p', dor: 'p', dificuldade: 'p',
+  };
+  const spin = Object.entries(rawSpin).reduce<Record<string, unknown>>((acc, [key, value]) => {
+    const normalized = normalizeKey(key);
+    const canonical = spinAliases[normalized] || normalized;
+    acc[canonical] = value;
+    return acc;
+  }, {});
+
   const conscienciaTotalPresente = conscienciaPatterns.some(p => todoTexto.includes(p));
   const aberturaExplicita = aberturaPatterns.some(p => msgLower.includes(p));
   const volumeTempoConhecido = !!(spin.s && spin.p);
