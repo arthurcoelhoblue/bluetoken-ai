@@ -131,6 +131,7 @@ export function useSendManualMessage() {
             conversation_id: bluechatConversationId,
             phone: telefone.replace(/\D/g, ''),
             content: conteudo,
+            sender_name: user?.user_metadata?.nome || user?.user_metadata?.full_name || 'Vendedor',
           },
         });
 

@@ -193,7 +193,7 @@ Deno.serve(async (req) => {
 
   // ── send-message ── (Send message via Blue Chat POST /messages)
   if (action === "send-message") {
-    const { conversation_id, content, phone } = body as { conversation_id?: string; content?: string; phone?: string };
+    const { conversation_id, content, phone, sender_name } = body as { conversation_id?: string; content?: string; phone?: string; sender_name?: string };
     if (!content || (!conversation_id && !phone)) {
       return jsonResponse({ error: "Missing content, and need conversation_id or phone" }, 400);
     }
@@ -205,7 +205,8 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           content,
           type: "TEXT",
-          source: "AMELIA_SDR",
+          source: sender_name ? "MANUAL" : "AMELIA_SDR",
+          senderName: sender_name || "Amélia",
           ...(conversation_id ? { ticketId: conversation_id } : {}),
           ...(phone ? { phone } : {}),
         }),
