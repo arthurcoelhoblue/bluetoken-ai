@@ -502,7 +502,9 @@ Deno.serve(async (req) => {
       const companyName = EMPRESA_TO_COMPANY[empresa] || "Blue Consult";
       const contactName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
 
-      const dispatchUrl = `${bcConfig.baseUrl}/campaign-dispatch/campaign-dispatched`;
+      // baseUrl is like https://host/api/external-ai — campaign-dispatch is a sibling route
+      const apiRoot = bcConfig.baseUrl.replace(/\/external-ai\/?$/, "");
+      const dispatchUrl = `${apiRoot}/campaign-dispatch/campaign-dispatched`;
       const dispatchPayload = {
         event: "campaign.dispatched",
         dispatchedAt: new Date().toISOString(),
