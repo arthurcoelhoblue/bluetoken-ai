@@ -339,8 +339,9 @@ Deno.serve(async (req) => {
     let messageId: string | null = null;
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
-    // 6a. If no existing conversation, open one via POST /conversations
-    if (!conversationId) {
+    // 6a. If no conversation or no ticket, open a new one via POST /conversations
+    // This always returns a fresh ticket_id
+    if (!conversationId || !ticketId) {
       try {
         const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
           method: "POST",
@@ -353,20 +354,21 @@ Deno.serve(async (req) => {
           }),
         });
 
+        const openText = await openRes.text();
+        console.log("Blue Chat open-conversation response:", openRes.status, openText);
+
         if (!openRes.ok) {
-          const errText = await openRes.text();
-          console.error("Blue Chat open-conversation error:", openRes.status, errText);
+          console.error("Blue Chat open-conversation error:", openRes.status, openText);
           return jsonResponse(
-            { error: "Failed to open conversation in Blue Chat", detail: errText },
+            { error: "Failed to open conversation in Blue Chat", detail: openText },
             req,
             openRes.status
           );
         }
 
-        const openData = await openRes.json().catch(() => ({}));
-        console.log("Blue Chat open-conversation response:", JSON.stringify(openData));
-        conversationId = openData?.conversation_id || openData?.conversationId || openData?.id || null;
-        ticketId = openData?.ticket_id || openData?.ticketId || null;
+        const openData = JSON.parse(openText || "{}");
+        conversationId = openData?.conversation_id || openData?.conversationId || openData?.id || conversationId;
+        ticketId = openData?.ticket_id || openData?.ticketId || openData?.ticket?.id || null;
       } catch (err) {
         console.error("open-conversation fetch error:", err);
         return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
@@ -377,39 +379,45 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Could not obtain Blue Chat conversation ID" }, req, 500);
     }
 
-    // 6b. If no ticketId yet, try to get it from the conversation
-    if (!ticketId && conversationId) {
+    // 6b. If still no ticketId, try POST /tickets to create one
+    if (!ticketId) {
       try {
-        const convRes = await fetch(`${bcConfig.baseUrl}/conversations/${conversationId}`, {
-          method: "GET",
+        const ticketRes = await fetch(`${bcConfig.baseUrl}/tickets`, {
+          method: "POST",
           headers: bcHeaders,
+          body: JSON.stringify({
+            conversation_id: conversationId,
+            source: "AMELIA_SDR",
+          }),
         });
-        if (convRes.ok) {
-          const convData = await convRes.json().catch(() => ({}));
-          console.log("Blue Chat conversation detail:", JSON.stringify(convData));
-          ticketId = convData?.ticket_id || convData?.ticketId || convData?.ticket?.id || null;
+        const ticketText = await ticketRes.text();
+        console.log("Blue Chat create-ticket response:", ticketRes.status, ticketText);
+        if (ticketRes.ok) {
+          const ticketData = JSON.parse(ticketText || "{}");
+          ticketId = ticketData?.ticket_id || ticketData?.ticketId || ticketData?.id || null;
         }
       } catch (e) {
-        console.warn("Failed to fetch conversation details for ticketId:", e);
+        console.warn("Failed to create ticket:", e);
       }
     }
 
-    if (!ticketId) {
-      console.error("Could not obtain ticketId for Blue Chat message");
-      return jsonResponse({ error: "Could not obtain Blue Chat ticketId" }, req, 500);
-    }
+    // 6c. Last resort: send without ticketId and let Blue Chat auto-create
+    console.log(`Proceeding with conversationId=${conversationId}, ticketId=${ticketId}`);
 
-    // 6c. Send message via POST /messages
+    // 6d. Send message via POST /messages
     try {
+      const messagePayload: Record<string, unknown> = {
+        conversation_id: conversationId,
+        content: greetingMessage,
+        source: "AMELIA_SDR",
+        phone,
+      };
+      if (ticketId) messagePayload.ticketId = ticketId;
+
       const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
         method: "POST",
         headers: bcHeaders,
-        body: JSON.stringify({
-          conversation_id: conversationId,
-          ticketId: ticketId,
-          content: greetingMessage,
-          source: "AMELIA_SDR",
-        }),
+        body: JSON.stringify(messagePayload),
       });
 
       if (!sendRes.ok) {
