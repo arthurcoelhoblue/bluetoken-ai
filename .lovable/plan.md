@@ -1,97 +1,103 @@
 
-Resumo do que está acontecendo agora (análise profunda, baseada em dados reais)
-- O problema principal neste momento não é “falta de contexto da IA”. O motor de interpretação está quebrando na inicialização (erro de sintaxe), então a Amélia entra no fallback genérico do inbound.
-- Evidência objetiva:
-  1) `bluechat-inbound` está recebendo 503 em todas as tentativas para `sdr-ia-interpret`:
-     - “SDR IA erro (tentativa 1/2/3)” com `status: 503` em sequência.
-  2) Logs de `sdr-ia-interpret` mostram crash de boot:
-     - `Uncaught SyntaxError: Identifier 'convState' has already been declared`
-     - arquivo: `supabase/functions/sdr-ia-interpret/index.ts` (linha do runtime: 210).
-  3) Nas últimas mensagens do Arthur, a partir de ~21:00, quase não há novas interpretações úteis em `lead_message_intents`; o que aparece no chat é fallback (“Desculpa, pode repetir…”), típico de indisponibilidade do interpretador.
-  4) O estado conversacional no banco NÃO está vazio:
-     - `estado_funil: FECHAMENTO`
-     - `spin.s/p/i/n` preenchidos
-     - `ia_null_count: 2`
-    Isso confirma: o contexto existe, mas o processo que deveria usá-lo está indisponível.
+Objetivo
+- Resolver o looping na conversa do Arthur (+351910506655), onde a Amélia “avança” e em seguida volta para mensagens de “não entendi”, mesmo com contexto já construído.
 
-Diagnóstico técnico raiz (root cause)
-1) Quebra de deploy por variável duplicada no mesmo escopo
-- Em `sdr-ia-interpret/index.ts`, existe:
-  - `const convState = ...` (primeiro uso)
-  - depois outro `const convState = ...` (segundo uso no mesmo bloco)
-- Isso gera erro de parse em Deno e impede a função de subir.
-- Resultado direto: toda chamada do inbound para interpretar volta 503.
+Diagnóstico consolidado (baseado no que está no banco e logs)
+1) O contexto do Arthur existe e está preenchido
+- `lead_conversation_state` do lead está em `estado_funil = FECHAMENTO`.
+- `framework_data.spin` está preenchido (`s/p/i/n`) e `ia_null_count = 2`.
+- Portanto, não é “falta de contexto salvo”; é falha de uso do contexto na decisão da próxima resposta.
 
-2) Fallback do inbound transforma indisponibilidade técnica em “loop de qualificação”
-- Quando `callSdrIaInterpret` retorna `null`, o `bluechat-inbound` responde com mensagem genérica e continua o fluxo.
-- Em queda prolongada do interpretador, isso cria repetição (“desculpa, repete…”) sem progressão semântica, parecendo perda de contexto.
+2) O looping recente acontece exatamente após resposta curta contextual
+- Sequência observada:
+  - Amélia pergunta preço/plano e “quantas exchanges você usou”.
+  - Arthur responde “Usei 3” / “Usei 3 exchanges”.
+  - Classificador retorna `intent=OUTRO`, `confidence=0.3`, com resposta de clarificação.
+- Isso dispara anti-limbo de clarificação novamente, mesmo sendo resposta válida de continuidade.
 
-3) Escalação humana com erro de transferência
-- Também há erro no callback de transferência:
-  - `POST /tickets/transfer` 400: “Must specify toDepartmentId or toUserId”.
-- Mesmo quando tenta escalar, a transferência no Blue Chat pode não concluir corretamente.
+3) Problema estrutural adicional que agrava inconsistência
+- Em `bluechat-inbound/index.ts`, há `upsert` em `lead_conversation_state` com `onConflict: 'lead_id,empresa'`.
+- A tabela possui UNIQUE em `(lead_id, empresa, canal)`, então esse `onConflict` é inválido.
+- Isso gera erro SQL recorrente (“no unique or exclusion constraint matching ON CONFLICT”), deixando dados auxiliares (como `bluechat_conversation_id`) desatualizados.
+
+4) Risco de perda de mensagens por deduplicação excessiva
+- Há dedupe por conteúdo nos últimos 30s sem escopo por lead/conversa (`eq('conteudo', payload.message.text)` global).
+- Isso pode suprimir mensagens legítimas de leads diferentes com texto igual (“sim”, “ok”, “usei 3”), causando sensação de “sem contexto”.
 
 Plano de correção (implementação)
-Fase 1 — Hotfix de disponibilidade (prioridade máxima)
+Fase 1 — Corrigir persistência de estado (alta prioridade)
+- Arquivo: `supabase/functions/bluechat-inbound/index.ts`
+- Ajustes:
+  - Remover `upsert(... onConflict: 'lead_id,empresa')` para `lead_conversation_state`.
+  - Trocar por estratégia segura:
+    - `update` por `(lead_id, empresa)` quando existir estado.
+    - fallback `insert` com `canal: 'WHATSAPP'` quando não existir.
+  - Resultado esperado: parar erros SQL de ON CONFLICT e manter `framework_data`/conversation metadata consistentes.
+
+Fase 2 — Tornar o classificador robusto para “respostas curtas de continuidade”
+- Arquivo: `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
+- Ajustes:
+  - Incluir regra determinística antes/depois da IA para detectar resposta curta contextual:
+    - quando a última OUTBOUND da Amélia foi pergunta objetiva (ex.: “quantas exchanges”, “quantas operações”, “volume”),
+    - e a INBOUND atual traz número/quantificador curto (“usei 3”, “3 exchanges”, “duas”, “poucas”).
+  - Nesses casos:
+    - não classificar como falha (`OUTRO 0.3`);
+    - forçar intenção útil (ex.: `DUVIDA_PRECO`/`INTERESSE_IR` conforme contexto), `deve_responder=true`;
+    - gerar `resposta_sugerida` de continuidade (sem pedir “pode reformular?”).
+  - Manter compatível com SPIN/BANT/GPCT já normalizados.
+
+Fase 3 — Blindagem do anti-limbo para não punir resposta contextual válida
 - Arquivo: `supabase/functions/sdr-ia-interpret/index.ts`
-  - Remover colisão de variável (`convState`), renomeando o segundo para algo como `convStateAntiLimbo` (ou equivalente) no bloco anti-limbo.
-  - Objetivo: função voltar a bootar imediatamente e parar os 503.
-
-Fase 2 — Blindagem do fluxo quando o interpretador estiver indisponível
-- Arquivos: 
-  - `supabase/functions/bluechat-inbound/sdr-bridge.ts`
-  - `supabase/functions/bluechat-inbound/index.ts`
 - Ajustes:
-  - Em vez de retornar apenas `null`, retornar erro estruturado (ex.: `status`, `kind: 'infra_unavailable' | 'timeout' | 'client_error'`).
-  - No inbound, separar:
-    - Falha de IA/modelo (conteúdo ruim)
-    - Falha de infraestrutura (503/boot error)
-  - Para falha de infraestrutura:
-    - Não tratar como “não entendi”.
-    - Não fazer loop de perguntas de clarificação.
-    - Responder mensagem de indisponibilidade temporária e escalar uma única vez por janela de tempo/conversa.
-    - Persistir flag curta no `framework_data` (ex.: `sdr_unavailable_until`) para evitar spam repetido.
+  - Antes de aplicar fallback de clarificação, calcular `isContextualShortReply` usando:
+    - mensagem atual curta + presença de numeral/quantificador,
+    - última pergunta outbound recente da Amélia.
+  - Se `isContextualShortReply=true`, tratar como progresso:
+    - não incrementar `ia_null_count`;
+    - preferir resposta de continuidade (mesmo com confiança menor).
+  - Manter escalonamento de 3 falhas reais para casos realmente sem compreensão.
 
-Fase 3 — Corrigir transferência de ticket na escalação
-- Arquivo: `supabase/functions/bluechat-inbound/callback.ts`
+Fase 4 — Corrigir deduplicação para evitar supressão indevida
+- Arquivo: `supabase/functions/bluechat-inbound/index.ts`
 - Ajustes:
-  - Trocar payload de transferência para enviar `toDepartmentId` (ou `toUserId`) conforme exigência da API.
-  - Implementar mapeamento `department -> departmentId` via configuração (por empresa), evitando 400.
+  - Remover ou escopar dedupe por conteúdo:
+    - incluir `lead_id` e `empresa` (ou `conversation_id`) no filtro;
+    - preferir dedupe por `whatsapp_message_id` (já existe no `saveInboundMessage`).
+  - Evitar dedupe global cross-lead por texto idêntico.
 
-Fase 4 — Observabilidade para não regressão
+Fase 5 — Observabilidade para fechar o ciclo de debug
 - Arquivos:
-  - `sdr-ia-interpret/index.ts`
-  - `bluechat-inbound/sdr-bridge.ts`
-- Ajustes:
-  - Logar `messageId`, `lead_id`, `conversation_id`, tipo de falha e decisão tomada (responder/escalar/silenciar).
-  - Facilitar diagnóstico sem depender de leitura manual extensa de histórico.
+  - `supabase/functions/sdr-ia-interpret/index.ts`
+  - `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
+  - `supabase/functions/bluechat-inbound/index.ts`
+- Logs adicionais:
+  - `messageId`, `lead_id`, `estado_funil`, `ia_null_count`, `isContextualShortReply`,
+  - motivo da decisão (clarificação vs continuidade vs escalação),
+  - identificação da “última pergunta outbound” usada como contexto.
 
-Validação após correção (checklist objetivo)
-1) Saúde da função
-- Confirmar ausência de `worker boot error` em `sdr-ia-interpret`.
-- Confirmar que `bluechat-inbound` para de registrar `SDR IA erro ... status: 503`.
+Validação (focada no Arthur)
+1) Reproduzir com sequência real:
+- “Antes preciso saber dos preços...”
+- “Usei 3”
+- “Usei 3 exchanges”
 
-2) Comportamento conversacional com Arthur (+351910506655)
-- Enviar 3 mensagens reais (ex.: “quero contratar”, “quero saber preço”, “faço trade”).
-- Esperado:
-  - geração contextual (não fallback genérico repetido),
-  - continuidade do funil com base em SPIN já salvo.
+2) Resultado esperado:
+- sem mensagens “Não entendi...” nesses dois últimos passos;
+- resposta de continuidade contextual;
+- `ia_null_count` não sobe indevidamente.
 
-3) Persistência de interpretação
-- Verificar novos registros em `lead_message_intents` para as novas mensagens.
-- Verificar atualização coerente de `lead_conversation_state.framework_data` sem regressão.
-
-4) Escalação operacional
-- Forçar cenário de escalação e validar transferência sem 400 no endpoint `/tickets/transfer`.
+3) Verificações de dados:
+- novos registros em `lead_message_intents` com confiança/intent coerentes;
+- `lead_conversation_state.framework_data` atualizado sem erros de upsert;
+- ausência de novos erros SQL de ON CONFLICT nos logs.
 
 Riscos e mitigação
-- Risco: corrigir apenas o parse error e manter loop em futuras indisponibilidades.
-  - Mitigação: Fase 2 (tratamento específico de indisponibilidade).
-- Risco: continuar falhando na transferência humana.
-  - Mitigação: Fase 3 com `toDepartmentId` configurado por empresa.
+- Risco: regras contextuais ficarem específicas demais.
+  - Mitigação: implementar heurística genérica baseada em “última pergunta outbound + resposta curta com numeral”, não hardcode por frase única.
+- Risco: reduzir dedupe e aceitar duplicata real.
+  - Mitigação: manter dedupe por `whatsapp_message_id` como controle primário (idempotência).
 
-Resultado esperado após as correções
-- A Amélia volta a usar o contexto que já existe.
-- Sai o comportamento “sem memória” causado por fallback técnico.
-- Em caso de nova indisponibilidade, o sistema não entra em looping de “não entendi”.
-- Escalação para humano passa a funcionar de forma consistente.
+Resultado esperado final
+- A Amélia para de “perder a linha” após respostas curtas válidas.
+- Conversa com Arthur continua de forma consultiva sem regressão para loop de clarificação.
+- Estado conversacional passa a ser persistido de forma consistente, sem erro estrutural de conflito.
