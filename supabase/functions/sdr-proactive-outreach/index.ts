@@ -324,7 +324,7 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { lead_id, contact_id, empresa, motivo, objetivo, bypass_rate_limit } = body as {
+    const rawBody = body as {
       lead_id?: string;
       contact_id?: string;
       empresa?: string;
@@ -332,6 +332,14 @@ Deno.serve(async (req) => {
       objetivo?: string;
       bypass_rate_limit?: boolean;
     };
+
+    // Sanitize: treat empty strings as undefined
+    const lead_id = rawBody.lead_id?.trim() || undefined;
+    const contact_id = rawBody.contact_id?.trim() || undefined;
+    const empresa = rawBody.empresa?.trim() || undefined;
+    const motivo = rawBody.motivo;
+    const objetivo = rawBody.objetivo;
+    const bypass_rate_limit = rawBody.bypass_rate_limit;
 
     if ((!lead_id && !contact_id) || !empresa) {
       return jsonResponse({ error: "Missing lead_id/contact_id or empresa" }, req, 400);
@@ -433,11 +441,25 @@ Deno.serve(async (req) => {
 
     // 6. Resolve conversation/ticket IDs from stored framework_data
     const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
-    let conversationId: string | null = (fwData.bluechat_conversation_id as string) || null;
+    let conversationId: string | null =
+      (fwData.bluechat_conversation_id as string) ||
+      (fwData.conversation_id as string) ||
+      (fwData.conversationId as string) ||
+      null;
     let messageId: string | null = null;
-    let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
+    let ticketId: string | null =
+      (fwData.bluechat_ticket_id as string) ||
+      (fwData.ticket_id as string) ||
+      (fwData.ticketId as string) ||
+      null;
 
-    // 6b. If no conversation/ticket exists, open one proactively (same as cadence-runner)
+    // Fallback: if conversationId exists but no ticketId, use conversationId as ticketId
+    if (conversationId && !ticketId) {
+      ticketId = conversationId;
+      console.log("Using conversationId as ticketId fallback:", ticketId);
+    }
+
+    // 6b. If no conversation/ticket exists, open one proactively
     if (!conversationId && !ticketId) {
       console.log("No existing Blue Chat conversation, opening new one for phone:", phone);
       try {
@@ -455,8 +477,21 @@ Deno.serve(async (req) => {
         console.log("Blue Chat /conversations response:", openRes.status, openText);
         if (openRes.ok) {
           const openData = JSON.parse(openText || "{}");
-          conversationId = openData?.conversation_id || openData?.id || null;
-          ticketId = openData?.ticket_id || null;
+          conversationId =
+            openData?.conversation_id ||
+            openData?.conversationId ||
+            openData?.id ||
+            openData?.conversation?.id ||
+            null;
+          ticketId =
+            openData?.ticket_id ||
+            openData?.ticketId ||
+            openData?.ticket?.id ||
+            null;
+          // Fallback after open
+          if (conversationId && !ticketId) {
+            ticketId = conversationId;
+          }
           console.log("Opened Blue Chat conversation:", { conversationId, ticketId });
         } else {
           console.warn("Failed to open Blue Chat conversation:", openRes.status, openText);
@@ -464,6 +499,15 @@ Deno.serve(async (req) => {
       } catch (err) {
         console.warn("Error opening Blue Chat conversation:", err);
       }
+    }
+
+    // Guard: if still no ticketId, abort before calling /messages
+    if (!ticketId) {
+      return jsonResponse(
+        { error: "Could not resolve ticketId for Blue Chat", conversationId },
+        req,
+        400
+      );
     }
 
     // Send directly via /messages with phone as primary identifier
@@ -474,9 +518,10 @@ Deno.serve(async (req) => {
         content: greetingMessage,
         source: "AMELIA_SDR",
         phone,
+        ticketId,
+        type: "TEXT",
       };
       if (conversationId) messagePayload.conversation_id = conversationId;
-      if (ticketId) messagePayload.ticketId = ticketId;
 
       console.log("Sending to Blue Chat:", messagesUrl, JSON.stringify(messagePayload));
 
@@ -506,31 +551,17 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
     }
 
-    // 8. Record outbound message in lead_messages
+    // 8. Record outbound message in lead_messages (schema-aligned)
     const { data: savedMsg } = await serviceClient.from("lead_messages").insert({
       lead_id: effectiveLeadId,
       empresa,
       direcao: "OUTBOUND",
       canal: "WHATSAPP",
       conteudo: greetingMessage,
-      remetente: "AMELIA",
-      source: "BLUECHAT",
-      metadata: {
-        bluechat_conversation_id: conversationId,
-        bluechat_message_id: messageId,
-        bluechat_ticket_id: ticketId,
-        proactive_outreach: true,
-        motivo: objetivo || motivo || "abordagem proativa",
-        ai_model: aiResult.model,
-        contact_id: resolvedContactId || null,
-        synthetic_lead: lead.synthetic,
-        context_depth: {
-          messages: ctx.messages.length,
-          has_deal: !!ctx.deal,
-          framework: ctx.convState?.framework_ativo || "NONE",
-          sgt_events: ctx.sgtEvents.length,
-        },
-      },
+      estado: "ENVIADA",
+      template_codigo: "proactive_outreach",
+      enviado_em: new Date().toISOString(),
+      whatsapp_message_id: messageId || undefined,
     }).select("id").maybeSingle();
 
     // 9. Update conversation state
