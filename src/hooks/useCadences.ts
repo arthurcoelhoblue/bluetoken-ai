@@ -8,6 +8,7 @@ export {
   useCadenceNextActions,
   useUpdateCadenceRunStatus,
   useToggleCadenceAtivo,
+  useDeactivateCadence,
   useCadenceStageTriggers,
   useCreateStageTrigger,
   useDeleteStageTrigger,

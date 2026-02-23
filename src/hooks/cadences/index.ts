@@ -5,6 +5,7 @@ export { useCadenceEvents, useCadenceNextActions } from './useCadenceEvents';
 export {
   useUpdateCadenceRunStatus,
   useToggleCadenceAtivo,
+  useDeactivateCadence,
   useCadenceStageTriggers,
   useCreateStageTrigger,
   useDeleteStageTrigger,

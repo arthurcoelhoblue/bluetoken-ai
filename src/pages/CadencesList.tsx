@@ -5,7 +5,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useCadences, useCadenciasCRMView, useCadenceStageTriggers, useCreateStageTrigger, useDeleteStageTrigger, useToggleCadenceAtivo } from '@/hooks/useCadences';
+import { useCadences, useCadenciasCRMView, useCadenceStageTriggers, useCreateStageTrigger, useDeleteStageTrigger, useToggleCadenceAtivo, useDeactivateCadence } from '@/hooks/useCadences';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 import {
   EMPRESA_LABELS,
@@ -20,6 +20,15 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogCancel,
+} from '@/components/ui/alert-dialog';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
@@ -66,6 +75,8 @@ function CadencesListContent() {
   const { data: cadences, isLoading, error } = useCadences(filters);
   const { data: crmStats } = useCadenciasCRMView();
   const toggleAtivo = useToggleCadenceAtivo();
+  const deactivateCadence = useDeactivateCadence();
+  const [deactivatingId, setDeactivatingId] = useState<string | null>(null);
 
   // Build map of CRM stats by cadence id
   const crmMap = new Map<string, { deals_ativos: number; deals_completados: number }>();
@@ -269,7 +280,11 @@ function CadencesListContent() {
                                   <div
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      toggleAtivo.mutate({ id: cadence.id, ativo: !cadence.ativo });
+                                      if (cadence.ativo) {
+                                        setDeactivatingId(cadence.id);
+                                      } else {
+                                        toggleAtivo.mutate({ id: cadence.id, ativo: true });
+                                      }
                                     }}
                                   >
                                     <Switch
@@ -336,6 +351,45 @@ function CadencesListContent() {
           <TriggersTab />
         </TabsContent>
       </Tabs>
+
+      {/* AlertDialog de desativação */}
+      <AlertDialog open={!!deactivatingId} onOpenChange={(open) => !open && setDeactivatingId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Desativar cadência</AlertDialogTitle>
+            <AlertDialogDescription>
+              Escolha como deseja desativar esta cadência:
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <Button
+              variant="outline"
+              onClick={() => {
+                if (deactivatingId) {
+                  deactivateCadence.mutate({ id: deactivatingId, pausarRuns: false });
+                  setDeactivatingId(null);
+                  toast.success('Cadência desativada (runs existentes mantidas)');
+                }
+              }}
+            >
+              Apenas para novos
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deactivatingId) {
+                  deactivateCadence.mutate({ id: deactivatingId, pausarRuns: true });
+                  setDeactivatingId(null);
+                  toast.success('Cadência desativada e runs pausadas');
+                }
+              }}
+            >
+              Para todos
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
