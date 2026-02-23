@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { AppLayout } from "@/components/layout/AppLayout";
 import {
   Card,
   CardContent,
@@ -227,6 +228,7 @@ export default function EmailSmtpConfigPage() {
   }
 
   return (
+    <AppLayout>
     <div className="container mx-auto max-w-4xl space-y-6 p-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -558,5 +560,6 @@ export default function EmailSmtpConfigPage() {
         </CardContent>
       </Card>
     </div>
+    </AppLayout>
   );
 }
