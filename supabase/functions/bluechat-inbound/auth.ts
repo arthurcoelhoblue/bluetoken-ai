@@ -10,62 +10,86 @@ import { resolveBluechatWebhookSecret } from "../_shared/channel-resolver.ts";
 const log = createLogger('bluechat-inbound');
 
 /**
- * Validate webhook auth. Tries per-empresa api_key from system_settings first,
- * then falls back to BLUECHAT_API_KEY env.
+ * Validate webhook auth async. Supports three methods:
+ * 1. Bearer token / X-API-Key (direct comparison)
+ * 2. x-webhook-signature (HMAC-SHA256 of body)
+ * 3. Fallback to BLUECHAT_API_KEY env
  */
 export async function validateAuthAsync(
   req: Request,
   supabase: SupabaseClient,
   empresa: string,
+  bodyText?: string,
 ): Promise<{ valid: boolean }> {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
+  const webhookSignature = req.headers.get('x-webhook-signature');
   const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
 
-  if (!token) {
-    log.warn('Nenhum token recebido');
-    return { valid: false };
+  // Method 1: Direct token (Authorization/X-API-Key)
+  if (token) {
+    const expectedSecret = await resolveBluechatWebhookSecret(supabase, empresa);
+    if (expectedSecret && token.trim() === expectedSecret.trim()) {
+      return { valid: true };
+    }
+    const envKey = getOptionalEnv('BLUECHAT_API_KEY');
+    if (envKey && token.trim() === envKey.trim()) {
+      return { valid: true };
+    }
   }
 
-  // 1. Try per-empresa webhook_secret from system_settings
-  const expectedSecret = await resolveBluechatWebhookSecret(supabase, empresa);
+  // Method 2: HMAC signature (x-webhook-signature)
+  if (webhookSignature && bodyText) {
+    const secret = await resolveBluechatWebhookSecret(supabase, empresa)
+      || getOptionalEnv('BLUECHAT_API_KEY');
 
-  if (expectedSecret && token.trim() === expectedSecret.trim()) {
-    return { valid: true };
+    if (secret) {
+      const encoder = new TextEncoder();
+      const key = await crypto.subtle.importKey(
+        'raw', encoder.encode(secret),
+        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+      );
+      const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(bodyText));
+      const computed = Array.from(new Uint8Array(signature))
+        .map(b => b.toString(16).padStart(2, '0')).join('');
+
+      if (computed === webhookSignature) {
+        log.info('Autenticação HMAC validada com sucesso', { empresa });
+        return { valid: true };
+      }
+      log.warn('HMAC signature não confere', {
+        empresa,
+        expected: `${computed.substring(0, 8)}...`,
+        received: `${webhookSignature.substring(0, 8)}...`,
+      });
+    }
   }
 
-  // 2. Fallback: try env directly (covers case where resolveBluechatApiKey already tried env)
-  const envKey = getOptionalEnv('BLUECHAT_API_KEY');
-  if (envKey && token.trim() === envKey.trim()) {
-    return { valid: true };
+  // No valid method
+  if (token) {
+    log.warn('Token inválido para Blue Chat', {
+      empresa,
+      tokenPreview: `${token.substring(0, 8)}...${token.substring(token.length - 4)}`,
+    });
   }
-
-  log.warn('Token inválido para Blue Chat', {
-    empresa,
-    tokenPreview: `${token.substring(0, 8)}...${token.substring(token.length - 4)}`,
-  });
   return { valid: false };
 }
 
 /**
- * Legacy sync validation (kept for backward compat).
- * IMPORTANT: Only checks if a token is present. The actual secret validation
- * is always done asynchronously in validateAuthAsync (per-company lookup).
- * This avoids rejecting requests with company-specific keys when BLUECHAT_API_KEY
- * env var exists but holds a different (generic) value.
+ * Sync validation — checks if ANY auth method is present.
+ * The actual secret/HMAC validation is done in validateAuthAsync.
  */
 export function validateAuth(req: Request): { valid: boolean } {
   const authHeader = req.headers.get('Authorization');
   const apiKeyHeader = req.headers.get('X-API-Key');
+  const webhookSignature = req.headers.get('x-webhook-signature');
   const token = authHeader ? authHeader.replace('Bearer ', '') : apiKeyHeader;
 
-  if (!token) {
+  if (!token && !webhookSignature) {
     log.warn('Nenhum token recebido na requisição Blue Chat');
     return { valid: false };
   }
 
-  // Always pass through — the real validation is done in validateAuthAsync
-  // which checks per-company api_key stored in system_settings first,
-  // then falls back to BLUECHAT_API_KEY env.
+  // Pass through — real validation in validateAuthAsync
   return { valid: true };
 }
