@@ -126,7 +126,7 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
                 size="icon"
                 title="Ver ficha do contato"
                 onClick={() => {
-                  navigate(`/contatos?contact=${contactId}`);
+                  navigate(`/contatos?open=${contactId}`);
                   onClose?.();
                 }}
               >
