@@ -1,103 +1,52 @@
 
-# Substituir "Responder no Blue Chat" por "Abordar via Amelia" com Contexto Inteligente
 
-## Resumo
+# Plano: Criar Templates Reais para Cadências de SDR
 
-Transformar o botao "Responder no Blue Chat" (no `ManualMessageInput`) em um botao de abordagem proativa pela Amelia, com contexto rico. O botao existente do `DealDetailHeader` (icone Bot) ja faz uma abordagem proativa, mas com um prompt generico e raso. A mudanca principal e evoluir o `sdr-proactive-outreach` para carregar contexto profundo (historico de conversas, deals, classificacao, SGT, frameworks SPIN/GPCT/BANT) e gerar uma abordagem inteligente e contextualizada.
+## Contexto
 
-## O que muda
+As cadências de aquecimento ("Warming Inbound Frio") para Tokeniza e Blue referenciam templates que ainda nao existem no banco (`SAUDACAO_INBOUND`, `FOLLOWUP_INBOUND`, `APRESENTACAO_TOKENIZA`, `APRESENTACAO_BLUE`). Alem disso, a cadencia "Onboarding Blue - E-mail" usa o placeholder `BLUE_EMAIL_TESTE` nos dois steps. Precisamos criar os templates faltantes e os extras de email (Case e Oferta).
 
-### 1. Frontend — `ManualMessageInput.tsx`
+O motor de cadencias (`cadence-runner`) resolve templates por `empresa` + `codigo`, entao templates com mesmo codigo mas empresas diferentes funcionam corretamente.
 
-Substituir o bloco "Responder no Blue Chat" (linhas 146-161) por um botao "Abordar via Amelia" que:
-- Chama `sdr-proactive-outreach` passando o `motivo` contextualizado (ex: "follow-up", "qualificacao")
-- Mostra loading state com spinner
-- Exibe toast de sucesso/erro
-- Mantém o deeplink do Blue Chat como link secundario (texto menor, "Ver no Blue Chat")
+## Templates a Criar (12 no total)
 
-O textarea e botao de envio manual continuam existindo abaixo, sem mudanca.
+### WhatsApp (4 templates)
 
-### 2. Backend — `sdr-proactive-outreach/index.ts`
+| codigo | empresa | canal | conteudo |
+|--------|---------|-------|----------|
+| `SAUDACAO_INBOUND` | TOKENIZA | WHATSAPP | Texto 1 aprovado (Amelia/Tokeniza) |
+| `FOLLOWUP_INBOUND` | TOKENIZA | WHATSAPP | Texto 2 aprovado |
+| `SAUDACAO_INBOUND` | BLUE | WHATSAPP | Texto 3 aprovado (Amelia/Blue) |
+| `FOLLOWUP_INBOUND` | BLUE | WHATSAPP | Texto 4 aprovado |
 
-Evolucao significativa para carregar contexto completo antes de gerar a mensagem:
+### Email (8 templates)
 
-**Novos dados carregados (em paralelo):**
-- Historico de mensagens (ultimas 20 via `lead_messages`)
-- Estado da conversa (`lead_conversation_state` com framework_data SPIN/GPCT/BANT)
-- Classificacao do lead (`lead_classifications` — temperatura, ICP, perfil)
-- Deal ativo (titulo, valor, estagio, SLA)
-- Eventos SGT recentes (`sgt_events` — ultimos 5)
-- Pessoa/relacionamentos cross-company (via `pessoa_id`)
-- Aprendizados validados da Amelia (`amelia_learnings`)
+| codigo | empresa | canal | assunto |
+|--------|---------|-------|---------|
+| `APRESENTACAO_TOKENIZA` | TOKENIZA | EMAIL | Acesse ativos exclusivos... |
+| `APRESENTACAO_BLUE` | BLUE | EMAIL | Sua tranquilidade fiscal... |
+| `BLUE_EMAIL_CASE` | BLUE | EMAIL | Como resolvemos o caos cripto... |
+| `BLUE_EMAIL_OFERTA` | BLUE | EMAIL | 20% OFF para blindar seu IR... |
+| `TOKENIZA_EMAIL_CASE` | TOKENIZA | EMAIL | O investimento que rendeu 18%... |
+| `TOKENIZA_EMAIL_OFERTA` | TOKENIZA | EMAIL | Nova emissao disponivel... |
+| `BLUE_EMAIL_ONBOARDING_1` | BLUE | EMAIL | (step 1 do Onboarding Blue) |
+| `BLUE_EMAIL_ONBOARDING_2` | BLUE | EMAIL | (step 2 do Onboarding Blue) |
 
-**Prompt evoluido:**
-Em vez do prompt fixo de "primeiro contato", a IA recebe todo o contexto e decide autonomamente:
-- Se e primeiro contato ou retomada
-- Se o objetivo e follow-up, qualificacao, agendamento ou fechamento
-- Qual framework aplicar (SPIN/GPCT/BANT) baseado no estado atual
-- Tom adequado ao perfil DISC do lead
-- Referencia a interacoes anteriores para demonstrar continuidade
+## Cadencia "Onboarding Blue" - Ajuste nos Steps
 
-**Regra de negocio ajustada:**
-- Remover o rate-limit de 24h para outbound (ou tornar configuravel via parametro `bypass_rate_limit`), ja que a abordagem agora e manual e intencional pelo vendedor
-- Aceitar um parametro opcional `objetivo` no body (ex: "follow_up", "agendar_reuniao", "reengajar") para guiar a IA
+A cadencia `BLUE_EMAIL_ONBOARDING` usa `BLUE_EMAIL_TESTE` em ambos os steps. Vou:
+1. Criar `BLUE_EMAIL_ONBOARDING_1` (Apresentacao Blue - reutilizando o conteudo de `APRESENTACAO_BLUE`) 
+2. Criar `BLUE_EMAIL_ONBOARDING_2` (Case Blue - reutilizando o conteudo de `BLUE_EMAIL_CASE`)
+3. Atualizar os steps da cadencia para apontar para esses novos codigos
 
-### 3. Detalhes Tecnicos
+**Alternativa**: Se preferir, posso apontar os steps diretamente para `APRESENTACAO_BLUE` e `BLUE_EMAIL_CASE` sem criar templates duplicados.
 
-**`ManualMessageInput.tsx` — Bloco Blue Chat:**
-```
-[Botao] Abordar via Amelia (icone Bot + loading)
-[Link pequeno] Ver no Blue Chat (icone ExternalLink)
-[Textarea + Send] Enviar via Blue Chat... (sem mudanca)
-```
+## Implementacao Tecnica
 
-**`sdr-proactive-outreach/index.ts` — Novo fluxo:**
-```
-1. Auth + validacao
-2. Fetch lead data
-3. [NOVO] Carregar contexto completo em paralelo:
-   - lead_messages (20 ultimas)
-   - lead_conversation_state (frameworks)
-   - lead_classifications
-   - deals (aberto, via contact)
-   - sgt_events (5 ultimos)
-   - amelia_learnings (5 validados)
-   - pessoa + relacionamentos
-4. [EVOLUIDO] Gerar mensagem com prompt contextualizado
-5. Resolver Blue Chat config
-6. Abrir conversa + enviar
-7. Registrar mensagem + atualizar estado
-```
+1. **INSERT em `message_templates`**: 12 registros com os textos aprovados, todos com `ativo = true`
+2. **UPDATE em `cadence_steps`**: Atualizar os 2 steps da cadencia Onboarding Blue (`61c393fa-ef37-4edf-bb79-851cd5747566`) para usar os novos codigos ao inves de `BLUE_EMAIL_TESTE`
+3. **Nenhuma alteracao de codigo**: O motor de cadencias ja resolve templates por `empresa` + `codigo`, entao nao precisa de mudancas no frontend ou edge functions
 
-**System prompt evoluido (resumo):**
-```
-Voce e a Amelia, SDR da {empresa}.
-Analise TODO o contexto fornecido e gere UMA mensagem de abordagem.
-- Se ja houve conversa anterior, retome naturalmente
-- Se tem framework incompleto, avance na qualificacao
-- Adapte tom ao perfil DISC
-- Maximo 250 caracteres
-- Objetivo: {objetivo || "qualificar e avancar conversa"}
-```
+## Resultado Esperado
 
-**User prompt contextualizado:**
-```
-LEAD: {nome}
-TEMPERATURA: {temp}
-ESTADO_FUNIL: {estado}
-FRAMEWORK: SPIN(S:{s}, P:{p}...) | GPCT(G:{g}...)
-DEAL: {titulo} - {estagio} - R${valor}
-HISTORICO (ultimas 5):
-[OUTBOUND] Oi Joao, tudo bem?
-[INBOUND] Oi, quero saber mais
-...
-SGT: {eventos recentes}
-OBJETIVO: {motivo}
-```
-
-### 4. Arquivos Modificados
-
-| Arquivo | Mudanca |
-|---|---|
-| `src/components/conversas/ManualMessageInput.tsx` | Substituir "Responder no Blue Chat" por botao Amelia + link secundario |
-| `supabase/functions/sdr-proactive-outreach/index.ts` | Carregar contexto completo, prompt evoluido, rate-limit flexivel |
+Todas as 7 cadencias existentes terao templates reais com conteudo profissional de SDR (persona Amelia), prontos para execucao automatica pelo motor de cadencias.
