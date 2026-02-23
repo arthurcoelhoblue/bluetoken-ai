@@ -30,8 +30,11 @@ function detectRoboticPattern(resposta: string, leadNome?: string): boolean {
   ];
   for (const p of frasesElogio) { if (p.test(resposta)) return true; }
   if (leadNome) {
-    const nomePattern = new RegExp(`^${leadNome},?\\s`, 'i');
-    if (nomePattern.test(resposta)) return true;
+    const roboticAfterName = new RegExp(
+      `^${leadNome},?\\s+(entendi|perfeito|que bom|excelente|ótimo|claro|certo|legal|maravilha|show|beleza|fantástico|incrível|sensacional|bacana)`,
+      'i'
+    );
+    if (roboticAfterName.test(resposta)) return true;
   }
   return false;
 }
@@ -58,7 +61,7 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
   cleaned = cleaned.replace(/agora me conta:?\s*/gi, '');
   cleaned = cleaned.replace(/me fala:?\s*/gi, '');
   if (leadNome) {
-    cleaned = cleaned.replace(new RegExp(`^${leadNome},?\\s*`, 'i'), '');
+    cleaned = cleaned.replace(new RegExp(`^${leadNome}[,;.!]?\\s*`, 'i'), '');
     const parts = cleaned.split(new RegExp(`(${leadNome})`, 'gi'));
     if (parts.length > 3) {
       let count = 0;
