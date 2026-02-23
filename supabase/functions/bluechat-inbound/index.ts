@@ -52,11 +52,20 @@ serve(async (req) => {
     );
   }
 
-  // Clone request for re-reading body if needed for async auth
+  // Read body as text first (needed for HMAC signature validation)
   const clonedReq = req.clone();
+  const bodyText = await req.text();
 
   try {
-    let rawPayload = await req.json();
+    let rawPayload: unknown;
+    try {
+      rawPayload = JSON.parse(bodyText);
+    } catch {
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     // Debug: log raw payload before validation
     log.info('Payload bruto recebido', {
@@ -100,7 +109,7 @@ serve(async (req) => {
     const empresa: EmpresaTipo = mapBluechatEmpresa(payload.context?.empresa);
 
     // Async per-empresa auth validation (checks api_key from system_settings)
-    const asyncAuth = await validateAuthAsync(clonedReq, supabase, empresa);
+    const asyncAuth = await validateAuthAsync(clonedReq, supabase, empresa, bodyText);
     if (!asyncAuth.valid) {
       log.error('Acesso não autorizado (validação por empresa)', { empresa });
       return new Response(
