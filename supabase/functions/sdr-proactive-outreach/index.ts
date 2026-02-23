@@ -459,56 +459,8 @@ Deno.serve(async (req) => {
       console.log("Using conversationId as ticketId fallback:", ticketId);
     }
 
-    // 6b. If no conversation/ticket exists, open one proactively
-    if (!conversationId && !ticketId) {
-      console.log("No existing Blue Chat conversation, opening new one for phone:", phone);
-      try {
-        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            phone,
-            contact_name: lead.nome || lead.primeiro_nome || undefined,
-            channel: "whatsapp",
-            source: "AMELIA_SDR",
-          }),
-        });
-        const openText = await openRes.text();
-        console.log("Blue Chat /conversations response:", openRes.status, openText);
-        if (openRes.ok) {
-          const openData = JSON.parse(openText || "{}");
-          conversationId =
-            openData?.conversation_id ||
-            openData?.conversationId ||
-            openData?.id ||
-            openData?.conversation?.id ||
-            null;
-          ticketId =
-            openData?.ticket_id ||
-            openData?.ticketId ||
-            openData?.ticket?.id ||
-            null;
-          // Fallback after open
-          if (conversationId && !ticketId) {
-            ticketId = conversationId;
-          }
-          console.log("Opened Blue Chat conversation:", { conversationId, ticketId });
-        } else {
-          console.warn("Failed to open Blue Chat conversation:", openRes.status, openText);
-        }
-      } catch (err) {
-        console.warn("Error opening Blue Chat conversation:", err);
-      }
-    }
-
-    // Guard: if still no ticketId, abort before calling /messages
-    if (!ticketId) {
-      return jsonResponse(
-        { error: "Could not resolve ticketId for Blue Chat", conversationId },
-        req,
-        400
-      );
-    }
+    // 6b. If no conversation/ticket exists, we send with phone only — Blue Chat auto-creates the ticket.
+    // The old /conversations endpoint doesn't exist, so we skip it entirely.
 
     // Send directly via /messages with phone as primary identifier
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
@@ -518,9 +470,10 @@ Deno.serve(async (req) => {
         content: greetingMessage,
         source: "AMELIA_SDR",
         phone,
-        ticketId,
         type: "TEXT",
       };
+      // Include ticketId and conversationId only if we have them
+      if (ticketId) messagePayload.ticketId = ticketId;
       if (conversationId) messagePayload.conversation_id = conversationId;
 
       console.log("Sending to Blue Chat:", messagesUrl, JSON.stringify(messagePayload));
