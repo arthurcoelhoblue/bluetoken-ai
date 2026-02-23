@@ -5,7 +5,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOptionalEnv } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
-import { resolveBluechatApiKey } from "../_shared/channel-resolver.ts";
+import { resolveBluechatWebhookSecret } from "../_shared/channel-resolver.ts";
 
 const log = createLogger('bluechat-inbound');
 
@@ -27,10 +27,10 @@ export async function validateAuthAsync(
     return { valid: false };
   }
 
-  // 1. Try per-empresa key from system_settings
-  const expectedKey = await resolveBluechatApiKey(supabase, empresa);
+  // 1. Try per-empresa webhook_secret from system_settings
+  const expectedSecret = await resolveBluechatWebhookSecret(supabase, empresa);
 
-  if (expectedKey && token.trim() === expectedKey.trim()) {
+  if (expectedSecret && token.trim() === expectedSecret.trim()) {
     return { valid: true };
   }
 
