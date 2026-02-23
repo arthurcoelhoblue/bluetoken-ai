@@ -1,51 +1,67 @@
 
 
-## Corrigir duplicacao de conversas na tela de Atendimentos
+## Corrigir nome do remetente em mensagens manuais via Blue Chat
+
+### Problema
+
+Quando o vendedor assume o atendimento e envia uma mensagem manual, ela chega no Blue Chat com `source: "AMELIA_SDR"`, fazendo com que o Blue Chat identifique a mensagem como vinda da Amelia em vez do vendedor logado (Arthur).
 
 ### Causa raiz
 
-Quando um lead e encontrado em uma empresa diferente (ex: BLUE), o `bluechat-inbound` cria um registro "espelho" em `lead_contacts` para a outra empresa (TOKENIZA) com o **mesmo `lead_id`**. Porem, todas as mensagens ficam salvas com `empresa: BLUE`. 
+Dois pontos precisam ser corrigidos:
 
-O hook `useAtendimentos` busca contatos com `.in('lead_id', leadIds)` e retorna **ambas** as linhas (BLUE e TOKENIZA), gerando duas conversas identicas na lista -- com as mesmas mensagens, mesmo conteudo e mesmos contadores.
+1. **`bluechat-proxy/index.ts`** (edge function): O campo `source` esta hardcoded como `"AMELIA_SDR"` e nenhum nome de remetente e enviado no payload
+2. **`useConversationMode.ts`** (frontend): O hook `useSendManualMessage` nao envia o nome do usuario logado no body da requisicao
 
 ### Solucao
 
-Deduplicar por `lead_id` no hook `useAtendimentos`, mantendo apenas um registro por lead. A logica sera:
+#### 1. Frontend: `src/hooks/useConversationMode.ts`
 
-1. Apos buscar os contacts, agrupar por `lead_id`
-2. Para cada `lead_id` com multiplos registros, manter o que tem mensagens correspondentes (verificando a empresa das mensagens no `lead_messages`)
-3. Se ambos tiverem mensagens, manter o mais recente
-
-### Arquivo: `src/hooks/useAtendimentos.ts`
-
-Apos a query de contacts (linha 73) e antes do merge (linha 133), adicionar logica de deduplicacao:
+Incluir o nome do usuario logado no payload enviado ao `bluechat-proxy`:
 
 ```typescript
-// Deduplicar contacts por lead_id (evitar espelhos cross-empresa)
-const contactsByLeadId = new Map<string, typeof contacts[0][]>();
-for (const c of contacts) {
-  const existing = contactsByLeadId.get(c.lead_id) || [];
-  existing.push(c);
-  contactsByLeadId.set(c.lead_id, existing);
-}
-
-const deduplicatedContacts = [];
-for (const [leadId, dupes] of contactsByLeadId) {
-  if (dupes.length === 1) {
-    deduplicatedContacts.push(dupes[0]);
-  } else {
-    // Preferir o contact cuja empresa aparece nas mensagens passivas
-    const withMessages = dupes.find(d => uniqueKeys.has(`${d.lead_id}_${d.empresa}`));
-    deduplicatedContacts.push(withMessages || dupes[0]);
-  }
-}
+// Linha ~127: adicionar sender_name ao body
+const { data, error } = await supabase.functions.invoke('bluechat-proxy', {
+  body: {
+    action: 'send-message',
+    empresa,
+    conversation_id: bluechatConversationId,
+    phone: telefone.replace(/\D/g, ''),
+    content: conteudo,
+    sender_name: user?.user_metadata?.nome || user?.user_metadata?.full_name || 'Vendedor',
+  },
+});
 ```
 
-Depois, usar `deduplicatedContacts` em vez de `contacts` no merge final (linha 133).
+#### 2. Edge Function: `supabase/functions/bluechat-proxy/index.ts`
+
+No bloco `send-message`, receber `sender_name` do body e:
+- Mudar o `source` de `"AMELIA_SDR"` para `"MANUAL"` (ou outro identificador) quando um nome humano e fornecido
+- Incluir `senderName` no payload enviado ao Blue Chat
+
+```typescript
+// Linha ~196: extrair sender_name do body
+const { conversation_id, content, phone, sender_name } = body as { ... };
+
+// Linha ~205: ajustar payload
+body: JSON.stringify({
+  content,
+  type: "TEXT",
+  source: sender_name ? "MANUAL" : "AMELIA_SDR",
+  senderName: sender_name || "Amélia",
+  ...(conversation_id ? { ticketId: conversation_id } : {}),
+  ...(phone ? { phone } : {}),
+}),
+```
+
+### Arquivos alterados
+
+- `src/hooks/useConversationMode.ts` -- incluir `sender_name` no payload
+- `supabase/functions/bluechat-proxy/index.ts` -- receber e repassar `sender_name` ao Blue Chat, ajustar `source`
 
 ### Impacto
 
-- Zero risco de regressao: leads com registros legitimamente separados (lead_ids diferentes) nao sao afetados
-- Apenas leads com o mesmo lead_id em multiplas empresas serao deduplicados na listagem
-- Nenhuma mudanca de banco ou migracao necessaria
+- Mensagens manuais passam a exibir o nome do vendedor no Blue Chat
+- Mensagens automaticas da Amelia continuam com `source: "AMELIA_SDR"` (sem regressao)
+- Nenhuma mudanca de banco necessaria
 
