@@ -1,52 +1,46 @@
 
+# Plano: Limpar Runs e Dialog de Desativacao Inteligente
 
-# Plano: Criar Templates Reais para Cadências de SDR
+## 1. Limpar banco agora
 
-## Contexto
+Executar UPDATE em massa para cancelar todas as runs ativas (`lead_cadence_runs` com `status = 'ATIVA'`), setando `status = 'CANCELADA'` e `next_run_at = NULL`. Tambem cancelar as bridge rows em `deal_cadence_runs` com `status = 'ACTIVE'`.
 
-As cadências de aquecimento ("Warming Inbound Frio") para Tokeniza e Blue referenciam templates que ainda nao existem no banco (`SAUDACAO_INBOUND`, `FOLLOWUP_INBOUND`, `APRESENTACAO_TOKENIZA`, `APRESENTACAO_BLUE`). Alem disso, a cadencia "Onboarding Blue - E-mail" usa o placeholder `BLUE_EMAIL_TESTE` nos dois steps. Precisamos criar os templates faltantes e os extras de email (Case e Oferta).
+## 2. Dialog ao desativar cadencia pelo switch
 
-O motor de cadencias (`cadence-runner`) resolve templates por `empresa` + `codigo`, entao templates com mesmo codigo mas empresas diferentes funcionam corretamente.
+Quando o usuario clicar no switch para **desativar** uma cadencia (de ativo para inativo), abre um `AlertDialog` com duas opcoes:
 
-## Templates a Criar (12 no total)
+- **"Apenas para novos"** -- Desativa a cadencia (`ativo = false`) mas mantem as runs existentes rodando normalmente.
+- **"Para todos"** -- Desativa a cadencia E pausa todas as runs ativas dessa cadencia (`status = 'PAUSADA'`, `next_run_at = null`).
 
-### WhatsApp (4 templates)
+Quando o usuario **ativar** (de inativo para ativo), o switch funciona direto sem dialog.
 
-| codigo | empresa | canal | conteudo |
-|--------|---------|-------|----------|
-| `SAUDACAO_INBOUND` | TOKENIZA | WHATSAPP | Texto 1 aprovado (Amelia/Tokeniza) |
-| `FOLLOWUP_INBOUND` | TOKENIZA | WHATSAPP | Texto 2 aprovado |
-| `SAUDACAO_INBOUND` | BLUE | WHATSAPP | Texto 3 aprovado (Amelia/Blue) |
-| `FOLLOWUP_INBOUND` | BLUE | WHATSAPP | Texto 4 aprovado |
+## 3. Detalhes tecnicos
 
-### Email (8 templates)
+### Mutacao atualizada (`useCadenceMutations.ts`)
 
-| codigo | empresa | canal | assunto |
-|--------|---------|-------|---------|
-| `APRESENTACAO_TOKENIZA` | TOKENIZA | EMAIL | Acesse ativos exclusivos... |
-| `APRESENTACAO_BLUE` | BLUE | EMAIL | Sua tranquilidade fiscal... |
-| `BLUE_EMAIL_CASE` | BLUE | EMAIL | Como resolvemos o caos cripto... |
-| `BLUE_EMAIL_OFERTA` | BLUE | EMAIL | 20% OFF para blindar seu IR... |
-| `TOKENIZA_EMAIL_CASE` | TOKENIZA | EMAIL | O investimento que rendeu 18%... |
-| `TOKENIZA_EMAIL_OFERTA` | TOKENIZA | EMAIL | Nova emissao disponivel... |
-| `BLUE_EMAIL_ONBOARDING_1` | BLUE | EMAIL | (step 1 do Onboarding Blue) |
-| `BLUE_EMAIL_ONBOARDING_2` | BLUE | EMAIL | (step 2 do Onboarding Blue) |
+Adicionar uma nova mutacao `useDeactivateCadence` que aceita `{ id, pausarRuns: boolean }`:
+- Sempre faz `UPDATE cadences SET ativo = false WHERE id = ?`
+- Se `pausarRuns = true`, tambem faz `UPDATE lead_cadence_runs SET status = 'PAUSADA', next_run_at = null WHERE cadence_id = ? AND status = 'ATIVA'`
+- Invalida queries de cadences + runs
 
-## Cadencia "Onboarding Blue" - Ajuste nos Steps
+### UI (`CadencesList.tsx`)
 
-A cadencia `BLUE_EMAIL_ONBOARDING` usa `BLUE_EMAIL_TESTE` em ambos os steps. Vou:
-1. Criar `BLUE_EMAIL_ONBOARDING_1` (Apresentacao Blue - reutilizando o conteudo de `APRESENTACAO_BLUE`) 
-2. Criar `BLUE_EMAIL_ONBOARDING_2` (Case Blue - reutilizando o conteudo de `BLUE_EMAIL_CASE`)
-3. Atualizar os steps da cadencia para apontar para esses novos codigos
+- Adicionar estado `deactivatingCadence` para controlar qual cadencia esta sendo desativada
+- Ao clicar switch OFF: setar estado e abrir `AlertDialog`
+- Ao clicar switch ON: chamar `toggleAtivo` direto como hoje
+- AlertDialog com dois botoes: "Apenas para novos" e "Para todos"
+- Ambos fecham o dialog e executam a acao correspondente
 
-**Alternativa**: Se preferir, posso apontar os steps diretamente para `APRESENTACAO_BLUE` e `BLUE_EMAIL_CASE` sem criar templates duplicados.
+### Limpeza do banco (INSERT tool)
 
-## Implementacao Tecnica
+```sql
+UPDATE lead_cadence_runs SET status = 'CANCELADA', next_run_at = NULL WHERE status = 'ATIVA';
+UPDATE deal_cadence_runs SET status = 'CANCELLED' WHERE status = 'ACTIVE';
+```
 
-1. **INSERT em `message_templates`**: 12 registros com os textos aprovados, todos com `ativo = true`
-2. **UPDATE em `cadence_steps`**: Atualizar os 2 steps da cadencia Onboarding Blue (`61c393fa-ef37-4edf-bb79-851cd5747566`) para usar os novos codigos ao inves de `BLUE_EMAIL_TESTE`
-3. **Nenhuma alteracao de codigo**: O motor de cadencias ja resolve templates por `empresa` + `codigo`, entao nao precisa de mudancas no frontend ou edge functions
+## Arquivos alterados
 
-## Resultado Esperado
-
-Todas as 7 cadencias existentes terao templates reais com conteudo profissional de SDR (persona Amelia), prontos para execucao automatica pelo motor de cadencias.
+- `src/hooks/cadences/useCadenceMutations.ts` -- nova mutacao `useDeactivateCadence`
+- `src/hooks/cadences/index.ts` -- re-export
+- `src/hooks/useCadences.ts` -- re-export
+- `src/pages/CadencesList.tsx` -- AlertDialog + logica de switch
