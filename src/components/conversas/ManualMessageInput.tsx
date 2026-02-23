@@ -16,6 +16,7 @@ interface ManualMessageInputProps {
   empresa: string;
   telefone?: string | null;
   modo: AtendimentoModo;
+  contactId?: string | null;
   bluechatConversationId?: string | null;
 }
 
@@ -24,6 +25,7 @@ export function ManualMessageInput({
   empresa,
   telefone,
   modo,
+  contactId,
   bluechatConversationId,
 }: ManualMessageInputProps) {
   const [text, setText] = useState('');
@@ -122,11 +124,20 @@ export function ManualMessageInput({
   };
 
   const handleAbordarAmelia = async () => {
+    const normalizedLeadId = leadId?.trim() || undefined;
+    const normalizedContactId = !normalizedLeadId ? (contactId || undefined) : undefined;
+
+    if (!normalizedLeadId && !normalizedContactId) {
+      toast.error('Contato sem identificador para abordagem automática');
+      return;
+    }
+
     setIsCallingAmelia(true);
     try {
       const { data, error } = await supabase.functions.invoke('sdr-proactive-outreach', {
         body: {
-          lead_id: leadId,
+          lead_id: normalizedLeadId,
+          contact_id: normalizedContactId,
           empresa,
           motivo: 'Acionado manualmente pelo chat',
           bypass_rate_limit: true,

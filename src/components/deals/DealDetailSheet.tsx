@@ -163,6 +163,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                       telefone={contactBridge?.telefone}
                       leadNome={contactBridge?.nome}
                       contactEmail={deal.contact_email}
+                      contactId={deal.contact_id}
                       dealId={deal.id}
                       messages={chatMessages}
                       isLoading={chatLoading}

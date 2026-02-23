@@ -18,6 +18,7 @@ interface ConversationPanelProps {
   telefone?: string | null;
   leadNome?: string | null;
   contactEmail?: string | null;
+  contactId?: string | null;
   dealId?: string | null;
   messages: LeadMessageWithContext[];
   isLoading?: boolean;
@@ -34,6 +35,7 @@ export function ConversationPanel({
   telefone,
   leadNome,
   contactEmail,
+  contactId,
   dealId,
   messages,
   isLoading,
@@ -114,6 +116,7 @@ export function ConversationPanel({
             empresa={empresa}
             telefone={telefone}
             modo={modo}
+            contactId={contactId}
             bluechatConversationId={bluechatConversationId}
           />
         </div>
