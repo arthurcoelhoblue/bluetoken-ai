@@ -57,6 +57,7 @@ const ZadarmaConfigPage = lazy(() => import("./pages/ZadarmaConfigPage"));
 const CaptureFormsPage = lazy(() => import("./pages/CaptureFormsPage"));
 const CaptureFormBuilderPage = lazy(() => import("./pages/CaptureFormBuilderPage"));
 const PublicFormPage = lazy(() => import("./pages/PublicFormPage"));
+const EmailSmtpConfigPage = lazy(() => import("./pages/EmailSmtpConfigPage"));
 
 // CS Module pages
 const CSDashboardPage = lazy(() => import("./pages/cs/CSDashboardPage"));
@@ -161,6 +162,7 @@ const App = () => (
                 <Route path="/settings/custom-fields" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CustomFieldsConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/importacao" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ImportacaoPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/zadarma" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ZadarmaConfigPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/email-smtp" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><EmailSmtpConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/operational-health" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><OperationalHealthPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/access-control" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AccessControl /></ErrorBoundary></ProtectedRoute>} />
 
