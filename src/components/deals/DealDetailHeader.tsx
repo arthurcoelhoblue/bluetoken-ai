@@ -28,10 +28,11 @@ interface DealDetailHeaderProps {
   onStageClick: (stageId: string) => void;
   legacyLeadId?: string | null;
   leadEmpresa?: string | null;
+  contactId?: string | null;
   onClose?: () => void;
 }
 
-export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReopen, onStageClick, legacyLeadId, leadEmpresa, onClose }: DealDetailHeaderProps) {
+export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReopen, onStageClick, legacyLeadId, leadEmpresa, contactId, onClose }: DealDetailHeaderProps) {
   const navigate = useNavigate();
   const [isCallingAmelia, setIsCallingAmelia] = useState(false);
   const { isBluechat } = useChannelConfig(leadEmpresa ?? '');
@@ -107,7 +108,7 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
                 }
               </Button>
             )}
-            {legacyLeadId && leadEmpresa && (
+            {legacyLeadId && leadEmpresa ? (
               <Button
                 variant="ghost"
                 size="icon"
@@ -119,7 +120,19 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
               >
                 <ExternalLink className="h-4 w-4" />
               </Button>
-            )}
+            ) : contactId ? (
+              <Button
+                variant="ghost"
+                size="icon"
+                title="Ver ficha do contato"
+                onClick={() => {
+                  navigate(`/contatos?contact=${contactId}`);
+                  onClose?.();
+                }}
+              >
+                <ExternalLink className="h-4 w-4" />
+              </Button>
+            ) : null}
             <ClickToCallButton
               phone={deal.contact_telefone}
               contactName={deal.contact_nome}

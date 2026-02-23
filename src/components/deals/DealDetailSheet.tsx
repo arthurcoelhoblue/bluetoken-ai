@@ -55,7 +55,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
     },
   });
 
-  const hasChat = !!contactBridge?.legacy_lead_id;
+  const hasChat = !!contactBridge?.legacy_lead_id || !!contactBridge?.telefone;
 
   // Conversation messages for Chat tab
   const { data: chatMessages = [], isLoading: chatLoading } = useConversationMessages({
@@ -119,6 +119,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 onStageClick={handleStageClick}
                 legacyLeadId={contactBridge?.legacy_lead_id ?? null}
                 leadEmpresa={contactBridge?.empresa ?? null}
+                contactId={deal.contact_id ?? null}
                 onClose={() => onOpenChange(false)}
               />
 
@@ -157,10 +158,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 {hasChat && (
                   <TabsContent value="chat" className="px-6 mt-3 pb-4">
                     <ConversationPanel
-                      leadId={contactBridge!.legacy_lead_id!}
-                      empresa={contactBridge!.empresa!}
-                      telefone={contactBridge!.telefone}
-                      leadNome={contactBridge!.nome}
+                      leadId={contactBridge?.legacy_lead_id ?? ''}
+                      empresa={contactBridge?.empresa ?? ''}
+                      telefone={contactBridge?.telefone}
+                      leadNome={contactBridge?.nome}
                       contactEmail={deal.contact_email}
                       dealId={deal.id}
                       messages={chatMessages}
