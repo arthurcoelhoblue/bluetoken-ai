@@ -204,7 +204,7 @@ Deno.serve(async (req) => {
         headers,
         body: JSON.stringify({
           content,
-          type: "text",
+          type: "TEXT",
           source: "AMELIA_SDR",
           ...(conversation_id ? { ticketId: conversation_id } : {}),
           ...(phone ? { phone } : {}),
