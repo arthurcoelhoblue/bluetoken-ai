@@ -7,6 +7,7 @@ import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from ".
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 import { resolveChannelConfig, sendViaBluechat, openBluechatConversation } from "../_shared/channel-resolver.ts";
 import type { ChannelConfig } from "../_shared/channel-resolver.ts";
+import { wrapEmailHtml } from "../_shared/email-template.ts";
 
 const log = createLogger('cadence-runner');
 const MAX_RETRIES = 3;
@@ -277,7 +278,8 @@ async function dispararMensagem(
   empresa: EmpresaTipo,
   runId: string,
   stepOrdem: number,
-  templateCodigo: string
+  templateCodigo: string,
+  leadNome?: string | null,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   log.info('Enviando mensagem', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
 
@@ -360,7 +362,7 @@ async function dispararMensagem(
         body: JSON.stringify({
           to,
           subject,
-          html: htmlBody.replace(/\n/g, '<br>'),
+          html: wrapEmailHtml(htmlBody, empresa, leadNome),
           text: htmlBody,
           lead_id: leadId,
           empresa,
@@ -801,6 +803,8 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
+  const leadNome = (contact as LeadContact).primeiro_nome || (contact as LeadContact).nome?.split(' ')[0] || null;
+
   const disparo = await dispararMensagem(
     supabase,
     currentStep.canal,
@@ -810,7 +814,8 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     run.empresa,
     run.id,
     currentStep.ordem,
-    currentStep.template_codigo
+    currentStep.template_codigo,
+    leadNome,
   );
 
   if (!disparo.success) {
