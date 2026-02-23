@@ -47,22 +47,43 @@ interface EmailSendResponse {
   error?: string;
 }
 
+interface SmtpConfig {
+  host: string;
+  port: number;
+  fromHeader: string;
+  replyTo?: string;
+}
+
 // ========================================
-// Configurações SMTP (via API HTTP)
+// Secrets (fallback apenas)
 // ========================================
-const SMTP_HOST = getOptionalEnvWithDefault('SMTP_HOST', '');
-const SMTP_PORT = parseInt(getOptionalEnvWithDefault('SMTP_PORT', '587'));
+const SMTP_HOST_SECRET = getOptionalEnvWithDefault('SMTP_HOST', '');
+const SMTP_PORT_SECRET = parseInt(getOptionalEnvWithDefault('SMTP_PORT', '587'));
 const SMTP_USER = getOptionalEnvWithDefault('SMTP_USER', '');
 const SMTP_PASS = getOptionalEnvWithDefault('SMTP_PASS', '');
-const SMTP_FROM = getOptionalEnvWithDefault('SMTP_FROM', '');
+const SMTP_FROM_SECRET = getOptionalEnvWithDefault('SMTP_FROM', '');
 
-// Modo de teste agora é lido do banco de dados
-// const TEST_MODE = true; // REMOVIDO - buscar do banco
+// ========================================
+// Resolver configuração SMTP (banco > secrets)
+// ========================================
+function resolveSmtpConfig(dbSmtp: Record<string, unknown> | null): SmtpConfig {
+  const host = (dbSmtp?.host as string) || SMTP_HOST_SECRET;
+  const port = (dbSmtp?.port as number) || SMTP_PORT_SECRET;
+  const fromName = (dbSmtp?.from_name as string) || 'Blue CRM';
+  const fromEmail = (dbSmtp?.from_email as string) || SMTP_FROM_SECRET;
+  const replyTo = (dbSmtp?.reply_to as string) || undefined;
+
+  // Montar header From com nome
+  const fromHeader = fromName ? `"${fromName}" <${fromEmail}>` : fromEmail;
+
+  return { host, port, fromHeader, replyTo };
+}
 
 // ========================================
 // Função para enviar via SMTP usando base64 encoding
 // ========================================
 async function sendEmailViaSMTP(
+  smtpCfg: SmtpConfig,
   to: string,
   subject: string,
   html: string,
@@ -72,29 +93,23 @@ async function sendEmailViaSMTP(
   const decoder = new TextDecoder();
   
   try {
-    log.info('Conectando SMTP', { host: SMTP_HOST, port: SMTP_PORT });
+    log.info('Conectando SMTP', { host: smtpCfg.host, port: smtpCfg.port });
     
-    // Para Deno Edge Functions, precisamos usar TLS direto
-    // Porta 587 com STARTTLS não é bem suportada em edge functions
-    // Vamos tentar conectar com TLS direto independente da porta
     let conn: Deno.TlsConn;
     
     try {
-      // Tentar conexão TLS direta (funciona para 465 e alguns 587 com TLS)
       conn = await Deno.connectTls({
-        hostname: SMTP_HOST,
-        port: SMTP_PORT,
+        hostname: smtpCfg.host,
+        port: smtpCfg.port,
       });
       log.info('Conexão TLS estabelecida');
     } catch (tlsError) {
       log.warn('TLS direto falhou, tentando conexão normal');
-      // Se TLS falhar, usar conexão normal (menos segura, mas funciona)
       const tcpConn = await Deno.connect({
-        hostname: SMTP_HOST,
-        port: SMTP_PORT,
+        hostname: smtpCfg.host,
+        port: smtpCfg.port,
       }) as Deno.TcpConn;
       
-      // Helper para ler resposta
       async function readTcpResponse(): Promise<string> {
         const buffer = new Uint8Array(4096);
         const n = await tcpConn.read(buffer);
@@ -102,15 +117,14 @@ async function sendEmailViaSMTP(
         return decoder.decode(buffer.subarray(0, n));
       }
       
-      // Ler banner
       await readTcpResponse();
-      await tcpConn.write(encoder.encode(`EHLO ${SMTP_HOST}\r\n`));
+      await tcpConn.write(encoder.encode(`EHLO ${smtpCfg.host}\r\n`));
       await readTcpResponse();
       await tcpConn.write(encoder.encode('STARTTLS\r\n'));
       const starttlsResp = await readTcpResponse();
       
       if (starttlsResp.startsWith('220')) {
-        conn = await Deno.startTls(tcpConn, { hostname: SMTP_HOST });
+        conn = await Deno.startTls(tcpConn, { hostname: smtpCfg.host });
         log.info('STARTTLS upgrade completo');
       } else {
         tcpConn.close();
@@ -118,7 +132,6 @@ async function sendEmailViaSMTP(
       }
     }
     
-    // Helper para ler resposta
     async function readResponse(): Promise<string> {
       const buffer = new Uint8Array(4096);
       const n = await conn.read(buffer);
@@ -126,7 +139,6 @@ async function sendEmailViaSMTP(
       return decoder.decode(buffer.subarray(0, n));
     }
     
-    // Helper para enviar comando
     async function sendCommand(cmd: string): Promise<string> {
       log.debug('SMTP >', { cmd: cmd.includes('AUTH') || cmd.length > 50 ? cmd.substring(0, 20) + '...' : cmd.trim() });
       await conn.write(encoder.encode(cmd + '\r\n'));
@@ -135,22 +147,18 @@ async function sendEmailViaSMTP(
       return response;
     }
     
-    // Ler banner inicial (se conexão TLS direta)
     let response = await readResponse();
     log.debug('SMTP Banner', { banner: response.trim().substring(0, 100) });
     
-    // EHLO
-    response = await sendCommand(`EHLO ${SMTP_HOST}`);
+    response = await sendCommand(`EHLO ${smtpCfg.host}`);
     
     // AUTH LOGIN
     response = await sendCommand('AUTH LOGIN');
     if (response.startsWith('334')) {
-      // Enviar username em base64
       const userB64 = btoa(SMTP_USER);
       response = await sendCommand(userB64);
       
       if (response.startsWith('334')) {
-        // Enviar password em base64
         const passB64 = btoa(SMTP_PASS);
         response = await sendCommand(passB64);
       }
@@ -161,38 +169,46 @@ async function sendEmailViaSMTP(
       return { success: false, error: `Autenticação falhou: ${response}` };
     }
     
-    // MAIL FROM
-    response = await sendCommand(`MAIL FROM:<${SMTP_FROM.replace(/.*<|>.*/g, '')}>`);
+    // Extrair apenas o email do fromHeader para MAIL FROM
+    const fromEmailOnly = smtpCfg.fromHeader.replace(/.*<|>.*/g, '');
+    
+    response = await sendCommand(`MAIL FROM:<${fromEmailOnly}>`);
     if (!response.startsWith('250')) {
       conn.close();
       return { success: false, error: `MAIL FROM falhou: ${response}` };
     }
     
-    // RCPT TO
     response = await sendCommand(`RCPT TO:<${to}>`);
     if (!response.startsWith('250')) {
       conn.close();
       return { success: false, error: `RCPT TO falhou: ${response}` };
     }
     
-    // DATA
     response = await sendCommand('DATA');
     if (!response.startsWith('354')) {
       conn.close();
       return { success: false, error: `DATA falhou: ${response}` };
     }
     
-    // Construir mensagem MIME
     const boundary = `----=_Part_${Date.now()}`;
-    const messageId = `<${Date.now()}.${Math.random().toString(36).substring(2)}@${SMTP_HOST}>`;
+    const messageId = `<${Date.now()}.${Math.random().toString(36).substring(2)}@${smtpCfg.host}>`;
     
-    const emailContent = [
-      `From: ${SMTP_FROM}`,
+    const headers = [
+      `From: ${smtpCfg.fromHeader}`,
       `To: ${to}`,
       `Subject: ${subject}`,
       `Message-ID: ${messageId}`,
       `MIME-Version: 1.0`,
       `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    ];
+
+    // Adicionar Reply-To se configurado
+    if (smtpCfg.replyTo) {
+      headers.push(`Reply-To: ${smtpCfg.replyTo}`);
+    }
+
+    const emailContent = [
+      ...headers,
       ``,
       `--${boundary}`,
       `Content-Type: text/plain; charset=UTF-8`,
@@ -217,7 +233,6 @@ async function sendEmailViaSMTP(
       return { success: false, error: `Envio falhou: ${response}` };
     }
     
-    // QUIT
     await sendCommand('QUIT');
     conn.close();
     
@@ -236,7 +251,6 @@ async function sendEmailViaSMTP(
 // Função Principal
 // ========================================
 serve(async (req) => {
-  // CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -245,18 +259,6 @@ serve(async (req) => {
   log.info('Recebendo requisição');
 
   try {
-    // Validar configurações SMTP
-    if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS || !SMTP_FROM) {
-      log.error('Configurações SMTP incompletas');
-      return new Response(
-        JSON.stringify({
-          success: false,
-          error: 'Configurações SMTP não configuradas',
-        } as EmailSendResponse),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
     // Parse e validar body com Zod
     const rawBody = await req.json();
     const parsed = emailSendPayload.safeParse(rawBody);
@@ -274,24 +276,118 @@ serve(async (req) => {
     const body = parsed.data;
     log.info('Request', { to: body.to, subject: body.subject, lead_id: body.lead_id, empresa: body.empresa });
 
-    // Inicializar Supabase para logging
+    // Inicializar Supabase
     const supabase = createServiceClient();
 
-    // Buscar configuração de modo teste do banco
-    const { data: testConfig } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('category', 'email')
-      .eq('key', 'modo_teste')
-      .single();
+    // ========================================
+    // Buscar configurações do banco
+    // ========================================
+    const [testConfigResult, smtpDbResult] = await Promise.all([
+      supabase
+        .from('system_settings')
+        .select('value')
+        .eq('category', 'email')
+        .eq('key', 'modo_teste')
+        .single(),
+      supabase
+        .from('system_settings')
+        .select('value')
+        .eq('category', 'email')
+        .eq('key', 'smtp_config')
+        .single(),
+    ]);
+
+    const testConfig = testConfigResult.data;
+    const smtpDbConfig = smtpDbResult.data;
 
     const TEST_MODE = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.ativo ?? true;
     const TEST_EMAIL = (testConfig?.value as { ativo?: boolean; email_teste?: string })?.email_teste || 'admin@grupoblue.com.br';
 
-    log.info('Modo teste', { ativo: TEST_MODE, email: TEST_MODE ? TEST_EMAIL : undefined });
+    const dbSmtp = (smtpDbConfig?.value as Record<string, unknown>) ?? null;
+    const smtpCfg = resolveSmtpConfig(dbSmtp);
+
+    log.info('Config resolvida', {
+      host: smtpCfg.host,
+      port: smtpCfg.port,
+      from: smtpCfg.fromHeader,
+      replyTo: smtpCfg.replyTo,
+      testMode: TEST_MODE,
+    });
+
+    // Validar que temos config SMTP mínima
+    if (!smtpCfg.host || !SMTP_USER || !SMTP_PASS || !smtpCfg.fromHeader) {
+      log.error('Configurações SMTP incompletas');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          error: 'Configurações SMTP não configuradas',
+        } as EmailSendResponse),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // ========================================
+    // Validar limite diário (max_per_day)
+    // ========================================
+    const maxPerDay = (dbSmtp?.max_per_day as number) || 0;
+    if (maxPerDay > 0) {
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+
+      const { count, error: countError } = await supabase
+        .from('lead_messages')
+        .select('id', { count: 'exact', head: true })
+        .eq('canal', 'EMAIL')
+        .eq('direcao', 'OUTBOUND')
+        .eq('estado', 'ENVIADO')
+        .gte('enviado_em', todayStart.toISOString());
+
+      if (!countError && count !== null && count >= maxPerDay) {
+        log.warn('Limite diário atingido', { count, maxPerDay });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Limite diário de ${maxPerDay} e-mails atingido (${count} enviados hoje)`,
+          } as EmailSendResponse),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
+    // ========================================
+    // Validar intervalo mínimo (interval_seconds)
+    // ========================================
+    const intervalSeconds = (dbSmtp?.interval_seconds as number) || 0;
+    if (intervalSeconds > 0) {
+      const minTime = new Date(Date.now() - intervalSeconds * 1000).toISOString();
+
+      const { data: recentMsg } = await supabase
+        .from('lead_messages')
+        .select('enviado_em')
+        .eq('canal', 'EMAIL')
+        .eq('direcao', 'OUTBOUND')
+        .eq('estado', 'ENVIADO')
+        .gte('enviado_em', minTime)
+        .order('enviado_em', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (recentMsg) {
+        const waitSec = Math.ceil(intervalSeconds - (Date.now() - new Date(recentMsg.enviado_em).getTime()) / 1000);
+        log.warn('Intervalo mínimo não respeitado', { intervalSeconds, waitSec });
+        return new Response(
+          JSON.stringify({
+            success: false,
+            error: `Intervalo mínimo entre e-mails: aguarde ${waitSec}s`,
+          } as EmailSendResponse),
+          { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
 
     // Se modo teste, redirecionar email
     const finalTo = TEST_MODE ? TEST_EMAIL : body.to;
+    log.info('Modo teste', { ativo: TEST_MODE, email: TEST_MODE ? TEST_EMAIL : undefined });
 
     // Registrar mensagem como PENDENTE
     let messageId: string | undefined;
@@ -325,7 +421,6 @@ serve(async (req) => {
       log.info('[TEST_MODE] Simulando envio de e-mail');
       const fakeMessageId = `test-${Date.now()}`;
 
-      // Atualizar status para ENVIADO
       if (messageId) {
         await supabase
           .from('lead_messages')
@@ -350,12 +445,11 @@ serve(async (req) => {
       );
     }
 
-    // Enviar e-mail via SMTP
+    // Enviar e-mail via SMTP com config do banco
     log.info('Enviando via SMTP nativo');
-    const result = await sendEmailViaSMTP(body.to, body.subject, body.html, body.text);
+    const result = await sendEmailViaSMTP(smtpCfg, finalTo, body.subject, body.html, body.text);
     
     if (result.success) {
-      // Atualizar status para ENVIADO
       if (messageId) {
         await supabase
           .from('lead_messages')
@@ -378,7 +472,6 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else {
-      // Atualizar status para ERRO
       if (messageId) {
         await supabase
           .from('lead_messages')
