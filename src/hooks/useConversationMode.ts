@@ -129,6 +129,7 @@ export function useSendManualMessage() {
             action: 'send-message',
             empresa,
             conversation_id: bluechatConversationId,
+            phone: telefone.replace(/\D/g, ''),
             content: conteudo,
           },
         });
