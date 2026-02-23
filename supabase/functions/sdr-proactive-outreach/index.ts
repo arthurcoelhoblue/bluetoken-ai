@@ -333,18 +333,55 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Send message directly via Blue Chat POST /messages
-    let conversationId: string | null = null;
+    // 6. Check if there's an existing conversation_id in framework_data
+    let conversationId: string | null =
+      (ctx.convState?.framework_data as Record<string, unknown>)?.bluechat_conversation_id as string | null ?? null;
     let messageId: string | null = null;
     let ticketId: string | null = null;
 
+    // 6a. If no existing conversation, open one via POST /conversations
+    if (!conversationId) {
+      try {
+        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify({
+            phone,
+            contact_name: lead.nome || lead.primeiro_nome,
+            channel: "whatsapp",
+            source: "AMELIA",
+          }),
+        });
+
+        if (!openRes.ok) {
+          const errText = await openRes.text();
+          console.error("Blue Chat open-conversation error:", openRes.status, errText);
+          return jsonResponse(
+            { error: "Failed to open conversation in Blue Chat", detail: errText },
+            req,
+            openRes.status
+          );
+        }
+
+        const openData = await openRes.json().catch(() => ({}));
+        conversationId = openData?.conversation_id || openData?.id || null;
+        ticketId = openData?.ticket_id || null;
+      } catch (err) {
+        console.error("open-conversation fetch error:", err);
+        return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
+      }
+    }
+
+    if (!conversationId) {
+      return jsonResponse({ error: "Could not obtain Blue Chat conversation ID" }, req, 500);
+    }
+
+    // 6b. Send message to the conversation via POST /conversations/{id}/messages
     try {
-      const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
+      const sendRes = await fetch(`${bcConfig.baseUrl}/conversations/${conversationId}/messages`, {
         method: "POST",
         headers: bcHeaders,
         body: JSON.stringify({
-          phone,
-          contact_name: lead.nome || lead.primeiro_nome,
           content: greetingMessage,
           source: "AMELIA_SDR",
         }),
@@ -361,9 +398,8 @@ Deno.serve(async (req) => {
       }
 
       const sendData = await sendRes.json().catch(() => ({}));
-      conversationId = sendData?.conversation_id || sendData?.id || null;
       messageId = sendData?.message_id || sendData?.id || null;
-      ticketId = sendData?.ticket_id || null;
+      if (!ticketId) ticketId = sendData?.ticket_id || null;
     } catch (err) {
       console.error("send-message fetch error:", err);
       return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
