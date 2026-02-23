@@ -218,6 +218,7 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
       };
     },
     enabled: !!leadId,
+    refetchInterval: 30_000,
   });
 
   const refetch = () => {

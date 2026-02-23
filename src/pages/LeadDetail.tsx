@@ -34,6 +34,7 @@ import {
   Bot,
   Calendar,
   Edit,
+  Loader2,
   Mail,
   MessageCircle,
   Phone,
@@ -43,7 +44,7 @@ import {
   Clock,
   AlertCircle,
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { Temperatura } from '@/types/classification';
 import type { EmpresaTipo } from '@/types/sgt';
@@ -340,16 +341,28 @@ function LeadDetailContent() {
                         Passo {cadenceRun.last_step_ordem || 0}
                       </p>
                     </div>
-                    {cadenceRun.next_run_at && (
-                      <div>
-                        <p className="text-muted-foreground">Próxima execução</p>
-                        <p className="font-medium">
-                          {format(new Date(cadenceRun.next_run_at), "dd/MM 'às' HH:mm", {
-                            locale: ptBR,
-                          })}
-                        </p>
-                      </div>
-                    )}
+                    {cadenceRun.next_run_at && (() => {
+                      const nextRunDate = new Date(cadenceRun.next_run_at);
+                      const isPast = nextRunDate < new Date();
+                      return (
+                        <div>
+                          <p className="text-muted-foreground">Próxima execução</p>
+                          {isPast ? (
+                            <p className="font-medium text-muted-foreground flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Aguardando execução...
+                            </p>
+                          ) : (
+                            <p className="font-medium">
+                              {format(nextRunDate, "dd/MM 'às' HH:mm", { locale: ptBR })}
+                              <span className="text-muted-foreground text-xs ml-1">
+                                ({formatDistanceToNow(nextRunDate, { addSuffix: true, locale: ptBR })})
+                              </span>
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               ) : (
