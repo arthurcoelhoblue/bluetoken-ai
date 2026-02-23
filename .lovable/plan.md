@@ -1,72 +1,104 @@
 
+# Corrigir mensagens nao aparecendo na UI + sanitizacao cortando texto
 
-# Corrigir extração da mensagem atual no payload adapter do Blue Chat
+## Problema 1: Mensagens nao aparecem na interface
 
-## Problema
+A pagina do lead usa realtime para atualizar mensagens automaticamente (`useConversationMessages.ts` linhas 149-166). Porem, a tabela `lead_messages` **nao esta na publicacao `supabase_realtime`**, entao o subscription nunca recebe eventos e a UI nunca atualiza.
 
-O Blue Chat envia dois campos no payload:
-- `message.content` -- a mensagem que o lead acabou de enviar (a atual)
-- `conversation[]` -- o historico completo da conversa (mensagens antigas)
+As mensagens existem no banco de dados (confirmado via query), mas o usuario precisa recarregar a pagina manualmente para ve-las.
 
-O adaptador atual (`payload-adapter.ts`) ignora o campo `message` e extrai a ultima mensagem do array `conversation`. Isso faz com que a Amelia receba uma mensagem antiga em vez da mensagem que o lead realmente enviou.
+### Correcao
 
-Exemplo concreto dos logs:
-- Lead enviou: **"Amelia"** (campo `message.content`)
-- Amelia recebeu: **"Sim, quero falar com comercial"** (ultima mensagem de customer no `conversation[]`)
+Adicionar `lead_messages` a publicacao realtime via migration:
 
-## Causa raiz
+```sql
+ALTER PUBLICATION supabase_realtime ADD TABLE public.lead_messages;
+```
 
-A interface `BlueChatNativePayload` nao inclui o campo `message` (separado do `conversation`). A funcao `adaptNativePayload` usa apenas `extractLastCustomerMessage(conversation)` para definir o texto da mensagem.
+---
 
-## Correcao
+## Problema 2: Texto cortado na sanitizacao
 
-### Arquivo: `supabase/functions/bluechat-inbound/payload-adapter.ts`
+A IA gerou algo como:
 
-1. Adicionar o campo `message` na interface `BlueChatNativePayload`:
+> **Arthur, como e a sua primeira vez...**
+
+O sanitizador anti-robotico (arquivo `response-generator.ts`, linha 61) tem esta regra:
 
 ```typescript
-interface BlueChatNativePayload {
-  event: string;
-  timestamp: string;
-  ticket: { ... };
-  contact: { ... };
-  message?: {
-    id?: string;
-    content?: string;
-    type?: string;
-    mediaUrl?: string | null;
-    timestamp?: string;
-  };
-  conversation?: Array<{ ... }>;
-  summary?: string;
-  instruction?: string;
+cleaned = cleaned.replace(new RegExp(`^${leadNome},?\\s*`, 'i'), '');
+```
+
+Isso remove "Arthur" do inicio, mas o resultado fica:
+
+> **, como e a sua primeira vez...**
+
+O problema: a regex remove o nome mas deixa a virgula/pontuacao que vem depois, gerando um texto que comeca com ", Arthur" (ou so a virgula).
+
+Alem disso, na linha 32-35 do `detectRoboticPattern`, a deteccao por nome e acionada quando a mensagem comeca com o nome do lead, mas a limpeza nao trata corretamente o caso onde ha conteudo valido apos o nome.
+
+### Correcao
+
+Alterar a regex na linha 61 do `response-generator.ts` para tambem remover a pontuacao e espaco que seguem o nome:
+
+```typescript
+// Antes (remove nome mas deixa virgula):
+cleaned = cleaned.replace(new RegExp(`^${leadNome},?\\s*`, 'i'), '');
+
+// Depois (remove nome + virgula/ponto + espaco):
+cleaned = cleaned.replace(new RegExp(`^${leadNome}[,.]?\\s*`, 'i'), '');
+```
+
+Mas isso ainda nao resolve 100% — se a IA gerou "Arthur, como e...", remover "Arthur, " deixa "como e..." (sem maiuscula). A logica de capitalizar na linha 72-74 ja cobre isso.
+
+O problema real e que a deteccao (`detectRoboticPattern`) esta sendo muito agressiva. A mensagem "Arthur, como e a sua primeira vez..." nao e robotica — e uma resposta natural que usa o nome do lead. A regra na linha 32-35 detecta qualquer mensagem que comece com o nome do lead como "robotica", o que esta errado.
+
+### Correcao aprimorada
+
+1. **Tornar a deteccao por nome menos agressiva**: So detectar como robotico se o nome for seguido de padrao robotico (como "Arthur, que bom!" ou "Arthur, entendi!"), nao quando e parte natural da frase.
+
+2. **Na sanitizacao, preservar o conteudo apos o nome**: Em vez de apagar o nome cegamente, verificar se o que sobra faz sentido.
+
+Alteracao no `detectRoboticPattern` (linhas 32-35):
+
+```typescript
+// Antes: detecta QUALQUER mensagem que comeca com o nome do lead
+if (leadNome) {
+  const nomePattern = new RegExp(`^${leadNome},?\\s`, 'i');
+  if (nomePattern.test(resposta)) return true;
+}
+
+// Depois: so detecta se o nome e seguido de padrao robotico
+if (leadNome) {
+  const roboticAfterName = new RegExp(
+    `^${leadNome},?\\s+(entendi|perfeito|que bom|excelente|ótimo|claro|certo|legal|maravilha|show|beleza)`,
+    'i'
+  );
+  if (roboticAfterName.test(resposta)) return true;
 }
 ```
 
-2. Na funcao `adaptNativePayload`, priorizar `native.message.content` sobre o historico do `conversation`:
+Alteracao no `sanitizeRoboticResponse` (linha 61):
 
 ```typescript
-// Prioridade: message.content (mensagem atual) > conversation (historico)
-const lastMessage = (native.message?.content?.trim())
-  ? native.message.content.trim()
-  : extractLastCustomerMessage(native.conversation, native.summary, native.instruction);
+// Manter a regex mas so remover se foi detectado como robotico
+// (a funcao so e chamada quando detectRoboticPattern retorna true)
+// Ajustar para nao deixar virgula solta:
+if (leadNome) {
+  cleaned = cleaned.replace(new RegExp(`^${leadNome}[,;.!]?\\s*`, 'i'), '');
+}
 ```
 
-3. Usar o `message.id` nativo como `message_id` quando disponivel (em vez do ID sintetico baseado em timestamp):
+---
 
-```typescript
-message_id: native.message?.id
-  ? `bc-${native.message.id}`
-  : `bc-${native.ticket.id}-${Date.now()}`,
-```
-
-## Resultado esperado
-
-A Amelia vai receber a mensagem que o lead realmente enviou, em vez de uma mensagem antiga do historico. O historico continua disponivel no campo `context.history_summary` para dar contexto a IA.
-
-## Arquivo alterado
+## Arquivos alterados
 
 | Arquivo | Alteracao |
 |---------|-----------|
-| `supabase/functions/bluechat-inbound/payload-adapter.ts` | Priorizar `message.content` sobre `conversation[]` para extrair mensagem atual |
+| Migration SQL | Adicionar `lead_messages` ao `supabase_realtime` |
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Corrigir deteccao de nome para nao ser agressiva demais; ajustar sanitizacao para nao deixar pontuacao solta |
 
+## Resultado esperado
+
+1. As mensagens vao aparecer automaticamente na interface sem precisar recarregar a pagina
+2. A Amelia vai poder usar o nome do lead naturalmente ("Arthur, como e...") sem que o sanitizador corte o texto
