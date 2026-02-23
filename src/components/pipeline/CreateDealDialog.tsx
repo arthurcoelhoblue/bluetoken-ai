@@ -194,7 +194,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
                           value={contactSearch}
                           onValueChange={setContactSearch}
                         />
-                        <CommandList>
+                        <CommandList className="max-h-[200px] overflow-y-auto">
                           <CommandEmpty>Nenhum contato encontrado.</CommandEmpty>
                           <CommandGroup>
                             {allContacts.map(c => (
