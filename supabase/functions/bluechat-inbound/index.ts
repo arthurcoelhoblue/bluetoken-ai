@@ -732,6 +732,7 @@ serve(async (req) => {
         resolution,
         empresa,
         department: action === 'ESCALATE' ? departamentoDestino : undefined,
+        phone: payload.contact?.phone,
       });
 
       // Se ação é RESOLVE, marcar ticket_resolved no framework_data
