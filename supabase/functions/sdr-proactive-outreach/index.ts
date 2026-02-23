@@ -56,6 +56,81 @@ async function resolveBlueChat(
   return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };
 }
 
+// ── contact resolution ──
+
+interface ResolvedLead {
+  lead_id: string;
+  empresa: string;
+  nome: string | null;
+  primeiro_nome: string | null;
+  telefone: string | null;
+  telefone_e164: string | null;
+  email: string | null;
+  synthetic: boolean; // true if lead_contacts was created from a CRM contact
+}
+
+async function resolveLeadFromContact(
+  supabase: ReturnType<typeof createClient>,
+  contactId: string,
+  empresa: string,
+): Promise<{ lead: ResolvedLead | null; error?: string }> {
+  const { data: contact, error: cErr } = await supabase
+    .from("contacts")
+    .select("id, legacy_lead_id, nome, primeiro_nome, telefone, telefone_e164, email, empresa")
+    .eq("id", contactId)
+    .maybeSingle();
+
+  if (cErr || !contact) {
+    return { lead: null, error: cErr?.message || "Contact not found" };
+  }
+
+  // If contact already has a legacy_lead_id, use the standard path
+  if (contact.legacy_lead_id) {
+    const { data: existing } = await supabase
+      .from("lead_contacts")
+      .select("lead_id, empresa, nome, primeiro_nome, telefone, telefone_e164, email")
+      .eq("lead_id", contact.legacy_lead_id)
+      .eq("empresa", empresa)
+      .maybeSingle();
+
+    if (existing) {
+      return { lead: { ...existing, synthetic: false } };
+    }
+  }
+
+  // Create synthetic lead_contacts entry from CRM contact
+  const syntheticLeadId = `crm_${contactId}`;
+
+  const { data: upserted, error: uErr } = await supabase
+    .from("lead_contacts")
+    .upsert(
+      {
+        lead_id: syntheticLeadId,
+        empresa,
+        nome: contact.nome,
+        primeiro_nome: contact.primeiro_nome,
+        telefone: contact.telefone,
+        telefone_e164: contact.telefone_e164,
+        email: contact.email,
+      },
+      { onConflict: "lead_id,empresa" }
+    )
+    .select("lead_id, empresa, nome, primeiro_nome, telefone, telefone_e164, email")
+    .maybeSingle();
+
+  if (uErr || !upserted) {
+    return { lead: null, error: uErr?.message || "Failed to create synthetic lead" };
+  }
+
+  // Update contacts table with the synthetic lead_id so the sync trigger links them
+  await supabase
+    .from("contacts")
+    .update({ legacy_lead_id: syntheticLeadId })
+    .eq("id", contactId);
+
+  return { lead: { ...upserted, synthetic: true } };
+}
+
 // ── context loading ──
 
 interface DeepContext {
@@ -70,7 +145,8 @@ interface DeepContext {
 async function loadDeepContext(
   supabase: ReturnType<typeof createClient>,
   leadId: string,
-  empresa: string
+  empresa: string,
+  contactId?: string,
 ): Promise<DeepContext> {
   // All queries in parallel
   const [msgRes, convRes, classRes, contactRes, sgtRes, learningsRes] = await Promise.all([
@@ -96,13 +172,15 @@ async function loadDeepContext(
       .eq("lead_id", leadId)
       .eq("empresa", empresa)
       .maybeSingle(),
-    // 4. Contact (to find deal)
-    supabase
-      .from("contacts")
-      .select("id")
-      .eq("legacy_lead_id", leadId)
-      .eq("empresa", empresa as "BLUE" | "TOKENIZA")
-      .maybeSingle(),
+    // 4. Contact (to find deal) — use contactId directly if available
+    contactId
+      ? Promise.resolve({ data: { id: contactId }, error: null })
+      : supabase
+          .from("contacts")
+          .select("id")
+          .eq("legacy_lead_id", leadId)
+          .eq("empresa", empresa as "BLUE" | "TOKENIZA")
+          .maybeSingle(),
     // 5. SGT events (last 5)
     supabase
       .from("sgt_events")
@@ -246,30 +324,50 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json().catch(() => ({}));
-    const { lead_id, empresa, motivo, objetivo, bypass_rate_limit } = body as {
+    const { lead_id, contact_id, empresa, motivo, objetivo, bypass_rate_limit } = body as {
       lead_id?: string;
+      contact_id?: string;
       empresa?: string;
       motivo?: string;
       objetivo?: string;
       bypass_rate_limit?: boolean;
     };
 
-    if (!lead_id || !empresa) {
-      return jsonResponse({ error: "Missing lead_id or empresa" }, req, 400);
+    if ((!lead_id && !contact_id) || !empresa) {
+      return jsonResponse({ error: "Missing lead_id/contact_id or empresa" }, req, 400);
     }
 
-    // 1. Fetch lead data
-    const { data: lead, error: leadErr } = await serviceClient
-      .from("lead_contacts")
-      .select("lead_id, empresa, nome, primeiro_nome, telefone, telefone_e164, email")
-      .eq("lead_id", lead_id)
-      .eq("empresa", empresa)
-      .maybeSingle();
+    // ── Resolve lead data ──
+    let lead: ResolvedLead | null = null;
+    let resolvedContactId: string | undefined = contact_id || undefined;
 
-    if (leadErr || !lead) {
-      return jsonResponse({ error: "Lead not found", detail: leadErr?.message }, req, 404);
+    if (lead_id) {
+      // Standard path: fetch from lead_contacts
+      const { data: leadData, error: leadErr } = await serviceClient
+        .from("lead_contacts")
+        .select("lead_id, empresa, nome, primeiro_nome, telefone, telefone_e164, email")
+        .eq("lead_id", lead_id)
+        .eq("empresa", empresa)
+        .maybeSingle();
+
+      if (leadErr || !leadData) {
+        return jsonResponse({ error: "Lead not found", detail: leadErr?.message }, req, 404);
+      }
+      lead = { ...leadData, synthetic: false };
+    } else if (contact_id) {
+      // New path: resolve from contacts table
+      const result = await resolveLeadFromContact(serviceClient, contact_id, empresa);
+      if (!result.lead) {
+        return jsonResponse({ error: "Contact not found", detail: result.error }, req, 404);
+      }
+      lead = result.lead;
     }
 
+    if (!lead) {
+      return jsonResponse({ error: "Could not resolve lead" }, req, 400);
+    }
+
+    const effectiveLeadId = lead.lead_id;
     const phone = lead.telefone_e164 || lead.telefone;
     if (!phone) {
       return jsonResponse({ error: "Lead has no phone number" }, req, 400);
@@ -281,7 +379,7 @@ Deno.serve(async (req) => {
       const { data: recentOutbound } = await serviceClient
         .from("lead_messages")
         .select("id")
-        .eq("lead_id", lead_id)
+        .eq("lead_id", effectiveLeadId)
         .eq("empresa", empresa)
         .eq("direcao", "OUTBOUND")
         .gte("created_at", twentyFourHoursAgo)
@@ -297,7 +395,7 @@ Deno.serve(async (req) => {
     }
 
     // 3. Load deep context in parallel
-    const ctx = await loadDeepContext(serviceClient, lead_id, empresa);
+    const ctx = await loadDeepContext(serviceClient, effectiveLeadId, empresa, resolvedContactId);
 
     // 4. Generate contextual message via AI
     const { system: systemPrompt, user: userPrompt } = buildContextualPrompt(
@@ -340,7 +438,6 @@ Deno.serve(async (req) => {
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
     // Send directly via /messages with phone as primary identifier
-    // Blue Chat auto-creates ticket/conversation when phone is provided
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
     try {
@@ -382,7 +479,7 @@ Deno.serve(async (req) => {
 
     // 8. Record outbound message in lead_messages
     const { data: savedMsg } = await serviceClient.from("lead_messages").insert({
-      lead_id,
+      lead_id: effectiveLeadId,
       empresa,
       direcao: "OUTBOUND",
       canal: "WHATSAPP",
@@ -396,6 +493,8 @@ Deno.serve(async (req) => {
         proactive_outreach: true,
         motivo: objetivo || motivo || "abordagem proativa",
         ai_model: aiResult.model,
+        contact_id: resolvedContactId || null,
+        synthetic_lead: lead.synthetic,
         context_depth: {
           messages: ctx.messages.length,
           has_deal: !!ctx.deal,
@@ -408,7 +507,7 @@ Deno.serve(async (req) => {
     // 9. Update conversation state
     await serviceClient.from("lead_conversation_state").upsert(
       {
-        lead_id,
+        lead_id: effectiveLeadId,
         empresa,
         canal: "WHATSAPP",
         estado_funil: (ctx.convState?.estado_funil as string) || "SAUDACAO",
@@ -425,19 +524,24 @@ Deno.serve(async (req) => {
       { onConflict: "lead_id,empresa" }
     );
 
-    // 10. Update deal if exists
+    // 10. Update deal if exists — use contactId directly when available
     let dealUpdated = false;
-    const { data: contact } = await serviceClient
-      .from("contacts")
-      .select("id")
-      .eq("legacy_lead_id", lead_id)
-      .maybeSingle();
+    let dealContactId: string | null = resolvedContactId || null;
 
-    if (contact?.id) {
+    if (!dealContactId) {
+      const { data: contact } = await serviceClient
+        .from("contacts")
+        .select("id")
+        .eq("legacy_lead_id", effectiveLeadId)
+        .maybeSingle();
+      dealContactId = contact?.id || null;
+    }
+
+    if (dealContactId) {
       const { data: dealRow } = await serviceClient
         .from("deals")
         .select("id")
-        .eq("contact_id", contact.id)
+        .eq("contact_id", dealContactId)
         .eq("status", "ABERTO")
         .order("created_at", { ascending: false })
         .limit(1)
@@ -453,19 +557,21 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[sdr-proactive-outreach] ✅ ${empresa} lead=${lead_id} conv=${conversationId} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
+      `[sdr-proactive-outreach] ✅ ${empresa} lead=${effectiveLeadId} conv=${conversationId} synthetic=${lead.synthetic} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
     );
 
     return jsonResponse(
       {
         success: true,
-        lead_id,
+        lead_id: effectiveLeadId,
+        contact_id: resolvedContactId || null,
         conversation_id: conversationId,
         ticket_id: ticketId,
         message_sent: greetingMessage,
         message_id: savedMsg?.id || null,
         ai_model: aiResult.model,
         deal_updated: dealUpdated,
+        synthetic_lead: lead.synthetic,
       },
       req
     );
