@@ -333,39 +333,14 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Resolve conversation/ticket IDs, opening a new conversation if needed
+    // 6. Resolve conversation/ticket IDs from stored framework_data
     const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
     let conversationId: string | null = (fwData.bluechat_conversation_id as string) || null;
     let messageId: string | null = null;
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
 
-    // If we don't have a ticketId, open a conversation first to obtain one
-    if (!ticketId) {
-      try {
-        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            phone,
-            contact_name: lead.primeiro_nome || lead.nome || undefined,
-            channel: "whatsapp",
-            source: "AMELIA",
-          }),
-        });
-        const openText = await openRes.text();
-        console.log("Blue Chat /conversations response:", openRes.status, openText);
-        if (openRes.ok) {
-          const openData = JSON.parse(openText || "{}");
-          conversationId = openData?.conversation_id || openData?.id || conversationId;
-          ticketId = openData?.ticket_id || openData?.ticketId || ticketId;
-        } else {
-          console.warn("Failed to open conversation, will try sending with phone only:", openText);
-        }
-      } catch (err) {
-        console.warn("Open conversation fetch error (non-fatal):", err);
-      }
-    }
-
+    // Send directly via /messages with phone as primary identifier
+    // Blue Chat auto-creates ticket/conversation when phone is provided
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
     try {

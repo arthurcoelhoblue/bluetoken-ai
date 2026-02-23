@@ -40,7 +40,11 @@ serve(async (req) => {
   // Validar autenticação (sync check with env fallback — async per-empresa check happens after body parsing)
   const authResult = validateAuth(req);
   if (!authResult.valid) {
-    log.error('Acesso não autorizado');
+    log.error('Acesso não autorizado — nenhum token presente', {
+      headers: Object.fromEntries(req.headers.entries()),
+      hasAuth: !!req.headers.get('Authorization'),
+      hasApiKey: !!req.headers.get('X-API-Key'),
+    });
     return new Response(
       JSON.stringify({ error: 'Unauthorized' }),
       { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
@@ -53,9 +57,20 @@ serve(async (req) => {
   try {
     const rawPayload = await req.json();
 
+    // Debug: log raw payload before validation
+    log.info('Payload bruto recebido', {
+      keys: Object.keys(rawPayload),
+      raw: JSON.stringify(rawPayload).substring(0, 500),
+    });
+
     // Zod validation
     const parsed = blueChatSchema.safeParse(rawPayload);
     if (!parsed.success) {
+      log.error('Validação Zod falhou', {
+        errors: parsed.error.errors,
+        payloadKeys: Object.keys(rawPayload),
+        rawPreview: JSON.stringify(rawPayload).substring(0, 300),
+      });
       return new Response(
         JSON.stringify({ error: 'Invalid payload', details: parsed.error.errors[0]?.message }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
