@@ -2,12 +2,13 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, AlertCircle, ExternalLink } from 'lucide-react';
+import { Send, AlertCircle, ExternalLink, Bot, Loader2 } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { buildBluechatDeepLink } from '@/utils/bluechat';
 import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
+import { toast } from 'sonner';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -28,6 +29,7 @@ export function ManualMessageInput({
   const [text, setText] = useState('');
   const [dealDialogOpen, setDealDialogOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
+  const [isCallingAmelia, setIsCallingAmelia] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
   const { isBluechat } = useChannelConfig(empresa);
@@ -95,7 +97,6 @@ export function ManualMessageInput({
     const trimmed = text.trim();
     if (!trimmed || !telefone) return;
 
-    // If contact exists but has no deal, require deal creation first
     if (contact && !hasDeal) {
       setPendingMessage(trimmed);
       setDealDialogOpen(true);
@@ -120,10 +121,28 @@ export function ManualMessageInput({
     }
   };
 
-  const handleOpenBluechat = () => {
-    const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
-    if (deepLink) {
-      window.open(deepLink, '_blank');
+  const handleAbordarAmelia = async () => {
+    setIsCallingAmelia(true);
+    try {
+      const { data, error } = await supabase.functions.invoke('sdr-proactive-outreach', {
+        body: {
+          lead_id: leadId,
+          empresa,
+          motivo: 'Acionado manualmente pelo chat',
+          bypass_rate_limit: true,
+        },
+      });
+      if (error) throw error;
+      if (data?.error) {
+        toast.error(`Erro: ${data.error}`);
+        return;
+      }
+      toast.success(`Amélia enviou: "${(data?.message_sent || '').substring(0, 60)}..."`);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      toast.error('Erro ao acionar a Amélia: ' + msg);
+    } finally {
+      setIsCallingAmelia(false);
     }
   };
 
@@ -136,29 +155,40 @@ export function ManualMessageInput({
     );
   }
 
-  // ── Blue Chat mode: show link to Blue Chat + optional send via API ──
+  // ── Blue Chat mode: Abordar via Amelia + link secundário + envio manual ──
   if (isBluechat) {
     const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
 
     return (
       <>
         <div className="space-y-2">
+          <Button
+            variant="default"
+            size="sm"
+            className="w-full gap-2 text-xs"
+            disabled={isCallingAmelia}
+            onClick={handleAbordarAmelia}
+          >
+            {isCallingAmelia ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <Bot className="h-3.5 w-3.5" />
+            )}
+            {isCallingAmelia ? 'Amélia está analisando...' : 'Abordar via Amélia'}
+          </Button>
+
           {deepLink && (
             <a
               href={deepLink}
               target="_blank"
               rel="noopener noreferrer"
+              className="flex items-center justify-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
-              <Button
-                variant="outline"
-                size="sm"
-                className="w-full gap-2 text-xs"
-              >
-                <ExternalLink className="h-3.5 w-3.5" />
-                Responder no Blue Chat
-              </Button>
+              <ExternalLink className="h-3 w-3" />
+              Ver no Blue Chat
             </a>
           )}
+
           <div className="flex items-end gap-2">
             <Textarea
               ref={textareaRef}

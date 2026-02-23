@@ -81,6 +81,7 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
                         lead_id: legacyLeadId,
                         empresa: leadEmpresa,
                         motivo: 'Acionado manualmente pelo painel',
+                        bypass_rate_limit: true,
                       },
                     });
                     if (error) throw error;
