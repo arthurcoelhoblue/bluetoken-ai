@@ -4,6 +4,7 @@
 
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 import type { CadenceRunStatus } from '@/types/cadence';
 
 export function useUpdateCadenceRunStatus() {
@@ -121,10 +122,11 @@ export function useDeactivateCadence() {
 }
 
 export function useCadenciasCRMView() {
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['cadencias-crm-view'],
+    queryKey: ['cadencias-crm-view', activeCompanies],
     queryFn: async () => {
-      const { data, error } = await supabase.from('cadencias_crm').select('*');
+      const { data, error } = await supabase.from('cadencias_crm').select('*').in('empresa', activeCompanies);
       if (error) throw error;
       return (data ?? []) as unknown as import('@/types/cadence').CadenciaCRM[];
     },

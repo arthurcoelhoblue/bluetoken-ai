@@ -4,6 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 import type {
   Cadence,
   CadenceWithStats,
@@ -14,10 +15,11 @@ import type {
 } from '@/types/cadence';
 
 export function useCadences(filters?: CadencesFilters) {
+  const { activeCompanies } = useCompany();
   return useQuery({
-    queryKey: ['cadences', filters],
+    queryKey: ['cadences', filters, activeCompanies],
     queryFn: async (): Promise<CadenceWithStats[]> => {
-      let query = supabase.from('cadences').select('*');
+      let query = supabase.from('cadences').select('*').in('empresa', activeCompanies);
 
       if (filters?.empresa) query = query.eq('empresa', filters.empresa);
       if (filters?.ativo !== undefined) query = query.eq('ativo', filters.ativo);
