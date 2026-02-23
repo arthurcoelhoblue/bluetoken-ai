@@ -439,7 +439,7 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Resolve conversation/ticket IDs from stored framework_data
+    // 6. Check if conversation_id exists in framework_data
     const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
     let conversationId: string | null =
       (fwData.bluechat_conversation_id as string) ||
@@ -450,118 +450,102 @@ Deno.serve(async (req) => {
     let ticketId: string | null =
       (fwData.bluechat_ticket_id as string) ||
       (fwData.ticket_id as string) ||
-      (fwData.ticketId as string) ||
       null;
 
-    // Fallback: if conversationId exists but no ticketId, use conversationId as ticketId
-    if (conversationId && !ticketId) {
-      ticketId = conversationId;
-      console.log("Using conversationId as ticketId fallback:", ticketId);
-    }
-
-    // 6b. If no conversation/ticket exists, create a ticket first via POST /tickets
-    if (!ticketId && !conversationId) {
-      const ticketsUrl = `${bcConfig.baseUrl}/tickets`;
-      const contactName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
-      const ticketPayload = {
-        phone,
-        contact_name: contactName,
-        channel: "whatsapp",
-        source: "AMELIA_SDR",
-      };
-
-      console.log("Creating Blue Chat ticket:", ticketsUrl, JSON.stringify(ticketPayload));
-
-      try {
-        const ticketRes = await fetch(ticketsUrl, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify(ticketPayload),
-        });
-
-        const ticketText = await ticketRes.text();
-        console.log("Blue Chat /tickets response:", ticketRes.status, ticketText);
-
-        if (ticketRes.ok) {
-          const ticketData = JSON.parse(ticketText || "{}");
-          ticketId =
-            ticketData?.ticket_id ||
-            ticketData?.ticketId ||
-            ticketData?.id ||
-            ticketData?.ticket?.id ||
-            null;
-          conversationId =
-            ticketData?.conversation_id ||
-            ticketData?.conversationId ||
-            ticketData?.conversation?.id ||
-            null;
-
-          // Fallback: use one as the other if only one is returned
-          if (conversationId && !ticketId) ticketId = conversationId;
-          if (ticketId && !conversationId) conversationId = ticketId;
-
-          console.log("Ticket created successfully:", { ticketId, conversationId });
-        } else {
-          console.warn("Failed to create ticket:", ticketRes.status, ticketText);
-          // Don't fail yet — try sending with phone-only as last resort
-        }
-      } catch (err) {
-        console.error("Ticket creation fetch error:", err);
-      }
-    }
-
-    // If still no ticketId after all attempts, return clear error
-    if (!ticketId) {
-      return jsonResponse(
-        {
-          error: "Não foi possível criar ticket no Blue Chat. Este contato precisa iniciar uma conversa via WhatsApp primeiro para ser abordado pela Amélia.",
-          no_ticket: true,
-          phone,
-        },
-        req,
-        400
-      );
-    }
-
-    // Send message via /messages with ticketId guaranteed
-    const messagesUrl = `${bcConfig.baseUrl}/messages`;
-
-    try {
-      const messagePayload: Record<string, unknown> = {
+    // ── PATH A: Lead has existing conversation → send via /messages (same as whatsapp-send) ──
+    if (conversationId) {
+      console.log(`[sdr-proactive-outreach] PATH A: Sending via /messages with conversation_id=${conversationId}`);
+      
+      const messagesUrl = `${bcConfig.baseUrl}/messages`;
+      const messagePayload = {
+        conversation_id: conversationId,
         content: greetingMessage,
         source: "AMELIA_SDR",
-        phone,
-        type: "TEXT",
-        ticketId,
       };
-      if (conversationId) messagePayload.conversation_id = conversationId;
 
-      console.log("Sending to Blue Chat:", messagesUrl, JSON.stringify(messagePayload));
+      try {
+        const sendRes = await fetch(messagesUrl, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify(messagePayload),
+        });
 
-      const sendRes = await fetch(messagesUrl, {
-        method: "POST",
-        headers: bcHeaders,
-        body: JSON.stringify(messagePayload),
-      });
+        const sendText = await sendRes.text();
+        console.log("Blue Chat /messages response:", sendRes.status, sendText);
 
-      const sendText = await sendRes.text();
-      console.log("Blue Chat /messages response:", sendRes.status, sendText);
+        if (!sendRes.ok) {
+          return jsonResponse(
+            { error: "Failed to send message via Blue Chat", detail: sendText },
+            req,
+            sendRes.status
+          );
+        }
 
-      if (!sendRes.ok) {
-        return jsonResponse(
-          { error: "Failed to send message via Blue Chat", detail: sendText },
-          req,
-          sendRes.status
-        );
+        const sendData = JSON.parse(sendText || "{}");
+        messageId = sendData?.message_id || sendData?.id || null;
+        ticketId = sendData?.ticket_id || sendData?.ticketId || ticketId;
+      } catch (err) {
+        console.error("send-message fetch error:", err);
+        return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
       }
+    }
+    // ── PATH B: No conversation → use campaign-dispatch to create ticket + send message ──
+    else {
+      console.log(`[sdr-proactive-outreach] PATH B: No conversation_id, using campaign-dispatch`);
 
-      const sendData = JSON.parse(sendText || "{}");
-      messageId = sendData?.message_id || sendData?.id || null;
-      conversationId = sendData?.conversation_id || sendData?.conversationId || conversationId;
-      ticketId = sendData?.ticket_id || sendData?.ticketId || ticketId;
-    } catch (err) {
-      console.error("send-message fetch error:", err);
-      return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
+      const EMPRESA_TO_COMPANY: Record<string, string> = {
+        BLUE: "Blue Consult",
+        TOKENIZA: "Tokeniza",
+        MPUPPE: "MPuppe",
+        AXIA: "Axia",
+      };
+      const companyName = EMPRESA_TO_COMPANY[empresa] || "Blue Consult";
+      const contactName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
+
+      const dispatchUrl = `${bcConfig.baseUrl}/campaign-dispatch/campaign-dispatched`;
+      const dispatchPayload = {
+        event: "campaign.dispatched",
+        dispatchedAt: new Date().toISOString(),
+        campaignId: 99999,
+        campaignName: "Amelia SDR Outreach",
+        company: companyName,
+        message: greetingMessage,
+        contacts: [{ name: contactName, phone }],
+      };
+
+      console.log("Sending campaign-dispatch:", dispatchUrl, JSON.stringify(dispatchPayload));
+
+      try {
+        const dispatchRes = await fetch(dispatchUrl, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify(dispatchPayload),
+        });
+
+        const dispatchText = await dispatchRes.text();
+        console.log("Blue Chat campaign-dispatch response:", dispatchRes.status, dispatchText);
+
+        if (!dispatchRes.ok) {
+          return jsonResponse(
+            {
+              error: "Não foi possível enviar mensagem via Blue Chat (campaign-dispatch).",
+              detail: dispatchText,
+              no_ticket: true,
+              phone,
+            },
+            req,
+            dispatchRes.status
+          );
+        }
+
+        // campaign-dispatch returns { ok: true, ticketsCreated: N }
+        // We don't get conversation_id back, but the message was sent
+        const dispatchData = JSON.parse(dispatchText || "{}");
+        console.log("Campaign dispatch result:", dispatchData);
+      } catch (err) {
+        console.error("campaign-dispatch fetch error:", err);
+        return jsonResponse({ error: "Failed to connect to Blue Chat for campaign dispatch" }, req, 502);
+      }
     }
 
     // 8. Record outbound message in lead_messages (schema-aligned)
