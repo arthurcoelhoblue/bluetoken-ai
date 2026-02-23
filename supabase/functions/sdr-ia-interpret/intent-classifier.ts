@@ -529,6 +529,63 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     result = { intent: 'OUTRO', confidence: 0.3, sentimento: 'NEUTRO', resumo: 'Classificação determinística', acao: 'NENHUMA' };
   }
 
+  // ========================================
+  // CONTEXTUAL SHORT REPLY OVERRIDE
+  // Detecta respostas curtas válidas (numeral/quantificador) a perguntas outbound recentes
+  // Evita classificação falsa como OUTRO 0.3 quando lead responde "Usei 3", "duas", etc.
+  // ========================================
+  const isLowConfidenceResult = (result.intent === 'OUTRO' || result.intent === 'NAO_ENTENDI') && result.confidence < 0.7;
+  if (isLowConfidenceResult && historico && historico.length > 0) {
+    const msgLower = mensagem_normalizada.toLowerCase().trim();
+    const isShort = msgLower.length <= 60;
+    const hasNumeral = /\d+|uma?|duas?|três|tres|quatro|cinco|seis|sete|oito|nove|dez|poucas?|poucos?|muitas?|muitos?|algumas?|alguns?|v[aá]rias?|v[aá]rios?/.test(msgLower);
+
+    if (isShort && hasNumeral) {
+      // Encontrar última mensagem outbound da Amélia
+      const lastOutbound = [...historico].reverse().find(h => h.direcao === 'OUTBOUND');
+      if (lastOutbound) {
+        const outLower = lastOutbound.conteudo.toLowerCase();
+        const isQuestion = /\?|quantas?|quantos?|qual|como|onde|quando|quanto|volume|opera[çc][oõ]es?|exchange|carteira|declara|investe|valor|anos?/.test(outLower);
+
+        if (isQuestion) {
+          log.info('Contextual short reply detected — overriding low-confidence classification', {
+            originalIntent: result.intent,
+            originalConfidence: result.confidence,
+            mensagem: msgLower,
+            lastOutbound: outLower.substring(0, 80),
+          });
+
+          // Determine better intent based on funnel stage
+          const estadoAtual = (conversation_state?.estado_funil as string) || 'SAUDACAO';
+          const betterIntent = ['FECHAMENTO', 'NEGOCIACAO', 'PROPOSTA'].includes(estadoAtual)
+            ? 'DUVIDA_PRECO'
+            : ['QUALIFICACAO', 'DIAGNOSTICO'].includes(estadoAtual)
+              ? 'INTERESSE_IR'
+              : 'DUVIDA_PRODUTO';
+
+          // Keep AI response if it's substantial, otherwise generate continuation
+          const hasGoodResponse = result.resposta_sugerida && result.resposta_sugerida.length > 20
+            && !result.resposta_sugerida.toLowerCase().includes('reformul')
+            && !result.resposta_sugerida.toLowerCase().includes('não entendi')
+            && !result.resposta_sugerida.toLowerCase().includes('pode me explicar');
+
+          result.intent = betterIntent;
+          result.confidence = 0.75;
+          result.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+          result.deve_responder = true;
+          (result as ClassifierResult & { _isContextualShortReply?: boolean })._isContextualShortReply = true;
+
+          if (!hasGoodResponse) {
+            // Generate a contextual continuation response
+            result.resposta_sugerida = empresa === 'BLUE'
+              ? 'Entendi! Com base nisso, posso te explicar melhor como funciona nosso serviço de IR cripto. Quer saber mais sobre os planos?'
+              : 'Legal! Com essas informações, consigo te direcionar melhor. Quer que eu te explique as opções disponíveis?';
+          }
+        }
+      }
+    }
+  }
+
   const validIntents = ['INTERESSE_COMPRA', 'INTERESSE_IR', 'DUVIDA_PRODUTO', 'DUVIDA_PRECO', 'DUVIDA_TECNICA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO', 'RECLAMACAO', 'OPT_OUT', 'OBJECAO_PRECO', 'OBJECAO_RISCO', 'SEM_INTERESSE', 'NAO_ENTENDI', 'CUMPRIMENTO', 'AGRADECIMENTO', 'FORA_CONTEXTO', 'OUTRO'];
   if (!validIntents.includes(result.intent)) result.intent = 'OUTRO';
   result.confidence = Math.max(0, Math.min(1, result.confidence || 0.5));

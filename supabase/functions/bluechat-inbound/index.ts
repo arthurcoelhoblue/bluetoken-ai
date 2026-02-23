@@ -148,28 +148,35 @@ serve(async (req) => {
       );
     }
 
-    // Deduplicação por conteúdo (mesma mensagem nos últimos 30s)
+    // Deduplicação por conteúdo — ESCOPADA por lead (evita suprimir mensagens cross-lead)
     {
       const thirtySecsAgo = new Date(Date.now() - 30000).toISOString();
-      const { data: recentDup } = await supabase
-        .from('lead_messages')
-        .select('id')
-        .eq('conteudo', payload.message.text)
-        .gte('created_at', thirtySecsAgo)
-        .limit(1)
-        .maybeSingle();
+      // Buscar lead_id antecipado para escopo do dedupe
+      const phoneInfoForDedupe = normalizePhone(payload.contact.phone);
+      const leadForDedupe = await findLeadByPhone(supabase, phoneInfoForDedupe.normalized, phoneInfoForDedupe.e164, empresa);
+      if (leadForDedupe) {
+        const { data: recentDup } = await supabase
+          .from('lead_messages')
+          .select('id')
+          .eq('lead_id', leadForDedupe.lead_id)
+          .eq('empresa', empresa)
+          .eq('conteudo', payload.message.text)
+          .gte('created_at', thirtySecsAgo)
+          .limit(1)
+          .maybeSingle();
 
-      if (recentDup) {
-        log.info('Mensagem duplicada detectada (mesmo conteúdo em <30s)');
-        return new Response(
-          JSON.stringify({
-            success: true,
-            conversation_id: payload.conversation_id,
-            action: 'QUALIFY_ONLY',
-            deduplicated: true,
-          }),
-          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        if (recentDup) {
+          log.info('Mensagem duplicada detectada (mesmo conteúdo + lead em <30s)', { leadId: leadForDedupe.lead_id });
+          return new Response(
+            JSON.stringify({
+              success: true,
+              conversation_id: payload.conversation_id,
+              action: 'QUALIFY_ONLY',
+              deduplicated: true,
+            }),
+            { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       }
     }
 
@@ -659,10 +666,11 @@ serve(async (req) => {
     }
 
     // 7.5. Persistir conversation_id do Blue Chat no lead_conversation_state
+    // CORRIGIDO: usar update+insert em vez de upsert com onConflict inválido
     try {
       const { data: existingState } = await supabase
         .from('lead_conversation_state')
-        .select('framework_data')
+        .select('id, framework_data')
         .eq('lead_id', leadContact.lead_id)
         .eq('empresa', empresa)
         .maybeSingle();
@@ -674,15 +682,30 @@ serve(async (req) => {
         bluechat_ticket_id: payload.ticket_id || null,
       };
 
-      await supabase
-        .from('lead_conversation_state')
-        .upsert({
-          lead_id: leadContact.lead_id,
-          empresa: empresa,
-          framework_data: updatedFrameworkData,
-          ultimo_contato_em: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        }, { onConflict: 'lead_id,empresa' });
+      if (existingState) {
+        // Estado existe: update parcial (preserva tudo)
+        await supabase
+          .from('lead_conversation_state')
+          .update({
+            framework_data: updatedFrameworkData,
+            ultimo_contato_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa);
+      } else {
+        // Estado não existe: insert com canal
+        await supabase
+          .from('lead_conversation_state')
+          .insert({
+            lead_id: leadContact.lead_id,
+            empresa: empresa,
+            canal: 'WHATSAPP',
+            framework_data: updatedFrameworkData,
+            ultimo_contato_em: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+      }
 
       log.info('conversation_id salvo no framework_data', { conversationId: payload.conversation_id });
     } catch (err) {
