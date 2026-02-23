@@ -13,7 +13,7 @@ export const blueChatSchema = z.object({
   contact: z.object({
     phone: z.string().min(8).max(20),
     name: z.string().max(200).optional(),
-    email: z.string().email().max(255).optional(),
+    email: z.string().email().max(255).optional().nullable(),
   }),
   message: z.object({
     type: z.enum(['text', 'audio', 'image', 'document']).optional().default('text'),
