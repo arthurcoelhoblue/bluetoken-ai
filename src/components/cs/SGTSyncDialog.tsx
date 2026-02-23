@@ -69,7 +69,7 @@ export function SGTSyncDialog() {
       if (resetOffset) { body.reset_offset = true; resetOffset = false; }
       if (offset !== undefined) body.offset = offset;
 
-      const { data, error } = await supabase.functions.invoke('sgt-full-import', { body });
+      const { data, error } = await supabase.functions.invoke('sgt-sync', { body });
 
       if (error || !data) {
         addLog(`❌ ${empresa}: Erro na chamada — ${error?.message || 'resposta vazia'}`);
