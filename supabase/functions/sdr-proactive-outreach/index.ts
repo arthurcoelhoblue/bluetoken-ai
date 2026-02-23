@@ -333,13 +333,38 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Build message payload and send via POST /messages
-    // The Blue Chat API only exposes POST /messages — no /conversations endpoint.
-    // When we include `phone`, Blue Chat auto-creates the conversation if needed.
+    // 6. Resolve conversation/ticket IDs, opening a new conversation if needed
     const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
     let conversationId: string | null = (fwData.bluechat_conversation_id as string) || null;
     let messageId: string | null = null;
     let ticketId: string | null = (fwData.bluechat_ticket_id as string) || null;
+
+    // If we don't have a ticketId, open a conversation first to obtain one
+    if (!ticketId) {
+      try {
+        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
+          method: "POST",
+          headers: bcHeaders,
+          body: JSON.stringify({
+            phone,
+            contact_name: lead.primeiro_nome || lead.nome || undefined,
+            channel: "whatsapp",
+            source: "AMELIA",
+          }),
+        });
+        const openText = await openRes.text();
+        console.log("Blue Chat /conversations response:", openRes.status, openText);
+        if (openRes.ok) {
+          const openData = JSON.parse(openText || "{}");
+          conversationId = openData?.conversation_id || openData?.id || conversationId;
+          ticketId = openData?.ticket_id || openData?.ticketId || ticketId;
+        } else {
+          console.warn("Failed to open conversation, will try sending with phone only:", openText);
+        }
+      } catch (err) {
+        console.warn("Open conversation fetch error (non-fatal):", err);
+      }
+    }
 
     const messagesUrl = `${bcConfig.baseUrl}/messages`;
 
@@ -347,7 +372,7 @@ Deno.serve(async (req) => {
       const messagePayload: Record<string, unknown> = {
         content: greetingMessage,
         source: "AMELIA_SDR",
-        phone, // always include phone so Blue Chat can find/create conversation
+        phone,
       };
       if (conversationId) messagePayload.conversation_id = conversationId;
       if (ticketId) messagePayload.ticketId = ticketId;
