@@ -75,6 +75,23 @@ export function useDeleteStageTrigger() {
   });
 }
 
+export function useToggleCadenceAtivo() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, ativo }: { id: string; ativo: boolean }) => {
+      const { error } = await supabase
+        .from('cadences')
+        .update({ ativo })
+        .eq('id', id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['cadences'] });
+      qc.invalidateQueries({ queryKey: ['cadencias-crm-view'] });
+    },
+  });
+}
+
 export function useCadenciasCRMView() {
   return useQuery({
     queryKey: ['cadencias-crm-view'],
