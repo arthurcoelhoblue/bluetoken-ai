@@ -1,73 +1,72 @@
 
 
-# Corrigir escalacao prematura da Amelia para humano
+# Corrigir extração da mensagem atual no payload adapter do Blue Chat
 
-## Diagnostico
+## Problema
 
-Analisando os dados dos ultimos 13 dias (desde 10/fev), a Amelia escalou para humano **49 vezes**. Dessas:
+O Blue Chat envia dois campos no payload:
+- `message.content` -- a mensagem que o lead acabou de enviar (a atual)
+- `conversation[]` -- o historico completo da conversa (mensagens antigas)
 
-| Intent | Escalacoes | Problema |
-|--------|-----------|----------|
-| NAO_ENTENDI | 20 | **IA nao conseguiu classificar a mensagem e escalou na primeira falha** |
-| OUTRO | 9 | **IA classificou como generico e escalou sem tentar qualificar** |
-| SOLICITACAO_CONTATO | 17 | Correto na maioria dos casos |
-| AGENDAMENTO_REUNIAO | 3 | Correto |
+O adaptador atual (`payload-adapter.ts`) ignora o campo `message` e extrai a ultima mensagem do array `conversation`. Isso faz com que a Amelia receba uma mensagem antiga em vez da mensagem que o lead realmente enviou.
 
-**29 das 49 escalacoes (59%) sao prematuras** — a Amelia desiste rapido demais quando nao entende a mensagem.
+Exemplo concreto dos logs:
+- Lead enviou: **"Amelia"** (campo `message.content`)
+- Amelia recebeu: **"Sim, quero falar com comercial"** (ultima mensagem de customer no `conversation[]`)
 
 ## Causa raiz
 
-No arquivo `supabase/functions/sdr-ia-interpret/index.ts`, linhas 164-175:
+A interface `BlueChatNativePayload` nao inclui o campo `message` (separado do `conversation`). A funcao `adaptNativePayload` usa apenas `extractLastCustomerMessage(conversation)` para definir o texto da mensagem.
 
-```text
-if (source === 'BLUECHAT' && classifierResult.intent === 'NAO_ENTENDI') {
-  const hasContext = (parsedContext.historico || []).length >= 2;
-  if (!hasContext) {
-    // Primeira mensagem: tenta saudacao (OK)
-  } else {
-    // 2+ mensagens: ESCALA IMEDIATAMENTE (PROBLEMA)
-    classifierResult.acao = 'ESCALAR_HUMANO';
-  }
+## Correcao
+
+### Arquivo: `supabase/functions/bluechat-inbound/payload-adapter.ts`
+
+1. Adicionar o campo `message` na interface `BlueChatNativePayload`:
+
+```typescript
+interface BlueChatNativePayload {
+  event: string;
+  timestamp: string;
+  ticket: { ... };
+  contact: { ... };
+  message?: {
+    id?: string;
+    content?: string;
+    type?: string;
+    mediaUrl?: string | null;
+    timestamp?: string;
+  };
+  conversation?: Array<{ ... }>;
+  summary?: string;
+  instruction?: string;
 }
 ```
 
-O problema: **basta ter 2 mensagens no historico para a Amelia escalar na primeira falha de compreensao**. Nao ha contador de tentativas — qualquer `NAO_ENTENDI` com contexto vira escalacao imediata.
+2. Na funcao `adaptNativePayload`, priorizar `native.message.content` sobre o historico do `conversation`:
 
-Alem disso, a IA as vezes classifica mensagens normais como `OUTRO` com confidence 1.0 e a logica nao tenta reclassificar.
-
-## Correcao proposta
-
-### 1. Implementar contador de falhas consecutivas (`ia_null_count`)
-
-Usar o campo `ia_null_count` que ja existe no `framework_data` para contar falhas consecutivas. So escalar apos **3 falhas seguidas** (politica anti-limbo documentada).
-
-### 2. Alterar logica anti-limbo no index.ts
-
-```text
-Antes:  NAO_ENTENDI + 2 msgs historico -> ESCALAR_HUMANO
-Depois: NAO_ENTENDI -> incrementar ia_null_count
-         ia_null_count < 3 -> pedir esclarecimento (ENVIAR_RESPOSTA_AUTOMATICA)
-         ia_null_count >= 3 -> ESCALAR_HUMANO
+```typescript
+// Prioridade: message.content (mensagem atual) > conversation (historico)
+const lastMessage = (native.message?.content?.trim())
+  ? native.message.content.trim()
+  : extractLastCustomerMessage(native.conversation, native.summary, native.instruction);
 ```
 
-### 3. Resetar contador quando a IA entende
+3. Usar o `message.id` nativo como `message_id` quando disponivel (em vez do ID sintetico baseado em timestamp):
 
-Quando o intent NAO e `NAO_ENTENDI` nem `OUTRO`, resetar `ia_null_count` para 0 no `framework_data`.
-
-### 4. Tratar intent `OUTRO` como segunda chance
-
-Quando a IA retorna `OUTRO` com acao `ESCALAR_HUMANO`, converter para `ENVIAR_RESPOSTA_AUTOMATICA` se `ia_null_count < 3`, gerando uma pergunta de esclarecimento em vez de transferir.
-
-## Arquivos alterados
-
-| Arquivo | Alteracao |
-|---------|-----------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Reescrever logica anti-limbo (linhas 164-175) para usar ia_null_count com threshold de 3 |
-| `supabase/functions/sdr-ia-interpret/action-executor.ts` | Adicionar logica para incrementar/resetar ia_null_count no framework_data |
+```typescript
+message_id: native.message?.id
+  ? `bc-${native.message.id}`
+  : `bc-${native.ticket.id}-${Date.now()}`,
+```
 
 ## Resultado esperado
 
-- A Amelia vai tentar esclarecer ate 2 vezes antes de escalar ("Nao entendi bem, pode reformular?" / "Ainda nao consegui entender, vou pedir ajuda")
-- Reducao estimada de ~60% nas escalacoes prematuras (de 29 para ~10)
-- Leads como Arthur vao continuar sendo qualificados em vez de serem transferidos na primeira duvida
+A Amelia vai receber a mensagem que o lead realmente enviou, em vez de uma mensagem antiga do historico. O historico continua disponivel no campo `context.history_summary` para dar contexto a IA.
+
+## Arquivo alterado
+
+| Arquivo | Alteracao |
+|---------|-----------|
+| `supabase/functions/bluechat-inbound/payload-adapter.ts` | Priorizar `message.content` sobre `conversation[]` para extrair mensagem atual |
 
