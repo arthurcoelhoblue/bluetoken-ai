@@ -1,53 +1,41 @@
 
+# Corrigir feedback do teste de e-mail
 
-# Corrigir inputs da tela de E-mail/SMTP
+## Problema
 
-## Problemas identificados
-
-1. **Inputs nao funcionam**: Cada tecla digitada dispara `updateSetting.mutate()` que salva no banco imediatamente. Isso causa re-render via `invalidateQueries`, resetando o valor do input antes do usuario terminar de digitar. Os campos nao sao controlados por estado local -- leem direto do banco.
-
-2. **Intervalo em minutos**: O campo "Intervalo minimo" esta rotulado e armazenado como minutos (`interval_minutes`), mas deveria ser em segundos (`interval_seconds`).
+Quando o "Modo Teste" esta ativo, a edge function `email-send` simula o envio sem conectar ao SMTP. Ela retorna `success: true` com um `messageId` falso (`test-{timestamp}`). O frontend exibe "E-mail de teste enviado!" sem informar que foi apenas uma simulacao -- dando a impressao de que o SMTP esta funcionando mesmo sem senha configurada.
 
 ## Solucao
 
-### 1. Usar estado local com salvamento por debounce/blur
+### 1. Edge function: retornar flag `simulated` na resposta
 
-- Criar estados locais (`localSmtpConfig`, `localModoTeste`) inicializados a partir dos valores do banco via `useEffect`
-- Os inputs controlam o estado local (digitacao fluida)
-- Salvar no banco apenas no `onBlur` de cada campo (quando o usuario sai do input)
-- Remover o salvamento a cada tecla
+Alterar `supabase/functions/email-send/index.ts` para incluir `simulated: true` no JSON de resposta quando o modo teste esta ativo:
 
-### 2. Renomear intervalo para segundos
-
-- Renomear o campo de `interval_minutes` para `interval_seconds` na interface `SmtpConfig` e no `DEFAULT_SMTP_CONFIG`
-- Atualizar o label de "Intervalo minimo (minutos)" para "Intervalo minimo (segundos)"
-- Atualizar a descricao e o valor default (de 1 minuto para 30 segundos)
-
-## Detalhes tecnicos
-
-### Arquivo: `src/pages/EmailSmtpConfigPage.tsx`
-
-**Estado local para SMTP:**
-```
-const [localSmtp, setLocalSmtp] = useState<SmtpConfig>(DEFAULT_SMTP_CONFIG);
-
-useEffect(() => {
-  setLocalSmtp(smtpConfig);
-}, [JSON.stringify(smtpConfig)]);
+```json
+{ "success": true, "messageId": "test-...", "simulated": true }
 ```
 
-**Handlers atualizados:**
-- `onChange` atualiza apenas `setLocalSmtp`
-- `onBlur` dispara `updateSetting.mutate()` com o valor atual do estado local
+### 2. Frontend: diferenciar envio real de simulado
 
-**Estado local para modo teste:**
-- Mesmo padrao: `localModoTeste` com `useEffect` de sync e save no `onBlur`
+Alterar `src/pages/EmailSmtpConfigPage.tsx`:
 
-**Renomear campo:**
-- `interval_minutes` vira `interval_seconds` na interface, default e todos os handlers
-- Label: "Intervalo minimo (segundos)"
-- Default: 30
+- Ler o campo `simulated` da resposta da edge function
+- Se `simulated === true`, exibir toast de aviso (amarelo): **"Envio simulado (modo teste ativo)"** com descricao "Nenhum e-mail foi enviado de fato. Desative o modo teste para enviar de verdade."
+- Se `simulated === false/undefined`, manter o toast verde de sucesso atual
 
-### Arquivo unico alterado
-- `src/pages/EmailSmtpConfigPage.tsx`
+### 3. Validacao pre-envio no frontend
 
+Antes de chamar a edge function, verificar se os campos essenciais do SMTP estao preenchidos (host e porta). Se estiverem vazios, exibir toast de erro: **"Configure o SMTP antes de enviar"** e nao fazer a chamada.
+
+Isso nao valida a senha (que e um secret do backend), mas ja evita envios quando a config minima nao existe.
+
+## Arquivos alterados
+
+- `supabase/functions/email-send/index.ts` -- adicionar `simulated: true` na resposta do modo teste
+- `src/pages/EmailSmtpConfigPage.tsx` -- diferenciar toast por tipo de resposta e adicionar validacao pre-envio
+
+## Resultado esperado
+
+- Com modo teste ativo: toast amarelo "Envio simulado" 
+- Com modo teste desativado e SMTP configurado: toast verde "E-mail enviado"
+- Sem SMTP configurado: toast vermelho "Configure o SMTP antes de enviar"
