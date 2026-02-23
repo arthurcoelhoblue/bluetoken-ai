@@ -70,6 +70,32 @@ export async function resolveBluechatWebhookSecret(
 }
 
 /**
+ * Resolve ALL webhook secrets for cross-company validation.
+ * Returns array of [empresa, secret] tuples.
+ */
+export async function resolveAllWebhookSecrets(
+  supabase: SupabaseClient,
+): Promise<Array<[string, string]>> {
+  const results: Array<[string, string]> = [];
+
+  for (const [empresa, settingsKey] of Object.entries(SETTINGS_KEY_MAP)) {
+    const { data } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'integrations')
+      .eq('key', settingsKey)
+      .maybeSingle();
+
+    const secret = (data?.value as Record<string, unknown>)?.webhook_secret as string | undefined;
+    if (secret) {
+      results.push([empresa, secret]);
+    }
+  }
+
+  return results;
+}
+
+/**
  * Resolve which channel is active for a given empresa.
  * Returns 'BLUECHAT' if bluechat is enabled in integration_company_config,
  * otherwise 'DIRECT' (mensageria / whatsapp-send).

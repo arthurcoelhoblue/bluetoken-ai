@@ -5,7 +5,7 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOptionalEnv } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
-import { resolveBluechatWebhookSecret } from "../_shared/channel-resolver.ts";
+import { resolveBluechatWebhookSecret, resolveAllWebhookSecrets } from "../_shared/channel-resolver.ts";
 
 const log = createLogger('bluechat-inbound');
 
@@ -32,6 +32,16 @@ export async function validateAuthAsync(
     if (expectedSecret && token.trim() === expectedSecret.trim()) {
       return { valid: true };
     }
+
+    // Cross-check: try secrets from ALL registered companies
+    const allSecrets = await resolveAllWebhookSecrets(supabase);
+    for (const [emp, secret] of allSecrets) {
+      if (secret && token.trim() === secret.trim()) {
+        log.info('Token validado via cross-empresa', { payloadEmpresa: empresa, tokenEmpresa: emp });
+        return { valid: true };
+      }
+    }
+
     const envKey = getOptionalEnv('BLUECHAT_API_KEY');
     if (envKey && token.trim() === envKey.trim()) {
       return { valid: true };
@@ -40,39 +50,60 @@ export async function validateAuthAsync(
 
   // Method 2: HMAC signature (x-webhook-signature)
   if (webhookSignature && bodyText) {
-    const secret = await resolveBluechatWebhookSecret(supabase, empresa)
-      || getOptionalEnv('BLUECHAT_API_KEY');
-
+    // Try empresa-specific secret first
+    const secret = await resolveBluechatWebhookSecret(supabase, empresa);
     if (secret) {
-      const encoder = new TextEncoder();
-      const key = await crypto.subtle.importKey(
-        'raw', encoder.encode(secret),
-        { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
-      );
-      const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(bodyText));
-      const computed = Array.from(new Uint8Array(signature))
-        .map(b => b.toString(16).padStart(2, '0')).join('');
-
+      const computed = await computeHmac(secret, bodyText);
       if (computed === webhookSignature) {
         log.info('Autenticação HMAC validada com sucesso', { empresa });
         return { valid: true };
       }
-      log.warn('HMAC signature não confere', {
-        empresa,
-        expected: `${computed.substring(0, 8)}...`,
-        received: `${webhookSignature.substring(0, 8)}...`,
-      });
     }
+
+    // Cross-check HMAC against all company secrets
+    const allSecrets = await resolveAllWebhookSecrets(supabase);
+    for (const [emp, s] of allSecrets) {
+      if (!s) continue;
+      const computed = await computeHmac(s, bodyText);
+      if (computed === webhookSignature) {
+        log.info('HMAC validado via cross-empresa', { payloadEmpresa: empresa, tokenEmpresa: emp });
+        return { valid: true };
+      }
+    }
+
+    // Fallback env HMAC
+    const envKey = getOptionalEnv('BLUECHAT_API_KEY');
+    if (envKey) {
+      const computed = await computeHmac(envKey, bodyText);
+      if (computed === webhookSignature) {
+        log.info('HMAC validado via env fallback', { empresa });
+        return { valid: true };
+      }
+    }
+
+    log.warn('HMAC signature não confere com nenhum secret', { empresa });
   }
 
   // No valid method
   if (token) {
-    log.warn('Token inválido para Blue Chat', {
+    log.warn('Token inválido para Blue Chat (nenhum match cross-empresa)', {
       empresa,
       tokenPreview: `${token.substring(0, 8)}...${token.substring(token.length - 4)}`,
     });
   }
   return { valid: false };
+}
+
+/** Compute HMAC-SHA256 hex digest */
+async function computeHmac(secret: string, body: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const key = await crypto.subtle.importKey(
+    'raw', encoder.encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']
+  );
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(body));
+  return Array.from(new Uint8Array(signature))
+    .map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 /**
