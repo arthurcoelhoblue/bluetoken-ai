@@ -517,16 +517,64 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   });
 
   let result: ClassifierResult | null = null;
+  let fallbackReason: string | null = null;
   if (aiResult.content) {
+    // Phase 1: Robust JSON extraction with balanced brace matching
     try {
       const cleaned = aiResult.content.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (jsonMatch) result = JSON.parse(jsonMatch[0]);
-    } catch { log.warn('JSON parse failed'); }
+      // Balanced brace extraction (non-greedy)
+      let braceDepth = 0;
+      let jsonStart = -1;
+      let jsonEnd = -1;
+      for (let i = 0; i < cleaned.length; i++) {
+        if (cleaned[i] === '{') {
+          if (braceDepth === 0) jsonStart = i;
+          braceDepth++;
+        } else if (cleaned[i] === '}') {
+          braceDepth--;
+          if (braceDepth === 0 && jsonStart >= 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+      }
+      if (jsonStart >= 0 && jsonEnd > jsonStart) {
+        const jsonStr = cleaned.substring(jsonStart, jsonEnd);
+        result = JSON.parse(jsonStr);
+      } else {
+        fallbackReason = 'no_json_found';
+      }
+    } catch (parseErr) {
+      fallbackReason = 'parse_fail';
+      log.warn('JSON parse failed (attempt 1)', { error: parseErr instanceof Error ? parseErr.message : String(parseErr), contentPreview: aiResult.content.substring(0, 200) });
+
+      // Repair pass: try to extract key fields via regex
+      try {
+        const intentMatch = aiResult.content.match(/"intent"\s*:\s*"([A-Z_]+)"/);
+        const confMatch = aiResult.content.match(/"confidence"\s*:\s*([\d.]+)/);
+        const respostaMatch = aiResult.content.match(/"resposta_sugerida"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+        const acaoMatch = aiResult.content.match(/"acao"\s*:\s*"([A-Z_]+)"/);
+        if (intentMatch && confMatch) {
+          result = {
+            intent: intentMatch[1],
+            confidence: parseFloat(confMatch[1]),
+            acao: acaoMatch?.[1] || 'ENVIAR_RESPOSTA_AUTOMATICA',
+            deve_responder: true,
+            resposta_sugerida: respostaMatch?.[1]?.replace(/\\"/g, '"').replace(/\\n/g, '\n') || undefined,
+            summary: 'Recuperado via repair pass',
+          };
+          fallbackReason = null;
+          log.info('JSON repair pass succeeded', { intent: result.intent, confidence: result.confidence });
+        }
+      } catch { /* repair failed too */ }
+    }
+  } else {
+    fallbackReason = 'empty_content';
   }
 
   if (!result) {
-    result = { intent: 'OUTRO', confidence: 0.3, sentimento: 'NEUTRO', resumo: 'Classificação determinística', acao: 'NENHUMA' };
+    log.warn('Falling back to deterministic classification', { reason: fallbackReason, model: aiResult.model, contentLength: aiResult.content?.length || 0 });
+    result = { intent: 'OUTRO', confidence: 0.3, sentimento: 'NEUTRO', resumo: `Classificação determinística (${fallbackReason})`, acao: 'NENHUMA', _fallbackReason: fallbackReason } as ClassifierResult & { _fallbackReason?: string };
   }
 
   // ========================================
@@ -541,8 +589,8 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     const hasNumeral = /\d+|uma?|duas?|três|tres|quatro|cinco|seis|sete|oito|nove|dez|poucas?|poucos?|muitas?|muitos?|algumas?|alguns?|v[aá]rias?|v[aá]rios?/.test(msgLower);
 
     if (isShort && hasNumeral) {
-      // Encontrar última mensagem outbound da Amélia
-      const lastOutbound = [...historico].reverse().find(h => h.direcao === 'OUTBOUND');
+      // Encontrar última mensagem outbound da Amélia (historico já vem DESC = mais recente primeiro)
+      const lastOutbound = historico.find(h => h.direcao === 'OUTBOUND');
       if (lastOutbound) {
         const outLower = lastOutbound.conteudo.toLowerCase();
         const isQuestion = /\?|quantas?|quantos?|qual|como|onde|quando|quanto|volume|opera[çc][oõ]es?|exchange|carteira|declara|investe|valor|anos?/.test(outLower);
