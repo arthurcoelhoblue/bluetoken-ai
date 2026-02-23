@@ -129,8 +129,26 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         }
       }
 
+      // Deduplicar contacts por lead_id (evitar espelhos cross-empresa)
+      const contactsByLeadId = new Map<string, typeof contacts[0][]>();
+      for (const c of contacts!) {
+        const existing = contactsByLeadId.get(c.lead_id) || [];
+        existing.push(c);
+        contactsByLeadId.set(c.lead_id, existing);
+      }
+
+      const deduplicatedContacts: typeof contacts = [];
+      for (const [, dupes] of contactsByLeadId) {
+        if (dupes.length === 1) {
+          deduplicatedContacts.push(dupes[0]);
+        } else {
+          const withMessages = dupes.find(d => uniqueKeys.has(`${d.lead_id}_${d.empresa}`));
+          deduplicatedContacts.push(withMessages || dupes[0]);
+        }
+      }
+
       // 3. Merge
-      const atendimentos: Atendimento[] = contacts.map(c => {
+      const atendimentos: Atendimento[] = deduplicatedContacts.map(c => {
         const msgs = messagesByLead.get(c.lead_id);
         const state = statesByLead.get(`${c.lead_id}_${c.empresa}`);
         const intent = intentsByLead.get(c.lead_id);
