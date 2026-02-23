@@ -161,17 +161,51 @@ serve(async (req) => {
     const deveResponder = classifierResult.deve_responder ?? false;
     const acao = classifierResult.acao || classifierResult.acao_recomendada || 'NENHUMA';
 
-    // Anti-limbo patches for BLUECHAT
-    if (source === 'BLUECHAT' && classifierResult.intent === 'NAO_ENTENDI') {
+    // Anti-limbo patches — usar ia_null_count com threshold de 3
+    const frameworkData = (parsedContext.conversationState as Record<string, unknown>)?.framework_data as Record<string, unknown> || {};
+    const iaNullCount = (frameworkData.ia_null_count as number) || 0;
+    const isFailedIntent = classifierResult.intent === 'NAO_ENTENDI' || classifierResult.intent === 'OUTRO';
+    const ESCALATION_THRESHOLD = 3;
+
+    if (source === 'BLUECHAT' && isFailedIntent) {
       const hasContext = (parsedContext.historico || []).length >= 2;
-      if (!hasContext) {
+      const newCount = iaNullCount + 1;
+
+      // Guardar novo count para o action-executor persistir
+      classifierResult._ia_null_count_update = newCount;
+
+      if (!hasContext && classifierResult.intent === 'NAO_ENTENDI') {
+        // Primeira mensagem sem contexto: saudação
         respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
         classifierResult.deve_responder = true;
-      } else {
+      } else if (newCount >= ESCALATION_THRESHOLD) {
+        // 3+ falhas consecutivas: agora sim escala
         respostaTexto = respostaTexto || 'Hmm, deixa eu pedir ajuda de alguém da equipe. Já já entram em contato!';
         classifierResult.acao = 'ESCALAR_HUMANO';
         classifierResult.deve_responder = true;
+        log.info('Anti-limbo: escalando após 3 falhas consecutivas', { iaNullCount: newCount });
+      } else {
+        // Falha 1 ou 2: pedir esclarecimento
+        const clarificationMessages = [
+          'Não entendi bem. Pode me explicar melhor o que você precisa?',
+          'Ainda não consegui entender. Pode reformular de outra forma?',
+        ];
+        respostaTexto = respostaTexto || clarificationMessages[Math.min(newCount - 1, clarificationMessages.length - 1)];
+        classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+        classifierResult.deve_responder = true;
+        log.info('Anti-limbo: pedindo esclarecimento', { iaNullCount: newCount });
       }
+    } else if (source === 'BLUECHAT' && !isFailedIntent) {
+      // IA entendeu: resetar contador
+      if (iaNullCount > 0) {
+        classifierResult._ia_null_count_update = 0;
+        log.info('Anti-limbo: resetando ia_null_count', { previousCount: iaNullCount });
+      }
+    }
+
+    // OUTRO com ESCALAR_HUMANO mas abaixo do threshold: converter para esclarecimento
+    if (source === 'BLUECHAT' && classifierResult.intent === 'OUTRO' && classifierResult.acao === 'ESCALAR_HUMANO' && (iaNullCount + 1) < ESCALATION_THRESHOLD) {
+      classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
     }
 
     if (source === 'BLUECHAT' && acao === 'ESCALAR_HUMANO' && !respostaTexto) {
@@ -215,6 +249,7 @@ serve(async (req) => {
       pipedriveDealeId: parsedContext.pipedriveDealeId,
       historico: parsedContext.historico as Record<string, unknown>[],
       classification_upgrade: classifierResult.classification_upgrade,
+      _ia_null_count_update: classifierResult._ia_null_count_update,
     });
 
     // For BLUECHAT, response is returned via HTTP, not sent via WhatsApp
