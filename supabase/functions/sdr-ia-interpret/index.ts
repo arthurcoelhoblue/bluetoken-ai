@@ -177,8 +177,14 @@ serve(async (req) => {
     // Check if classifier flagged this as a contextual short reply (numeral answer to outbound question)
     const isContextualShortReply = !!(classifierResult as Record<string, unknown>)._isContextualShortReply;
 
+    // Phase 3: Semantic signal detection — clear product/price/process questions should never be "não entendi"
+    const msgLowerForSignal = msg.conteudo.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const hasClearSemanticSignal = /como|preco|pre[cç]o|suporte|exchange|ir |declarar|imposto|plano|quanto|investir|rentabilidade|cripto|bitcoin|carteira|opera[cç]/.test(msgLowerForSignal);
+    const isDeterministicFallback = !!(classifierResult as Record<string, unknown>)._fallbackReason;
+
     // Improved: OUTRO with high confidence + valid response = progress, not failure
-    const isFailedIntent = !isContextualShortReply && (
+    // Also: if clear semantic signal present OR deterministic fallback, don't treat as comprehension failure
+    const isFailedIntent = !isContextualShortReply && !hasClearSemanticSignal && !isDeterministicFallback && (
       classifierResult.intent === 'NAO_ENTENDI'
       || (classifierResult.intent === 'OUTRO' && (classifierResult.confidence < 0.8 || !classifierResult.resposta_sugerida || classifierResult.resposta_sugerida.length <= 20))
     );
@@ -195,6 +201,7 @@ serve(async (req) => {
     log.info('Anti-limbo context', {
       messageId, leadId: msg.lead_id, estadoFunil, iaNullCount,
       isContextualShortReply, isFailedIntent, isAdvancedFunnel, spinFilled,
+      hasClearSemanticSignal, isDeterministicFallback,
       intent: classifierResult.intent, confidence: classifierResult.confidence,
     });
 
@@ -205,6 +212,24 @@ serve(async (req) => {
       }
       log.info('Anti-limbo: resposta curta contextual detectada — tratando como progresso', {
         intent: classifierResult.intent, confidence: classifierResult.confidence,
+      });
+    } else if (source === 'BLUECHAT' && isDeterministicFallback && hasClearSemanticSignal) {
+      // Parser/model technical failure on a clear message — DO NOT treat as comprehension failure
+      // Force AI to respond with continuation instead of "não entendi"
+      classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+      classifierResult.deve_responder = true;
+      if (iaNullCount > 0) {
+        classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
+      }
+      // If no good response was generated, provide contextual continuation
+      if (!respostaTexto || respostaTexto.length <= 20 || respostaTexto.toLowerCase().includes('reformul') || respostaTexto.toLowerCase().includes('não entendi')) {
+        respostaTexto = empresa === 'BLUE'
+          ? 'Boa pergunta! Posso te explicar melhor como funciona. O que exatamente você gostaria de saber?'
+          : 'Ótima dúvida! Deixa eu te explicar com mais detalhes. Qual ponto específico te interessa?';
+      }
+      log.info('Anti-limbo: fallback determinístico com sinal semântico claro — tratando como progresso', {
+        fallbackReason: (classifierResult as Record<string, unknown>)._fallbackReason,
+        semanticSignal: true,
       });
     } else if (source === 'BLUECHAT' && isFailedIntent) {
       const hasContext = (parsedContext.historico || []).length >= 2;
