@@ -245,6 +245,7 @@ export interface ExecuteActionsParams {
   pipedriveDealeId?: string | null;
   historico?: Record<string, unknown>[];
   classification_upgrade?: Record<string, unknown>;
+  _ia_null_count_update?: number;
 }
 
 export interface ExecuteActionsResult {
@@ -253,7 +254,7 @@ export interface ExecuteActionsResult {
 }
 
 export async function executeActions(supabase: SupabaseClient, params: ExecuteActionsParams): Promise<ExecuteActionsResult> {
-  const { lead_id, run_id, empresa, acao, acao_detalhes, telefone, resposta, source, intent, mensagem_original, novo_estado_funil, frameworks_atualizados, disc_estimado, ultima_pergunta_id, conversation_state, pessoaContext, classificacao, pipedriveDealeId, historico, classification_upgrade } = params;
+  const { lead_id, run_id, empresa, acao, acao_detalhes, telefone, resposta, source, intent, mensagem_original, novo_estado_funil, frameworks_atualizados, disc_estimado, ultima_pergunta_id, conversation_state, pessoaContext, classificacao, pipedriveDealeId, historico, classification_upgrade, _ia_null_count_update } = params;
 
   // 1. Apply action
   const acaoAplicada = await applyAction(supabase, run_id, lead_id, empresa, acao, acao_detalhes, mensagem_original);
@@ -284,8 +285,9 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
     }
   }
 
-  // 4. Update conversation state
-  if (lead_id && (novo_estado_funil || frameworks_atualizados || disc_estimado)) {
+  // 4. Update conversation state (including ia_null_count)
+  const hasIaNullCountUpdate = (params as Record<string, unknown>)._ia_null_count_update !== undefined;
+  if (lead_id && (novo_estado_funil || frameworks_atualizados || disc_estimado || hasIaNullCountUpdate)) {
     const validEstados = ['SAUDACAO', 'DIAGNOSTICO', 'QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'];
     const stateUpdates: Record<string, unknown> = {};
 
@@ -310,6 +312,12 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
         bant: { ...(normalize(existing.bant || existing.BANT)), ...(normalize(fu.bant || fu.BANT)) },
         spin: { ...(normalize(existing.spin || existing.SPIN)), ...(normalize(fu.spin || fu.SPIN)) },
       };
+    }
+
+    // Persist ia_null_count in framework_data
+    if (_ia_null_count_update !== undefined) {
+      const existing = (stateUpdates.framework_data as Record<string, unknown>) || conversation_state?.framework_data as Record<string, unknown> || {};
+      stateUpdates.framework_data = { ...existing, ia_null_count: _ia_null_count_update };
     }
 
     if (disc_estimado && !conversation_state?.perfil_disc) {
