@@ -333,69 +333,40 @@ Deno.serve(async (req) => {
       "X-API-Key": bcConfig.apiKey,
     };
 
-    // 6. Open conversation in Blue Chat
+    // 6. Send message directly via Blue Chat POST /messages
     let conversationId: string | null = null;
+    let messageId: string | null = null;
     let ticketId: string | null = null;
 
     try {
-      const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
+      const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
         method: "POST",
         headers: bcHeaders,
         body: JSON.stringify({
           phone,
           contact_name: lead.nome || lead.primeiro_nome,
-          channel: "whatsapp",
-          source: "AMELIA",
+          content: greetingMessage,
+          source: "AMELIA_SDR",
         }),
       });
-
-      if (!openRes.ok) {
-        const errText = await openRes.text();
-        console.error("Blue Chat open-conversation error:", openRes.status, errText);
-        return jsonResponse(
-          { error: "Failed to open Blue Chat conversation", detail: errText },
-          req,
-          openRes.status
-        );
-      }
-
-      const openData = await openRes.json();
-      conversationId = openData?.conversation_id || openData?.id || null;
-      ticketId = openData?.ticket_id || null;
-    } catch (err) {
-      console.error("open-conversation fetch error:", err);
-      return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
-    }
-
-    if (!conversationId) {
-      return jsonResponse({ error: "Blue Chat returned no conversation_id" }, req, 502);
-    }
-
-    // 7. Send message via Blue Chat
-    let messageId: string | null = null;
-    try {
-      const sendRes = await fetch(
-        `${bcConfig.baseUrl}/conversations/${conversationId}/messages`,
-        {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            content: greetingMessage,
-            type: "text",
-            source: "AMELIA",
-          }),
-        }
-      );
 
       if (!sendRes.ok) {
         const errText = await sendRes.text();
         console.error("Blue Chat send-message error:", sendRes.status, errText);
-      } else {
-        const sendData = await sendRes.json().catch(() => ({}));
-        messageId = sendData?.id || sendData?.message_id || null;
+        return jsonResponse(
+          { error: "Failed to send message via Blue Chat", detail: errText },
+          req,
+          sendRes.status
+        );
       }
+
+      const sendData = await sendRes.json().catch(() => ({}));
+      conversationId = sendData?.conversation_id || sendData?.id || null;
+      messageId = sendData?.message_id || sendData?.id || null;
+      ticketId = sendData?.ticket_id || null;
     } catch (err) {
       console.error("send-message fetch error:", err);
+      return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
     }
 
     // 8. Record outbound message in lead_messages
