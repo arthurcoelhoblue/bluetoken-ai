@@ -298,7 +298,7 @@ export default function EmailSmtpConfigPage() {
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="smtp_port">Porta</Label>
+                <Label htmlFor="smtp_port">Porta SMTP</Label>
                 <Input
                   id="smtp_port"
                   type="number"
