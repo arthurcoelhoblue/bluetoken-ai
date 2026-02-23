@@ -1,4 +1,5 @@
 import { ReactNode, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Card,
   CardContent,
@@ -68,11 +69,13 @@ export function IntegrationCard({
   children,
 }: IntegrationCardProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const navigate = useNavigate();
   const Icon = iconMap[integration.icon] || Settings;
   const isEnabled = config?.enabled ?? false;
   const hasSecrets = integration.secrets.length > 0;
   const isTestable = integration.testable && onTest;
   const hasDetails = !!children;
+  const hasConfigPage = integration.id === "email";
 
   const getStatusIcon = () => {
     if (!healthStatus) return null;
@@ -148,6 +151,16 @@ export function IntegrationCard({
               )}
             </div>
             <div className="flex items-center gap-2 shrink-0">
+              {hasConfigPage && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => navigate("/admin/email-smtp")}
+                >
+                  <Settings className="mr-1 h-3 w-3" />
+                  Configurações
+                </Button>
+              )}
               {isTestable && (
                 <Button
                   variant="ghost"
@@ -169,7 +182,7 @@ export function IntegrationCard({
                   </Button>
                 </CollapsibleTrigger>
               )}
-              {hasSecrets && !hasDetails && (
+              {hasSecrets && !hasDetails && !hasConfigPage && (
                 <Button variant="outline" size="sm" onClick={onConfigure}>
                   <Settings className="mr-1 h-3 w-3" />
                   Configurar
