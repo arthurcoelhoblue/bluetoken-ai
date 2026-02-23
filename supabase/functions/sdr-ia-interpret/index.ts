@@ -159,12 +159,23 @@ serve(async (req) => {
     // ========================================
     let respostaTexto: string | null = classifierResult.resposta_sugerida || null;
     const deveResponder = classifierResult.deve_responder ?? false;
+
+    // Normalize actions BEFORE anti-limbo logic so invalid actions are handled correctly
+    if (classifierResult.acao) {
+      classifierResult.acao = normalizarAcao(classifierResult.acao);
+    }
+    if (classifierResult.acao_recomendada) {
+      classifierResult.acao_recomendada = normalizarAcao(classifierResult.acao_recomendada);
+    }
+
     const acao = classifierResult.acao || classifierResult.acao_recomendada || 'NENHUMA';
 
     // Anti-limbo patches — usar ia_null_count com threshold de 3
     const frameworkData = (parsedContext.conversationState as Record<string, unknown>)?.framework_data as Record<string, unknown> || {};
     const iaNullCount = (frameworkData.ia_null_count as number) || 0;
-    const isFailedIntent = classifierResult.intent === 'NAO_ENTENDI' || classifierResult.intent === 'OUTRO';
+    // Improved: OUTRO with high confidence + valid response = progress, not failure
+    const isFailedIntent = classifierResult.intent === 'NAO_ENTENDI'
+      || (classifierResult.intent === 'OUTRO' && (classifierResult.confidence < 0.8 || !classifierResult.resposta_sugerida || classifierResult.resposta_sugerida.length <= 20));
     const ESCALATION_THRESHOLD = 3;
 
     if (source === 'BLUECHAT' && isFailedIntent) {
