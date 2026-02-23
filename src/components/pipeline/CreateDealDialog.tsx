@@ -1,24 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
-import { Badge } from '@/components/ui/badge';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { useCreateDeal } from '@/hooks/useDeals';
-import { useContacts } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDealAutoFill } from '@/hooks/useDealAutoFill';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
 import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
-import { Brain, UserPlus } from 'lucide-react';
+import { Brain, UserPlus, ChevronsUpDown, Check } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { QuickCreateContactDialog } from './QuickCreateContactDialog';
+import { cn } from '@/lib/utils';
 
 function useVendedores() {
   return useQuery({
@@ -36,6 +37,29 @@ function useVendedores() {
   });
 }
 
+function useContactSearch(search: string, empresa: string) {
+  return useQuery({
+    queryKey: ['contacts-search', empresa, search],
+    queryFn: async () => {
+      let query = supabase
+        .from('contacts')
+        .select('id, nome, telefone, email')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .eq('is_active', true)
+        .order('nome')
+        .limit(50);
+
+      if (search.trim()) {
+        query = query.or(`nome.ilike.%${search}%,email.ilike.%${search}%,telefone.ilike.%${search}%`);
+      }
+
+      const { data, error } = await query;
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 interface CreateDealDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -48,14 +72,17 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const { user } = useAuth();
   const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
 
-  const { data: contactsData } = useContacts();
-  const contacts = contactsData?.data;
+  const [contactSearch, setContactSearch] = useState('');
+  const [contactPopoverOpen, setContactPopoverOpen] = useState(false);
+  const [manualContact, setManualContact] = useState<{ id: string; nome: string } | null>(null);
+
+  const { data: searchResults = [] } = useContactSearch(contactSearch, empresa);
   const createDeal = useCreateDeal();
   const { data: vendedores = [] } = useVendedores();
+  const [showQuickContact, setShowQuickContact] = useState(false);
 
   const activeStages = stages.filter(s => !s.is_won && !s.is_lost);
   const defaultStageId = activeStages[0]?.id ?? '';
-  const [showQuickContact, setShowQuickContact] = useState(false);
 
   const form = useForm<CreateDealFormData>({
     resolver: zodResolver(createDealSchema),
@@ -69,6 +96,17 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
       owner_id: user?.id ?? '',
     },
   });
+
+  // Merge manual contact into results so it's always visible
+  const allContacts = useMemo(() => {
+    if (!manualContact) return searchResults;
+    const exists = searchResults.some(c => c.id === manualContact.id);
+    if (exists) return searchResults;
+    return [{ id: manualContact.id, nome: manualContact.nome, telefone: null, email: null }, ...searchResults];
+  }, [searchResults, manualContact]);
+
+  const contactId = form.watch('contact_id');
+  const selectedContactName = allContacts.find(c => c.id === contactId)?.nome;
 
   const handleSubmit = async (data: CreateDealFormData) => {
     const finalContactId = data.contact_id;
@@ -91,15 +129,15 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
       toast.success('Deal criado com sucesso');
       onOpenChange(false);
       form.reset();
+      setManualContact(null);
+      setContactSearch('');
     } catch {
       toast.error('Erro ao criar deal');
     }
   };
 
-  const contactId = form.watch('contact_id');
   const { data: autoFill } = useDealAutoFill(contactId || undefined);
 
-  // Auto-fill fields when AI suggestions arrive
   useEffect(() => {
     if (!autoFill) return;
     const current = form.getValues();
@@ -132,34 +170,68 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
               </FormItem>
             )} />
 
-            <div>
-              <FormField control={form.control} name="contact_id" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Contato</FormLabel>
-                  <div className="flex gap-2">
-                    <Select value={field.value} onValueChange={field.onChange}>
+            <FormField control={form.control} name="contact_id" render={({ field }) => (
+              <FormItem className="flex flex-col">
+                <FormLabel>Contato</FormLabel>
+                <div className="flex gap-2">
+                  <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
+                    <PopoverTrigger asChild>
                       <FormControl>
-                        <SelectTrigger className="flex-1"><SelectValue placeholder="Selecione um contato" /></SelectTrigger>
+                        <Button
+                          variant="outline"
+                          role="combobox"
+                          className={cn("flex-1 justify-between font-normal", !field.value && "text-muted-foreground")}
+                        >
+                          {selectedContactName || "Buscar contato..."}
+                          <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                        </Button>
                       </FormControl>
-                      <SelectContent>
-                        {(contacts ?? []).map(c => (
-                          <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="icon"
-                      onClick={() => setShowQuickContact(true)}
-                      title="Criar novo contato"
-                    >
-                      <UserPlus className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </FormItem>
-              )} />
-            </div>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[320px] p-0" align="start">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Buscar por nome, email ou telefone..."
+                          value={contactSearch}
+                          onValueChange={setContactSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>Nenhum contato encontrado.</CommandEmpty>
+                          <CommandGroup>
+                            {allContacts.map(c => (
+                              <CommandItem
+                                key={c.id}
+                                value={c.id}
+                                onSelect={() => {
+                                  field.onChange(c.id);
+                                  setContactPopoverOpen(false);
+                                }}
+                              >
+                                <Check className={cn("mr-2 h-4 w-4", field.value === c.id ? "opacity-100" : "opacity-0")} />
+                                <div className="flex flex-col">
+                                  <span className="text-sm">{c.nome}</span>
+                                  {(c.telefone || c.email) && (
+                                    <span className="text-xs text-muted-foreground">{c.telefone || c.email}</span>
+                                  )}
+                                </div>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    onClick={() => setShowQuickContact(true)}
+                    title="Criar novo contato"
+                  >
+                    <UserPlus className="h-4 w-4" />
+                  </Button>
+                </div>
+              </FormItem>
+            )} />
 
             <div className="grid grid-cols-2 gap-4">
               <FormField control={form.control} name="valor" render={({ field }) => (
@@ -225,6 +297,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
           open={showQuickContact}
           onOpenChange={setShowQuickContact}
           onCreated={(contact) => {
+            setManualContact(contact);
             form.setValue('contact_id', contact.id);
           }}
         />
