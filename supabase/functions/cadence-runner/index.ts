@@ -586,6 +586,28 @@ async function escalarErroPermanente(
 async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Promise<ProcessResult> {
   log.info('Processando run', { runId: run.id, leadId: run.lead_id, step: run.next_step_ordem });
 
+  // ── Validação preventiva: lead_id deve ser UUID válido ──
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(run.lead_id)) {
+    log.error('lead_id inválido (não é UUID)', { runId: run.id, leadId: run.lead_id });
+    await supabase
+      .from('lead_cadence_runs')
+      .update({ status: 'PAUSADA', next_run_at: null, updated_at: new Date().toISOString() })
+      .eq('id', run.id);
+    await supabase.from('lead_cadence_events').insert({
+      lead_cadence_run_id: run.id,
+      step_ordem: run.next_step_ordem || 0,
+      template_codigo: '',
+      tipo_evento: 'ERRO',
+      detalhes: { error: `lead_id "${run.lead_id}" não é UUID válido`, motivo: 'invalid_lead_id' },
+    });
+    return {
+      runId: run.id, leadId: run.lead_id, stepOrdem: run.next_step_ordem || 0,
+      templateCodigo: '', status: 'ERRO',
+      erro: `lead_id "${run.lead_id}" não é UUID válido — run pausada`,
+    };
+  }
+
   const lockTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
   const { data: locked, error: lockError } = await supabase
     .from('lead_cadence_runs')

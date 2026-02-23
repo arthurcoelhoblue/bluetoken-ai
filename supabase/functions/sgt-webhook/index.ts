@@ -489,6 +489,11 @@ serve(async (req) => {
                 const { data: warmingCadence } = await supabase
                   .from('cadences').select('id').eq('codigo', warmingCode).eq('ativo', true).maybeSingle();
                 if (warmingCadence) {
+                  // Validar UUID antes de inserir cadência
+                  const UUID_RE_W = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+                  if (!UUID_RE_W.test(payload.lead_id)) {
+                    log.error('lead_id inválido para warming cadence, pulando', { leadId: payload.lead_id });
+                  } else {
                   const { data: warmingRun } = await supabase
                     .from('lead_cadence_runs')
                     .insert({
@@ -504,6 +509,7 @@ serve(async (req) => {
                       trigger_stage_id: routing.stageId, trigger_type: 'AUTO_WARMING', status: 'ACTIVE',
                     } as Record<string, unknown>);
                     log.info('Cadência de aquecimento iniciada', { runId: warmingRun.id });
+                  }
                   }
                 }
               }

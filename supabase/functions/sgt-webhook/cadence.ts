@@ -88,6 +88,13 @@ export async function iniciarCadenciaParaLead(
     }
   }
 
+  // ── Validação preventiva: leadId deve ser UUID válido ──
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!UUID_RE.test(leadId)) {
+    log.error('lead_id inválido (não é UUID)', { leadId, cadenceCodigo });
+    return { success: false, reason: `lead_id "${leadId}" não é UUID válido` };
+  }
+
   const { data: cadence, error: cadenceError } = await supabase
     .from('cadences')
     .select('id, codigo, nome')
