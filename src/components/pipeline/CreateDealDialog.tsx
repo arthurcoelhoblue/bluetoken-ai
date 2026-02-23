@@ -9,15 +9,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Badge } from '@/components/ui/badge';
 import { useCreateDeal } from '@/hooks/useDeals';
-import { useContacts, useCreateContact } from '@/hooks/useContacts';
+import { useContacts } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useDealAutoFill } from '@/hooks/useDealAutoFill';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
 import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
-import { Brain } from 'lucide-react';
+import { Brain, UserPlus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { QuickCreateContactDialog } from './QuickCreateContactDialog';
 
 function useVendedores() {
   return useQuery({
@@ -50,11 +51,11 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const { data: contactsData } = useContacts();
   const contacts = contactsData?.data;
   const createDeal = useCreateDeal();
-  const createContact = useCreateContact();
   const { data: vendedores = [] } = useVendedores();
 
   const activeStages = stages.filter(s => !s.is_won && !s.is_lost);
   const defaultStageId = activeStages[0]?.id ?? '';
+  const [showQuickContact, setShowQuickContact] = useState(false);
 
   const form = useForm<CreateDealFormData>({
     resolver: zodResolver(createDealSchema),
@@ -70,17 +71,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   });
 
   const handleSubmit = async (data: CreateDealFormData) => {
-    let finalContactId = data.contact_id;
-
-    if (!finalContactId && data.contact_nome?.trim()) {
-      try {
-        const contact = await createContact.mutateAsync({ nome: data.contact_nome.trim(), empresa });
-        finalContactId = contact.id;
-      } catch {
-        toast.error('Erro ao criar contato');
-        return;
-      }
-    }
+    const finalContactId = data.contact_id;
 
     if (!finalContactId) {
       toast.error('Selecione ou crie um contato');
@@ -145,29 +136,29 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
               <FormField control={form.control} name="contact_id" render={({ field }) => (
                 <FormItem>
                   <FormLabel>Contato</FormLabel>
-                  {contacts && contacts.length > 0 ? (
+                  <div className="flex gap-2">
                     <Select value={field.value} onValueChange={field.onChange}>
                       <FormControl>
-                        <SelectTrigger><SelectValue placeholder="Selecione um contato" /></SelectTrigger>
+                        <SelectTrigger className="flex-1"><SelectValue placeholder="Selecione um contato" /></SelectTrigger>
                       </FormControl>
                       <SelectContent>
-                        {contacts.map(c => (
+                        {(contacts ?? []).map(c => (
                           <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
-                  ) : (
-                    <FormField control={form.control} name="contact_nome" render={({ field: nomeField }) => (
-                      <FormControl><Input {...nomeField} placeholder="Nome do novo contato" /></FormControl>
-                    )} />
-                  )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      onClick={() => setShowQuickContact(true)}
+                      title="Criar novo contato"
+                    >
+                      <UserPlus className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </FormItem>
               )} />
-              {contacts && contacts.length > 0 && !contactId && (
-                <FormField control={form.control} name="contact_nome" render={({ field }) => (
-                  <FormControl><Input className="mt-2" {...field} placeholder="Ou crie um novo contato..." /></FormControl>
-                )} />
-              )}
             </div>
 
             <div className="grid grid-cols-2 gap-4">
@@ -230,6 +221,13 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
             </Button>
           </form>
         </Form>
+        <QuickCreateContactDialog
+          open={showQuickContact}
+          onOpenChange={setShowQuickContact}
+          onCreated={(contact) => {
+            form.setValue('contact_id', contact.id);
+          }}
+        />
       </DialogContent>
     </Dialog>
   );
