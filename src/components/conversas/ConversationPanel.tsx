@@ -24,6 +24,8 @@ interface ConversationPanelProps {
   isLoading?: boolean;
   error?: Error | null;
   onRetry?: () => void;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
   modo: AtendimentoModo;
   assumidoPorNome?: string | null;
   maxHeight?: string;
@@ -41,6 +43,8 @@ export function ConversationPanel({
   isLoading,
   error,
   onRetry,
+  onRefresh,
+  isRefreshing,
   modo,
   assumidoPorNome,
   maxHeight = '400px',
@@ -81,6 +85,8 @@ export function ConversationPanel({
         modo={modo}
         assumidoPorNome={assumidoPorNome}
         bluechatConversationId={bluechatConversationId}
+        onRefresh={onRefresh}
+        isRefreshing={isRefreshing}
       />
 
       {/* Blue Chat deep link badge */}

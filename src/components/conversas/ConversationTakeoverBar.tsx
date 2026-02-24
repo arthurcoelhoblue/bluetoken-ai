@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset, ExternalLink } from 'lucide-react';
+import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset, ExternalLink, RefreshCw } from 'lucide-react';
 import { useConversationTakeover } from '@/hooks/useConversationMode';
 import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { supabase } from '@/integrations/supabase/client';
@@ -43,6 +43,8 @@ interface ConversationTakeoverBarProps {
   assumidoPorNome?: string | null;
   isLoading?: boolean;
   bluechatConversationId?: string | null;
+  onRefresh?: () => void;
+  isRefreshing?: boolean;
 }
 
 export function ConversationTakeoverBar({
@@ -53,6 +55,8 @@ export function ConversationTakeoverBar({
   assumidoPorNome,
   isLoading,
   bluechatConversationId,
+  onRefresh,
+  isRefreshing,
 }: ConversationTakeoverBarProps) {
   const [open, setOpen] = useState(false);
   const [transferOpen, setTransferOpen] = useState(false);
@@ -248,6 +252,20 @@ export function ConversationTakeoverBar({
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Botão Atualizar Conversa */}
+        {onRefresh && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={onRefresh}
+            disabled={isRefreshing}
+            className="gap-1.5 text-xs"
+            title="Atualizar mensagens"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            Atualizar
+          </Button>
+        )}
         {/* Botão Transferir */}
         <AlertDialog
           open={transferOpen}
