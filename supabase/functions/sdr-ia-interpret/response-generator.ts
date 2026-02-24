@@ -93,7 +93,7 @@ interface HistoricoMsg {
 }
 
 interface ProductRow {
-  nome: string;
+  produto_nome: string;
   descricao_curta: string;
   preco_texto: string | null;
   diferenciais: string | null;
@@ -154,7 +154,7 @@ export interface GenerateResponseParams {
 export async function generateResponse(supabase: SupabaseClient, params: GenerateResponseParams): Promise<{ resposta: string; model?: string; provider?: string; prompt_version_id?: string | null }> {
   const { intent, confidence, temperatura, sentimento, acao_recomendada, mensagem_normalizada, empresa, canal, contato, conversation_state, historico } = params;
 
-  const { data: products } = await supabase.from('product_knowledge').select('nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
+  const { data: products } = await supabase.from('product_knowledge').select('produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
 
   let systemPrompt = '';
   let selectedPromptId: string | null = params.promptVersionId || null;
@@ -177,14 +177,20 @@ Tom: profissional, acolhedor, direto. Nunca robótica.
 ${canal === 'WHATSAPP' ? CHANNEL_RULES.WHATSAPP : CHANNEL_RULES.EMAIL}
 Adapte ao perfil DISC: ${conversation_state?.perfil_disc || 'não identificado'}.
 ${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_state.perfil_investidor}` : ''}
-PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".`;
+PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".
+PROIBIDO INVENTAR: Nunca cite planos, preços, valores ou produtos que NÃO estejam listados na seção PRODUTOS abaixo. Se não souber o preço ou plano exato, diga que vai verificar com a equipe.`;
   }
 
   const contactName = contato?.nome || contato?.primeiro_nome || 'Lead';
   const typedHistorico = (historico || []) as HistoricoMsg[];
   const historicoText = typedHistorico.slice(0, 8).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n');
   const typedProducts = (products || []) as ProductRow[];
-  const productsText = typedProducts.map((p) => `${p.nome}: ${p.descricao_curta} (${p.preco_texto || 'consultar'})`).join('\n') || '';
+  const productsText = typedProducts.map((p) => {
+    let line = `${p.produto_nome}: ${p.descricao_curta || ''}`;
+    if (p.preco_texto) line += ` | Preço: ${p.preco_texto}`;
+    if (p.diferenciais) line += ` | Diferenciais: ${p.diferenciais}`;
+    return line;
+  }).join('\n') || 'Nenhum produto cadastrado — NÃO invente informações.';
 
   const prompt = `CONTEXTO:
 Contato: ${contactName}
@@ -205,6 +211,7 @@ MENSAGEM DO LEAD:
 ${mensagem_normalizada}
 
 Gere uma resposta personalizada e natural. Se intent for OPT_OUT, respeite. Se for ESCALAR_HUMANO, avise que vai transferir.
+IMPORTANTE: Use APENAS os produtos e preços listados acima. Se não houver preço listado, diga que vai confirmar com a equipe. NUNCA invente planos ou valores.
 Responda APENAS com o texto da mensagem, sem prefixos.`;
 
   const aiResult = await callAI({

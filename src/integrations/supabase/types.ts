@@ -4735,8 +4735,10 @@ export type Database = {
           ativo: boolean
           created_at: string
           descricao_curta: string | null
+          diferenciais: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
+          preco_texto: string | null
           produto_id: string
           produto_nome: string
           updated_at: string
@@ -4745,8 +4747,10 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           descricao_curta?: string | null
+          diferenciais?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
+          preco_texto?: string | null
           produto_id: string
           produto_nome: string
           updated_at?: string
@@ -4755,8 +4759,10 @@ export type Database = {
           ativo?: boolean
           created_at?: string
           descricao_curta?: string | null
+          diferenciais?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
+          preco_texto?: string | null
           produto_id?: string
           produto_nome?: string
           updated_at?: string
