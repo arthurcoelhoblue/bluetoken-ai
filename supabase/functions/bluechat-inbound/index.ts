@@ -702,6 +702,32 @@ serve(async (req) => {
       }
     }
 
+    // ========================================
+    // GUARDRAIL: Detectar texto de transferência com ação incorreta
+    // Se a IA gerou texto indicando transferência mas a ação NÃO é ESCALATE,
+    // forçar ESCALATE e setar modo MANUAL imediatamente.
+    // ========================================
+    if (responseText && action !== 'ESCALATE' && action !== 'RESOLVE') {
+      const transferPatterns = /\b(?:vou\s+(?:chamar|transferir|conectar|passar)|(?:te\s+)?(?:conect(?:ar|ando)|transfer(?:ir|indo))\s+(?:com|para|pro|pra)|chaman?do\s+(?:o|a|algu[eé]m))/i;
+      if (transferPatterns.test(responseText)) {
+        log.warn('GUARDRAIL: texto de transferência detectado mas ação não é ESCALATE → forçando ESCALATE + MANUAL', {
+          action,
+          responseTextPreview: responseText.substring(0, 100),
+          leadId: leadContact.lead_id,
+        });
+        action = 'ESCALATE';
+        departamentoDestino = iaResult?.departamento_destino || 'Comercial';
+
+        // Setar modo MANUAL imediatamente para impedir IA de responder próximas msgs
+        await supabase
+          .from('lead_conversation_state')
+          .update({ modo: 'MANUAL', updated_at: new Date().toISOString() })
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa);
+        log.info('Modo setado para MANUAL via guardrail de texto de transferência');
+      }
+    }
+
     const response: BlueChatResponse = {
       success: true,
       conversation_id: payload.conversation_id,
