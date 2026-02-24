@@ -19,12 +19,7 @@ export function buildBluechatDeepLink(
   const slug = EMPRESA_TO_SLUG[empresa];
   if (!slug) return null;
 
-  // If we have a conversation ID, link directly to that ticket
-  if (bluechatConversationId) {
-    return `${BLUECHAT_BASE_URL}/${slug}/conversation/${bluechatConversationId}`;
-  }
-
-  // Fallback: open by phone number (may create new conversation)
+  // Always use phone-based format (only one supported by Blue Chat)
   if (!telefone) return null;
   const digits = telefone.replace(/\D/g, '');
   if (digits.length < 10) return null;
