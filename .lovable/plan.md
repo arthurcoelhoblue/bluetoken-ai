@@ -1,57 +1,31 @@
 
 
-## Filtro de empresa global na pagina de Conversas
+## Correcao da regex de validacao de email no sanitizador de leads
 
 ### Problema
-A pagina `/conversas` usa um estado local (`empresaFilter`) independente do seletor global de empresa no sidebar (`CompanySwitcher` / `useCompany()`). Ao trocar a empresa no switcher global, as conversas nao acompanham.
+A funcao `isValidEmailFormat` em `supabase/functions/sgt-webhook/normalization.ts` usa uma regex com escape incorreto:
+
+```typescript
+// ATUAL (bugado)
+const re = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+```
+
+Dentro de uma regex literal (`/.../`), `\\s` nao representa whitespace — representa o caractere literal `\` seguido de `s`. Isso faz emails perfeitamente validos como `coutinhoquiter@gmail.com` falharem na validacao, gerando issues `EMAIL_INVALIDO` falso-positivas.
 
 ### Solucao
-Conectar a pagina de Conversas ao contexto global de empresa (`activeCompanies`) e remover o seletor local de empresa duplicado.
+Corrigir a regex para usar escape simples, que e o correto em regex literal do JavaScript/TypeScript:
 
-### Mudancas
-
-**1. `src/hooks/useAtendimentos.ts`**
-- Alterar `empresaFilter` de `'TOKENIZA' | 'BLUE' | null` para aceitar um array de empresas (`ActiveCompany[]`).
-- Aplicar filtro `.in('empresa', empresas)` quando o array nao estiver vazio, em vez de `.eq('empresa', valor)`.
-
-**2. `src/pages/ConversasPage.tsx`**
-- Importar `useCompany` e usar `activeCompanies` em vez do estado local `empresaFilter`.
-- Remover o `Select` de empresa local (ja existe o switcher global no sidebar).
-- Passar `activeCompanies` para `useAtendimentos`.
-
-**3. `src/pages/Atendimentos.tsx`** (mesma correcao para consistencia)
-- Tambem usa filtro local de empresa. Alinhar ao contexto global da mesma forma.
-
-### Detalhamento tecnico
-
-No hook `useAtendimentos`:
-```text
-// Antes
-empresaFilter?: 'TOKENIZA' | 'BLUE' | null
-
-// Depois
-empresaFilter?: ActiveCompany[]
+```typescript
+// CORRIGIDO
+const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 ```
 
-Na query:
-```text
-// Antes
-if (empresaFilter) query = query.eq('empresa', empresaFilter)
+### Impacto
+- Leads futuros nao receberao mais a tag `EMAIL_INVALIDO` por falso positivo.
+- Issues ja criadas incorretamente permanecem no banco (as resolvidas, como a do Coutinho, ja estao ok; as pendentes de outros leads podem ser limpas).
 
-// Depois
-if (empresaFilter?.length) query = query.in('empresa', empresaFilter)
-```
+### Arquivos
+- `supabase/functions/sgt-webhook/normalization.ts` — corrigir linha 65, trocar `\\s` por `\s` e `\\.` por `\.`
 
-Na pagina ConversasPage:
-```text
-// Antes
-const [empresaFilter, setEmpresaFilter] = useState<...>(null);
-const { data } = useAtendimentos({ empresaFilter });
-
-// Depois
-const { activeCompanies } = useCompany();
-const { data } = useAtendimentos({ empresaFilter: activeCompanies });
-```
-
-O seletor de empresa local sera removido da UI, pois o switcher global no sidebar ja cumpre essa funcao.
-
+### Opcional (limpeza de dados)
+- Resolver automaticamente issues `EMAIL_INVALIDO` pendentes que tenham email valido no `lead_contacts`, para nao deixar lixo historico.
