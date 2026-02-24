@@ -1,46 +1,92 @@
 
 
-## Botao "Ver Deals" condicional na tela de Lead
+## Controle de Contatos Duplicados
 
-### O que muda
+### Situacao Atual
 
-Na tela de detalhe do lead (`LeadDetail.tsx`), ao lado do botao "Criar Deal", adicionar um botao **"Ver Deals"** que so aparece quando existem deals vinculados ao contato CRM do lead.
+O sistema ja possui deduplicacao robusta no **backend automatizado** (webhooks SGT, Blue Chat) via `_shared/contact-dedup.ts`, que busca por `legacy_lead_id`, `email+empresa` e `telefone+empresa` antes de criar um contato.
 
-### Como funciona
+Porem, os **formularios manuais** (Novo Contato na pagina de Contatos, Criacao Rapida no Pipeline) inserem diretamente na tabela `contacts` sem nenhuma verificacao. Isso permite que um usuario crie um contato com email ou telefone ja existente.
 
-1. **Consulta de deals existentes**: Junto com a busca do `crmContactId`, tambem buscar deals na tabela `deals` onde `contact_id = crmContactId`. Armazenar a lista de deals encontrados em estado local.
+### Solucao Proposta
 
-2. **Botao condicional**: Se houver deals vinculados, exibir um botao "Ver Deals (N)" que abre um pequeno dialog/popover listando os deals com link para o pipeline.
+Implementar verificacao de duplicatas em duas camadas:
 
-3. **Navegacao**: Cada deal na lista leva o usuario para a pagina do pipeline (`/deals?pipeline=X&deal=Y`) ou abre o `DealDetailSheet` diretamente.
+**Camada 1 — Constraint no banco (seguranca)**
+Criar um indice unico parcial `(email, empresa)` e `(telefone_e164, empresa)` para impedir duplicatas no nivel do banco. Isso funciona como rede de seguranca final.
 
-### Detalhes tecnicos
+**Camada 2 — Verificacao pre-submit no frontend (UX)**
+Antes de inserir, buscar contatos existentes com mesmo email ou telefone na mesma empresa. Se encontrado, exibir um alerta ao usuario com opcoes:
+- **Ver contato existente** — abre o contato ja cadastrado
+- **Criar mesmo assim** — permite a criacao (para casos legitimos como homonimos)
 
-**Arquivo: `src/pages/LeadDetail.tsx`**
+### Detalhes Tecnicos
 
-- Adicionar estado `linkedDeals` (array de deals basicos: id, titulo, valor, status, stage nome)
-- No `useEffect` que ja busca `crmContactId`, encadear uma segunda query:
-  ```
-  supabase.from('deals')
-    .select('id, titulo, valor, status, pipeline_id, pipeline_stages:stage_id(nome, cor)')
-    .eq('contact_id', contactId)
-    .order('created_at', { ascending: false })
-    .limit(10)
-  ```
-- Novo botao com icone `Briefcase` (lucide) ao lado de "Criar Deal":
-  - Texto: "Ver Deals (N)" onde N e a quantidade
-  - Ao clicar, abre um `Popover` ou `Dialog` simples com a lista
-  - Cada item mostra titulo, valor formatado, badge do stage e um link para navegar
+#### 1. Migration SQL
 
-**Novo componente: `src/components/leads/LinkedDealsPopover.tsx`**
+Criar indices unicos parciais (nao bloqueantes para valores NULL):
 
-Componente leve que recebe a lista de deals e renderiza:
-- Lista com titulo, valor, badge de stage (com cor)
-- Botao "Abrir" em cada deal que navega para `/deals` com o pipeline correto
-- Se nao houver deals, o componente nao renderiza nada (o botao tambem fica oculto)
+```sql
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_email_empresa_unique
+  ON contacts (lower(email), empresa)
+  WHERE email IS NOT NULL AND is_active = true;
 
-### Resultado esperado
+CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_telefone_e164_empresa_unique
+  ON contacts (telefone_e164, empresa)
+  WHERE telefone_e164 IS NOT NULL AND is_active = true;
+```
 
-- Lead SEM deals: aparece apenas "Criar Deal" (comportamento atual)
-- Lead COM deals: aparece "Ver Deals (2)" ao lado, com popover listando os deals vinculados
+Esses indices permitem multiplos contatos sem email/telefone, mas impedem dois ativos com o mesmo email ou telefone E.164 na mesma empresa.
+
+#### 2. Novo hook: `src/hooks/useContactDuplicateCheck.ts`
+
+Funcao que recebe `{ email, telefone, empresa }` e retorna contatos possivelmente duplicados:
+
+```text
+useContactDuplicateCheck({ email, telefone, empresa })
+  -> query contacts WHERE (email = X OR telefone = X) AND empresa = Y AND is_active = true
+  -> retorna lista de matches com id, nome, email, telefone
+```
+
+#### 3. Componente: `src/components/contacts/DuplicateContactAlert.tsx`
+
+Alerta inline exibido abaixo do formulario quando duplicatas sao detectadas. Mostra:
+- Nome e dados do contato existente
+- Botao "Ver contato" (navega para o contato)
+- Botao "Criar mesmo assim" (prossegue com a criacao)
+
+#### 4. Integracao nos formularios existentes
+
+**`ContactCreateDialog.tsx`**: Adicionar verificacao no `handleCreate` antes do `mutateAsync`. Se houver match, exibir o `DuplicateContactAlert` em vez de criar.
+
+**`QuickCreateContactDialog.tsx`**: Mesma logica — verificar antes de criar, exibir alerta se duplicata detectada.
+
+**`useCreateContactPage` / `useCreateContact`**: Tratar erro de constraint unica (`duplicate key`) com mensagem amigavel ("Ja existe um contato com este email/telefone").
+
+### Fluxo do Usuario
+
+```text
+1. Usuario preenche formulario de novo contato
+2. Ao clicar "Criar":
+   a. Sistema busca duplicatas por email/telefone + empresa
+   b. Se encontrou:
+      - Exibe alerta com dados do contato existente
+      - Opcoes: "Ver contato" ou "Criar mesmo assim"
+   c. Se nao encontrou:
+      - Cria normalmente
+3. Se o usuario forca a criacao e bate na constraint:
+   - Toast de erro amigavel
+```
+
+### Arquivos Afetados
+
+| Arquivo | Acao |
+|---------|------|
+| Migration SQL | Criar indices unicos parciais |
+| `src/hooks/useContactDuplicateCheck.ts` | Novo — hook de verificacao |
+| `src/components/contacts/DuplicateContactAlert.tsx` | Novo — componente de alerta |
+| `src/components/contacts/ContactCreateDialog.tsx` | Modificar — integrar verificacao |
+| `src/components/pipeline/QuickCreateContactDialog.tsx` | Modificar — integrar verificacao |
+| `src/hooks/useContactsPage.ts` | Modificar — tratar erro de constraint |
+| `src/hooks/useContacts.ts` | Modificar — tratar erro de constraint |
 
