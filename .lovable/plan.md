@@ -1,49 +1,83 @@
 
+## Correcao: Amelia continua respondendo apos escalacao (ESCALAR_HUMANO)
 
-## Botao "Editar Contato" na tela do Lead
+### Problema identificado
 
-### O que sera feito
+Analisando os dados do lead `a70b1b62` (telefone 556799960045):
 
-Adicionar um botao "Editar Contato" ao lado do botao "Editar Classificacao" no header da pagina de detalhe do lead. Ao clicar, abre um modal (Dialog) onde o usuario pode editar os dados do contato: nome, primeiro nome, email, telefone, CPF, tipo, canal de origem e notas.
+| Hora | Evento | Problema |
+|------|--------|----------|
+| 19:49:32 | Lead: "Preciso falar com Roney Gustavo" | - |
+| 19:49:38 | IA classificou como `OUTRO` com acao `ENVIAR_RESPOSTA_AUTOMATICA` | **BUG 1**: Deveria ser `ESCALAR_HUMANO` |
+| 19:49:39 | Amelia: "Vou chamar o Roney..." | Resposta parece correta, mas acao nao escalou |
+| 19:57:26 | Lead envia midia (sem texto) | - |
+| 19:57:34 | Amelia: "Enquanto chamo o Roney..." | **BUG 2**: modo nunca foi setado para MANUAL |
+| 19:57:53 | Usuario assumiu manualmente pelo botao | Solucao paliativa |
 
-### Arquitetura
+### Causa raiz
 
-O lead detail usa a tabela `lead_contacts`, mas os campos ricos (CPF, tipo, canal_origem, notas) vivem na tabela `contacts` (vinculada via `legacy_lead_id`). O modal vai:
+**BUG 1 - Classificador nao detecta pedido explicito de falar com humano**
 
-1. Buscar o registro na tabela `contacts` usando `legacy_lead_id = lead_id`
-2. Exibir os campos para edicao
-3. Salvar via UPDATE na tabela `contacts`
-4. Apos salvar, dar refetch nos dados do lead
+Quando o lead diz "Preciso falar com Roney Gustavo" (nome de um vendedor), o classificador deveria detectar `SOLICITACAO_CONTATO` com acao `ESCALAR_HUMANO`. Porem, classificou como `OUTRO` com `ENVIAR_RESPOSTA_AUTOMATICA`.
 
-### Campos editaveis no modal
+O gerador de resposta gerou o texto correto ("Vou chamar o Roney"), mas a acao ficou como `ENVIAR_RESPOSTA_AUTOMATICA`, entao o `action-executor` nao setou `modo = MANUAL`.
 
-- Nome completo
-- Primeiro nome
-- Email
-- Telefone
-- CPF (com validacao)
-- Tipo (LEAD, CLIENTE, PARCEIRO, FORNECEDOR, OUTRO)
-- Canal de origem
-- Notas
+**BUG 2 - Consequencia direta**: Como `modo` ficou `SDR_IA`, a mensagem inbound seguinte (8 min depois) passou pela verificacao de modo na linha 497 do `bluechat-inbound/index.ts` e a IA respondeu normalmente.
+
+### Solucao
+
+Dois ajustes complementares:
+
+#### A) Regra explicita no classificador para pedido de falar com pessoa/humano
+
+**Arquivo: `supabase/functions/sdr-ia-interpret/intent-classifier.ts`**
+
+Adicionar regra rule-based (antes da chamada a IA) que detecta quando o lead pede explicitamente para falar com alguem:
+
+```text
+Padroes a detectar:
+- "preciso falar com [nome]"
+- "quero falar com [nome]"
+- "me passa pro [nome]"
+- "chama o [nome]"
+- "transfere pro [nome]"
+- "quero falar com um humano"
+- "falar com atendente"
+- "falar com vendedor"
+```
+
+Essa regra retorna:
+- `intent: 'SOLICITACAO_CONTATO'`
+- `acao: 'ESCALAR_HUMANO'`
+- `deve_responder: true`
+- `resposta_sugerida` com mensagem de transferencia
+
+#### B) Guardrail no bluechat-inbound: detectar ESCALAR_HUMANO no texto mesmo quando acao e diferente
+
+**Arquivo: `supabase/functions/bluechat-inbound/index.ts`**
+
+Apos receber o resultado do sdr-ia-interpret, se o `responseText` contem padroes de transferencia ("vou chamar", "vou te conectar", "transferir") mas a acao NAO e ESCALAR_HUMANO, forcar a acao para ESCALATE e setar modo=MANUAL.
+
+Isso serve como rede de seguranca para quando o classificador erra a acao mas acerta a resposta.
+
+```text
+Logica:
+if (responseText matches /vou (chamar|transferir|conectar|passar)/i && action !== 'ESCALATE') {
+  action = 'ESCALATE';
+  // Setar modo MANUAL imediatamente
+  await supabase.from('lead_conversation_state')
+    .update({ modo: 'MANUAL' })
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa);
+}
+```
 
 ### Arquivos afetados
 
-1. **Novo: `src/components/leads/EditContactModal.tsx`**
-   - Dialog com formulario usando react-hook-form + zod (reutilizando `contactCreateSchema` adaptado)
-   - Busca dados atuais do `contacts` via `legacy_lead_id`
-   - Salva via `supabase.from('contacts').update(...)`
-   - Segue mesmo padrao visual do `EditClassificationModal`
+1. **`supabase/functions/sdr-ia-interpret/intent-classifier.ts`** — Adicionar regra rule-based para pedido explicito de falar com pessoa
+2. **`supabase/functions/bluechat-inbound/index.ts`** — Guardrail pos-IA para detectar incoerencia entre texto e acao
 
-2. **Editar: `src/pages/LeadDetail.tsx`**
-   - Importar `EditContactModal`
-   - Adicionar estado `editContactOpen`
-   - Adicionar botao "Editar Contato" com icone `UserPen` ao lado do botao de classificacao
-   - Renderizar o modal no final do componente
+### Resultado esperado
 
-### Detalhes tecnicos
-
-- O modal recebe `leadId` e `empresa` como props
-- Ao abrir, faz query em `contacts` WHERE `legacy_lead_id = leadId` para pre-popular o form
-- Validacao com schema zod similar ao `contactCreateSchema` existente
-- Permissao: mesmo `canEdit` ja usado (ADMIN ou CLOSER)
-- Apos salvar com sucesso, chama `onSuccess` que faz refetch dos dados do lead
+- Lead diz "Preciso falar com Roney" → classificado como `ESCALAR_HUMANO` → `modo = MANUAL` → Amelia fica muda para proximas mensagens
+- Mesmo que o classificador erre a acao, o guardrail no bluechat-inbound detecta o texto de transferencia e forca ESCALATE
