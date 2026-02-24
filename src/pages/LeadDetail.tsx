@@ -23,10 +23,12 @@ import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
+import { CreateDealFromConversationDialog } from '@/components/conversas/CreateDealFromConversationDialog';
 
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
 import { ConversationStateCard } from '@/components/conversation/ConversationStateCard';
+import { supabase } from '@/integrations/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -45,8 +47,10 @@ import {
   Zap,
   Clock,
   AlertCircle,
+  Plus,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+
 import { ptBR } from 'date-fns/locale';
 import type { Temperatura } from '@/types/classification';
 import type { EmpresaTipo } from '@/types/sgt';
@@ -72,11 +76,24 @@ function LeadDetailContent() {
   const { hasRole } = useAuth();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
+  const [createDealOpen, setCreateDealOpen] = useState(false);
+  const [crmContactId, setCrmContactId] = useState<string | null>(null);
   const { trackPageView } = useAnalyticsEvents();
 
   useEffect(() => {
     trackPageView('lead_detail');
   }, [trackPageView]);
+
+  // Buscar contact CRM pelo legacy_lead_id
+  useEffect(() => {
+    if (!leadId) return;
+    supabase
+      .from('contacts')
+      .select('id')
+      .eq('legacy_lead_id', leadId)
+      .maybeSingle()
+      .then(({ data }) => setCrmContactId(data?.id || null));
+  }, [leadId]);
 
   const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
     useLeadDetail(leadId || '', empresa as EmpresaTipo);
@@ -162,6 +179,12 @@ function LeadDetailContent() {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
+            {crmContactId && (
+              <Button variant="outline" onClick={() => setCreateDealOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Criar Deal
+              </Button>
+            )}
             <Button variant="outline" onClick={() => setEditContactOpen(true)}>
               <UserPen className="h-4 w-4 mr-2" />
               Editar Contato
@@ -392,6 +415,8 @@ function LeadDetailContent() {
             isLoading={messagesLoading}
             error={messagesError as Error | null}
             onRetry={() => refetchMessages()}
+            onRefresh={() => refetchMessages()}
+            isRefreshing={messagesLoading}
             modo={conversationState?.modo || 'SDR_IA'}
             assumidoPorNome={null}
             maxHeight="500px"
@@ -491,6 +516,21 @@ function LeadDetailContent() {
           onSuccess={() => {
             refetch();
             setEditModalOpen(false);
+          }}
+        />
+      )}
+
+      {/* Create Deal Dialog */}
+      {crmContactId && (
+        <CreateDealFromConversationDialog
+          open={createDealOpen}
+          onOpenChange={setCreateDealOpen}
+          contactId={crmContactId}
+          contactNome={contact.nome || contact.primeiro_nome || 'Lead'}
+          empresa={empresa || ''}
+          onDealCreated={() => {
+            setCreateDealOpen(false);
+            
           }}
         />
       )}
