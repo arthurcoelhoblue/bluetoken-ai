@@ -1,6 +1,8 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 
+import type { ActiveCompany } from '@/contexts/CompanyContext';
+
 export interface Atendimento {
   lead_id: string;
   empresa: 'TOKENIZA' | 'BLUE';
@@ -19,7 +21,7 @@ export interface Atendimento {
 }
 
 interface UseAtendimentosOptions {
-  empresaFilter?: 'TOKENIZA' | 'BLUE' | null;
+  empresaFilter?: ActiveCompany[];
 }
 
 /**
@@ -41,8 +43,8 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         .is('run_id', null)
         .not('lead_id', 'is', null);
 
-      if (empresaFilter) {
-        passiveQuery = passiveQuery.eq('empresa', empresaFilter);
+      if (empresaFilter?.length) {
+        passiveQuery = passiveQuery.in('empresa', empresaFilter);
       }
 
       const { data: passiveMessages, error: passiveErr } = await passiveQuery;
@@ -67,8 +69,8 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         .from('lead_contacts')
         .select('lead_id, empresa, nome, telefone, telefone_e164')
         .in('lead_id', leadIds);
-      if (empresaFilter) {
-        contactsQuery = contactsQuery.eq('empresa', empresaFilter);
+      if (empresaFilter?.length) {
+        contactsQuery = contactsQuery.in('empresa', empresaFilter);
       }
       const { data: contacts, error: contactsError } = await contactsQuery;
       if (contactsError) throw contactsError;
