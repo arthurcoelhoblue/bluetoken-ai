@@ -457,6 +457,50 @@ serve(async (req) => {
       );
     }
 
+    // 5.1. Verificar modo de atendimento — se MANUAL, NÃO acionar IA
+    const { data: modoCheck } = await supabase
+      .from('lead_conversation_state')
+      .select('modo')
+      .eq('lead_id', leadContact.lead_id)
+      .eq('empresa', empresa)
+      .maybeSingle();
+
+    if (modoCheck?.modo === 'MANUAL') {
+      log.info('Modo MANUAL ativo — suprimindo resposta automática', {
+        leadId: leadContact.lead_id,
+        empresa,
+      });
+
+      // Persistir conversation_id mesmo em modo manual (rastreabilidade)
+      if (payload.conversation_id) {
+        await supabase
+          .from('lead_conversation_state')
+          .update({
+            framework_data: {
+              ...((modoCheck as Record<string, unknown>)?.framework_data as Record<string, unknown> || {}),
+              bluechat_conversation_id: payload.conversation_id,
+            },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('lead_id', leadContact.lead_id)
+          .eq('empresa', empresa);
+      }
+
+      return new Response(JSON.stringify({
+        success: true,
+        conversation_id: payload.conversation_id,
+        message_id: savedMessage.messageId,
+        lead_id: leadContact.lead_id,
+        action: 'QUALIFY_ONLY',
+        intent: { detected: 'MANUAL_MODE', confidence: 1, lead_ready: false },
+        escalation: { needed: false },
+        manual_mode: true,
+      }), {
+        status: 200,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // 6. Chamar SDR IA para interpretar
     const sdrResponse = await callSdrIaInterpret(savedMessage.messageId, triageSummary);
     
