@@ -22,7 +22,7 @@ import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
-import { WhatsAppTestButton } from '@/components/whatsapp/WhatsAppTestButton';
+
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
 import { ConversationStateCard } from '@/components/conversation/ConversationStateCard';
@@ -196,14 +196,6 @@ function LeadDetailContent() {
                   <ClickToCallButton phone={contact.telefone} contactName={contact.nome || contact.primeiro_nome} />
                 </div>
               )}
-              <Separator />
-              {/* WhatsApp Test Button */}
-              <WhatsAppTestButton
-                leadId={contact.lead_id}
-                empresa={contact.empresa}
-                telefone={contact.telefone}
-                nome={contact.nome || contact.primeiro_nome}
-              />
               {contact.telefone && buildBluechatDeepLink(contact.empresa, contact.telefone, bluechatConversationId) && (
                 <Button
                   variant="outline"
