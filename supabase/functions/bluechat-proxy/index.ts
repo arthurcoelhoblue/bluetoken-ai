@@ -154,41 +154,12 @@ Deno.serve(async (req) => {
     }
   }
 
-  // ── open-conversation ── (Amélia proactive outreach via Blue Chat)
+  // ── open-conversation ── DESABILITADO: endpoint /conversations não existe na API external-ai do Blue Chat
   if (action === "open-conversation") {
-    const { telefone, nome_lead } = body as { telefone?: string; nome_lead?: string };
-    if (!telefone) {
-      return jsonResponse({ error: "Missing telefone" }, 400);
-    }
-
-    try {
-      const res = await fetch(`${config.baseUrl}/conversations`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
-          phone: telefone,
-          contact_name: nome_lead || undefined,
-          channel: "whatsapp",
-          source: "AMELIA",
-        }),
-      });
-
-      if (!res.ok) {
-        const text = await res.text();
-        console.error("open-conversation error:", res.status, text);
-        return jsonResponse({ error: "Failed to open conversation", detail: text }, res.status);
-      }
-
-      const data = await res.json();
-      return jsonResponse({
-        success: true,
-        conversation_id: data?.conversation_id || data?.id,
-        ticket_id: data?.ticket_id,
-      });
-    } catch (err) {
-      console.error("open-conversation fetch error:", err);
-      return jsonResponse({ error: "Open conversation request failed" }, 500);
-    }
+    return jsonResponse({
+      error: "Endpoint de abertura proativa não disponível na API external-ai do Blue Chat. Aguardando implementação do endpoint POST /api/external-ai/proactive-message.",
+      integration_required: true,
+    }, 501);
   }
 
   // ── send-message ── (Send message via Blue Chat POST /messages)

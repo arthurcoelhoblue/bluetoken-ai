@@ -91,6 +91,10 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
                       toast.warning('Lead já foi contactado nas últimas 24h');
                       return;
                     }
+                    if (data?.integration_required) {
+                      toast.info('Para primeiro contato, o Blue Chat ainda precisa habilitar o endpoint de abertura proativa. Para leads com conversa ativa, a Amélia funciona normalmente.', { duration: 8000 });
+                      return;
+                    }
                     toast.success('Amélia iniciou a abordagem no Blue Chat!');
                     // Open conversation link if available
                     const link = buildBluechatDeepLink(leadEmpresa, deal.contact_telefone ?? '', data?.conversation_id);
