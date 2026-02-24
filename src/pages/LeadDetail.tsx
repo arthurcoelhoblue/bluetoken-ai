@@ -113,6 +113,12 @@ function LeadDetailContent() {
     enabled: !!leadId && !!empresa,
   });
 
+  // Extract bluechat_conversation_id from conversation state framework_data
+  const bluechatConversationId = (() => {
+    const fd = conversationState?.framework_data as Record<string, unknown> | null;
+    return (fd?.bluechat_conversation_id as string) || (fd?.bluechat_ticket_id as string) || null;
+  })();
+
   const canEdit = hasRole('ADMIN') || hasRole('CLOSER');
 
   if (isLoading) {
@@ -198,14 +204,14 @@ function LeadDetailContent() {
                 telefone={contact.telefone}
                 nome={contact.nome || contact.primeiro_nome}
               />
-              {contact.telefone && buildBluechatDeepLink(contact.empresa, contact.telefone) && (
+              {contact.telefone && buildBluechatDeepLink(contact.empresa, contact.telefone, bluechatConversationId) && (
                 <Button
                   variant="outline"
                   className="w-full border-green-500/30 text-green-600 hover:bg-green-50 hover:text-green-700"
                   asChild
                 >
                   <a
-                    href={buildBluechatDeepLink(contact.empresa, contact.telefone)!}
+                    href={buildBluechatDeepLink(contact.empresa, contact.telefone, bluechatConversationId)!}
                     target="_blank"
                     rel="noopener noreferrer"
                   >
