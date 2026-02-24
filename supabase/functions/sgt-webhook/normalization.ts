@@ -62,7 +62,7 @@ function isPlaceholderEmailLocal(email: string | null): boolean {
 function isValidEmailFormat(email: string | null): boolean {
   if (!email) return false;
   const trimmed = email.trim();
-  const re = /^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/;
+  const re = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   return re.test(trimmed);
 }
 
