@@ -24,6 +24,7 @@ import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import { IntentHistoryCard } from '@/components/intents/IntentHistoryCard';
 import { CreateDealFromConversationDialog } from '@/components/conversas/CreateDealFromConversationDialog';
+import { LinkedDealsPopover } from '@/components/leads/LinkedDealsPopover';
 
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
 import { PessoaCard } from '@/components/pessoa/PessoaCard';
@@ -78,13 +79,14 @@ function LeadDetailContent() {
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);
   const [crmContactId, setCrmContactId] = useState<string | null>(null);
+  const [linkedDeals, setLinkedDeals] = useState<any[]>([]);
   const { trackPageView } = useAnalyticsEvents();
 
   useEffect(() => {
     trackPageView('lead_detail');
   }, [trackPageView]);
 
-  // Buscar contact CRM pelo legacy_lead_id
+  // Buscar contact CRM pelo legacy_lead_id + deals vinculados
   useEffect(() => {
     if (!leadId) return;
     supabase
@@ -92,7 +94,21 @@ function LeadDetailContent() {
       .select('id')
       .eq('legacy_lead_id', leadId)
       .maybeSingle()
-      .then(({ data }) => setCrmContactId(data?.id || null));
+      .then(({ data }) => {
+        const contactId = data?.id || null;
+        setCrmContactId(contactId);
+        if (contactId) {
+          supabase
+            .from('deals')
+            .select('id, titulo, valor, status, pipeline_id, pipeline_stages:stage_id(nome, cor)')
+            .eq('contact_id', contactId)
+            .order('created_at', { ascending: false })
+            .limit(10)
+            .then(({ data: deals }) => setLinkedDeals(deals || []));
+        } else {
+          setLinkedDeals([]);
+        }
+      });
   }, [leadId]);
 
   const { contact, classification, sgtEvents, cadenceRun, isLoading, error, refetch } =
@@ -179,6 +195,7 @@ function LeadDetailContent() {
         </div>
         {canEdit && (
           <div className="flex items-center gap-2">
+            <LinkedDealsPopover deals={linkedDeals} />
             {crmContactId && (
               <Button variant="outline" onClick={() => setCreateDealOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
