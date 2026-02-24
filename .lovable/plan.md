@@ -1,88 +1,43 @@
 
 
-## Correcao: Amélia continua falando apos atendente assumir no Blue Chat
+## Correcao: Link "Abrir no Blue Chat" inconsistente
 
 ### Problema
-Quando um atendente assume uma conversa no Blue Chat (takeover para MANUAL), a Amelia continua respondendo. Caso comprovado com a lead Maria de Nazare Muniz dos Santos:
-- Takeover ASSUMIR registrado as 18:49:56
-- Amelia enviou mensagem as 18:50:32 (36 segundos depois)
+O link "Ver no Blue Chat" as vezes abre a conversa existente e as vezes cria uma nova. A causa e que o `bluechatConversationId` (ticket ID salvo no `framework_data`) nao esta sendo passado para a funcao `buildBluechatDeepLink` em dois lugares do codigo.
 
-### Causa raiz (2 pontos de falha)
+Quando o conversation ID esta disponivel, o link usa o formato `/conversation/{id}` que abre exatamente o ticket certo. Sem ele, o link usa `/open/{slug}/{telefone}` que depende do Blue Chat encontrar o contato pelo numero — e se o formato nao bater exatamente, abre uma conversa nova.
 
-**1. `bluechat-inbound/index.ts` (orquestrador)**
-Nao existe NENHUMA verificacao do campo `modo` da `lead_conversation_state` antes de chamar o SDR IA e montar resposta. A funcao recebe o webhook, salva a mensagem e chama `callSdrIaInterpret` incondicionalmente.
+### Causa raiz
 
-**2. `sdr-ia-interpret/index.ts` (linha 128)**
-A verificacao de modo MANUAL exclui explicitamente o Blue Chat:
+**Arquivo 1: `src/components/conversas/ConversationPanel.tsx` (linha 73)**
+O componente busca o `bluechatConversationId` do banco (linhas 53-70) mas NAO passa para a funcao:
+
+```text
+// Bugado — ignora o terceiro parametro
+buildBluechatDeepLink(empresa, telefone || '')
+
+// Correto
+buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId)
 ```
-if (isManualMode && source !== 'BLUECHAT') {
-```
-Isso significa que mesmo que o modo seja MANUAL, mensagens vindas do Blue Chat nao sao suprimidas.
+
+**Arquivo 2: `src/pages/LeadDetail.tsx` (linha 208)**
+Tambem chama sem o conversation ID. Precisa buscar do `framework_data` ou receber como prop.
 
 ### Solucao
 
-**Arquivo 1: `supabase/functions/bluechat-inbound/index.ts`**
-Adicionar verificacao do modo LOGO APOS salvar a mensagem (etapa 5) e ANTES de chamar o SDR IA (etapa 6):
+**1. `src/components/conversas/ConversationPanel.tsx`**
+- Linha 73: passar `bluechatConversationId` como terceiro argumento de `buildBluechatDeepLink`
 
-```typescript
-// 5.1. Verificar modo de atendimento — se MANUAL, NÃO acionar IA
-const { data: modoCheck } = await supabase
-  .from('lead_conversation_state')
-  .select('modo')
-  .eq('lead_id', leadContact.lead_id)
-  .eq('empresa', empresa)
-  .maybeSingle();
+**2. `src/pages/LeadDetail.tsx`**
+- Buscar `bluechat_conversation_id` do `lead_conversation_state` para cada contato
+- Passar como terceiro argumento na chamada da linha 208
 
-if (modoCheck?.modo === 'MANUAL') {
-  log.info('Modo MANUAL ativo — suprimindo resposta automática', {
-    leadId: leadContact.lead_id,
-    empresa,
-  });
-
-  // Salvar conversation_id/ticket_id mesmo em modo manual
-  // (para manter rastreabilidade)
-  // ... (bloco existente de persistencia do conversation_id)
-
-  return new Response(JSON.stringify({
-    success: true,
-    conversation_id: payload.conversation_id,
-    message_id: savedMessage.messageId,
-    lead_id: leadContact.lead_id,
-    action: 'QUALIFY_ONLY',
-    intent: { detected: 'MANUAL_MODE', confidence: 1, lead_ready: false },
-    escalation: { needed: false },
-    manual_mode: true,
-  }), {
-    status: 200,
-    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-  });
-}
-```
-
-**Arquivo 2: `supabase/functions/sdr-ia-interpret/index.ts`**
-Remover a exclusao `&& source !== 'BLUECHAT'` nas linhas 128 e 152, para que o modo MANUAL seja respeitado independentemente da fonte. Isso serve como segunda camada de protecao:
-
-```typescript
-// Antes (bugado)
-if (isManualMode && source !== 'BLUECHAT') {
-
-// Depois (corrigido)
-if (isManualMode) {
-```
-
-### Por que duas camadas?
-
-1. **Camada 1 (bluechat-inbound)**: Impede a chamada ao SDR IA completamente, economizando latencia e tokens. E o ponto correto para a decisao.
-
-2. **Camada 2 (sdr-ia-interpret)**: Fallback de seguranca caso algum outro fluxo futuro chame o interpret com source BLUECHAT. Defesa em profundidade.
-
-### Sequencia de execucao
-
-1. Editar `bluechat-inbound/index.ts` — inserir check de modo MANUAL apos etapa 5 (save message)
-2. Editar `sdr-ia-interpret/index.ts` — remover exclusao `source !== 'BLUECHAT'` (linhas 128 e 152)
-3. Deploy das duas edge functions
-4. Validar com lead em modo MANUAL que Amelia nao responde
+### Resultado esperado
+- Quando existir um ticket/conversa ja registrado no `framework_data`, o link abrira diretamente essa conversa (formato `/conversation/{id}`)
+- Quando nao existir, continuara usando o fallback por telefone (comportamento atual)
+- Isso elimina a inconsistencia de abrir conversas novas para leads que ja tem ticket
 
 ### Arquivos afetados
-- `supabase/functions/bluechat-inbound/index.ts`
-- `supabase/functions/sdr-ia-interpret/index.ts`
+- `src/components/conversas/ConversationPanel.tsx` — correcao simples (1 linha)
+- `src/pages/LeadDetail.tsx` — adicionar busca do conversation_id e passar na chamada
+
