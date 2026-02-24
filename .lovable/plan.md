@@ -1,114 +1,131 @@
 
+Objetivo: eliminar o loop de erro no “Abordar via Amélia” e separar claramente o que conseguimos resolver do nosso lado versus o que depende de implementação no Blue Chat.
 
-## Solucao Definitiva: Alinhamento com a API Real do Blue Chat
+1) Diagnóstico consolidado (com evidências)
 
-### Descoberta Critica (leitura do codigo-fonte do Blue Chat)
+- Erro atual no nosso backend:
+  - `Cannot POST /api/external-ai/conversations`
+  - Origem: `sdr-proactive-outreach` tenta abrir conversa nova em `POST {baseUrl}/conversations`.
+- Configuração atual da integração:
+  - `system_settings.integrations.bluechat_*` aponta `api_url = https://chat.grupoblue.com.br/api/external-ai`.
+- Leitura do repositório Blue Chat (`apps/api/src/routes/external-ai.routes.ts`):
+  - Existe `POST /messages` (com `ticketId` obrigatório).
+  - Não existe `POST /conversations` nessa API externa.
+- Leitura do servidor Blue Chat (`apps/api/src/server.ts`):
+  - `campaign-dispatch` está montado em `app.use('/api/webhooks', campaignDispatchRouter)`.
+  - Portanto o caminho correto é `/api/webhooks/campaign-dispatched` (não `/api/campaign-dispatch/...`).
+- Leitura de `campaign-dispatch.routes.ts`:
+  - Endpoint cria contato/ticket/mensagem no banco.
+  - Não chama serviço de envio WhatsApp nessa rota.
+  - Ou seja: pode registrar despacho, mas não garante envio real da mensagem para o cliente.
 
-Ao ler o arquivo `external-ai.routes.ts` do repositorio Blue Chat, ficou claro:
+Conclusão técnica:
+- O erro repetido não é bug “pontual”, é incompatibilidade de contrato:
+  - Nosso fluxo B usa endpoint inexistente (`/conversations`) na API `external-ai`.
+  - E a rota alternativa testada também estava em path incorreto.
+- Para cold outreach real (lead sem ticket ativo), hoje não há endpoint “external-ai” explícito para “criar ticket + enviar WhatsApp”.
 
-1. **`POST /api/external-ai/messages`** valida com Zod: `ticketId: z.string().min(1)` -- campo OBRIGATORIO, sem excecao
-2. **NAO EXISTE endpoint `POST /tickets` nem `POST /conversations`** nas rotas external-ai -- por isso recebemos 404 em todas as tentativas anteriores
-3. **Tickets sao criados INTERNAMENTE** pelo Blue Chat quando um cliente envia mensagem, ou pelo `campaign-dispatch.routes.ts` que usa Prisma diretamente (acesso direto ao banco)
-4. **O `whatsapp-send` que funciona** envia usando `conversation_id` (NAO `ticketId`) para o endpoint `/messages` com `source: 'MANUAL_SELLER'`
+2) Plano do nosso lado (imediato, para parar o loop)
 
-### O Que Funciona Hoje (whatsapp-send, linhas 119-130)
+2.1. Estabilizar `sdr-proactive-outreach` (fail-safe e sem tentativa inválida)
+- Arquivo: `supabase/functions/sdr-proactive-outreach/index.ts`
+- Mudanças:
+  - Remover tentativa de `POST /conversations` no Path B.
+  - Não tentar mais caminhos já comprovadamente inválidos.
+  - Para Path A (quando já existe conversa/ticket):
+    - Enviar em `/messages` com payload compatível: priorizar `ticketId` (e manter fallback compatível se necessário).
+    - Log estruturado com `lead_id`, `ticketId/conversation_id`, status HTTP e corpo resumido.
+  - Para Path B (sem ticket/conversa):
+    - Retornar erro funcional claro e orientativo (não genérico), por exemplo:
+      - “Este lead ainda não possui ticket ativo no Blue Chat. O Blue Chat precisa disponibilizar endpoint de abertura proativa para envio inicial.”
+    - Incluir `integration_required: true` no JSON para o frontend tratar melhor.
+- Resultado imediato:
+  - Acaba o ciclo de 404 repetitivo.
+  - Usuário passa a receber causa real em vez de stack genérica.
 
-```text
-POST /api/external-ai/messages
-{
-  conversation_id: conversationId,   <-- usa conversation_id
-  content: mensagem,
-  source: 'MANUAL_SELLER'            <-- source diferente
-}
-```
+2.2. Alinhar função auxiliar que também está com contrato inválido
+- Arquivo: `supabase/functions/bluechat-proxy/index.ts`
+- Mudanças:
+  - Remover/neutralizar action `open-conversation` (hoje chama endpoint inexistente).
+  - Deixar erro explícito para não incentivar uso de rota inválida no futuro.
+- Resultado:
+  - Evita regressão por outro fluxo que tente “abrir conversa” via endpoint inexistente.
 
-Importante: o `whatsapp-send` NAO envia `ticketId`. Envia apenas `conversation_id`. E quando nao tem `conversation_id`, simplesmente retorna erro dizendo que o lead precisa ter uma conversa ativa.
+2.3. Melhorar feedback no frontend (sem “erro técnico cru”)
+- Arquivos:
+  - `src/components/deals/DealDetailHeader.tsx`
+  - `src/components/conversas/ManualMessageInput.tsx`
+- Mudanças:
+  - Se `integration_required: true`, mostrar toast orientativo:
+    - “Para primeiro contato, o Blue Chat ainda precisa habilitar endpoint de abertura proativa. Para leads com conversa ativa, a Amélia funciona normalmente.”
+- Resultado:
+  - Menos fricção operacional do time comercial.
 
-### O Que o sdr-proactive-outreach Faz de Errado
+3) Plano do lado Blue Chat (necessário para viabilizar cold outreach de verdade)
 
-1. Tenta criar ticket via `POST /tickets` -- endpoint inexistente (404)
-2. Envia `ticketId` como campo obrigatorio no payload -- mas o Zod do Blue Chat so exige `ticketId` como obrigatorio na validacao, enquanto o fluxo que funciona usa `conversation_id`
-3. Para leads novos SEM conversa previa, tenta criar ticket -- impossivel pela API externa
+Solicitação de implementação para o time Blue Chat:
 
-### Solucao em 2 Partes
+3.1. Novo endpoint externo para abordagem proativa
+- Proposta mínima:
+  - `POST /api/external-ai/proactive-message`
+- Autenticação:
+  - mesmo padrão de `external-ai` (`X-API-Key` por empresa).
+- Body:
+  - `phone`, `contact_name`, `content`, `source`, `department` (opcional).
+- Comportamento:
+  - localizar/criar contato
+  - abrir ticket (se não houver aberto)
+  - enviar mensagem via conexão WhatsApp ativa
+  - retornar `ticketId`, `conversationId`, `messageId`, `status`.
+- Benefício:
+  - resolve o caso crítico “lead sem conversa prévia”.
 
-#### Parte 1: Para leads COM conversa existente (maioria dos casos)
+3.2. Alternativa menor (se preferirem evoluir endpoint existente)
+- Permitir em `POST /api/external-ai/messages`:
+  - enviar por `phone` quando `ticketId` não for informado,
+  - com auto-criação de ticket.
+- Também precisa retornar IDs criados.
 
-Replicar exatamente o padrao do `whatsapp-send`:
-- Usar `conversation_id` do `framework_data`
-- Se existe `conversation_id`, enviar: `{ conversation_id, content, source: 'AMELIA_SDR' }`
-- O Blue Chat internamente resolve o ticket a partir do `conversation_id`
+3.3. Critérios de aceite para Blue Chat
+- Requisição com número novo envia mensagem real para WhatsApp.
+- Ticket aparece no painel no departamento esperado.
+- API retorna IDs para rastreabilidade.
+- Erros de conexão/departamento retornam 4xx sem HTML genérico.
 
-#### Parte 2: Para leads SEM conversa previa (abordagem fria)
+4) Sequência de execução recomendada
 
-NAO e possivel criar ticket pela API external-ai. A solucao e usar o endpoint `POST /api/campaign-dispatch/campaign-dispatched` que JA EXISTE no Blue Chat e cria tickets + envia mensagens. Este e o unico caminho para outbound proativo.
+Fase 1 (rápida, nossa):
+1. Refatorar `sdr-proactive-outreach` para parar tentativas inválidas.
+2. Ajustar `bluechat-proxy` (`open-conversation`).
+3. Melhorar mensagens de erro no frontend.
+4. Validar e2e no `/pipeline` com:
+   - lead com ticket ativo (deve enviar)
+   - lead sem ticket ativo (deve orientar, sem 404 técnico)
 
-Payload do campaign-dispatch:
-```text
-POST /api/campaign-dispatch/campaign-dispatched
-{
-  event: "campaign.dispatched",
-  dispatchedAt: "2026-02-23T...",
-  campaignId: 99999,
-  campaignName: "Amelia SDR Outreach",
-  company: "Blue Consult",    // nome da empresa no Blue Chat
-  message: "Oi Arthur, tudo bem?...",
-  contacts: [{ name: "Arthur", phone: "5561998317422" }]
-}
-```
+Fase 2 (dependência externa):
+5. Enviar especificação para Blue Chat (endpoint proativo).
+6. Após entrega deles, adaptar Path B para novo endpoint e validar novamente e2e.
 
-Este endpoint:
-- Cria o contato se nao existir
-- Cria ticket no departamento Comercial
-- Cria a mensagem automaticamente
-- Retorna `{ ok: true, ticketsCreated: 1 }`
+5) Riscos e mitigação
 
-### Mudancas no Arquivo
+- Risco: “parece regressão” no cold outreach (porque hoje falha com 404 e passará a falhar com erro funcional claro).
+  - Mitigação: comunicação explícita + mensagem amigável no frontend.
+- Risco: Blue Chat implementar endpoint com contrato diferente.
+  - Mitigação: fechar contrato (payload/response/status) antes da entrega.
+- Risco: diferenças entre branches/ambientes do Blue Chat.
+  - Mitigação: teste contratual em ambiente de produção real com 2 números (um com ticket, outro sem ticket).
 
-| Arquivo | Mudanca |
-|---------|---------|
-| `supabase/functions/sdr-proactive-outreach/index.ts` | Refatorar envio Blue Chat com 2 caminhos |
+6) Entregáveis do plano
 
-### Detalhamento Tecnico
+- Código (nosso lado):
+  - `supabase/functions/sdr-proactive-outreach/index.ts`
+  - `supabase/functions/bluechat-proxy/index.ts`
+  - `src/components/deals/DealDetailHeader.tsx`
+  - `src/components/conversas/ManualMessageInput.tsx`
+- Documento curto de handoff para Blue Chat:
+  - problema, evidência, contrato de endpoint proativo, critérios de aceite.
 
-#### Fluxo Decisorio
-
-```text
-1. Resolver lead, gerar mensagem IA (sem mudanca)
-2. Verificar se existe conversation_id em framework_data
-   |
-   |- SIM: Enviar via POST /messages { conversation_id, content, source: 'AMELIA_SDR' }
-   |        (mesmo padrao do whatsapp-send que funciona)
-   |
-   |- NAO: Enviar via POST /campaign-dispatch/campaign-dispatched
-   |        { event, campaignId, company, message, contacts }
-   |        Isso cria ticket + mensagem automaticamente
-   |
-3. Registrar em lead_messages + atualizar conversation_state
-```
-
-#### Mapeamento empresa para company name (campaign-dispatch)
-
-O endpoint `campaign-dispatch` busca a empresa por nome (`contains`, case insensitive):
-- `BLUE` -> `"Blue Consult"` (ou o nome cadastrado no Blue Chat)
-- `TOKENIZA` -> `"Tokeniza"`
-- `MPUPPE` -> `"MPuppe"`
-- `AXIA` -> `"Axia"`
-
-#### Autenticacao do campaign-dispatch
-
-O endpoint usa `CHAT_WEBHOOK_SECRET` como Bearer token (opcional se nao configurado no Blue Chat). Precisamos verificar se este secret esta configurado.
-
-#### Remocao de codigo morto
-
-- Remover toda a logica de `POST /tickets` (endpoint inexistente)
-- Remover fallbacks complexos de ticketId
-- Simplificar para os 2 caminhos claros acima
-
-### Resultado Esperado
-
-- Leads com conversa existente: envio funciona igual ao `whatsapp-send` (padrao comprovado)
-- Leads sem conversa: envio via campaign-dispatch cria ticket e mensagem automaticamente
-- Sem mais erros 404 (nao tenta endpoints inexistentes)
-- Sem mais erros de `ticketId Required` (usa `conversation_id` quando disponivel)
-
+Resumo executivo:
+- O bug recorrente não é “mais uma tentativa de URL”, é ausência de endpoint compatível para primeiro disparo na API external-ai atual.
+- Do nosso lado, a correção certa agora é estabilizar (sem rota inválida) e dar erro funcional claro.
+- Para viabilizar abordagem proativa real em leads sem conversa, precisamos de implementação no Blue Chat.
