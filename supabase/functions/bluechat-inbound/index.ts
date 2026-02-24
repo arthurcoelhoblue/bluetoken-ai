@@ -373,6 +373,35 @@ serve(async (req) => {
     // 3. Detectar resumo de triagem [NOVO ATENDIMENTO]
     const triageSummary = parseTriageSummary(payload.message.text);
 
+    // Dedup de triagem: se já recebemos [NOVO ATENDIMENTO] para este lead nos últimos 5 min, ignorar
+    if (triageSummary) {
+      const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      const { data: recentTriage } = await supabase
+        .from('lead_messages')
+        .select('id')
+        .eq('lead_id', leadContact.lead_id)
+        .eq('empresa', empresa)
+        .eq('direcao', 'INBOUND')
+        .ilike('conteudo', '%[NOVO ATENDIMENTO]%')
+        .gte('created_at', fiveMinAgo)
+        .limit(1)
+        .maybeSingle();
+
+      if (recentTriage) {
+        log.info('Triagem duplicada detectada (<5min), ignorando', { leadId: leadContact.lead_id });
+        return new Response(
+          JSON.stringify({
+            success: true,
+            conversation_id: payload.conversation_id,
+            action: 'QUALIFY_ONLY',
+            deduplicated: true,
+            reason: 'triage_dedup_5min',
+          }),
+          { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+    }
+
     // Verificar se é lead retornando (interação recente < 2h)
     let isReturningLead = false;
     if (triageSummary) {
