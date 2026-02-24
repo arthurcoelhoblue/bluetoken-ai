@@ -65,7 +65,12 @@ export function useCreateContact() {
         })
         .select()
         .single();
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('duplicate key') || error.code === '23505') {
+          throw new Error('Já existe um contato ativo com este email ou telefone.');
+        }
+        throw error;
+      }
       return contact;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['contacts'] }),
