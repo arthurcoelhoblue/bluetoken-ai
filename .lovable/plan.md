@@ -1,64 +1,43 @@
 
-
-## Correcao: Amelia envia cumprimento duplicado (2-3 vezes)
+## Correcao: Botoes "Abrir/Ver no Blue Chat" dando 404
 
 ### Problema
 
-A Amelia envia mensagens de apresentacao ("Sou a Amelia...") multiplas vezes para o mesmo lead. Encontrei 8 leads afetados nos ultimos 14 dias.
+Apos a correcao anterior, os dois botoes que abrem o Blue Chat estao gerando URLs com formato `/{slug}/conversation/{id}`, que resulta em 404. O Blue Chat nao suporta essa rota.
 
-**Dois cenarios identificados:**
+Confirmei acessando diretamente:
+- `https://chat.grupoblue.com.br/blue-consult/conversation/cmm0sfl1601m77e17k2v14clk` -> **404**
+- `https://chat.grupoblue.com.br/open/blue-consult/5587999188396` -> **Funciona** (login do ChatBlue)
 
-1. **Webhooks duplicados rapidos** (caso Tokeniza: 3 cumprimentos em 1 minuto). O Blue Chat dispara multiplos `[NOVO ATENDIMENTO]` para o mesmo lead em sequencia. O dedup atual compara conteudo exato com janela de 30 segundos, mas o conteudo do `[NOVO ATENDIMENTO]` muda levemente a cada webhook (historico cresce), entao o dedup nao pega.
+### Causa raiz
 
-2. **Ticket reaberto** (caso Arthur Coelho: 3 cumprimentos em 50 minutos). O lead reenvia a mesma mensagem, Blue Chat gera um novo `[NOVO ATENDIMENTO]`, e a Amelia trata como conversa nova — se reapresentando a cada vez.
+A funcao `buildBluechatDeepLink` em `src/utils/bluechat.ts` foi escrita assumindo que o Blue Chat teria uma rota `/conversation/{id}`, mas essa rota nao existe. O unico formato que funciona e `/open/{slug}/{telefone}`.
 
-### Causa raiz tecnica
+### Solucao
 
-**1. Sem trava de "ja cumprimentou"**
-O classifier (linha 441 de `intent-classifier.ts`) checa se ha outbound no historico para decidir se e "PRIMEIRA interacao". Porem quando chega um `[NOVO ATENDIMENTO]`, o contexto pode nao conter o historico anterior, fazendo a IA achar que precisa se apresentar novamente.
+**Arquivo: `src/utils/bluechat.ts`**
 
-**2. Dedup insuficiente para triagem**
-O dedup de conteudo em `bluechat-inbound` (linhas 151-180) usa comparacao exata de texto com janela de 30s. Os `[NOVO ATENDIMENTO]` de mesmo lead tem conteudo ligeiramente diferente e chegam com mais de 30s de distancia.
-
-**3. Estado resetado no [NOVO ATENDIMENTO]**
-Em `bluechat-inbound` (linhas 400-428), quando chega `[NOVO ATENDIMENTO]` e nao e "lead retornando" (< 2h), o `estado_funil` pode ser resetado, perdendo o contexto de que a Amelia ja interagiu.
-
-### Solucao (3 camadas de protecao)
-
-**Camada 1: Dedup de triagem por lead + janela de 5 minutos**
-Em `bluechat-inbound/index.ts`, apos detectar o `triageSummary` (linha 374), verificar se ja existe uma mensagem INBOUND com `[NOVO ATENDIMENTO]` para esse lead nos ultimos 5 minutos. Se existir, tratar como duplicata e retornar sem acionar a IA.
+Remover o branch que usa `bluechatConversationId` na funcao `buildBluechatDeepLink`. Manter APENAS o formato por telefone que comprovadamente funciona:
 
 ```text
-Arquivo: supabase/functions/bluechat-inbound/index.ts
-Local: Apos linha 374 (parseTriageSummary)
+Antes:
+  if (bluechatConversationId) {
+    return `${BLUECHAT_BASE_URL}/${slug}/conversation/${bluechatConversationId}`;
+  }
+  // fallback por telefone...
+
+Depois:
+  // Sempre usar formato por telefone (unico suportado pelo Blue Chat)
+  if (!telefone) return null;
+  const digits = telefone.replace(/\D/g, '');
+  if (digits.length < 10) return null;
+  return `${BLUECHAT_BASE_URL}/open/${slug}/${digits}`;
 ```
 
-**Camada 2: Flag "ja_cumprimentou" no conversation_state**
-Em `sdr-ia-interpret/action-executor.ts`, quando a Amelia envia uma resposta com apresentacao (contem "sou a Amelia/Maria"), gravar um flag `ja_cumprimentou: true` no `framework_data`. Esse flag persiste entre reaberturas de ticket.
-
-```text
-Arquivo: supabase/functions/sdr-ia-interpret/action-executor.ts
-Local: Apos enviar resposta com sucesso
-```
-
-**Camada 3: Instrucao no prompt do classifier**
-Em `intent-classifier.ts`, ALEM de checar `ameliaOutbound.length === 0`, verificar o flag `ja_cumprimentou` no `framework_data`. Se true, adicionar instrucao "VOCE JA SE APRESENTOU. NAO se reapresente. Continue a conversa naturalmente."
-
-```text
-Arquivo: supabase/functions/sdr-ia-interpret/intent-classifier.ts
-Local: Linha 440-441 (bloco de primeira interacao)
-```
+A assinatura da funcao pode manter o terceiro parametro opcional para nao quebrar chamadas existentes, mas ele sera ignorado.
 
 ### Arquivos afetados
 
-1. `supabase/functions/bluechat-inbound/index.ts` — dedup de triagem (5 min)
-2. `supabase/functions/sdr-ia-interpret/action-executor.ts` — gravar flag `ja_cumprimentou`
-3. `supabase/functions/sdr-ia-interpret/intent-classifier.ts` — respeitar flag no prompt
+- `src/utils/bluechat.ts` — remover branch de conversation ID (unica alteracao necessaria)
 
-### Sequencia
-
-1. Editar `bluechat-inbound/index.ts` — adicionar dedup de `[NOVO ATENDIMENTO]` por lead (5 min)
-2. Editar `action-executor.ts` — gravar `ja_cumprimentou` no framework_data
-3. Editar `intent-classifier.ts` — checar flag e instruir IA a nao se reapresentar
-4. Deploy das 2 edge functions afetadas (`bluechat-inbound`, `sdr-ia-interpret`)
-
+Nenhum outro arquivo precisa mudar, pois todos chamam `buildBluechatDeepLink` que sera corrigida centralmente.
