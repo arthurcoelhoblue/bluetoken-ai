@@ -125,8 +125,8 @@ serve(async (req) => {
     // Check manual mode
     const convStateRaw = parsedContext.conversationState;
     const isManualMode = (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
-    if (isManualMode && source !== 'BLUECHAT') {
-      log.info('Manual mode — interpreting but suppressing response');
+    if (isManualMode) {
+      log.info('Manual mode — interpreting but suppressing response', { source });
     }
 
     // ========================================
@@ -149,7 +149,7 @@ serve(async (req) => {
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
 
     // If manual mode, save and return without response
-    if (isManualMode && source !== 'BLUECHAT') {
+    if (isManualMode) {
       const intentId = await saveInterpretation(supabase, msg, classifierResult, false, false, null);
       return new Response(JSON.stringify({ success: true, intentId, intent: classifierResult.intent, confidence: classifierResult.confidence, modoManual: true, message: 'Modo MANUAL ativo — resposta automática suprimida' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
