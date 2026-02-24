@@ -3,18 +3,18 @@ import { MessageSquare, RefreshCw } from 'lucide-react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { AtendimentoCard } from '@/components/atendimentos/AtendimentoCard';
 import { useAtendimentos } from '@/hooks/useAtendimentos';
+import { useCompany } from '@/contexts/CompanyContext';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 const ATENDIMENTO_PAGE_SIZE = 25;
 
 export default function Atendimentos() {
-  const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | null>(null);
+  const { activeCompanies } = useCompany();
   const [page, setPage] = useState(0);
-  const { data: atendimentos, isLoading, refetch, isFetching } = useAtendimentos({ empresaFilter });
+  const { data: atendimentos, isLoading, refetch, isFetching } = useAtendimentos({ empresaFilter: activeCompanies });
 
   const allItems = atendimentos ?? [];
   const totalCount = allItems.length;
@@ -39,19 +39,6 @@ export default function Atendimentos() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Select
-              value={empresaFilter ?? 'ALL'}
-              onValueChange={(v) => { setEmpresaFilter(v === 'ALL' ? null : v as 'TOKENIZA' | 'BLUE'); setPage(0); }}
-            >
-              <SelectTrigger className="w-[140px]">
-                <SelectValue placeholder="Empresa" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="ALL">Todas</SelectItem>
-                <SelectItem value="BLUE">Blue</SelectItem>
-                <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-              </SelectContent>
-            </Select>
             <Button variant="outline" size="icon" onClick={() => refetch()} disabled={isFetching}>
               <RefreshCw className={`h-4 w-4 ${isFetching ? 'animate-spin' : ''}`} />
             </Button>

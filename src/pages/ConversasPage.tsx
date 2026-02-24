@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
+import { useCompany } from '@/contexts/CompanyContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -31,7 +32,7 @@ type StatusFilter = 'TODOS' | 'AGUARDANDO' | 'RESPONDIDO' | 'VENDEDOR';
 
 function ConversasContent() {
   const navigate = useNavigate();
-  const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | null>(null);
+  const { activeCompanies } = useCompany();
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
   const [search, setSearch] = useState('');
   const { trackPageView } = useAnalyticsEvents();
@@ -40,7 +41,7 @@ function ConversasContent() {
     trackPageView('conversas');
   }, [trackPageView]);
 
-  const { data: atendimentos = [], isLoading, error } = useAtendimentos({ empresaFilter });
+  const { data: atendimentos = [], isLoading, error } = useAtendimentos({ empresaFilter: activeCompanies });
 
   const filtered = useMemo(() => {
     let result = atendimentos;
@@ -112,19 +113,6 @@ function ConversasContent() {
             className="pl-9"
           />
         </div>
-        <Select
-          value={empresaFilter || 'TODAS'}
-          onValueChange={(v) => setEmpresaFilter(v === 'TODAS' ? null : v as 'TOKENIZA' | 'BLUE')}
-        >
-          <SelectTrigger className="w-[140px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="TODAS">Todas</SelectItem>
-            <SelectItem value="BLUE">Blue</SelectItem>
-            <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-          </SelectContent>
-        </Select>
         <Select
           value={statusFilter}
           onValueChange={(v) => setStatusFilter(v as StatusFilter)}
