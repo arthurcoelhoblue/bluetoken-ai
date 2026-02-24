@@ -489,85 +489,23 @@ Deno.serve(async (req) => {
         return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
       }
     }
-    // ── PATH B: No conversation → open conversation first, then send message ──
+    // ── PATH B: No conversation/ticket → endpoint proativo não existe ainda no Blue Chat ──
     else {
-      console.log(`[sdr-proactive-outreach] PATH B: No conversation_id, opening new conversation`);
+      console.log(`[sdr-proactive-outreach] PATH B: No conversation_id/ticket_id for lead=${effectiveLeadId}. Blue Chat external-ai API does not support proactive outreach yet.`);
 
-      const contactName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
-
-      // Step 1: Open a new conversation via POST /conversations
-      try {
-        const openRes = await fetch(`${bcConfig.baseUrl}/conversations`, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify({
-            phone,
-            contact_name: contactName,
-            channel: "whatsapp",
-            source: "AMELIA",
-          }),
-        });
-
-        const openText = await openRes.text();
-        console.log("Blue Chat /conversations response:", openRes.status, openText);
-
-        if (!openRes.ok) {
-          return jsonResponse(
-            {
-              error: "Não foi possível abrir conversa no Blue Chat.",
-              detail: openText,
-              no_ticket: true,
-              phone,
-            },
-            req,
-            openRes.status
-          );
-        }
-
-        const openData = JSON.parse(openText || "{}");
-        conversationId = openData?.conversation_id || openData?.id || null;
-        ticketId = openData?.ticket_id || ticketId;
-
-        console.log(`[sdr-proactive-outreach] Conversation opened: conv=${conversationId} ticket=${ticketId}`);
-      } catch (err) {
-        console.error("open-conversation fetch error:", err);
-        return jsonResponse({ error: "Failed to connect to Blue Chat to open conversation" }, req, 502);
-      }
-
-      // Step 2: Send the greeting message via POST /messages
-      if (conversationId) {
-        try {
-          const sendRes = await fetch(`${bcConfig.baseUrl}/messages`, {
-            method: "POST",
-            headers: bcHeaders,
-            body: JSON.stringify({
-              conversation_id: conversationId,
-              content: greetingMessage,
-              source: "AMELIA_SDR",
-            }),
-          });
-
-          const sendText = await sendRes.text();
-          console.log("Blue Chat /messages (after open) response:", sendRes.status, sendText);
-
-          if (!sendRes.ok) {
-            return jsonResponse(
-              { error: "Conversa aberta mas falhou ao enviar mensagem.", detail: sendText },
-              req,
-              sendRes.status
-            );
-          }
-
-          const sendData = JSON.parse(sendText || "{}");
-          messageId = sendData?.message_id || sendData?.id || null;
-          ticketId = sendData?.ticket_id || sendData?.ticketId || ticketId;
-        } catch (err) {
-          console.error("send-message (after open) fetch error:", err);
-          return jsonResponse({ error: "Failed to send message after opening conversation" }, req, 502);
-        }
-      } else {
-        console.warn("[sdr-proactive-outreach] Conversation opened but no conversation_id returned");
-      }
+      return jsonResponse(
+        {
+          error: "Este lead ainda não possui ticket ativo no Blue Chat. Para primeiro contato, o Blue Chat precisa disponibilizar endpoint de abertura proativa.",
+          integration_required: true,
+          no_ticket: true,
+          phone,
+          lead_id: effectiveLeadId,
+          message_generated: greetingMessage,
+          ai_model: aiResult.model,
+        },
+        req,
+        422
+      );
     }
 
     // 8. Record outbound message in lead_messages (schema-aligned)

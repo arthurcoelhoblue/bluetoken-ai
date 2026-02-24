@@ -144,6 +144,10 @@ export function ManualMessageInput({
         },
       });
       if (error) throw error;
+      if (data?.integration_required) {
+        toast.info('Para primeiro contato, o Blue Chat ainda precisa habilitar o endpoint de abertura proativa. Para leads com conversa ativa, a Amélia funciona normalmente.', { duration: 8000 });
+        return;
+      }
       if (data?.error) {
         toast.error(`Erro: ${data.error}`);
         return;
