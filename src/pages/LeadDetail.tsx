@@ -17,6 +17,7 @@ import {
   ORIGEM_LABELS,
 } from '@/types/classification';
 import { EditClassificationModal } from '@/components/leads/EditClassificationModal';
+import { EditContactModal } from '@/components/leads/EditContactModal';
 import { ClassificationExplanation } from '@/components/leads/ClassificationExplanation';
 import { ExternalLinks } from '@/components/leads/ExternalLinks';
 import { ContactIssuesCard } from '@/components/leads/ContactIssuesCard';
@@ -35,6 +36,7 @@ import {
   Calendar,
   Edit,
   Loader2,
+  UserPen,
   Mail,
   MessageCircle,
   Phone,
@@ -69,6 +71,7 @@ function LeadDetailContent() {
   const navigate = useNavigate();
   const { hasRole } = useAuth();
   const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editContactOpen, setEditContactOpen] = useState(false);
   const { trackPageView } = useAnalyticsEvents();
 
   useEffect(() => {
@@ -157,11 +160,19 @@ function LeadDetailContent() {
             <span className="text-xs text-muted-foreground">ID: {contact.lead_id}</span>
           </div>
         </div>
-        {canEdit && classification && (
-          <Button variant="outline" onClick={() => setEditModalOpen(true)}>
-            <Edit className="h-4 w-4 mr-2" />
-            Editar Classificação
-          </Button>
+        {canEdit && (
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={() => setEditContactOpen(true)}>
+              <UserPen className="h-4 w-4 mr-2" />
+              Editar Contato
+            </Button>
+            {classification && (
+              <Button variant="outline" onClick={() => setEditModalOpen(true)}>
+                <Edit className="h-4 w-4 mr-2" />
+                Editar Classificação
+              </Button>
+            )}
+          </div>
         )}
       </div>
 
@@ -458,6 +469,18 @@ function LeadDetailContent() {
           </Card>
         </div>
       </div>
+
+      {/* Edit Contact Modal */}
+      <EditContactModal
+        open={editContactOpen}
+        onOpenChange={setEditContactOpen}
+        leadId={contact.lead_id}
+        empresa={contact.empresa}
+        onSuccess={() => {
+          refetch();
+          setEditContactOpen(false);
+        }}
+      />
 
       {/* Edit Classification Modal */}
       {classification && (
