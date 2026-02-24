@@ -438,7 +438,12 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     if (triageSummary.resumoTriagem) userPrompt += `RESUMO: ${triageSummary.resumoTriagem}\n`;
     if (triageSummary.historico) userPrompt += `HISTÓRICO: ${triageSummary.historico}\n`;
     const ameliaOutbound = ((historico || []) as HistoricoMsg[]).filter((h) => h.direcao === 'OUTBOUND');
-    if (ameliaOutbound.length === 0) userPrompt += `⚠️ PRIMEIRA interação após handoff. Apresente-se como Amélia.\n`;
+    const jaCumprimentou = !!(conversation_state?.framework_data as Record<string, unknown> | null)?.ja_cumprimentou;
+    if (jaCumprimentou) {
+      userPrompt += `⚠️ VOCÊ JÁ SE APRESENTOU para este lead. NÃO se reapresente. Continue a conversa naturalmente.\n`;
+    } else if (ameliaOutbound.length === 0) {
+      userPrompt += `⚠️ PRIMEIRA interação após handoff. Apresente-se como Amélia.\n`;
+    }
   }
 
   if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {

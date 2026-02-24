@@ -269,6 +269,32 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
     }
   }
 
+  // 2.1 Flag ja_cumprimentou — persiste no framework_data se a resposta contém apresentação
+  if (resposta && lead_id && /sou a (am[eé]lia|maria|lu[íi]sa)/i.test(resposta)) {
+    try {
+      const { data: curState } = await supabase
+        .from('lead_conversation_state')
+        .select('framework_data')
+        .eq('lead_id', lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+      const existingFd = (curState?.framework_data as Record<string, unknown>) || {};
+      if (!existingFd.ja_cumprimentou) {
+        await supabase
+          .from('lead_conversation_state')
+          .update({
+            framework_data: { ...existingFd, ja_cumprimentou: true },
+            updated_at: new Date().toISOString(),
+          })
+          .eq('lead_id', lead_id)
+          .eq('empresa', empresa);
+        log.info('Flag ja_cumprimentou gravado', { lead_id });
+      }
+    } catch (e) {
+      log.error('Erro ao gravar ja_cumprimentou', { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
   // 3. Apply classification upgrade
   if (classification_upgrade && lead_id) {
     const updateFields: Record<string, unknown> = { updated_at: new Date().toISOString() };
