@@ -65,7 +65,12 @@ export function useCreateContactPage() {
   return useMutation({
     mutationFn: async (data: ContactFormData) => {
       const { error } = await supabase.from('contacts').insert(data as never);
-      if (error) throw error;
+      if (error) {
+        if (error.message?.includes('duplicate key') || error.code === '23505') {
+          throw new Error('Já existe um contato ativo com este email ou telefone.');
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts_with_stats'] });

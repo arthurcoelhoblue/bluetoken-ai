@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import {
@@ -19,6 +20,8 @@ import { useOrganizations } from '@/hooks/useOrganizations';
 import { useCreateContactPage } from '@/hooks/useContactsPage';
 import { toast } from 'sonner';
 import { contactCreateSchema, type ContactCreateFormData } from '@/schemas/contacts';
+import { checkContactDuplicates, type DuplicateMatch } from '@/hooks/useContactDuplicateCheck';
+import { DuplicateContactAlert } from '@/components/contacts/DuplicateContactAlert';
 
 const TIPO_OPTIONS = ['LEAD', 'CLIENTE', 'PARCEIRO', 'FORNECEDOR', 'OUTRO'] as const;
 const CANAL_OPTIONS = ['WhatsApp', 'Email', 'Telefone', 'Site', 'Indicação', 'Outro'] as const;
@@ -32,6 +35,8 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
   const { activeCompany } = useCompany();
   const { data: orgs } = useOrganizations();
   const create = useCreateContactPage();
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [checking, setChecking] = useState(false);
 
   const form = useForm<ContactCreateFormData>({
     resolver: zodResolver(contactCreateSchema),
@@ -41,7 +46,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
     },
   });
 
-  const handleCreate = async (data: ContactCreateFormData) => {
+  const doCreate = async (data: ContactCreateFormData) => {
     const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
     try {
       await create.mutateAsync({
@@ -58,13 +63,42 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
       toast.success('Contato criado com sucesso');
       onOpenChange(false);
       form.reset();
-    } catch {
-      toast.error('Erro ao criar contato');
+      setDuplicates([]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('duplicate key') || msg.includes('idx_contacts_email') || msg.includes('idx_contacts_telefone')) {
+        toast.error('Já existe um contato ativo com este email ou telefone.');
+      } else {
+        toast.error('Erro ao criar contato');
+      }
     }
   };
 
+  const handleCreate = async (data: ContactCreateFormData) => {
+    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
+    setChecking(true);
+    try {
+      const matches = await checkContactDuplicates({
+        email: data.email || undefined,
+        telefone: data.telefone || undefined,
+        empresa,
+      });
+      if (matches.length > 0) {
+        setDuplicates(matches);
+        return;
+      }
+    } finally {
+      setChecking(false);
+    }
+    await doCreate(data);
+  };
+
+  const handleViewContact = (id: string) => {
+    window.open(`/contatos?contact=${id}`, '_blank');
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setDuplicates([]); }}>
       <DialogContent className="sm:max-w-lg max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Novo Contato</DialogTitle>
@@ -179,13 +213,28 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
                 <FormLabel htmlFor="is_cliente" className="text-sm cursor-pointer !mt-0">Já é cliente</FormLabel>
               </FormItem>
             )} />
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button type="submit" disabled={create.isPending}>
-                {create.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Criar Contato
-              </Button>
-            </DialogFooter>
+
+            {duplicates.length > 0 && (
+              <DuplicateContactAlert
+                duplicates={duplicates}
+                onViewContact={handleViewContact}
+                onForceCreate={() => {
+                  setDuplicates([]);
+                  doCreate(form.getValues());
+                }}
+                isPending={create.isPending}
+              />
+            )}
+
+            {duplicates.length === 0 && (
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+                <Button type="submit" disabled={create.isPending || checking}>
+                  {(create.isPending || checking) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Criar Contato
+                </Button>
+              </DialogFooter>
+            )}
           </form>
         </Form>
       </DialogContent>

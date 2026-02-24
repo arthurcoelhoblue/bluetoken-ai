@@ -9,6 +9,8 @@ import { useCreateContact } from '@/hooks/useContacts';
 import { useCompany } from '@/contexts/CompanyContext';
 import { toast } from 'sonner';
 import { Loader2 } from 'lucide-react';
+import { checkContactDuplicates, type DuplicateMatch } from '@/hooks/useContactDuplicateCheck';
+import { DuplicateContactAlert } from '@/components/contacts/DuplicateContactAlert';
 
 interface Props {
   open: boolean;
@@ -23,13 +25,14 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
   const [nome, setNome] = useState('');
   const [telefone, setTelefone] = useState('');
   const [email, setEmail] = useState('');
+  const [duplicates, setDuplicates] = useState<DuplicateMatch[]>([]);
+  const [checking, setChecking] = useState(false);
 
-  const handleSubmit = async () => {
+  const doCreate = async () => {
     if (!nome.trim()) {
       toast.error('Nome é obrigatório');
       return;
     }
-
     try {
       const contact = await createContact.mutateAsync({
         nome: nome.trim(),
@@ -43,13 +46,45 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
       setNome('');
       setTelefone('');
       setEmail('');
-    } catch {
-      toast.error('Erro ao criar contato');
+      setDuplicates([]);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : '';
+      if (msg.includes('duplicate key') || msg.includes('idx_contacts_email') || msg.includes('idx_contacts_telefone')) {
+        toast.error('Já existe um contato com este email ou telefone.');
+      } else {
+        toast.error('Erro ao criar contato');
+      }
     }
   };
 
+  const handleSubmit = async () => {
+    if (!nome.trim()) {
+      toast.error('Nome é obrigatório');
+      return;
+    }
+    setChecking(true);
+    try {
+      const matches = await checkContactDuplicates({
+        email: email.trim() || undefined,
+        telefone: telefone.trim() || undefined,
+        empresa: activeCompany as 'BLUE' | 'TOKENIZA',
+      });
+      if (matches.length > 0) {
+        setDuplicates(matches);
+        return;
+      }
+    } finally {
+      setChecking(false);
+    }
+    await doCreate();
+  };
+
+  const handleViewContact = (id: string) => {
+    window.open(`/contatos?contact=${id}`, '_blank');
+  };
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(v) => { onOpenChange(v); if (!v) setDuplicates([]); }}>
       <DialogContent className="sm:max-w-sm">
         <DialogHeader>
           <DialogTitle>Novo Contato Rápido</DialogTitle>
@@ -68,14 +103,25 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
             <Label>Email</Label>
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="email@exemplo.com" />
           </div>
+
+          {duplicates.length > 0 && (
+            <DuplicateContactAlert
+              duplicates={duplicates}
+              onViewContact={handleViewContact}
+              onForceCreate={() => { setDuplicates([]); doCreate(); }}
+              isPending={createContact.isPending}
+            />
+          )}
         </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-          <Button onClick={handleSubmit} disabled={createContact.isPending}>
-            {createContact.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-            Criar Contato
-          </Button>
-        </DialogFooter>
+        {duplicates.length === 0 && (
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
+            <Button onClick={handleSubmit} disabled={createContact.isPending || checking}>
+              {(createContact.isPending || checking) && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+              Criar Contato
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );
