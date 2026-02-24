@@ -408,6 +408,42 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
 
   // Rule-based shortcuts
+
+  // REGRA: Pedido explícito de falar com pessoa/humano
+  {
+    const msgLower = mensagem_normalizada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const humanRequestPatterns = [
+      /(?:preciso|quero|gostaria de|posso|pode)\s+falar\s+com\s+/,
+      /(?:me\s+)?pass[ae]\s+(?:pr[oa]|para)\s+/,
+      /cham[ae]\s+(?:o|a|os|as)\s+/,
+      /transfer[ei]\s+(?:pr[oa]|para)\s+/,
+      /falar\s+com\s+(?:um\s+)?(?:humano|atendente|vendedor|pessoa|alguem|gente)/,
+      /(?:voce|vc)\s+(?:e|eh)\s+(?:robo|bot|maquina|ia)/,
+      /quero\s+(?:um\s+)?(?:atendente|humano|pessoa)/,
+    ];
+    if (humanRequestPatterns.some(p => p.test(msgLower))) {
+      // Extrair nome mencionado (se houver)
+      const nameMatch = msgLower.match(/(?:falar com|passa pro|chama o|transfere pro)\s+(?:o\s+|a\s+)?(\w+)/);
+      const mentionedName = nameMatch ? nameMatch[1] : null;
+      const responseMsg = mentionedName
+        ? `Vou chamar ${mentionedName.charAt(0).toUpperCase() + mentionedName.slice(1)} pra você agora. Um momento! 🙂`
+        : 'Vou te conectar com alguém da equipe agora. Um momento! 🙂';
+      log.info('Regra rule-based: pedido explícito de falar com humano', { mentionedName, mensagem: mensagem_normalizada.substring(0, 80) });
+      return {
+        intent: 'SOLICITACAO_CONTATO',
+        confidence: 0.98,
+        summary: `Lead pediu para falar com ${mentionedName || 'humano'}`,
+        acao: 'ESCALAR_HUMANO',
+        deve_responder: true,
+        resposta_sugerida: responseMsg,
+        novo_estado_funil: 'FECHAMENTO',
+        departamento_destino: 'Comercial',
+        model: 'rule-based-human-request',
+        provider: 'rules',
+      };
+    }
+  }
+
   if (leadNome) {
     const nl = (leadNome as string).toLowerCase();
     if (nl.includes('renovação') || nl.includes('renovacao') || nl.includes('renov')) {
