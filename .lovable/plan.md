@@ -1,92 +1,69 @@
 
 
-## Controle de Contatos Duplicados
+## Corrigir Alucinação de Planos/Preços pela Amélia
 
-### Situacao Atual
+### Problema
 
-O sistema ja possui deduplicacao robusta no **backend automatizado** (webhooks SGT, Blue Chat) via `_shared/contact-dedup.ts`, que busca por `legacy_lead_id`, `email+empresa` e `telefone+empresa` antes de criar um contato.
+A Amélia está inventando planos e preços inexistentes (ex: "Plano Starter R$ 297") porque:
+1. A query de produtos usa colunas erradas (`nome, preco_texto, diferenciais`) que nao existem na tabela `product_knowledge` (colunas reais: `produto_nome, descricao_curta`)
+2. O prompt nao tem instrucao proibindo a IA de inventar informacoes
+3. A tabela `product_knowledge` da Blue tem apenas 1 registro generico sem planos/precos detalhados
 
-Porem, os **formularios manuais** (Novo Contato na pagina de Contatos, Criacao Rapida no Pipeline) inserem diretamente na tabela `contacts` sem nenhuma verificacao. Isso permite que um usuario crie um contato com email ou telefone ja existente.
+### Solucao em 3 partes
 
-### Solucao Proposta
+#### 1. Corrigir a query de produtos no response-generator.ts
 
-Implementar verificacao de duplicatas em duas camadas:
+A query atual:
+```
+.select('nome, descricao_curta, preco_texto, diferenciais')
+```
 
-**Camada 1 — Constraint no banco (seguranca)**
-Criar um indice unico parcial `(email, empresa)` e `(telefone_e164, empresa)` para impedir duplicatas no nivel do banco. Isso funciona como rede de seguranca final.
+Precisa ser corrigida para usar as colunas reais da tabela:
+```
+.select('produto_nome, descricao_curta')
+```
 
-**Camada 2 — Verificacao pre-submit no frontend (UX)**
-Antes de inserir, buscar contatos existentes com mesmo email ou telefone na mesma empresa. Se encontrado, exibir um alerta ao usuario com opcoes:
-- **Ver contato existente** — abre o contato ja cadastrado
-- **Criar mesmo assim** — permite a criacao (para casos legitimos como homonimos)
+E ajustar o `ProductRow` e o mapeamento para `productsText`.
+
+#### 2. Adicionar instrucao anti-alucinacao no system prompt
+
+Adicionar ao system prompt padrao (e como regra geral):
+```
+PROIBIDO INVENTAR: Nunca cite planos, precos, valores ou produtos que nao estejam listados na secao PRODUTOS. Se nao souber o preco ou plano exato, diga que vai verificar com a equipe.
+```
+
+#### 3. Enriquecer a tabela product_knowledge com dados reais
+
+Adicionar colunas `preco_texto` e `diferenciais` na tabela `product_knowledge` para que os planos reais da Blue possam ser cadastrados e injetados no prompt. Isso evita que a IA precise "adivinhar".
 
 ### Detalhes Tecnicos
 
-#### 1. Migration SQL
+**Arquivo: `supabase/functions/sdr-ia-interpret/response-generator.ts`**
 
-Criar indices unicos parciais (nao bloqueantes para valores NULL):
+- Corrigir a interface `ProductRow` para refletir colunas reais: `produto_nome` em vez de `nome`
+- Corrigir a query `.select(...)` para usar `produto_nome, descricao_curta`
+- Atualizar o mapeamento em `productsText` para usar `p.produto_nome`
+- Adicionar ao system prompt (linha 180): instrucao clara proibindo inventar planos, precos ou informacoes nao fornecidas
+- Adicionar ao prompt do usuario (linha 207): reforco de que se os produtos listados nao tiverem preco, a Amelia deve dizer que vai confirmar com a equipe
 
+**Migration SQL**
+
+Adicionar colunas opcionais `preco_texto` e `diferenciais` na tabela `product_knowledge`:
 ```sql
-CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_email_empresa_unique
-  ON contacts (lower(email), empresa)
-  WHERE email IS NOT NULL AND is_active = true;
-
-CREATE UNIQUE INDEX IF NOT EXISTS idx_contacts_telefone_e164_empresa_unique
-  ON contacts (telefone_e164, empresa)
-  WHERE telefone_e164 IS NOT NULL AND is_active = true;
+ALTER TABLE product_knowledge ADD COLUMN IF NOT EXISTS preco_texto TEXT;
+ALTER TABLE product_knowledge ADD COLUMN IF NOT EXISTS diferenciais TEXT;
 ```
 
-Esses indices permitem multiplos contatos sem email/telefone, mas impedem dois ativos com o mesmo email ou telefone E.164 na mesma empresa.
+### Resultado Esperado
 
-#### 2. Novo hook: `src/hooks/useContactDuplicateCheck.ts`
-
-Funcao que recebe `{ email, telefone, empresa }` e retorna contatos possivelmente duplicados:
-
-```text
-useContactDuplicateCheck({ email, telefone, empresa })
-  -> query contacts WHERE (email = X OR telefone = X) AND empresa = Y AND is_active = true
-  -> retorna lista de matches com id, nome, email, telefone
-```
-
-#### 3. Componente: `src/components/contacts/DuplicateContactAlert.tsx`
-
-Alerta inline exibido abaixo do formulario quando duplicatas sao detectadas. Mostra:
-- Nome e dados do contato existente
-- Botao "Ver contato" (navega para o contato)
-- Botao "Criar mesmo assim" (prossegue com a criacao)
-
-#### 4. Integracao nos formularios existentes
-
-**`ContactCreateDialog.tsx`**: Adicionar verificacao no `handleCreate` antes do `mutateAsync`. Se houver match, exibir o `DuplicateContactAlert` em vez de criar.
-
-**`QuickCreateContactDialog.tsx`**: Mesma logica — verificar antes de criar, exibir alerta se duplicata detectada.
-
-**`useCreateContactPage` / `useCreateContact`**: Tratar erro de constraint unica (`duplicate key`) com mensagem amigavel ("Ja existe um contato com este email/telefone").
-
-### Fluxo do Usuario
-
-```text
-1. Usuario preenche formulario de novo contato
-2. Ao clicar "Criar":
-   a. Sistema busca duplicatas por email/telefone + empresa
-   b. Se encontrou:
-      - Exibe alerta com dados do contato existente
-      - Opcoes: "Ver contato" ou "Criar mesmo assim"
-   c. Se nao encontrou:
-      - Cria normalmente
-3. Se o usuario forca a criacao e bate na constraint:
-   - Toast de erro amigavel
-```
+- Amelia nunca mais inventa planos ou precos
+- Se nao tiver dados de produto suficientes, ela diz "vou verificar com a equipe"
+- Quando os planos reais forem cadastrados na tabela, a Amelia os utiliza corretamente
 
 ### Arquivos Afetados
 
 | Arquivo | Acao |
 |---------|------|
-| Migration SQL | Criar indices unicos parciais |
-| `src/hooks/useContactDuplicateCheck.ts` | Novo — hook de verificacao |
-| `src/components/contacts/DuplicateContactAlert.tsx` | Novo — componente de alerta |
-| `src/components/contacts/ContactCreateDialog.tsx` | Modificar — integrar verificacao |
-| `src/components/pipeline/QuickCreateContactDialog.tsx` | Modificar — integrar verificacao |
-| `src/hooks/useContactsPage.ts` | Modificar — tratar erro de constraint |
-| `src/hooks/useContacts.ts` | Modificar — tratar erro de constraint |
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Corrigir query, prompt e tipos |
+| Migration SQL | Adicionar colunas `preco_texto` e `diferenciais` |
 
