@@ -115,7 +115,7 @@ function LeadDetailContent() {
     useLeadDetail(leadId || '', empresa as EmpresaTipo);
 
   // Usar novo hook com realtime
-  const { data: messages = [], isLoading: messagesLoading, error: messagesError, refetch: refetchMessages } = useConversationMessages({
+  const { data: messages = [], isLoading: messagesLoading, isFetching: messagesFetching, error: messagesError, refetch: refetchMessages } = useConversationMessages({
     leadId: leadId || '',
     empresa: empresa as EmpresaTipo,
     telefone: contact?.telefone,
@@ -433,7 +433,7 @@ function LeadDetailContent() {
             error={messagesError as Error | null}
             onRetry={() => refetchMessages()}
             onRefresh={() => refetchMessages()}
-            isRefreshing={messagesLoading}
+            isRefreshing={messagesFetching}
             modo={conversationState?.modo || 'SDR_IA'}
             assumidoPorNome={null}
             maxHeight="500px"
