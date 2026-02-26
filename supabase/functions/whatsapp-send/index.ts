@@ -31,6 +31,11 @@ interface WhatsAppSendRequest {
     type: string;
     parameters: Array<{ type: string; text?: string; image?: { link: string } }>;
   }>;
+  // Media fields
+  mediaType?: 'image' | 'document' | 'audio' | 'video';
+  mediaUrl?: string;
+  mediaCaption?: string;
+  mediaFilename?: string;
 }
 
 interface WhatsAppSendResponse {
@@ -268,8 +273,13 @@ serve(async (req) => {
     const metaTemplateName = body.metaTemplateName;
     const metaLanguage = body.metaLanguage;
     const metaComponents = body.metaComponents;
+    const mediaType = body.mediaType;
+    const mediaUrl = body.mediaUrl;
+    const mediaCaption = body.mediaCaption;
+    const mediaFilename = body.mediaFilename;
 
     const isTemplateSend = !!metaTemplateName;
+    const isMediaSend = !!mediaType && !!mediaUrl;
 
     // Validações - mensagem não é obrigatória para envio de template
     if (!leadId || !telefone || !empresa) {
@@ -381,11 +391,16 @@ serve(async (req) => {
         empresa: empresa,
         canal: 'WHATSAPP',
         direcao: 'OUTBOUND',
-        conteudo: mensagem,
+        conteudo: mensagem || mediaCaption || `[${mediaType || 'text'}]`,
         estado: 'PENDENTE',
         run_id: runId || null,
         step_ordem: stepOrdem || null,
         template_codigo: templateCodigo || null,
+        tipo_midia: mediaType || 'text',
+        media_url: mediaUrl || null,
+        media_mime_type: null,
+        media_filename: mediaFilename || null,
+        media_caption: mediaCaption || null,
       })
       .select()
       .single();
@@ -413,8 +428,8 @@ serve(async (req) => {
         messageId,
       });
     } else if (activeChannel === 'meta_cloud') {
-      log.info('Roteando via META CLOUD', { empresa, isTemplateSend });
-      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud } = await import('../_shared/channel-resolver.ts');
+      log.info('Roteando via META CLOUD', { empresa, isTemplateSend, isMediaSend });
+      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud } = await import('../_shared/channel-resolver.ts');
       const metaConfig = await resolveMetaCloudConfig(supabase, empresa);
 
       if (metaConfig.mode !== 'META_CLOUD') {
@@ -441,6 +456,55 @@ serve(async (req) => {
           }).eq('id', messageId);
         }
         sendResult = metaResult;
+      } else if (isMediaSend) {
+        // ── MEDIA SEND (requires 24h window) ──
+        const { data: convState2 } = await supabase
+          .from('lead_conversation_state')
+          .select('last_inbound_at, ultimo_contato_em')
+          .eq('lead_id', leadId)
+          .eq('empresa', empresa)
+          .maybeSingle();
+        const lastInbound2 = convState2?.last_inbound_at || convState2?.ultimo_contato_em;
+        const hoursAgo2 = lastInbound2 ? (Date.now() - new Date(lastInbound2).getTime()) / (1000 * 60 * 60) : Infinity;
+
+        if (hoursAgo2 > 24) {
+          await supabase.from('lead_messages').update({
+            estado: 'ERRO',
+            erro_detalhe: 'Fora da janela de 24h do Meta Cloud. Use um template aprovado para reabrir.',
+          }).eq('id', messageId);
+          sendResult = { success: false, error: 'Janela de 24h expirada.' };
+        } else {
+          let metaMediaResult: { success: boolean; error?: string; messageId?: string };
+          switch (mediaType) {
+            case 'image':
+              metaMediaResult = await sendImageViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaCaption);
+              break;
+            case 'document':
+              metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaFilename, mediaCaption);
+              break;
+            case 'audio':
+              metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, mediaUrl!);
+              break;
+            case 'video':
+              metaMediaResult = await sendVideoViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaCaption);
+              break;
+            default:
+              metaMediaResult = { success: false, error: `Tipo de mídia não suportado: ${mediaType}` };
+          }
+          if (metaMediaResult.success) {
+            await supabase.from('lead_messages').update({
+              estado: 'ENVIADO',
+              enviado_em: new Date().toISOString(),
+              whatsapp_message_id: metaMediaResult.messageId || null,
+            }).eq('id', messageId);
+          } else {
+            await supabase.from('lead_messages').update({
+              estado: 'ERRO',
+              erro_detalhe: metaMediaResult.error || 'Erro Meta Cloud Media',
+            }).eq('id', messageId);
+          }
+          sendResult = metaMediaResult;
+        }
       } else {
         // ── FREE TEXT SEND (requires 24h window) ──
         // Check 24h window

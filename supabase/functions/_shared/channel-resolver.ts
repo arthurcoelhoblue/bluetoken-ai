@@ -415,3 +415,99 @@ export async function sendTextViaMetaCloud(
     return { success: false, error: `Meta Cloud send failed: ${err}` };
   }
 }
+
+// ========================================
+// Media sending helpers
+// ========================================
+
+/**
+ * Send an image via Meta Cloud API.
+ */
+export async function sendImageViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  imageUrl: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'image', { link: imageUrl }, caption);
+}
+
+/**
+ * Send a document via Meta Cloud API.
+ */
+export async function sendDocumentViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  documentUrl: string,
+  filename?: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'document', { link: documentUrl, filename }, caption);
+}
+
+/**
+ * Send an audio via Meta Cloud API.
+ */
+export async function sendAudioViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  audioUrl: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'audio', { link: audioUrl });
+}
+
+/**
+ * Send a video via Meta Cloud API.
+ */
+export async function sendVideoViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  videoUrl: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'video', { link: videoUrl }, caption);
+}
+
+/**
+ * Generic media send helper.
+ */
+async function sendMediaViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  mediaType: string,
+  mediaPayload: Record<string, unknown>,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  const payload: Record<string, unknown> = { ...mediaPayload };
+  if (caption) payload.caption = caption;
+
+  try {
+    const res = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: mediaType,
+        [mediaType]: payload,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Meta API error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Cloud media send failed: ${err}` };
+  }
+}
