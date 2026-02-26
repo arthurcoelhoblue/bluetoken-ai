@@ -1,114 +1,44 @@
 
-## Remover Integração Blue Chat Completamente
 
-A integração com o Blue Chat está presente em ~40 arquivos (frontend + backend). Abaixo está o plano completo de remoção, mantendo apenas **Mensageria (Baileys)** e **WhatsApp Business Oficial (meta_cloud)**.
+## Revisão Completa — Pontas Soltas Pós-Remoção Blue Chat
 
----
-
-### 1. Edge Functions — Deletar
-
-Remover completamente as seguintes Edge Functions:
-
-- **`supabase/functions/bluechat-inbound/`** (11 arquivos) — Webhook de entrada do Blue Chat
-- **`supabase/functions/bluechat-proxy/`** (1 arquivo) — Proxy para envio de mensagens, transferência de tickets e listagem de agentes
-
-### 2. Edge Functions — Limpar referências Blue Chat
-
-**`supabase/functions/_shared/channel-resolver.ts`**:
-- Remover `ChannelMode = 'BLUECHAT'` (manter apenas `'DIRECT' | 'META_CLOUD'`)
-- Remover `bluechatApiUrl`, `bluechatApiKey` do `ChannelConfig`
-- Deletar funções: `resolveBluechatApiKey`, `resolveBluechatWebhookSecret`, `resolveBluechatConfig`, `resolveBluechatFrontendUrl`, `sendViaBluechat`, `openBluechatConversation`
-- Remover `SETTINGS_KEY_MAP` das empresas Blue Chat
-- Simplificar `resolveChannelConfig` para retornar `META_CLOUD` ou `DIRECT`
-
-**`supabase/functions/_shared/empresa-mapping.ts`**:
-- Remover `mapBluechatEmpresa` e `BLUECHAT_EMPRESA_MAP`
-
-**`supabase/functions/whatsapp-send/index.ts`**:
-- Remover toda a função `sendViaBluechat`
-- Remover bloco `if (activeChannel === 'bluechat')` no roteamento principal
-
-**`supabase/functions/cadence-runner/index.ts`**:
-- Remover import de `sendViaBluechat`, `openBluechatConversation`
-- Remover função `dispararViaBluechat` e o branch `channelConfig.mode === 'BLUECHAT'`
-
-**`supabase/functions/sdr-ia-interpret/index.ts`** e **`action-executor.ts`**:
-- Remover todas as condições `source === 'BLUECHAT'` (anti-limbo, escalation, response handling)
-- Simplificar lógica para tratar apenas `WHATSAPP` / `META_CLOUD`
-
-**`supabase/functions/sdr-proactive-outreach/index.ts`**:
-- Remover `resolveBlueChat()` e toda a lógica de envio via Blue Chat
-- Redirecionar o envio proativo para usar Mensageria ou Meta Cloud conforme canal ativo
-
-**`supabase/functions/integration-health-check/index.ts`**:
-- Remover `checkBlueChat()` e referências no health check cron e no switch
-
-### 3. Frontend — Deletar arquivos
-
-- **`src/utils/bluechat.ts`** — Deep link builder
-- **`src/components/settings/BlueChatConfigDialog.tsx`** — Dialog de configuração
-
-### 4. Frontend — Limpar referências
-
-**`src/hooks/useChannelConfig.ts`**:
-- Remover `'bluechat'` do tipo `ActiveChannel` (manter `'mensageria' | 'meta_cloud'`)
-- Remover `isBluechat` do resultado
-
-**`src/hooks/useConversationMode.ts`**:
-- Remover `bluechatConversationId` do `SendManualParams`
-- Remover todo o bloco de envio via `bluechat-proxy`
-
-**`src/hooks/useIntegrationCompanyConfig.ts`**:
-- Remover `'bluechat'` do `ChannelType` e `CHANNEL_LABELS`
-
-**`src/hooks/useOperationalHealth.ts`**:
-- Remover `{ name: 'bluechat', label: 'Blue Chat' }` dos health checks
-
-**`src/components/conversas/ManualMessageInput.tsx`**:
-- Remover prop `bluechatConversationId`
-- Remover todo o bloco `if (isBluechat)` (botão "Abordar via Amélia" + envio Blue Chat)
-- Remover import de `useChannelConfig`
-
-**`src/components/conversas/ConversationPanel.tsx`**:
-- Remover state `bluechatConversationId`, useEffect de fetch, deep link badge
-- Remover imports de `buildBluechatDeepLink`, `useChannelConfig`
-- Remover prop `bluechatConversationId` dos componentes filhos
-
-**`src/components/conversas/ConversationTakeoverBar.tsx`**:
-- Remover `BlueChatAgent` interface e state `blueChatAgents`
-- Remover fetch de agentes via `bluechat-proxy`
-- Remover lógica de transferência de ticket Blue Chat
-- Remover badge "Blue Chat" e seção "Atendentes Blue Chat" no select
-- Remover import `buildBluechatDeepLink`
-
-**`src/components/settings/IntegrationsTab.tsx`**:
-- Remover `BlueChatConfigDialog` e todo state relacionado (`blueChatDialogOpen`, `blueChatHealthStatus`)
-- Remover auto health check do Blue Chat no `useEffect`
-
-**`src/components/settings/CompanyChannelCard.tsx`**:
-- Remover condição especial para `integration.id === 'bluechat'`
-
-**`src/types/settings.ts`**:
-- Remover entry `'bluechat'` do array `INTEGRATIONS`
-- Remover entry `'bluechat-inbound'` de `WEBHOOK_ENDPOINTS`
-- Remover `'bluechat'` do tipo de `channel` na interface
-
-**`src/pages/ConversasPage.tsx`**:
-- Atualizar subtítulo de "Blue Chat & WhatsApp" para "WhatsApp"
-
-### 5. Dados — Limpar configurações (opcional, pós-deploy)
-
-- Inativar registros `integration_company_config` onde `channel = 'bluechat'`
-- Limpar settings `bluechat_*` em `system_settings`
+Após a remoção, restam os seguintes problemas que precisam ser corrigidos:
 
 ---
 
-### Resumo de impacto
+### 1. `supabase/config.toml` — Entradas fantasma (NÃO EDITÁVEL)
+O arquivo `config.toml` contém referências a `[functions.bluechat-inbound]` (linha 27) e `[functions.bluechat-proxy]` (linha 132), mas este arquivo é auto-gerenciado e **não pode ser editado manualmente**. Essas entradas serão ignoradas pelo runtime pois as funções já foram deletadas — sem impacto funcional.
 
-| Area | Arquivos deletados | Arquivos editados |
-|------|-------------------|-------------------|
-| Edge Functions | 12 (2 funções) | 7 |
-| Frontend | 2 | 11 |
-| **Total** | **14** | **18** |
+### 2. `integration-health-check/index.ts` — Duplicate `default` case (BUG)
+Linhas 120-121 têm dois `default:` no switch, o que é um bug de sintaxe. Remover a linha duplicada.
 
-Os canais restantes (Mensageria + Meta Cloud API) continuarão funcionando sem alteração na lógica de negócio. O roteamento via `integration_company_config` permanece intacto para esses dois canais.
+### 3. DB Constraint — `integration_company_config` ainda permite `'bluechat'`
+A migration `20260226182306` criou um CHECK constraint que inclui `'bluechat'` como valor válido:
+```sql
+CHECK (channel = ANY (ARRAY['bluechat', 'mensageria', 'meta_cloud']))
+```
+Criar nova migration para:
+- **DROP** o constraint antigo
+- **ADD** novo constraint permitindo apenas `'mensageria'` e `'meta_cloud'`
+- **DELETE** quaisquer registros restantes com `channel = 'bluechat'`
+
+### 4. DB Function — Comentário legado em `update_conversation_with_intent`
+A função `update_conversation_with_intent` tem um comentário `-- MERGE: preserve existing keys (like bluechat_conversation_id)`. Criar migration para atualizar o comentário removendo a referência ao Blue Chat.
+
+### 5. `sdr-proactive-outreach/index.ts` — Payload incorreto para whatsapp-send
+Na função `sendViaActiveChannel` (linha 283), o payload enviado para `whatsapp-send` usa campos `phone` e `message`, mas o handler espera `telefone` e `mensagem` (+ `leadId`). Sem `leadId`, a validação do `whatsapp-send` falha com 400. Corrigir para enviar os campos corretos, ou fazer o proactive outreach chamar diretamente a API Mensageria em vez de passar pelo whatsapp-send.
+
+### 6. Migrations históricas — Sem ação
+As migrations antigas (`20260108...`, `20260209...`, etc.) contêm referências ao Blue Chat, mas são histórico imutável do banco. Não devem ser alteradas.
+
+---
+
+### Resumo de Ações
+
+| # | Arquivo | Ação |
+|---|---------|------|
+| 1 | `integration-health-check/index.ts` | Remover `default` duplicado (linha 121) |
+| 2 | Nova migration SQL | Drop/recreate constraint sem `bluechat`, delete rows `bluechat` |
+| 3 | Nova migration SQL | Atualizar comentário na function `update_conversation_with_intent` |
+| 4 | `sdr-proactive-outreach/index.ts` | Corrigir payload do `sendViaActiveChannel` para `whatsapp-send` |
+
