@@ -2922,6 +2922,30 @@ export type Database = {
           },
         ]
       }
+      empresas: {
+        Row: {
+          color: string
+          created_at: string
+          id: string
+          is_active: boolean
+          label: string
+        }
+        Insert: {
+          color?: string
+          created_at?: string
+          id: string
+          is_active?: boolean
+          label: string
+        }
+        Update: {
+          color?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          label?: string
+        }
+        Relationships: []
+      }
       follow_up_optimal_hours: {
         Row: {
           canal: string

@@ -70,6 +70,7 @@ const CSPlaybooksPage = lazy(() => import("./pages/cs/CSPlaybooksPage"));
 const CSOfertasPage = lazy(() => import("./pages/admin/CSOfertasPage"));
 const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealthPage"));
 const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
+const AdminEmpresas = lazy(() => import("./pages/AdminEmpresas"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -165,6 +166,7 @@ const App = () => (
                 <Route path="/admin/email-smtp" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><EmailSmtpConfigPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/operational-health" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><OperationalHealthPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/access-control" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AccessControl /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/admin/empresas" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><AdminEmpresas /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* CS Module — isolated ErrorBoundary */}
                 <Route path="/cs" element={<ProtectedRoute><ErrorBoundary><CSDashboardPage /></ErrorBoundary></ProtectedRoute>} />

@@ -1,5 +1,5 @@
 import { Building2, ChevronDown, Check } from 'lucide-react';
-import { useCompany, type ActiveCompany } from '@/contexts/CompanyContext';
+import { useCompany } from '@/contexts/CompanyContext';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -7,25 +7,18 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 
-const COMPANY_META: Record<string, { label: string; color: string }> = {
-  BLUE: { label: 'Blue Consult', color: 'bg-primary' },
-  TOKENIZA: { label: 'Tokeniza', color: 'bg-accent' },
-  MPUPPE: { label: 'MPuppe', color: 'bg-orange-500' },
-  AXIA: { label: 'Axia', color: 'bg-emerald-600' },
-};
-
 export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {
-  const { activeCompanies, userCompanies, toggleCompany, companyLabel } = useCompany();
+  const { activeCompanies, userCompanies, toggleCompany, companyLabel, getCompanyLabel, getCompanyColor } = useCompany();
 
-  // If user only has access to 1 company, show static label
   if (userCompanies.length <= 1) {
-    const current = COMPANY_META[activeCompanies[0]] ?? COMPANY_META.BLUE;
+    const color = getCompanyColor(activeCompanies[0]);
+    const label = getCompanyLabel(activeCompanies[0]);
     return (
       <div className="flex items-center gap-2 w-full px-2.5 py-2 rounded-lg border border-sidebar-border bg-sidebar-accent/30 text-sidebar-foreground text-sm shadow-sm">
-        <div className={`h-5 w-5 rounded flex items-center justify-center shrink-0 ${current.color}`}>
+        <div className={`h-5 w-5 rounded flex items-center justify-center shrink-0 ${color}`}>
           <Building2 className="h-3 w-3 text-primary-foreground" />
         </div>
-        {!collapsed && <span className="truncate flex-1 text-left text-xs font-medium">{current.label}</span>}
+        {!collapsed && <span className="truncate flex-1 text-left text-xs font-medium">{label}</span>}
       </div>
     );
   }
@@ -47,7 +40,8 @@ export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
         {userCompanies.map(company => {
-          const meta = COMPANY_META[company] ?? { label: company, color: 'bg-muted' };
+          const color = getCompanyColor(company);
+          const label = getCompanyLabel(company);
           const isSelected = activeCompanies.includes(company);
           return (
             <DropdownMenuItem
@@ -58,8 +52,8 @@ export function CompanySwitcher({ collapsed }: { collapsed?: boolean }) {
               }}
               className={isSelected ? 'bg-accent/10 font-medium' : ''}
             >
-              <div className={`h-4 w-4 rounded mr-2 ${meta.color}`} />
-              <span className="flex-1">{meta.label}</span>
+              <div className={`h-4 w-4 rounded mr-2 ${color}`} />
+              <span className="flex-1">{label}</span>
               {isSelected && <Check className="h-4 w-4 text-primary" />}
             </DropdownMenuItem>
           );
