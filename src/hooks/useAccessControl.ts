@@ -133,26 +133,28 @@ export function useAssignProfile() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (payload: { user_id: string; access_profile_id: string; empresas: string[] }) => {
-      // Delete existing assignments for this user
+      // 1. Upsert new assignments first (safe: never leaves user without access)
+      for (const empresa of payload.empresas) {
+        const { error } = await supabase
+          .from('user_access_assignments')
+          .upsert(
+            {
+              user_id: payload.user_id,
+              access_profile_id: payload.access_profile_id,
+              empresa: empresa as Database['public']['Enums']['empresa_tipo'],
+            },
+            { onConflict: 'user_id,empresa' }
+          );
+        if (error) throw error;
+      }
+
+      // 2. Delete only assignments NOT in the new list
       const { error: delErr } = await supabase
         .from('user_access_assignments')
         .delete()
-        .eq('user_id', payload.user_id);
+        .eq('user_id', payload.user_id)
+        .not('empresa', 'in', `(${payload.empresas.join(',')})`);
       if (delErr) throw delErr;
-
-      // Insert new assignments (one per empresa)
-      const rows = payload.empresas.map(empresa => ({
-        user_id: payload.user_id,
-        access_profile_id: payload.access_profile_id,
-        empresa: empresa as Database['public']['Enums']['empresa_tipo'],
-      }));
-
-      if (rows.length > 0) {
-        const { error } = await supabase
-          .from('user_access_assignments')
-          .insert(rows);
-        if (error) throw error;
-      }
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['users-with-profiles'] });
