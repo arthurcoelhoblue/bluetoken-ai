@@ -554,7 +554,7 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     maxTokens: 1500,
     promptVersionId: selectedPromptVersionId || undefined,
     supabase,
-    // Uses default provider chain: Claude Sonnet 4.6 → Gemini Pro → GPT-4o
+    model: 'claude-haiku',  // Haiku 4.5 — menor custo, suficiente para classificação
   });
 
   let result: ClassifierResult | null = null;
