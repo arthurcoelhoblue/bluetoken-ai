@@ -48,128 +48,6 @@ interface WhatsAppSendResponse {
   channel?: string;
 }
 
-// ========================================
-// ROTEAMENTO: Blue Chat
-// ========================================
-
-async function sendViaBluechat(
-  supabase: SupabaseClient,
-  opts: {
-    leadId: string;
-    empresa: string;
-    mensagem: string;
-    messageId: string;
-  }
-): Promise<{ success: boolean; error?: string }> {
-  const { leadId, empresa, mensagem, messageId } = opts;
-
-  // 1. Buscar config Blue Chat em system_settings
-  const SETTINGS_KEY_MAP: Record<string, string> = { 'BLUE': 'bluechat_blue', 'TOKENIZA': 'bluechat_tokeniza', 'MPUPPE': 'bluechat_mpuppe', 'AXIA': 'bluechat_axia' };
-  const settingsKey = SETTINGS_KEY_MAP[empresa] || 'bluechat_tokeniza';
-  const { data: setting } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('category', 'integrations')
-    .eq('key', settingsKey)
-    .maybeSingle();
-
-  let apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
-  if (!apiUrl) {
-    // Fallback para config legada
-    const { data: legacySetting } = await supabase
-      .from('system_settings')
-      .select('value')
-      .eq('category', 'integrations')
-      .eq('key', 'bluechat')
-      .maybeSingle();
-    apiUrl = (legacySetting?.value as Record<string, unknown>)?.api_url as string | undefined;
-  }
-
-  if (!apiUrl) {
-    return { success: false, error: `URL da API Blue Chat não configurada para ${empresa}` };
-  }
-
-  // 2. Buscar API key por empresa (settings → fallback env)
-  let bluechatApiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
-  if (!bluechatApiKey) {
-    // Fallback para config legada
-    const legacyVal = await (async () => {
-      const { data: ls } = await supabase.from('system_settings').select('value').eq('category', 'integrations').eq('key', 'bluechat').maybeSingle();
-      return (ls?.value as Record<string, unknown>)?.api_key as string | undefined;
-    })();
-    bluechatApiKey = legacyVal || getOptionalEnv('BLUECHAT_API_KEY') || undefined;
-  }
-
-  if (!bluechatApiKey) {
-    return { success: false, error: `API Key do Blue Chat não configurada para ${empresa}` };
-  }
-
-  // 3. Buscar conversation_id do lead_conversation_state.framework_data
-  const { data: convState } = await supabase
-    .from('lead_conversation_state')
-    .select('framework_data')
-    .eq('lead_id', leadId)
-    .eq('empresa', empresa)
-    .maybeSingle();
-
-  const frameworkData = convState?.framework_data as Record<string, unknown> | null;
-  const conversationId = (frameworkData?.bluechat_conversation_id as string) || null;
-
-  if (!conversationId) {
-    return { 
-      success: false, 
-      error: 'Nenhuma conversa Blue Chat ativa encontrada para este lead. O lead precisa ter iniciado uma conversa via Blue Chat primeiro.' 
-    };
-  }
-
-  log.info('Enviando via Blue Chat', { leadId, conversationId });
-
-  // 4. Enviar mensagem via API Blue Chat
-  const baseUrl = apiUrl.replace(/\/$/, '');
-  const messagesUrl = `${baseUrl}/messages`;
-
-  const response = await fetch(messagesUrl, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-API-Key': bluechatApiKey,
-    },
-    body: JSON.stringify({
-      conversation_id: conversationId,
-      content: mensagem,
-      source: 'MANUAL_SELLER',
-    }),
-  });
-
-  const responseText = await response.text();
-  log.info('BlueChatSend response', { status: response.status });
-
-  if (!response.ok) {
-    // Atualizar estado para ERRO
-    await supabase
-      .from('lead_messages')
-      .update({
-        estado: 'ERRO',
-        erro_detalhe: `Blue Chat API erro (${response.status}): ${responseText.substring(0, 200)}`,
-      })
-      .eq('id', messageId);
-
-    return { success: false, error: `Blue Chat API retornou ${response.status}: ${responseText.substring(0, 200)}` };
-  }
-
-  // 5. Atualizar estado para ENVIADO
-  await supabase
-    .from('lead_messages')
-    .update({
-      estado: 'ENVIADO',
-      enviado_em: new Date().toISOString(),
-      template_codigo: 'MANUAL_BLUECHAT',
-    })
-    .eq('id', messageId);
-
-  log.info('Mensagem enviada via Blue Chat', { messageId });
-  return { success: true };
-}
 
 // ========================================
 // ROTEAMENTO: Mensageria (fluxo original)
@@ -419,15 +297,7 @@ serve(async (req) => {
 
     let sendResult: { success: boolean; error?: string };
 
-    if (activeChannel === 'bluechat') {
-      log.info('Roteando via BLUE CHAT', { empresa });
-      sendResult = await sendViaBluechat(supabase, {
-        leadId,
-        empresa,
-        mensagem,
-        messageId,
-      });
-    } else if (activeChannel === 'meta_cloud') {
+    if (activeChannel === 'meta_cloud') {
       log.info('Roteando via META CLOUD', { empresa, isTemplateSend, isMediaSend });
       const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud } = await import('../_shared/channel-resolver.ts');
       const metaConfig = await resolveMetaCloudConfig(supabase, empresa);

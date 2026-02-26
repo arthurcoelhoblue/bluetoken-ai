@@ -3,14 +3,10 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { SheetHeader, SheetTitle } from '@/components/ui/sheet';
-import { Trophy, XCircle, RotateCcw, Clock, AlertTriangle, ExternalLink, Bot, Loader2 } from 'lucide-react';
+import { Trophy, XCircle, RotateCcw, Clock, AlertTriangle, ExternalLink } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { toast } from 'sonner';
 import { CopilotPanel } from '@/components/copilot/CopilotPanel';
 import { ClickToCallButton } from '@/components/zadarma/ClickToCallButton';
-import { useChannelConfig } from '@/hooks/useChannelConfig';
-import { supabase } from '@/integrations/supabase/client';
-import { buildBluechatDeepLink } from '@/utils/bluechat';
 import type { DealFullDetail } from '@/types/deal';
 import type { PipelineStage } from '@/types/deal';
 
@@ -34,8 +30,6 @@ interface DealDetailHeaderProps {
 
 export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReopen, onStageClick, legacyLeadId, leadEmpresa, contactId, onClose }: DealDetailHeaderProps) {
   const navigate = useNavigate();
-  const [isCallingAmelia, setIsCallingAmelia] = useState(false);
-  const { isBluechat } = useChannelConfig(leadEmpresa ?? '');
   const orderedStages = stages.filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
   const currentStageIndex = orderedStages.findIndex(s => s.id === deal.stage_id);
   const progressPercent = orderedStages.length > 1 ? ((currentStageIndex + 1) / orderedStages.length) * 100 : 0;
@@ -67,52 +61,6 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
             </div>
           </div>
           <div className="flex items-center gap-1">
-            {/* "Abordar via Amélia" — visible only when channel is Blue Chat and deal is open */}
-            {isBluechat && !isClosed && ((legacyLeadId && legacyLeadId.trim()) || contactId) && leadEmpresa && (
-              <Button
-                variant="ghost"
-                size="icon"
-                title="Abordar via Amélia no Blue Chat"
-                disabled={isCallingAmelia}
-                onClick={async () => {
-                  setIsCallingAmelia(true);
-                  try {
-                    const { data, error } = await supabase.functions.invoke('sdr-proactive-outreach', {
-                      body: {
-                        lead_id: legacyLeadId && legacyLeadId.trim() ? legacyLeadId : undefined,
-                        contact_id: (!legacyLeadId || !legacyLeadId.trim()) ? contactId : undefined,
-                        empresa: leadEmpresa,
-                        motivo: 'Acionado manualmente pelo painel',
-                        bypass_rate_limit: true,
-                      },
-                    });
-                    if (error) throw error;
-                    if (data?.rate_limited) {
-                      toast.warning('Lead já foi contactado nas últimas 24h');
-                      return;
-                    }
-                    if (data?.integration_required) {
-                      toast.info('Para primeiro contato, o Blue Chat ainda precisa habilitar o endpoint de abertura proativa. Para leads com conversa ativa, a Amélia funciona normalmente.', { duration: 8000 });
-                      return;
-                    }
-                    toast.success('Amélia iniciou a abordagem no Blue Chat!');
-                    // Open conversation link if available
-                    const link = buildBluechatDeepLink(leadEmpresa, deal.contact_telefone ?? '', data?.conversation_id);
-                    if (link) window.open(link, '_blank');
-                  } catch (err: unknown) {
-                    const msg = err instanceof Error ? err.message : String(err);
-                    toast.error('Erro ao acionar a Amélia: ' + msg);
-                  } finally {
-                    setIsCallingAmelia(false);
-                  }
-                }}
-              >
-                {isCallingAmelia
-                  ? <Loader2 className="h-4 w-4 animate-spin" />
-                  : <Bot className="h-4 w-4" />
-                }
-              </Button>
-            )}
             {legacyLeadId && leadEmpresa ? (
               <Button
                 variant="ghost"

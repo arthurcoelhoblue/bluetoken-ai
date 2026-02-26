@@ -262,9 +262,7 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
   // 2. Send auto response
   let respostaEnviada = false;
   if (resposta && resposta.length >= 10) {
-    if (source === 'BLUECHAT') {
-      respostaEnviada = false;
-    } else if (telefone) {
+    if (telefone) {
       respostaEnviada = await sendAutoResponse(telefone, empresa, resposta, lead_id, run_id);
     }
   }
@@ -375,7 +373,7 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
       const existing = conversation_state?.framework_data as Record<string, unknown> || {};
       const fu = frameworks_atualizados as Record<string, unknown>;
       stateUpdates.framework_data = {
-        ...existing,  // preserve bluechat_conversation_id, ia_null_count, etc.
+        ...existing,  // preserve ia_null_count, etc.
         gpct: {
           ...normalizeFramework(existing.gpct || existing.GPCT, 'gpct'),
           ...stripNulls(normalizeFramework(fu.gpct || fu.GPCT, 'gpct')),

@@ -1,11 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export type ActiveChannel = 'bluechat' | 'mensageria' | 'meta_cloud';
+export type ActiveChannel = 'mensageria' | 'meta_cloud';
 
 export interface ChannelConfigResult {
   activeChannel: ActiveChannel;
-  isBluechat: boolean;
   isMensageria: boolean;
   isMetaCloud: boolean;
   isLoading: boolean;
@@ -13,7 +12,7 @@ export interface ChannelConfigResult {
 
 /**
  * Hook that resolves the active channel for a given empresa.
- * Returns whether bluechat or mensageria is active.
+ * Returns whether mensageria or meta_cloud is active.
  */
 export function useChannelConfig(empresa: string): ChannelConfigResult {
   const { data, isLoading } = useQuery({
@@ -37,7 +36,6 @@ export function useChannelConfig(empresa: string): ChannelConfigResult {
 
   return {
     activeChannel: ch,
-    isBluechat: ch === 'bluechat',
     isMensageria: ch === 'mensageria',
     isMetaCloud: ch === 'meta_cloud',
     isLoading,

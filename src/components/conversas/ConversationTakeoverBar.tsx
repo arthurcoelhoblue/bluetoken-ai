@@ -18,22 +18,14 @@ import {
   SelectGroup,
   SelectItem,
   SelectLabel,
-  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Bot, UserCheck, ArrowLeftRight, UserCog, Headset, ExternalLink, RefreshCw } from 'lucide-react';
+import { Bot, UserCheck, ArrowLeftRight, UserCog, RefreshCw } from 'lucide-react';
 import { useConversationTakeover } from '@/hooks/useConversationMode';
-import { useChannelConfig } from '@/hooks/useChannelConfig';
 import { supabase } from '@/integrations/supabase/client';
-import { buildBluechatDeepLink } from '@/utils/bluechat';
 import { toast } from '@/hooks/use-toast';
 import type { AtendimentoModo } from '@/types/conversas';
-
-interface BlueChatAgent {
-  id: string;
-  name: string;
-}
 
 interface ConversationTakeoverBarProps {
   leadId: string;
@@ -42,7 +34,6 @@ interface ConversationTakeoverBarProps {
   modo: AtendimentoModo;
   assumidoPorNome?: string | null;
   isLoading?: boolean;
-  bluechatConversationId?: string | null;
   onRefresh?: () => void;
   isRefreshing?: boolean;
 }
@@ -54,7 +45,6 @@ export function ConversationTakeoverBar({
   modo,
   assumidoPorNome,
   isLoading,
-  bluechatConversationId,
   onRefresh,
   isRefreshing,
 }: ConversationTakeoverBarProps) {
@@ -62,16 +52,12 @@ export function ConversationTakeoverBar({
   const [transferOpen, setTransferOpen] = useState(false);
   const [ownerName, setOwnerName] = useState<string | null>(null);
   const [users, setUsers] = useState<{ id: string; nome: string }[]>([]);
-  const [blueChatAgents, setBlueChatAgents] = useState<BlueChatAgent[]>([]);
-  const [bluechatTicketId, setBluechatTicketId] = useState<string | null>(null);
   const [selectedValue, setSelectedValue] = useState<string>('');
   const [transferring, setTransferring] = useState(false);
   const takeover = useConversationTakeover();
-  const { isBluechat } = useChannelConfig(empresa);
 
   const isManual = modo === 'MANUAL';
 
-  // Buscar dono do lead
   useEffect(() => {
     async function fetchOwner() {
       const { data } = await supabase
@@ -95,57 +81,19 @@ export function ConversationTakeoverBar({
     fetchOwner();
   }, [leadId, empresa]);
 
-  // Carregar dados ao abrir dialog de transferência
   const loadTransferData = async () => {
-    const profilesPromise = supabase
+    await supabase
       .from('profiles')
       .select('id, nome')
       .order('nome')
       .then(({ data }) => setUsers(data || []));
-
-    const ticketPromise = supabase
-      .from('lead_conversation_state')
-      .select('framework_data')
-      .eq('lead_id', leadId)
-      .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
-      .maybeSingle()
-      .then(({ data }) => {
-        const fd = data?.framework_data as Record<string, unknown> | null;
-        const ticketId = (fd?.bluechat_ticket_id as string) || (fd?.bluechat_conversation_id as string) || null;
-        setBluechatTicketId(ticketId);
-        return ticketId;
-      });
-
-    const agentsPromise = supabase.functions
-      .invoke('bluechat-proxy', {
-        body: { action: 'list-agents', empresa },
-      })
-      .then(({ data, error }) => {
-        if (error || !data?.agents) {
-          setBlueChatAgents([]);
-        } else {
-          setBlueChatAgents(data.agents);
-        }
-      })
-      .catch(() => setBlueChatAgents([]));
-
-    await Promise.all([profilesPromise, ticketPromise, agentsPromise]);
   };
 
   const handleTakeover = () => {
     takeover.mutate(
       { leadId, empresa, acao: isManual ? 'DEVOLVER' : 'ASSUMIR' },
       {
-        onSuccess: () => {
-          setOpen(false);
-          // In Blue Chat mode, open Blue Chat on "Assumir"
-          if (!isManual && isBluechat) {
-            const deepLink = buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId);
-            if (deepLink) {
-              window.open(deepLink, '_blank');
-            }
-          }
-        },
+        onSuccess: () => setOpen(false),
         onError: () => setOpen(false),
       }
     );
@@ -156,45 +104,18 @@ export function ConversationTakeoverBar({
     setTransferring(true);
 
     try {
-      if (selectedValue.startsWith('bluechat:')) {
-        const agentId = selectedValue.replace('bluechat:', '');
-        if (!bluechatTicketId) {
-          toast({ title: 'Erro', description: 'Lead sem ticket ativo no Blue Chat', variant: 'destructive' });
-          return;
-        }
+      const userId = selectedValue.replace('amelia:', '');
+      const { error } = await supabase
+        .from('lead_contacts')
+        .update({ owner_id: userId })
+        .eq('lead_id', leadId)
+        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
 
-        const { data, error } = await supabase.functions.invoke('bluechat-proxy', {
-          body: {
-            action: 'transfer-ticket',
-            empresa,
-            ticket_id: bluechatTicketId,
-            agent_id: agentId,
-          },
-        });
+      if (error) throw error;
 
-        if (error || !data?.success) {
-          throw new Error(data?.error || 'Falha na transferência');
-        }
-
-        const agent = blueChatAgents.find((a) => a.id === agentId);
-        toast({
-          title: 'Transferido',
-          description: `Ticket transferido para ${agent?.name || agentId} no Blue Chat`,
-        });
-      } else {
-        const userId = selectedValue.replace('amelia:', '');
-        const { error } = await supabase
-          .from('lead_contacts')
-          .update({ owner_id: userId })
-          .eq('lead_id', leadId)
-          .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
-
-        if (error) throw error;
-
-        const selected = users.find((u) => u.id === userId);
-        setOwnerName(selected?.nome || null);
-        toast({ title: 'Transferido', description: `Lead transferido para ${selected?.nome}` });
-      }
+      const selected = users.find((u) => u.id === userId);
+      setOwnerName(selected?.nome || null);
+      toast({ title: 'Transferido', description: `Lead transferido para ${selected?.nome}` });
       setTransferOpen(false);
     } catch (err) {
       toast({
@@ -207,20 +128,10 @@ export function ConversationTakeoverBar({
     }
   };
 
-  const hasBlueChatSection = blueChatAgents.length > 0 || bluechatTicketId !== null;
-
-  // Blue Chat mode labels
-  const takeoverLabel = isManual
-    ? 'Devolver à Amélia'
-    : isBluechat
-      ? 'Assumir no Blue Chat'
-      : 'Assumir atendimento';
-
+  const takeoverLabel = isManual ? 'Devolver à Amélia' : 'Assumir atendimento';
   const takeoverDescription = isManual
     ? 'A Amélia voltará a responder automaticamente este lead. Você pode reassumir a qualquer momento.'
-    : isBluechat
-      ? 'A Amélia parará de responder automaticamente. Você será redirecionado para o Blue Chat para atender este lead.'
-      : 'A Amélia parará de responder automaticamente. Você será responsável por este atendimento.';
+    : 'A Amélia parará de responder automaticamente. Você será responsável por este atendimento.';
 
   return (
     <div
@@ -237,12 +148,6 @@ export function ConversationTakeoverBar({
         <Badge variant={isManual ? 'default' : 'secondary'} className="text-xs">
           {isManual ? 'Modo Manual' : 'SDR IA Ativo'}
         </Badge>
-        {isBluechat && (
-          <Badge variant="outline" className="text-xs gap-1">
-            <Headset className="h-3 w-3" />
-            Blue Chat
-          </Badge>
-        )}
         {isManual && assumidoPorNome && (
           <span className="text-xs text-muted-foreground">por {assumidoPorNome}</span>
         )}
@@ -252,7 +157,6 @@ export function ConversationTakeoverBar({
       </div>
 
       <div className="flex items-center gap-2">
-        {/* Botão Atualizar Conversa */}
         {onRefresh && (
           <Button
             variant="ghost"
@@ -266,7 +170,7 @@ export function ConversationTakeoverBar({
             Atualizar
           </Button>
         )}
-        {/* Botão Transferir */}
+
         <AlertDialog
           open={transferOpen}
           onOpenChange={(v) => {
@@ -297,42 +201,13 @@ export function ConversationTakeoverBar({
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
-                  <SelectLabel>Usuários Amélia</SelectLabel>
+                  <SelectLabel>Usuários</SelectLabel>
                   {users.map((u) => (
                     <SelectItem key={u.id} value={`amelia:${u.id}`}>
                       {u.nome}
                     </SelectItem>
                   ))}
                 </SelectGroup>
-
-                {hasBlueChatSection && (
-                  <>
-                    <SelectSeparator />
-                    <SelectGroup>
-                      <SelectLabel className="flex items-center gap-1.5">
-                        <Headset className="h-3.5 w-3.5" />
-                        Atendentes Blue Chat
-                      </SelectLabel>
-                      {blueChatAgents.length > 0 ? (
-                        blueChatAgents.map((a) => (
-                          <SelectItem
-                            key={a.id}
-                            value={`bluechat:${a.id}`}
-                            disabled={!bluechatTicketId}
-                          >
-                            {a.name}
-                          </SelectItem>
-                        ))
-                      ) : (
-                        <SelectItem value="__no_agents__" disabled>
-                          {bluechatTicketId
-                            ? 'Nenhum atendente disponível'
-                            : 'Lead sem conversa ativa no Blue Chat'}
-                        </SelectItem>
-                      )}
-                    </SelectGroup>
-                  </>
-                )}
               </SelectContent>
             </Select>
 
@@ -340,7 +215,7 @@ export function ConversationTakeoverBar({
               <AlertDialogCancel>Cancelar</AlertDialogCancel>
               <AlertDialogAction
                 onClick={handleTransfer}
-                disabled={!selectedValue || selectedValue === '__no_agents__' || transferring}
+                disabled={!selectedValue || transferring}
               >
                 {transferring ? 'Transferindo...' : 'Confirmar'}
               </AlertDialogAction>
@@ -348,7 +223,6 @@ export function ConversationTakeoverBar({
           </AlertDialogContent>
         </AlertDialog>
 
-        {/* Botão Assumir/Devolver */}
         <AlertDialog open={open} onOpenChange={setOpen}>
           <AlertDialogTrigger asChild>
             <Button
@@ -357,18 +231,14 @@ export function ConversationTakeoverBar({
               disabled={isLoading || takeover.isPending}
               className="gap-1.5"
             >
-              {isBluechat && !isManual ? (
-                <ExternalLink className="h-3.5 w-3.5" />
-              ) : (
-                <ArrowLeftRight className="h-3.5 w-3.5" />
-              )}
+              <ArrowLeftRight className="h-3.5 w-3.5" />
               {takeoverLabel}
             </Button>
           </AlertDialogTrigger>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>
-                {isManual ? 'Devolver à Amélia?' : isBluechat ? 'Assumir no Blue Chat?' : 'Assumir atendimento?'}
+                {isManual ? 'Devolver à Amélia?' : 'Assumir atendimento?'}
               </AlertDialogTitle>
               <AlertDialogDescription>
                 {takeoverDescription}

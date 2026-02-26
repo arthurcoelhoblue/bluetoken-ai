@@ -1,14 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { ConversationView } from '@/components/messages/ConversationView';
 import { ConversationTakeoverBar } from './ConversationTakeoverBar';
 import { ManualMessageInput } from './ManualMessageInput';
 import { EmailFromDealDialog } from '@/components/deals/EmailFromDealDialog';
 import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Mail, ExternalLink, Headset } from 'lucide-react';
-import { useChannelConfig } from '@/hooks/useChannelConfig';
-import { supabase } from '@/integrations/supabase/client';
-import { buildBluechatDeepLink } from '@/utils/bluechat';
+import { Mail } from 'lucide-react';
 import type { LeadMessageWithContext } from '@/types/messaging';
 import type { AtendimentoModo } from '@/types/conversas';
 
@@ -50,31 +46,6 @@ export function ConversationPanel({
   maxHeight = '400px',
 }: ConversationPanelProps) {
   const [emailOpen, setEmailOpen] = useState(false);
-  const [bluechatConversationId, setBluechatConversationId] = useState<string | null>(null);
-  const { isBluechat } = useChannelConfig(empresa);
-
-  // Fetch bluechat_conversation_id from framework_data (kept for transfers)
-  useEffect(() => {
-    if (!leadId || !empresa) return;
-
-    supabase
-      .from('lead_conversation_state')
-      .select('framework_data')
-      .eq('lead_id', leadId)
-      .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
-      .maybeSingle()
-      .then(({ data }) => {
-        const fd = data?.framework_data as Record<string, unknown> | null;
-        setBluechatConversationId(
-          (fd?.bluechat_conversation_id as string) ||
-          (fd?.bluechat_ticket_id as string) ||
-          null
-        );
-      });
-  }, [leadId, empresa]);
-
-  // Use conversation ID when available for direct deep link, fallback to phone
-  const bluechatDeepLink = isBluechat ? buildBluechatDeepLink(empresa, telefone || '', bluechatConversationId) : null;
 
   return (
     <div className="space-y-3">
@@ -84,26 +55,9 @@ export function ConversationPanel({
         telefone={telefone}
         modo={modo}
         assumidoPorNome={assumidoPorNome}
-        bluechatConversationId={bluechatConversationId}
         onRefresh={onRefresh}
         isRefreshing={isRefreshing}
       />
-
-      {/* Blue Chat deep link badge */}
-      {bluechatDeepLink && (
-        <div className="flex items-center justify-end">
-          <a
-            href={bluechatDeepLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Headset className="h-3 w-3" />
-            Ver no Blue Chat
-            <ExternalLink className="h-3 w-3" />
-          </a>
-        </div>
-      )}
 
       <ConversationView
         messages={messages}
@@ -123,7 +77,6 @@ export function ConversationPanel({
             telefone={telefone}
             modo={modo}
             contactId={contactId}
-            bluechatConversationId={bluechatConversationId}
           />
         </div>
         {contactEmail && (
