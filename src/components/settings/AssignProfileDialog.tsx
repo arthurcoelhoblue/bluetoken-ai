@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useAccessProfiles, useAssignProfile } from '@/hooks/useAccessControl';
+import { useCompany } from '@/contexts/CompanyContext';
 import { supabase } from '@/integrations/supabase/client';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -16,22 +17,21 @@ interface Props {
   userId: string;
   userName: string;
   currentProfileId?: string | null;
-  currentEmpresas?: ('BLUE' | 'TOKENIZA')[];
+  currentEmpresas?: string[];
 }
-
-const AVAILABLE_EMPRESAS: { value: 'BLUE' | 'TOKENIZA'; label: string }[] = [
-  { value: 'BLUE', label: 'Blue Consult' },
-  { value: 'TOKENIZA', label: 'Tokeniza' },
-];
 
 export function AssignProfileDialog({ open, onOpenChange, userId, userName, currentProfileId, currentEmpresas }: Props) {
   const { data: profiles = [] } = useAccessProfiles();
+  const { empresaRecords } = useCompany();
   const assignMutation = useAssignProfile();
   const queryClient = useQueryClient();
 
+  const activeEmpresas = empresaRecords.filter(e => e.is_active);
+  const defaultEmpresa = activeEmpresas[0]?.id ?? '';
+
   const [profileId, setProfileId] = useState(currentProfileId ?? '');
-  const [selectedEmpresas, setSelectedEmpresas] = useState<('BLUE' | 'TOKENIZA')[]>(
-    currentEmpresas && currentEmpresas.length > 0 ? currentEmpresas : ['BLUE']
+  const [selectedEmpresas, setSelectedEmpresas] = useState<string[]>(
+    currentEmpresas && currentEmpresas.length > 0 ? currentEmpresas : defaultEmpresa ? [defaultEmpresa] : []
   );
   const [ramal, setRamal] = useState('');
 
@@ -42,7 +42,7 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
     }
   }, [open, userId]);
 
-  const toggleEmpresa = (empresa: 'BLUE' | 'TOKENIZA') => {
+  const toggleEmpresa = (empresa: string) => {
     setSelectedEmpresas(prev => {
       if (prev.includes(empresa)) {
         // Don't allow deselecting all
@@ -62,7 +62,7 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
           // Save ramal
           if (ramal) {
             await supabase.from('zadarma_extensions').upsert(
-              { user_id: userId, extension_number: ramal, empresa: selectedEmpresas[0] },
+              { user_id: userId, extension_number: ramal, empresa: selectedEmpresas[0] as any },
               { onConflict: 'user_id,empresa' }
             );
           } else {
@@ -101,11 +101,11 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
           <div className="space-y-2">
             <Label>Empresas</Label>
             <div className="space-y-2">
-              {AVAILABLE_EMPRESAS.map(emp => (
-                <label key={emp.value} className="flex items-center gap-2 cursor-pointer">
+              {activeEmpresas.map(emp => (
+                <label key={emp.id} className="flex items-center gap-2 cursor-pointer">
                   <Checkbox
-                    checked={selectedEmpresas.includes(emp.value)}
-                    onCheckedChange={() => toggleEmpresa(emp.value)}
+                    checked={selectedEmpresas.includes(emp.id)}
+                    onCheckedChange={() => toggleEmpresa(emp.id)}
                   />
                   <span className="text-sm">{emp.label}</span>
                 </label>

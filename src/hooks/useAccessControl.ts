@@ -1,4 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import type { Database } from '@/integrations/supabase/types';
 import { supabase } from '@/integrations/supabase/client';
 import type { AccessProfile, PermissionsMap, UserAccessAssignment, UserWithAccess } from '@/types/accessControl';
 import { toast } from 'sonner';
@@ -131,7 +132,7 @@ export function useUsersWithProfiles() {
 export function useAssignProfile() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (payload: { user_id: string; access_profile_id: string; empresas: ('BLUE' | 'TOKENIZA')[] }) => {
+    mutationFn: async (payload: { user_id: string; access_profile_id: string; empresas: string[] }) => {
       // Delete existing assignments for this user
       const { error: delErr } = await supabase
         .from('user_access_assignments')
@@ -143,7 +144,7 @@ export function useAssignProfile() {
       const rows = payload.empresas.map(empresa => ({
         user_id: payload.user_id,
         access_profile_id: payload.access_profile_id,
-        empresa,
+        empresa: empresa as Database['public']['Enums']['empresa_tipo'],
       }));
 
       if (rows.length > 0) {

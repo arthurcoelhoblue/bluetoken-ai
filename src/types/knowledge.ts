@@ -37,7 +37,7 @@ export const SECTION_ORDER: KnowledgeSectionTipo[] = [
 
 export interface ProductKnowledge {
   id: string;
-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+  empresa: string;
   produto_id: string;
   produto_nome: string;
   descricao_curta: string | null;

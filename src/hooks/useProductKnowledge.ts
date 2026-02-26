@@ -77,7 +77,7 @@ export function useCreateProductKnowledge() {
     mutationFn: async (product: Omit<ProductKnowledge, 'id' | 'created_at' | 'updated_at'>) => {
       const { data, error } = await supabase
         .from('product_knowledge')
-        .insert(product)
+        .insert(product as any)
         .select()
         .single();
 
@@ -98,7 +98,7 @@ export function useUpdateProductKnowledge() {
     mutationFn: async ({ id, ...updates }: Partial<ProductKnowledge> & { id: string }) => {
       const { data, error } = await supabase
         .from('product_knowledge')
-        .update(updates)
+        .update(updates as any)
         .eq('id', id)
         .select()
         .single();
