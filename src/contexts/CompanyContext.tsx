@@ -1,7 +1,16 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
+import { useQuery } from '@tanstack/react-query';
+import type { Database } from '@/integrations/supabase/types';
 
-export type ActiveCompany = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+export type ActiveCompany = Database['public']['Enums']['empresa_tipo'];
+
+export interface EmpresaRecord {
+  id: string;
+  label: string;
+  color: string;
+  is_active: boolean;
+}
 
 interface CompanyContextType {
   /** All currently selected companies */
@@ -10,18 +19,17 @@ interface CompanyContextType {
   activeCompany: ActiveCompany;
   /** All companies available to the logged-in user */
   userCompanies: ActiveCompany[];
+  /** Full empresa records from DB */
+  empresaRecords: EmpresaRecord[];
   setActiveCompanies: (companies: ActiveCompany[]) => void;
   toggleCompany: (company: ActiveCompany) => void;
   companyLabel: string;
   isMultiCompany: boolean;
+  /** Get label for a company ID */
+  getCompanyLabel: (id: string) => string;
+  /** Get color for a company ID */
+  getCompanyColor: (id: string) => string;
 }
-
-const LABELS: Record<ActiveCompany, string> = {
-  BLUE: 'Blue Consult',
-  TOKENIZA: 'Tokeniza',
-  MPUPPE: 'MPuppe',
-  AXIA: 'Axia',
-};
 
 const STORAGE_KEY = 'bluecrm-companies';
 const OLD_STORAGE_KEY = 'bluecrm-company';
@@ -32,12 +40,10 @@ function loadInitialCompanies(): ActiveCompany[] {
     try {
       const parsed = JSON.parse(stored);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const valid = parsed.filter((c: string) => ['BLUE', 'TOKENIZA', 'MPUPPE', 'AXIA'].includes(c)) as ActiveCompany[];
-        if (valid.length > 0) return valid;
+        return parsed as ActiveCompany[];
       }
     } catch { /* ignore */ }
   }
-  // Migrate from old single-value key
   const old = localStorage.getItem(OLD_STORAGE_KEY);
   if (old === 'BLUE' || old === 'TOKENIZA') return [old];
   if (old === 'blue') return ['BLUE'];
@@ -51,6 +57,28 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [userCompanies, setUserCompanies] = useState<ActiveCompany[]>([]);
   const [activeCompanies, setActiveCompaniesState] = useState<ActiveCompany[]>(loadInitialCompanies);
 
+  // Load empresa records from DB
+  const { data: empresaRecords = [] } = useQuery({
+    queryKey: ['empresas'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('empresas')
+        .select('id, label, color, is_active')
+        .order('created_at');
+      if (error) throw error;
+      return (data ?? []) as EmpresaRecord[];
+    },
+    staleTime: 5 * 60_000,
+  });
+
+  const getCompanyLabel = useCallback((id: string) => {
+    return empresaRecords.find(e => e.id === id)?.label ?? id;
+  }, [empresaRecords]);
+
+  const getCompanyColor = useCallback((id: string) => {
+    return empresaRecords.find(e => e.id === id)?.color ?? 'bg-primary';
+  }, [empresaRecords]);
+
   const loadUserCompanies = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
@@ -59,9 +87,8 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
       .select('empresa')
       .eq('user_id', user.id);
     if (data && data.length > 0) {
-      const companies = data.map(d => d.empresa).filter(Boolean) as ActiveCompany[];
+      const companies = data.map(d => String(d.empresa)).filter(Boolean) as ActiveCompany[];
       setUserCompanies(companies);
-      // Ensure active selection is valid
       setActiveCompaniesState(prev => {
         const valid = prev.filter(c => companies.includes(c));
         return valid.length > 0 ? valid : [companies[0]];
@@ -89,7 +116,6 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
 
   const toggleCompany = (company: ActiveCompany) => {
     if (activeCompanies.includes(company)) {
-      // Don't allow deselecting the last one
       if (activeCompanies.length > 1) {
         setActiveCompanies(activeCompanies.filter(c => c !== company));
       }
@@ -98,16 +124,17 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const activeCompany = activeCompanies[0] ?? 'BLUE';
+  const activeCompany: ActiveCompany = activeCompanies[0] ?? ('BLUE' as ActiveCompany);
   const companyLabel = activeCompanies.length === 1
-    ? LABELS[activeCompanies[0]]
+    ? getCompanyLabel(activeCompanies[0])
     : `${activeCompanies.length} empresas`;
   const isMultiCompany = activeCompanies.length > 1;
 
   return (
     <CompanyContext.Provider value={{
-      activeCompanies, activeCompany, userCompanies,
+      activeCompanies, activeCompany, userCompanies, empresaRecords,
       setActiveCompanies, toggleCompany, companyLabel, isMultiCompany,
+      getCompanyLabel, getCompanyColor,
     }}>
       {children}
     </CompanyContext.Provider>

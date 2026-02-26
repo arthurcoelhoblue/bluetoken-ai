@@ -7,7 +7,12 @@ import type { Database } from '@/integrations/supabase/types';
 export type EmpresaTipo = Database['public']['Enums']['empresa_tipo'];
 export type CanalTipo = Database['public']['Enums']['canal_tipo'];
 
-export const EMPRESA_LABELS: Record<EmpresaTipo, string> = {
+/** Cast string[] from CompanyContext to the DB enum type for Supabase queries */
+export function asEmpresaFilter(companies: string[]): EmpresaTipo[] {
+  return companies as unknown as EmpresaTipo[];
+}
+
+export const EMPRESA_LABELS: Record<string, string> = {
   TOKENIZA: 'Tokeniza',
   BLUE: 'Blue',
   MPUPPE: 'MPuppe',
