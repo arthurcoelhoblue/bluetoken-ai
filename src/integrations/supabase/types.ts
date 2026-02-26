@@ -4210,6 +4210,12 @@ export type Database = {
           descricao: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
+          meta_category: string | null
+          meta_components: Json | null
+          meta_language: string
+          meta_rejected_reason: string | null
+          meta_status: string
+          meta_template_id: string | null
           nome: string
           updated_at: string
         }
@@ -4223,6 +4229,12 @@ export type Database = {
           descricao?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
+          meta_category?: string | null
+          meta_components?: Json | null
+          meta_language?: string
+          meta_rejected_reason?: string | null
+          meta_status?: string
+          meta_template_id?: string | null
           nome: string
           updated_at?: string
         }
@@ -4236,6 +4248,12 @@ export type Database = {
           descricao?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
+          meta_category?: string | null
+          meta_components?: Json | null
+          meta_language?: string
+          meta_rejected_reason?: string | null
+          meta_status?: string
+          meta_template_id?: string | null
           nome?: string
           updated_at?: string
         }
@@ -5552,6 +5570,42 @@ export type Database = {
           id?: string
           identifier?: string
           window_start?: string
+        }
+        Relationships: []
+      }
+      whatsapp_connections: {
+        Row: {
+          business_account_id: string
+          created_at: string
+          display_phone: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          is_active: boolean
+          phone_number_id: string
+          updated_at: string
+          verified_name: string | null
+        }
+        Insert: {
+          business_account_id: string
+          created_at?: string
+          display_phone?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_active?: boolean
+          phone_number_id: string
+          updated_at?: string
+          verified_name?: string | null
+        }
+        Update: {
+          business_account_id?: string
+          created_at?: string
+          display_phone?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          is_active?: boolean
+          phone_number_id?: string
+          updated_at?: string
+          verified_name?: string | null
         }
         Relationships: []
       }

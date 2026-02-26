@@ -119,6 +119,13 @@ export interface MessageTemplate {
   descricao: string | null;
   conteudo: string;
   ativo: boolean;
+  assunto_template: string | null;
+  meta_template_id: string | null;
+  meta_status: string;
+  meta_category: string | null;
+  meta_language: string;
+  meta_components: unknown | null;
+  meta_rejected_reason: string | null;
   created_at: string;
   updated_at: string;
 }

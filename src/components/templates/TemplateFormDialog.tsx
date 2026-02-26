@@ -12,7 +12,10 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { MetaStatusBadge } from './MetaStatusBadge';
+import { MetaComponentsEditor, type MetaComponent } from './MetaComponentsEditor';
 import type { MessageTemplate, TemplateInsert, TemplateUpdate } from '@/hooks/useTemplates';
+import { useState } from 'react';
 
 const schema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
@@ -23,6 +26,8 @@ const schema = z.object({
   descricao: z.string().optional(),
   assunto_template: z.string().optional(),
   ativo: z.boolean(),
+  meta_category: z.string().optional(),
+  meta_language: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -37,18 +42,14 @@ interface Props {
 
 export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSaving }: Props) {
   const isEditing = !!template;
+  const [metaComponents, setMetaComponents] = useState<MetaComponent[]>([]);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      nome: '',
-      codigo: '',
-      empresa: 'BLUE',
-      canal: 'WHATSAPP',
-      conteudo: '',
-      descricao: '',
-      assunto_template: '',
-      ativo: true,
+      nome: '', codigo: '', empresa: 'BLUE', canal: 'WHATSAPP',
+      conteudo: '', descricao: '', assunto_template: '', ativo: true,
+      meta_category: '', meta_language: 'pt_BR',
     },
   });
 
@@ -63,12 +64,17 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
         descricao: template.descricao ?? '',
         assunto_template: template.assunto_template ?? '',
         ativo: template.ativo,
+        meta_category: template.meta_category ?? '',
+        meta_language: template.meta_language ?? 'pt_BR',
       });
+      setMetaComponents((template.meta_components as MetaComponent[]) || []);
     } else {
       form.reset({
         nome: '', codigo: '', empresa: 'BLUE', canal: 'WHATSAPP',
         conteudo: '', descricao: '', assunto_template: '', ativo: true,
+        meta_category: '', meta_language: 'pt_BR',
       });
+      setMetaComponents([]);
     }
   }, [template, open]);
 
@@ -85,12 +91,14 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
       descricao: values.descricao || null,
       assunto_template: values.canal === 'EMAIL' ? (values.assunto_template || null) : null,
       ativo: values.ativo,
+      meta_category: values.meta_category || null,
+      meta_language: values.meta_language || 'pt_BR',
+      meta_components: metaComponents.length > 0 ? metaComponents : null,
       ...(isEditing ? { id: template!.id } : {}),
     } as TemplateInsert | TemplateUpdate;
     onSave(payload);
   }
 
-  // Highlight placeholders in preview — safe React rendering (no dangerouslySetInnerHTML)
   function renderPreview(text: string) {
     const parts = text.split(/(\{\{\w+\}\})/g);
     return parts.map((part, i) =>
@@ -106,7 +114,12 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{isEditing ? 'Editar Template' : 'Novo Template'}</DialogTitle>
+          <div className="flex items-center gap-3">
+            <DialogTitle>{isEditing ? 'Editar Template' : 'Novo Template'}</DialogTitle>
+            {isEditing && template && (
+              <MetaStatusBadge status={template.meta_status} rejectedReason={template.meta_rejected_reason} />
+            )}
+          </div>
         </DialogHeader>
         <Form {...form}>
           <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
@@ -165,6 +178,38 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
               )} />
             </div>
 
+            {/* Meta fields for WhatsApp */}
+            {canal === 'WHATSAPP' && (
+              <div className="grid grid-cols-2 gap-4">
+                <FormField control={form.control} name="meta_category" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Categoria Meta</FormLabel>
+                    <Select value={field.value || ''} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="UTILITY">Utility</SelectItem>
+                        <SelectItem value="MARKETING">Marketing</SelectItem>
+                        <SelectItem value="AUTHENTICATION">Authentication</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="meta_language" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Idioma</FormLabel>
+                    <Select value={field.value || 'pt_BR'} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        <SelectItem value="pt_BR">Português (BR)</SelectItem>
+                        <SelectItem value="en_US">English (US)</SelectItem>
+                        <SelectItem value="es">Español</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+              </div>
+            )}
+
             {canal === 'EMAIL' && (
               <FormField control={form.control} name="assunto_template" render={({ field }) => (
                 <FormItem>
@@ -195,6 +240,11 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
                 <FormMessage />
               </FormItem>
             )} />
+
+            {/* Meta Components editor for WhatsApp */}
+            {canal === 'WHATSAPP' && (
+              <MetaComponentsEditor components={metaComponents} onChange={setMetaComponents} />
+            )}
 
             {conteudo && (
               <div>
