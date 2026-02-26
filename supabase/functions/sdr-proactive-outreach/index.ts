@@ -260,6 +260,7 @@ Responda APENAS com o texto da mensagem, sem aspas.`;
 async function sendViaActiveChannel(
   supabase: ReturnType<typeof createClient>,
   empresa: string,
+  leadId: string,
   phone: string,
   message: string,
 ): Promise<{ success: boolean; messageId?: string; error?: string; channel: string }> {
@@ -280,8 +281,9 @@ async function sendViaActiveChannel(
         "Authorization": `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
       },
       body: JSON.stringify({
-        phone,
-        message,
+        telefone: phone,
+        mensagem: message,
+        leadId,
         empresa,
         source: "AMELIA_SDR",
       }),
@@ -415,7 +417,7 @@ Deno.serve(async (req) => {
     }
 
     // 5. Send via active channel (Mensageria or Meta Cloud)
-    const sendResult = await sendViaActiveChannel(serviceClient, empresa, phone, greetingMessage);
+    const sendResult = await sendViaActiveChannel(serviceClient, empresa, effectiveLeadId, phone, greetingMessage);
 
     if (!sendResult.success) {
       return jsonResponse(

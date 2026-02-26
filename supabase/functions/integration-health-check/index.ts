@@ -118,7 +118,6 @@ async function checkIntegration(integration: string): Promise<HealthCheckResult>
     }
     case "sgt": return checkSGT();
     default: return { status: "error", message: `Integração desconhecida: ${integration}` };
-    default: return { status: "error", message: `Integração desconhecida: ${integration}` };
   }
 }
 
