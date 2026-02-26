@@ -1,5 +1,5 @@
 // _shared/cors.ts — Centralised CORS configuration
-// Webhooks externos (SGT, Blue Chat, WhatsApp, Zadarma) continuam com '*'
+// Webhooks externos (SGT, WhatsApp, Zadarma) continuam com '*'
 // porque são chamados por servidores de terceiros que não enviam Origin.
 // Funções chamadas pelo frontend usam whitelist restritiva.
 

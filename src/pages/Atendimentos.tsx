@@ -32,7 +32,7 @@ export default function Atendimentos() {
           <div>
             <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
               <MessageSquare className="h-6 w-6 text-primary" />
-              Atendimentos Blue Chat
+              Atendimentos WhatsApp
             </h1>
             <p className="text-sm text-muted-foreground mt-1">
               Conversas ativas da Amélia no modo atendente passivo
@@ -76,8 +76,8 @@ export default function Atendimentos() {
           <Card>
             <CardContent className="py-12 text-center text-muted-foreground">
               <MessageSquare className="h-10 w-10 mx-auto mb-3 opacity-40" />
-              <p>Nenhum atendimento Blue Chat encontrado.</p>
-              <p className="text-xs mt-1">Conversas aparecerão aqui quando leads forem recebidos via Blue Chat.</p>
+              <p>Nenhum atendimento encontrado.</p>
+              <p className="text-xs mt-1">Conversas aparecerão aqui quando leads forem recebidos via WhatsApp.</p>
             </CardContent>
           </Card>
         ) : (
