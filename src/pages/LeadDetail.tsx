@@ -55,7 +55,7 @@ import { format, formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import type { Temperatura } from '@/types/classification';
 import type { EmpresaTipo } from '@/types/sgt';
-import { buildBluechatDeepLink } from '@/utils/bluechat';
+
 
 function TemperatureBadge({ temperatura }: { temperatura: Temperatura }) {
   const colorMap: Record<Temperatura, string> = {
@@ -149,11 +149,6 @@ function LeadDetailContent() {
     enabled: !!leadId && !!empresa,
   });
 
-  // Extract bluechat_conversation_id from conversation state framework_data
-  const bluechatConversationId = (() => {
-    const fd = conversationState?.framework_data as Record<string, unknown> | null;
-    return (fd?.bluechat_conversation_id as string) || (fd?.bluechat_ticket_id as string) || null;
-  })();
 
   const canEdit = hasRole('ADMIN') || hasRole('CLOSER');
 
@@ -246,22 +241,6 @@ function LeadDetailContent() {
                   <span>{contact.telefone}</span>
                   <ClickToCallButton phone={contact.telefone} contactName={contact.nome || contact.primeiro_nome} />
                 </div>
-              )}
-              {contact.telefone && buildBluechatDeepLink(contact.empresa, contact.telefone, bluechatConversationId) && (
-                <Button
-                  variant="outline"
-                  className="w-full border-green-500/30 text-green-600 hover:bg-green-50 hover:text-green-700"
-                  asChild
-                >
-                  <a
-                    href={buildBluechatDeepLink(contact.empresa, contact.telefone, bluechatConversationId)!}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    <MessageCircle className="h-4 w-4" />
-                    Abrir no Blue Chat
-                  </a>
-                </Button>
               )}
               <Separator />
               <ExternalLinks contact={contact} />

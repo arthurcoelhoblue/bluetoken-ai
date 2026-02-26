@@ -34,7 +34,7 @@ export interface IntegrationConfig {
 export interface IntegrationCompanyConfig {
   id: string;
   empresa: 'TOKENIZA' | 'BLUE';
-  channel: 'bluechat' | 'mensageria';
+  channel: 'mensageria' | 'meta_cloud';
   enabled: boolean;
   updated_at: string;
   updated_by: string | null;
@@ -125,13 +125,13 @@ export const INTEGRATIONS: IntegrationInfo[] = [
     mutuallyExclusiveGroup: 'messaging',
   },
   {
-    id: 'bluechat',
-    name: 'Blue Chat',
-    description: 'Interface de atendimento humano',
-    icon: 'Headphones',
-    secrets: ['BLUECHAT_API_KEY'],
-    settingsKey: 'bluechat',
-    testable: true,
+    id: 'meta_cloud',
+    name: 'WhatsApp Business Oficial',
+    description: 'API oficial da Meta Cloud para WhatsApp Business',
+    icon: 'Send',
+    secrets: [],
+    settingsKey: 'meta_cloud',
+    testable: false,
     perCompany: true,
     mutuallyExclusiveGroup: 'messaging',
   },
@@ -172,15 +172,6 @@ export const WEBHOOKS: WebhookInfo[] = [
     method: 'POST',
     authType: 'Bearer',
     secretName: 'WHATSAPP_INBOUND_SECRET',
-  },
-  {
-    id: 'bluechat-inbound',
-    name: 'Blue Chat Inbound',
-    description: 'Recebe mensagens do Blue Chat',
-    path: '/functions/v1/bluechat-inbound',
-    method: 'POST',
-    authType: 'API-Key',
-    secretName: 'BLUECHAT_API_KEY',
   },
   {
     id: 'sgt-webhook',

@@ -23,7 +23,6 @@ const INTEGRATIONS = [
   { name: 'gemini', label: 'Gemini AI' },
   { name: 'smtp', label: 'SMTP Email' },
   { name: 'sgt', label: 'SGT' },
-  { name: 'bluechat', label: 'Blue Chat' },
   { name: 'zadarma', label: 'Zadarma' },
 ];
 
@@ -42,11 +41,8 @@ export function useOperationalHealth() {
 
   const checkAll = useCallback(async () => {
     setLoading(true);
-
-    // Set all to checking
     setIntegrations(prev => prev.map(i => ({ ...i, status: 'checking' as const })));
 
-    // Check all integrations in parallel
     const results = await Promise.allSettled(
       INTEGRATIONS.map(async (integration) => {
         const start = Date.now();
@@ -65,7 +61,6 @@ export function useOperationalHealth() {
 
     setIntegrations(results.map(r => r.status === 'fulfilled' ? r.value : { name: '', label: '', status: 'error' as const }));
 
-    // Fetch CRON statuses from system_settings
     try {
       const { data: settings } = await supabase
         .from('system_settings')

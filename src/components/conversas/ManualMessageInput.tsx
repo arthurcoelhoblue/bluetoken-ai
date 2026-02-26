@@ -2,13 +2,10 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
-import { Send, AlertCircle, Bot, Loader2 } from 'lucide-react';
+import { Send, AlertCircle } from 'lucide-react';
 import { useSendManualMessage } from '@/hooks/useConversationMode';
-import { useChannelConfig } from '@/hooks/useChannelConfig';
-
 import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
-import { toast } from 'sonner';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -17,7 +14,6 @@ interface ManualMessageInputProps {
   telefone?: string | null;
   modo: AtendimentoModo;
   contactId?: string | null;
-  bluechatConversationId?: string | null;
 }
 
 export function ManualMessageInput({
@@ -26,17 +22,13 @@ export function ManualMessageInput({
   telefone,
   modo,
   contactId,
-  bluechatConversationId,
 }: ManualMessageInputProps) {
   const [text, setText] = useState('');
   const [dealDialogOpen, setDealDialogOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
-  const [isCallingAmelia, setIsCallingAmelia] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
-  const { isBluechat } = useChannelConfig(empresa);
 
-  // Resolve contact_id from lead_id
   const { data: contact } = useQuery({
     queryKey: ['lead-contact-bridge', leadId, empresa],
     enabled: !!leadId,
@@ -51,7 +43,6 @@ export function ManualMessageInput({
     },
   });
 
-  // Check if contact has an open deal
   const { data: existingDeals = [], refetch: refetchDeals } = useQuery({
     queryKey: ['lead-has-deal', contact?.id],
     enabled: !!contact?.id,
@@ -89,7 +80,6 @@ export function ManualMessageInput({
         telefone,
         conteudo: message,
         modoAtual: modo,
-        bluechatConversationId: bluechatConversationId || undefined,
       },
       { onSuccess: () => setText('') }
     );
@@ -123,44 +113,6 @@ export function ManualMessageInput({
     }
   };
 
-  const handleAbordarAmelia = async () => {
-    const normalizedLeadId = leadId?.trim() || undefined;
-    const normalizedContactId = !normalizedLeadId ? (contactId || undefined) : undefined;
-
-    if (!normalizedLeadId && !normalizedContactId) {
-      toast.error('Contato sem identificador para abordagem automática');
-      return;
-    }
-
-    setIsCallingAmelia(true);
-    try {
-      const { data, error } = await supabase.functions.invoke('sdr-proactive-outreach', {
-        body: {
-          lead_id: normalizedLeadId,
-          contact_id: normalizedContactId,
-          empresa,
-          motivo: 'Acionado manualmente pelo chat',
-          bypass_rate_limit: true,
-        },
-      });
-      if (error) throw error;
-      if (data?.integration_required) {
-        toast.info('Para primeiro contato, o Blue Chat ainda precisa habilitar o endpoint de abertura proativa. Para leads com conversa ativa, a Amélia funciona normalmente.', { duration: 8000 });
-        return;
-      }
-      if (data?.error) {
-        toast.error(`Erro: ${data.error}`);
-        return;
-      }
-      toast.success(`Amélia enviou: "${(data?.message_sent || '').substring(0, 60)}..."`);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      toast.error('Erro ao acionar a Amélia: ' + msg);
-    } finally {
-      setIsCallingAmelia(false);
-    }
-  };
-
   if (!telefone) {
     return (
       <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground bg-muted/50 rounded-lg">
@@ -170,66 +122,6 @@ export function ManualMessageInput({
     );
   }
 
-  // ── Blue Chat mode: Abordar via Amelia + link secundário + envio manual ──
-  if (isBluechat) {
-    
-
-    return (
-      <>
-        <div className="space-y-2">
-          <Button
-            variant="default"
-            size="sm"
-            className="w-full gap-2 text-xs"
-            disabled={isCallingAmelia}
-            onClick={handleAbordarAmelia}
-          >
-            {isCallingAmelia ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Bot className="h-3.5 w-3.5" />
-            )}
-            {isCallingAmelia ? 'Amélia está analisando...' : 'Abordar via Amélia'}
-          </Button>
-
-
-          <div className="flex items-end gap-2">
-            <Textarea
-              ref={textareaRef}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Enviar via Blue Chat..."
-              className="min-h-[40px] max-h-[120px] resize-none flex-1"
-              rows={1}
-              disabled={sendMutation.isPending}
-            />
-            <Button
-              size="icon"
-              onClick={handleSend}
-              disabled={!text.trim() || sendMutation.isPending}
-              className="shrink-0"
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
-        </div>
-
-        {contact && (
-          <CreateDealFromConversationDialog
-            open={dealDialogOpen}
-            onOpenChange={setDealDialogOpen}
-            contactId={contact.id}
-            contactNome={contact.nome ?? ''}
-            empresa={empresa}
-            onDealCreated={handleDealCreated}
-          />
-        )}
-      </>
-    );
-  }
-
-  // ── Mensageria mode: existing behavior ──
   const isSDR = modo === 'SDR_IA';
   const placeholder = isSDR
     ? 'Enviar e assumir atendimento...'

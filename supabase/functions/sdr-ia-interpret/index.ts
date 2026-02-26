@@ -52,7 +52,7 @@ function normalizarAcao(acao: string | undefined): string {
 
 interface InterpretRequest {
   messageId: string;
-  source?: 'BLUECHAT' | 'WHATSAPP' | string;
+  source?: 'WHATSAPP' | string;
   mode?: 'PASSIVE_CHAT' | string;
   triageSummary?: { clienteNome: string | null; email: string | null; resumoTriagem: string | null; historico: string | null };
   testMode?: string;
@@ -205,23 +205,19 @@ serve(async (req) => {
       intent: classifierResult.intent, confidence: classifierResult.confidence,
     });
 
-    if (source === 'BLUECHAT' && isContextualShortReply) {
-      // Contextual short reply: treat as progress, decay counter
+    if (isContextualShortReply) {
       if (iaNullCount > 0) {
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
       }
       log.info('Anti-limbo: resposta curta contextual detectada — tratando como progresso', {
         intent: classifierResult.intent, confidence: classifierResult.confidence,
       });
-    } else if (source === 'BLUECHAT' && isDeterministicFallback && hasClearSemanticSignal) {
-      // Parser/model technical failure on a clear message — DO NOT treat as comprehension failure
-      // Force AI to respond with continuation instead of "não entendi"
+    } else if (isDeterministicFallback && hasClearSemanticSignal) {
       classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
       classifierResult.deve_responder = true;
       if (iaNullCount > 0) {
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
       }
-      // If no good response was generated, provide contextual continuation
       if (!respostaTexto || respostaTexto.length <= 20 || respostaTexto.toLowerCase().includes('reformul') || respostaTexto.toLowerCase().includes('não entendi')) {
         respostaTexto = empresa === 'BLUE'
           ? 'Boa pergunta! Posso te explicar melhor como funciona. O que exatamente você gostaria de saber?'
@@ -231,11 +227,10 @@ serve(async (req) => {
         fallbackReason: (classifierResult as Record<string, unknown>)._fallbackReason,
         semanticSignal: true,
       });
-    } else if (source === 'BLUECHAT' && isFailedIntent) {
+    } else if (isFailedIntent) {
       const hasContext = (parsedContext.historico || []).length >= 2;
       const newCount = iaNullCount + 1;
 
-      // If funnel is advanced and SPIN is filled, force AI response instead of canned "Não entendi"
       if (isAdvancedFunnel && spinFilled && respostaTexto && respostaTexto.length > 20) {
         classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
         classifierResult.deve_responder = true;
@@ -262,7 +257,7 @@ serve(async (req) => {
         classifierResult.deve_responder = true;
         log.info('Anti-limbo: pedindo esclarecimento', { iaNullCount: newCount });
       }
-    } else if (source === 'BLUECHAT' && !isFailedIntent) {
+    } else if (!isFailedIntent) {
       if (iaNullCount > 0) {
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
         log.info('Anti-limbo: decaying ia_null_count', { previousCount: iaNullCount, newCount: iaNullCount - 1 });
@@ -270,11 +265,11 @@ serve(async (req) => {
     }
 
     // OUTRO com ESCALAR_HUMANO mas abaixo do threshold: converter para esclarecimento
-    if (source === 'BLUECHAT' && classifierResult.intent === 'OUTRO' && classifierResult.acao === 'ESCALAR_HUMANO' && (iaNullCount + 1) < ESCALATION_THRESHOLD) {
+    if (classifierResult.intent === 'OUTRO' && classifierResult.acao === 'ESCALAR_HUMANO' && (iaNullCount + 1) < ESCALATION_THRESHOLD) {
       classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
     }
 
-    if (source === 'BLUECHAT' && acao === 'ESCALAR_HUMANO' && !respostaTexto) {
+    if (acao === 'ESCALAR_HUMANO' && !respostaTexto) {
       respostaTexto = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
       classifierResult.deve_responder = true;
     }
@@ -289,9 +284,7 @@ serve(async (req) => {
     const finalAcao = classifierResult.acao || acao;
     const telefone = parsedContext.telefone;
 
-    const canRespond = source === 'BLUECHAT'
-      ? (classifierResult.deve_responder && respostaTexto && classifierResult.intent !== 'OPT_OUT')
-      : (classifierResult.deve_responder && respostaTexto && telefone && classifierResult.intent !== 'OPT_OUT');
+    const canRespond = classifierResult.deve_responder && respostaTexto && telefone && classifierResult.intent !== 'OPT_OUT';
 
     const execResult = await executeActions(supabase, {
       lead_id: msg.lead_id,
@@ -318,8 +311,7 @@ serve(async (req) => {
       _ia_null_count_update: classifierResult._ia_null_count_update,
     });
 
-    // For BLUECHAT, response is returned via HTTP, not sent via WhatsApp
-    const respostaEnviada = source === 'BLUECHAT' && canRespond ? false : execResult.respostaEnviada;
+    const respostaEnviada = execResult.respostaEnviada;
 
     // ========================================
     // 7. SAVE INTERPRETATION

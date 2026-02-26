@@ -82,7 +82,7 @@ function ConversasContent() {
           Conversas
         </h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Atendimentos ativos — Blue Chat & WhatsApp
+          Atendimentos ativos — WhatsApp
         </p>
       </div>
 

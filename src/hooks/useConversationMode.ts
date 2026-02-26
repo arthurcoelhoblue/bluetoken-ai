@@ -22,7 +22,6 @@ export function useConversationTakeover() {
       const novoModo: AtendimentoModo = acao === 'ASSUMIR' ? 'MANUAL' : 'SDR_IA';
       const now = new Date().toISOString();
 
-      // Update conversation state
       const updateFields: Record<string, unknown> = {
         modo: novoModo,
         updated_at: now,
@@ -44,7 +43,6 @@ export function useConversationTakeover() {
 
       if (stateError) throw stateError;
 
-      // MUDANÇA 2: Auto-assign owner_id no takeover ASSUMIR
       if (acao === 'ASSUMIR') {
         const { data: leadContact } = await supabase
           .from('lead_contacts')
@@ -61,7 +59,6 @@ export function useConversationTakeover() {
         }
       }
 
-      // Insert takeover log
       const { error: logError } = await supabase
         .from('conversation_takeover_log')
         .insert({
@@ -100,7 +97,6 @@ interface SendManualParams {
   telefone: string;
   conteudo: string;
   modoAtual?: AtendimentoModo;
-  bluechatConversationId?: string;
 }
 
 export function useSendManualMessage() {
@@ -109,10 +105,9 @@ export function useSendManualMessage() {
   const takeover = useConversationTakeover();
 
   return useMutation({
-    mutationFn: async ({ leadId, empresa, telefone, conteudo, modoAtual, bluechatConversationId }: SendManualParams) => {
+    mutationFn: async ({ leadId, empresa, telefone, conteudo, modoAtual }: SendManualParams) => {
       if (!user?.id) throw new Error('Usuário não autenticado');
 
-      // Auto-takeover if not already in MANUAL
       if (modoAtual !== 'MANUAL') {
         await takeover.mutateAsync({
           leadId,
@@ -122,25 +117,6 @@ export function useSendManualMessage() {
         });
       }
 
-      // If bluechatConversationId is provided, route via bluechat-proxy
-      if (bluechatConversationId) {
-        const { data, error } = await supabase.functions.invoke('bluechat-proxy', {
-          body: {
-            action: 'send-message',
-            empresa,
-            conversation_id: bluechatConversationId,
-            phone: telefone.replace(/\D/g, ''),
-            content: conteudo,
-            sender_name: user?.user_metadata?.nome || user?.user_metadata?.full_name || 'Vendedor',
-          },
-        });
-
-        if (error) throw error;
-        if (!data?.success) throw new Error(data?.error || 'Falha ao enviar via Blue Chat');
-        return data;
-      }
-
-      // Otherwise, send via whatsapp-send (Direct mode)
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
         body: {
           leadId,
