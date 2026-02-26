@@ -1,46 +1,58 @@
 
 
-## Substituir Gemini Flash por Claude Haiku 4.5
+## Criar Tela de Gestão de Empresas (Tenants)
 
-### Escopo
+### Problema Atual
 
-Todas as funcoes que hoje usam `model: 'gemini-flash'` (tarefas analiticas/internas) passarao a usar Claude Haiku 4.5 via API Anthropic.
+Adicionar uma empresa requer mudanças manuais em:
+1. **Banco**: `ALTER TYPE empresa_tipo ADD VALUE 'NOVA'`
+2. **Banco**: `SELECT provision_tenant_schema('nova')` (cria ~57 views)
+3. **Frontend**: `CompanySwitcher.tsx`, `CompanyContext.tsx`, `enums.ts`
+4. **Edge Functions**: `_shared/tenant.ts`, `_shared/types.ts`
 
-### Arquivos afetados
+### Solução Proposta
 
-**Core (1 arquivo):**
+Substituir o enum hardcoded por uma **tabela `empresas`** e criar uma tela admin para gerenciar.
 
-| Arquivo | Mudanca |
+### Arquivos e Mudanças
+
+**Migration SQL:**
+
+| Mudança | Detalhe |
 |---------|---------|
-| `supabase/functions/_shared/ai-provider.ts` | Renomear opcao `'gemini-flash'` → `'claude-haiku'`; substituir bloco 0 (Gemini Flash via Google API) por chamada Claude Haiku 4.5 via Anthropic API; adicionar `'claude-haiku-4-5'` ao COST_TABLE |
+| Criar tabela `empresas` | `id TEXT PK, label TEXT, color TEXT, is_active BOOLEAN, created_at` |
+| Seed com dados atuais | BLUE, TOKENIZA, MPUPPE, AXIA |
+| RLS | Leitura para `authenticated`, escrita para ADMIN |
 
-**Edge functions (12 arquivos) — trocar `model: 'gemini-flash'` por `model: 'claude-haiku'`:**
+**Nota importante:** O enum `empresa_tipo` continuará existindo no banco (não é possível remover valores de enum no Postgres), mas a tabela `empresas` passará a ser a fonte de verdade para a UI e validações.
 
-1. `cs-health-calculator/index.ts`
-2. `deal-loss-analysis/index.ts` (2 chamadas)
-3. `copilot-chat/index.ts`
-4. `revenue-forecast/index.ts`
-5. `amelia-learn/index.ts` (2 chamadas)
-6. `call-transcribe/index.ts`
-7. `call-coach/index.ts`
-8. `deal-context-summary/index.ts`
-9. `deal-scoring/index.ts`
-10. `weekly-report/index.ts`
-11. `faq-auto-review/index.ts`
-12. `icp-learner/index.ts`
+**Frontend (3 arquivos):**
 
-**Teste:**
-
-| Arquivo | Mudanca |
+| Arquivo | Mudança |
 |---------|---------|
-| `src/lib/__tests__/ai-provider-logic.test.ts` | Atualizar teste "Gemini cost is lower than Claude" para comparar claude-haiku-4-5 vs claude-sonnet-4-6 |
+| `src/pages/AdminEmpresas.tsx` | **Novo** — Tela CRUD de empresas (listar, criar, editar label/cor, ativar/desativar) |
+| `src/contexts/CompanyContext.tsx` | Carregar empresas da tabela `empresas` ao invés de hardcoded |
+| `src/components/layout/CompanySwitcher.tsx` | Usar dados dinâmicos da tabela |
 
-### Detalhe tecnico — ai-provider.ts
+**Roteamento:**
 
-- `model` type muda de `'gemini-flash'` para `'claude-haiku'`
-- Bloco 0 passa a chamar `https://api.anthropic.com/v1/messages` com `model: 'claude-haiku-4-5'` usando `ANTHROPIC_API_KEY` (ja configurada)
-- COST_TABLE recebe entrada `'claude-haiku-4-5': { input: 0.80/1M, output: 4.0/1M }`
-- Cadeia de fallback continua: Claude Haiku → Claude Sonnet → Gemini Pro → GPT-4o
+| Arquivo | Mudança |
+|---------|---------|
+| `src/App.tsx` | Adicionar rota `/admin/empresas` |
 
-### Nenhuma migration SQL necessaria
+**Edge Functions (2 arquivos):**
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/_shared/tenant.ts` | Validar empresa contra tabela `empresas` (query) ao invés de Set hardcoded |
+| Nova edge function `admin-provision-tenant` | Executa `ALTER TYPE empresa_tipo ADD VALUE` + `provision_tenant_schema` via service_role |
+
+### Limitação Conhecida
+
+Adicionar valores ao enum PostgreSQL (`ALTER TYPE ... ADD VALUE`) não pode rodar dentro de uma transação. A edge function `admin-provision-tenant` precisará executar isso com `service_role` em statements separados.
+
+### Fora de Escopo
+
+- Remover empresas existentes (enum PG não permite remover valores)
+- Migrar todas as colunas `empresa_tipo` para `TEXT` (mudança muito grande, pode ser feita depois)
 
