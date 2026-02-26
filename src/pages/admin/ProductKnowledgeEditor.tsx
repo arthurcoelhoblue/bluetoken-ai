@@ -44,7 +44,7 @@ export default function ProductKnowledgeEditor() {
 
   // Form state
   const [formData, setFormData] = useState({
-    empresa: 'TOKENIZA' as 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA',
+    empresa: 'TOKENIZA',
     produto_id: '',
     produto_nome: '',
     descricao_curta: '',

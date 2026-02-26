@@ -7109,7 +7109,7 @@ export type Database = {
         | "URL"
         | "PERCENT"
         | "TAG"
-      empresa_tipo: "TOKENIZA" | "BLUE" | "MPUPPE" | "AXIA"
+      empresa_tipo: "TOKENIZA" | "BLUE" | "MPUPPE" | "AXIA" | "BLUE_LABS"
       estado_funil_tipo:
         | "SAUDACAO"
         | "DIAGNOSTICO"
@@ -7371,7 +7371,7 @@ export const Constants = {
         "PERCENT",
         "TAG",
       ],
-      empresa_tipo: ["TOKENIZA", "BLUE", "MPUPPE", "AXIA"],
+      empresa_tipo: ["TOKENIZA", "BLUE", "MPUPPE", "AXIA", "BLUE_LABS"],
       estado_funil_tipo: [
         "SAUDACAO",
         "DIAGNOSTICO",
