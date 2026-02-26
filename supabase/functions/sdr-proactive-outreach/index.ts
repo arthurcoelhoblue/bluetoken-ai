@@ -1,12 +1,13 @@
 // ========================================
-// sdr-proactive-outreach — Amélia proactive SDR outreach via Blue Chat
-// Opens a conversation, generates a personalized greeting with deep context, sends it, and records everything.
+// sdr-proactive-outreach — Amélia proactive SDR outreach
+// Generates a personalized greeting with deep context, sends via active channel (Mensageria or Meta Cloud), and records everything.
 // ========================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { envConfig, getOptionalEnv } from "../_shared/config.ts";
+import { envConfig } from "../_shared/config.ts";
 import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai-provider.ts";
+import { resolveChannelConfig, sendTextViaMetaCloud } from "../_shared/channel-resolver.ts";
 
 // ── helpers ──
 
@@ -15,45 +16,6 @@ function jsonResponse(body: unknown, req: Request, status = 200) {
     status,
     headers: { ...getCorsHeaders(req), "Content-Type": "application/json" },
   });
-}
-
-async function resolveBlueChat(
-  supabase: ReturnType<typeof createClient>,
-  empresa: string
-): Promise<{ baseUrl: string; apiKey: string } | null> {
-  const SETTINGS_KEY_MAP: Record<string, string> = {
-    'BLUE': 'bluechat_blue',
-    'TOKENIZA': 'bluechat_tokeniza',
-    'MPUPPE': 'bluechat_mpuppe',
-    'AXIA': 'bluechat_axia',
-  };
-  const settingsKey = SETTINGS_KEY_MAP[empresa] || "bluechat_tokeniza";
-  const { data: setting } = await supabase
-    .from("system_settings")
-    .select("value")
-    .eq("category", "integrations")
-    .eq("key", settingsKey)
-    .maybeSingle();
-
-  let apiUrl = (setting?.value as Record<string, unknown>)?.api_url as string | undefined;
-  if (!apiUrl) {
-    const { data: legacy } = await supabase
-      .from("system_settings")
-      .select("value")
-      .eq("category", "integrations")
-      .eq("key", "bluechat")
-      .maybeSingle();
-    apiUrl = (legacy?.value as Record<string, unknown>)?.api_url as string | undefined;
-  }
-  if (!apiUrl) return null;
-
-  let apiKey = (setting?.value as Record<string, unknown>)?.api_key as string | undefined;
-  if (!apiKey) {
-    apiKey = getOptionalEnv("BLUECHAT_API_KEY") || undefined;
-  }
-  if (!apiKey) return null;
-
-  return { baseUrl: apiUrl.replace(/\/$/, ""), apiKey };
 }
 
 // ── contact resolution ──
@@ -66,7 +28,7 @@ interface ResolvedLead {
   telefone: string | null;
   telefone_e164: string | null;
   email: string | null;
-  synthetic: boolean; // true if lead_contacts was created from a CRM contact
+  synthetic: boolean;
 }
 
 async function resolveLeadFromContact(
@@ -84,7 +46,6 @@ async function resolveLeadFromContact(
     return { lead: null, error: cErr?.message || "Contact not found" };
   }
 
-  // If contact already has a legacy_lead_id, use the standard path
   if (contact.legacy_lead_id) {
     const { data: existing } = await supabase
       .from("lead_contacts")
@@ -98,7 +59,6 @@ async function resolveLeadFromContact(
     }
   }
 
-  // Create synthetic lead_contacts entry from CRM contact
   const syntheticLeadId = `crm_${contactId}`;
 
   const { data: upserted, error: uErr } = await supabase
@@ -122,7 +82,6 @@ async function resolveLeadFromContact(
     return { lead: null, error: uErr?.message || "Failed to create synthetic lead" };
   }
 
-  // Update contacts table with the synthetic lead_id so the sync trigger links them
   await supabase
     .from("contacts")
     .update({ legacy_lead_id: syntheticLeadId })
@@ -148,9 +107,7 @@ async function loadDeepContext(
   empresa: string,
   contactId?: string,
 ): Promise<DeepContext> {
-  // All queries in parallel
   const [msgRes, convRes, classRes, contactRes, sgtRes, learningsRes] = await Promise.all([
-    // 1. Last 20 messages
     supabase
       .from("lead_messages")
       .select("direcao, conteudo, created_at")
@@ -158,21 +115,18 @@ async function loadDeepContext(
       .eq("empresa", empresa)
       .order("created_at", { ascending: false })
       .limit(20),
-    // 2. Conversation state
     supabase
       .from("lead_conversation_state")
       .select("estado_funil, framework_ativo, framework_data, perfil_disc, modo")
       .eq("lead_id", leadId)
       .eq("empresa", empresa)
       .maybeSingle(),
-    // 3. Classification
     supabase
       .from("lead_classifications")
       .select("temperatura, perfil_investidor, icp_score, tipo_lead")
       .eq("lead_id", leadId)
       .eq("empresa", empresa)
       .maybeSingle(),
-    // 4. Contact (to find deal) — use contactId directly if available
     contactId
       ? Promise.resolve({ data: { id: contactId }, error: null })
       : supabase
@@ -181,7 +135,6 @@ async function loadDeepContext(
           .eq("legacy_lead_id", leadId)
           .eq("empresa", empresa as "BLUE" | "TOKENIZA")
           .maybeSingle(),
-    // 5. SGT events (last 5)
     supabase
       .from("sgt_events")
       .select("tipo, descricao, created_at")
@@ -189,7 +142,6 @@ async function loadDeepContext(
       .eq("empresa", empresa)
       .order("created_at", { ascending: false })
       .limit(5),
-    // 6. Validated learnings
     supabase
       .from("amelia_learnings")
       .select("titulo, descricao, categoria")
@@ -199,7 +151,6 @@ async function loadDeepContext(
       .limit(5),
   ]);
 
-  // Load deal if contact exists
   let deal: Record<string, unknown> | null = null;
   if (contactRes.data?.id) {
     const { data: dealData } = await supabase
@@ -236,7 +187,6 @@ function buildContextualPrompt(
   const firstName = (lead.primeiro_nome || (lead.nome as string)?.split(" ")[0] || "Lead") as string;
   const empresaLabel = empresa === "BLUE" ? "Blue Consult" : empresa === "TOKENIZA" ? "Tokeniza" : empresa;
 
-  // Extract framework data
   const fw = ctx.convState?.framework_data as Record<string, unknown> | undefined;
   const estadoFunil = (ctx.convState?.estado_funil as string) || "DESCONHECIDO";
   const frameworkAtivo = (ctx.convState?.framework_ativo as string) || "NONE";
@@ -244,25 +194,21 @@ function buildContextualPrompt(
   const temp = (ctx.classification?.temperatura as string) || "MORNO";
   const perfilInvestidor = (ctx.classification?.perfil_investidor as string) || "";
 
-  // Build message history snippet (last 5)
   const lastMessages = ctx.messages.slice(-5);
   const historyText = lastMessages.length > 0
     ? lastMessages.map(m => `[${m.direcao}] ${(m.conteudo || "").substring(0, 100)}`).join("\n")
     : "Nenhuma conversa anterior.";
 
-  // Deal info
   let dealText = "Sem deal ativo.";
   if (ctx.deal) {
     const stageName = (ctx.deal.pipeline_stages as Record<string, unknown>)?.nome || "?";
     dealText = `${ctx.deal.titulo} — Estágio: ${stageName} — R$${ctx.deal.valor || 0}`;
   }
 
-  // SGT events
   const sgtText = ctx.sgtEvents.length > 0
     ? ctx.sgtEvents.map(e => `${e.tipo}: ${(e.descricao as string || "").substring(0, 60)}`).join("; ")
     : "Sem eventos SGT recentes.";
 
-  // Framework progress
   let frameworkText = "Nenhum framework iniciado.";
   if (fw && frameworkAtivo !== "NONE") {
     if (frameworkAtivo === "SPIN") {
@@ -276,7 +222,6 @@ function buildContextualPrompt(
     }
   }
 
-  // Learnings
   const learningsText = ctx.learnings.length > 0
     ? ctx.learnings.map(l => `- ${l.titulo}`).join("\n")
     : "";
@@ -310,6 +255,50 @@ Responda APENAS com o texto da mensagem, sem aspas.`;
   return { system, user };
 }
 
+// ── send message via active channel ──
+
+async function sendViaActiveChannel(
+  supabase: ReturnType<typeof createClient>,
+  empresa: string,
+  phone: string,
+  message: string,
+): Promise<{ success: boolean; messageId?: string; error?: string; channel: string }> {
+  const channelConfig = await resolveChannelConfig(supabase, empresa);
+
+  if (channelConfig.mode === 'META_CLOUD') {
+    const result = await sendTextViaMetaCloud(channelConfig, phone, message);
+    return { ...result, channel: 'META_CLOUD' };
+  }
+
+  // DIRECT mode — send via whatsapp-send edge function (Mensageria/Baileys)
+  const whatsappSendUrl = `${envConfig.SUPABASE_URL}/functions/v1/whatsapp-send`;
+  try {
+    const res = await fetch(whatsappSendUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
+      },
+      body: JSON.stringify({
+        phone,
+        message,
+        empresa,
+        source: "AMELIA_SDR",
+      }),
+    });
+
+    const text = await res.text();
+    if (!res.ok) {
+      return { success: false, error: `whatsapp-send error ${res.status}: ${text}`, channel: 'DIRECT' };
+    }
+
+    const data = JSON.parse(text || "{}");
+    return { success: true, messageId: data?.messageId || data?.message_id, channel: 'DIRECT' };
+  } catch (err) {
+    return { success: false, error: `whatsapp-send fetch error: ${err}`, channel: 'DIRECT' };
+  }
+}
+
 // ── main ──
 
 Deno.serve(async (req) => {
@@ -333,7 +322,6 @@ Deno.serve(async (req) => {
       bypass_rate_limit?: boolean;
     };
 
-    // Sanitize: treat empty strings as undefined
     const lead_id = rawBody.lead_id?.trim() || undefined;
     const contact_id = rawBody.contact_id?.trim() || undefined;
     const empresa = rawBody.empresa?.trim() || undefined;
@@ -350,7 +338,6 @@ Deno.serve(async (req) => {
     let resolvedContactId: string | undefined = contact_id || undefined;
 
     if (lead_id) {
-      // Standard path: fetch from lead_contacts
       const { data: leadData, error: leadErr } = await serviceClient
         .from("lead_contacts")
         .select("lead_id, empresa, nome, primeiro_nome, telefone, telefone_e164, email")
@@ -363,7 +350,6 @@ Deno.serve(async (req) => {
       }
       lead = { ...leadData, synthetic: false };
     } else if (contact_id) {
-      // New path: resolve from contacts table
       const result = await resolveLeadFromContact(serviceClient, contact_id, empresa);
       if (!result.lead) {
         return jsonResponse({ error: "Contact not found", detail: result.error }, req, 404);
@@ -381,7 +367,7 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "Lead has no phone number" }, req, 400);
     }
 
-    // 2. Rate-limit (skip if bypass_rate_limit=true — manual trigger by seller)
+    // 2. Rate-limit
     if (!bypass_rate_limit) {
       const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
       const { data: recentOutbound } = await serviceClient
@@ -402,7 +388,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 3. Load deep context in parallel
+    // 3. Load deep context
     const ctx = await loadDeepContext(serviceClient, effectiveLeadId, empresa, resolvedContactId);
 
     // 4. Generate contextual message via AI
@@ -428,87 +414,18 @@ Deno.serve(async (req) => {
       return jsonResponse({ error: "AI failed to generate greeting", model: aiResult.model }, req, 500);
     }
 
-    // 5. Resolve Blue Chat config
-    const bcConfig = await resolveBlueChat(serviceClient, empresa);
-    if (!bcConfig) {
-      return jsonResponse({ error: "Blue Chat not configured for this empresa" }, req, 404);
-    }
+    // 5. Send via active channel (Mensageria or Meta Cloud)
+    const sendResult = await sendViaActiveChannel(serviceClient, empresa, phone, greetingMessage);
 
-    const bcHeaders = {
-      "Content-Type": "application/json",
-      "X-API-Key": bcConfig.apiKey,
-    };
-
-    // 6. Check if conversation_id exists in framework_data
-    const fwData = (ctx.convState?.framework_data as Record<string, unknown>) || {};
-    let conversationId: string | null =
-      (fwData.bluechat_conversation_id as string) ||
-      (fwData.conversation_id as string) ||
-      (fwData.conversationId as string) ||
-      null;
-    let messageId: string | null = null;
-    let ticketId: string | null =
-      (fwData.bluechat_ticket_id as string) ||
-      (fwData.ticket_id as string) ||
-      null;
-
-    // ── PATH A: Lead has existing conversation → send via /messages (same as whatsapp-send) ──
-    if (conversationId) {
-      console.log(`[sdr-proactive-outreach] PATH A: Sending via /messages with conversation_id=${conversationId}`);
-      
-      const messagesUrl = `${bcConfig.baseUrl}/messages`;
-      const messagePayload = {
-        conversation_id: conversationId,
-        content: greetingMessage,
-        source: "AMELIA_SDR",
-      };
-
-      try {
-        const sendRes = await fetch(messagesUrl, {
-          method: "POST",
-          headers: bcHeaders,
-          body: JSON.stringify(messagePayload),
-        });
-
-        const sendText = await sendRes.text();
-        console.log("Blue Chat /messages response:", sendRes.status, sendText);
-
-        if (!sendRes.ok) {
-          return jsonResponse(
-            { error: "Failed to send message via Blue Chat", detail: sendText },
-            req,
-            sendRes.status
-          );
-        }
-
-        const sendData = JSON.parse(sendText || "{}");
-        messageId = sendData?.message_id || sendData?.id || null;
-        ticketId = sendData?.ticket_id || sendData?.ticketId || ticketId;
-      } catch (err) {
-        console.error("send-message fetch error:", err);
-        return jsonResponse({ error: "Failed to connect to Blue Chat" }, req, 502);
-      }
-    }
-    // ── PATH B: No conversation/ticket → endpoint proativo não existe ainda no Blue Chat ──
-    else {
-      console.log(`[sdr-proactive-outreach] PATH B: No conversation_id/ticket_id for lead=${effectiveLeadId}. Blue Chat external-ai API does not support proactive outreach yet.`);
-
+    if (!sendResult.success) {
       return jsonResponse(
-        {
-          error: "Este lead ainda não possui ticket ativo no Blue Chat. Para primeiro contato, o Blue Chat precisa disponibilizar endpoint de abertura proativa.",
-          integration_required: true,
-          no_ticket: true,
-          phone,
-          lead_id: effectiveLeadId,
-          message_generated: greetingMessage,
-          ai_model: aiResult.model,
-        },
+        { error: "Failed to send message", detail: sendResult.error, channel: sendResult.channel },
         req,
-        422
+        502
       );
     }
 
-    // 8. Record outbound message in lead_messages (schema-aligned)
+    // 6. Record outbound message in lead_messages
     const { data: savedMsg } = await serviceClient.from("lead_messages").insert({
       lead_id: effectiveLeadId,
       empresa,
@@ -518,10 +435,10 @@ Deno.serve(async (req) => {
       estado: "ENVIADA",
       template_codigo: "proactive_outreach",
       enviado_em: new Date().toISOString(),
-      whatsapp_message_id: messageId || undefined,
+      whatsapp_message_id: sendResult.messageId || undefined,
     }).select("id").maybeSingle();
 
-    // 9. Update conversation state
+    // 7. Update conversation state
     await serviceClient.from("lead_conversation_state").upsert(
       {
         lead_id: effectiveLeadId,
@@ -530,18 +447,14 @@ Deno.serve(async (req) => {
         estado_funil: (ctx.convState?.estado_funil as string) || "SAUDACAO",
         framework_ativo: (ctx.convState?.framework_ativo as string) || "SPIN",
         modo: "SDR_IA",
-        framework_data: {
-          ...(ctx.convState?.framework_data as Record<string, unknown> || {}),
-          bluechat_conversation_id: conversationId,
-          bluechat_ticket_id: ticketId,
-        },
+        framework_data: ctx.convState?.framework_data as Record<string, unknown> || {},
         ultimo_contato_em: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       },
       { onConflict: "lead_id,empresa" }
     );
 
-    // 10. Update deal if exists — use contactId directly when available
+    // 8. Update deal if exists
     let dealUpdated = false;
     let dealContactId: string | null = resolvedContactId || null;
 
@@ -574,7 +487,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[sdr-proactive-outreach] ✅ ${empresa} lead=${effectiveLeadId} conv=${conversationId} synthetic=${lead.synthetic} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
+      `[sdr-proactive-outreach] ✅ ${empresa} lead=${effectiveLeadId} channel=${sendResult.channel} synthetic=${lead.synthetic} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
     );
 
     return jsonResponse(
@@ -582,10 +495,10 @@ Deno.serve(async (req) => {
         success: true,
         lead_id: effectiveLeadId,
         contact_id: resolvedContactId || null,
-        conversation_id: conversationId,
-        ticket_id: ticketId,
+        channel: sendResult.channel,
         message_sent: greetingMessage,
         message_id: savedMsg?.id || null,
+        whatsapp_message_id: sendResult.messageId || null,
         ai_model: aiResult.model,
         deal_updated: dealUpdated,
         synthetic_lead: lead.synthetic,

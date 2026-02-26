@@ -34,9 +34,8 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
   return useQuery({
     queryKey: ['atendimentos', empresaFilter],
     queryFn: async (): Promise<Atendimento[]> => {
-      // 1. Find leads with passive-mode messages (run_id IS NULL = Blue Chat / passive)
+      // 1. Find leads with passive-mode messages (run_id IS NULL = passive)
       // Use lead_messages directly instead of lead_message_intents to catch ALL passive conversations
-      // (some leads may have messages but no intents if sdr-ia-interpret failed)
       let passiveQuery = supabase
         .from('lead_messages')
         .select('lead_id, empresa')
