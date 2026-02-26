@@ -6,12 +6,15 @@
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getOptionalEnv } from "./config.ts";
 
-export type ChannelMode = 'DIRECT' | 'BLUECHAT';
+export type ChannelMode = 'DIRECT' | 'BLUECHAT' | 'META_CLOUD';
 
 export interface ChannelConfig {
   mode: ChannelMode;
   bluechatApiUrl?: string;
   bluechatApiKey?: string;
+  metaPhoneNumberId?: string;
+  metaAccessToken?: string;
+  metaBusinessAccountId?: string;
 }
 
 const SETTINGS_KEY_MAP: Record<string, string> = {
@@ -97,7 +100,7 @@ export async function resolveAllWebhookSecrets(
 
 /**
  * Resolve which channel is active for a given empresa.
- * Returns 'BLUECHAT' or 'DIRECT' (mensageria).
+ * Returns 'BLUECHAT', 'META_CLOUD', or 'DIRECT' (mensageria / whatsapp-send).
  */
 export async function resolveChannelConfig(
   supabase: SupabaseClient,
@@ -112,6 +115,10 @@ export async function resolveChannelConfig(
     .maybeSingle();
 
   const activeChannel = config?.channel as string | undefined;
+
+  if (activeChannel === 'meta_cloud') {
+    return resolveMetaCloudConfig(supabase, empresa);
+  }
 
   if (activeChannel === 'bluechat') {
     return resolveBluechatConfig(supabase, empresa);
@@ -156,6 +163,55 @@ async function resolveBluechatConfig(
     mode: 'BLUECHAT',
     bluechatApiUrl: apiUrl.replace(/\/$/, ''),
     bluechatApiKey: apiKey,
+  };
+}
+
+/**
+ * Resolve Meta Cloud API config for a given empresa.
+ * Reads whatsapp_connections + access_token from system_settings.
+ */
+export async function resolveMetaCloudConfig(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<ChannelConfig> {
+  // 1. Get active whatsapp_connection
+  const { data: conn } = await supabase
+    .from('whatsapp_connections')
+    .select('phone_number_id, business_account_id')
+    .eq('empresa', empresa)
+    .eq('is_active', true)
+    .maybeSingle();
+
+  if (!conn?.phone_number_id) return { mode: 'DIRECT' };
+
+  // 2. Get access token from system_settings
+  const settingsKey = `meta_cloud_${empresa.toLowerCase()}`;
+  const { data: setting } = await supabase
+    .from('system_settings')
+    .select('value')
+    .eq('category', 'integrations')
+    .eq('key', settingsKey)
+    .maybeSingle();
+
+  const accessToken = (setting?.value as Record<string, unknown>)?.access_token as string | undefined;
+
+  // Fallback to env
+  if (!accessToken) {
+    const envToken = getOptionalEnv(`META_ACCESS_TOKEN_${empresa.toUpperCase()}`);
+    if (!envToken) return { mode: 'DIRECT' };
+    return {
+      mode: 'META_CLOUD',
+      metaPhoneNumberId: conn.phone_number_id,
+      metaAccessToken: envToken,
+      metaBusinessAccountId: conn.business_account_id,
+    };
+  }
+
+  return {
+    mode: 'META_CLOUD',
+    metaPhoneNumberId: conn.phone_number_id,
+    metaAccessToken: accessToken,
+    metaBusinessAccountId: conn.business_account_id,
   };
 }
 
@@ -259,5 +315,199 @@ export async function openBluechatConversation(
     };
   } catch (err) {
     return { success: false, error: `Blue Chat open conversation failed: ${err}` };
+  }
+}
+
+// ========================================
+// Meta Cloud API helpers
+// ========================================
+
+const META_API_VERSION = 'v21.0';
+const META_BASE_URL = `https://graph.facebook.com/${META_API_VERSION}`;
+
+export interface MetaTemplateSendParams {
+  templateName: string;
+  languageCode?: string;
+  components?: Array<{
+    type: string;
+    parameters: Array<{ type: string; text?: string; image?: { link: string } }>;
+  }>;
+}
+
+/**
+ * Send a template message via Meta Cloud API.
+ */
+export async function sendTemplateViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  template: MetaTemplateSendParams,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  try {
+    const res = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'template',
+        template: {
+          name: template.templateName,
+          language: { code: template.languageCode || 'pt_BR' },
+          components: template.components || [],
+        },
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Meta API error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Cloud send failed: ${err}` };
+  }
+}
+
+/**
+ * Send a free-form text message via Meta Cloud API (within 24h window).
+ */
+export async function sendTextViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  message: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  try {
+    const res = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'text',
+        text: { body: message },
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Meta API error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Cloud send failed: ${err}` };
+  }
+}
+
+// ========================================
+// Media sending helpers
+// ========================================
+
+/**
+ * Send an image via Meta Cloud API.
+ */
+export async function sendImageViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  imageUrl: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'image', { link: imageUrl }, caption);
+}
+
+/**
+ * Send a document via Meta Cloud API.
+ */
+export async function sendDocumentViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  documentUrl: string,
+  filename?: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'document', { link: documentUrl, filename }, caption);
+}
+
+/**
+ * Send an audio via Meta Cloud API.
+ */
+export async function sendAudioViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  audioUrl: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'audio', { link: audioUrl });
+}
+
+/**
+ * Send a video via Meta Cloud API.
+ */
+export async function sendVideoViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  videoUrl: string,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  return sendMediaViaMetaCloud(config, to, 'video', { link: videoUrl }, caption);
+}
+
+/**
+ * Generic media send helper.
+ */
+async function sendMediaViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  mediaType: string,
+  mediaPayload: Record<string, unknown>,
+  caption?: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  const payload: Record<string, unknown> = { ...mediaPayload };
+  if (caption) payload.caption = caption;
+
+  try {
+    const res = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: mediaType,
+        [mediaType]: payload,
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Meta API error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Cloud media send failed: ${err}` };
   }
 }

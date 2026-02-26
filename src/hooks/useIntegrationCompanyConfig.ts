@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
 export type EmpresaTipo = "TOKENIZA" | "BLUE";
-export type ChannelType = "bluechat" | "mensageria";
+export type ChannelType = "bluechat" | "mensageria" | "meta_cloud";
 
 export interface IntegrationCompanyConfig {
   id: string;
@@ -17,6 +17,7 @@ export interface IntegrationCompanyConfig {
 const CHANNEL_LABELS: Record<ChannelType, string> = {
   bluechat: "Blue Chat",
   mensageria: "Mensageria",
+  meta_cloud: "Meta Cloud API",
 };
 
 export function useIntegrationCompanyConfig() {
