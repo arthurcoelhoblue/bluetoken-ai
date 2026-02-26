@@ -24,6 +24,13 @@ interface WhatsAppSendRequest {
   to?: string;
   message?: string;
   isAutoResponse?: boolean;
+  // Meta Cloud template fields
+  metaTemplateName?: string;
+  metaLanguage?: string;
+  metaComponents?: Array<{
+    type: string;
+    parameters: Array<{ type: string; text?: string; image?: { link: string } }>;
+  }>;
 }
 
 interface WhatsAppSendResponse {
@@ -258,11 +265,22 @@ serve(async (req) => {
     const runId = body.runId;
     const stepOrdem = body.stepOrdem;
     const templateCodigo = body.templateCodigo;
+    const metaTemplateName = body.metaTemplateName;
+    const metaLanguage = body.metaLanguage;
+    const metaComponents = body.metaComponents;
 
-    // Validações
-    if (!leadId || !telefone || !mensagem || !empresa) {
+    const isTemplateSend = !!metaTemplateName;
+
+    // Validações - mensagem não é obrigatória para envio de template
+    if (!leadId || !telefone || !empresa) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Campos obrigatórios: leadId, telefone, mensagem, empresa' }),
+        JSON.stringify({ success: false, error: 'Campos obrigatórios: leadId, telefone, empresa' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (!isTemplateSend && !mensagem) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Campos obrigatórios: mensagem (ou metaTemplateName para template)' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -395,34 +413,72 @@ serve(async (req) => {
         messageId,
       });
     } else if (activeChannel === 'meta_cloud') {
-      log.info('Roteando via META CLOUD', { empresa });
-      // Import dynamically to avoid loading meta config when not needed
-      const { resolveMetaCloudConfig, sendTextViaMetaCloud } = await import('../_shared/channel-resolver.ts');
+      log.info('Roteando via META CLOUD', { empresa, isTemplateSend });
+      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud } = await import('../_shared/channel-resolver.ts');
       const metaConfig = await resolveMetaCloudConfig(supabase, empresa);
 
       if (metaConfig.mode !== 'META_CLOUD') {
         sendResult = { success: false, error: `Meta Cloud não configurado para ${empresa}` };
-      } else {
-        const metaResult = await sendTextViaMetaCloud(metaConfig, phoneToSend, mensagem);
+      } else if (isTemplateSend) {
+        // ── TEMPLATE SEND ──
+        log.info('Enviando template Meta Cloud', { template: metaTemplateName });
+        const metaResult = await sendTemplateViaMetaCloud(metaConfig, phoneToSend, {
+          templateName: metaTemplateName!,
+          languageCode: metaLanguage || 'pt_BR',
+          components: metaComponents,
+        });
         if (metaResult.success) {
-          await supabase
-            .from('lead_messages')
-            .update({
+          await supabase.from('lead_messages').update({
+            estado: 'ENVIADO',
+            enviado_em: new Date().toISOString(),
+            whatsapp_message_id: metaResult.messageId || null,
+            template_codigo: templateCodigo || metaTemplateName,
+          }).eq('id', messageId);
+        } else {
+          await supabase.from('lead_messages').update({
+            estado: 'ERRO',
+            erro_detalhe: metaResult.error || 'Erro Meta Cloud Template',
+          }).eq('id', messageId);
+        }
+        sendResult = metaResult;
+      } else {
+        // ── FREE TEXT SEND (requires 24h window) ──
+        // Check 24h window
+        const { data: convState } = await supabase
+          .from('lead_conversation_state')
+          .select('last_inbound_at, ultimo_contato_em')
+          .eq('lead_id', leadId)
+          .eq('empresa', empresa)
+          .maybeSingle();
+
+        const lastInbound = convState?.last_inbound_at || convState?.ultimo_contato_em;
+        const hoursAgo = lastInbound
+          ? (Date.now() - new Date(lastInbound).getTime()) / (1000 * 60 * 60)
+          : Infinity;
+
+        if (hoursAgo > 24) {
+          log.warn('Fora da janela 24h Meta Cloud', { hoursAgo, leadId });
+          await supabase.from('lead_messages').update({
+            estado: 'ERRO',
+            erro_detalhe: 'Fora da janela de 24h do Meta Cloud. Use um template aprovado para iniciar a conversa.',
+          }).eq('id', messageId);
+          sendResult = { success: false, error: 'Janela de 24h expirada. Envie um template aprovado para reabrir a conversa.' };
+        } else {
+          const metaResult = await sendTextViaMetaCloud(metaConfig, phoneToSend, mensagem);
+          if (metaResult.success) {
+            await supabase.from('lead_messages').update({
               estado: 'ENVIADO',
               enviado_em: new Date().toISOString(),
               whatsapp_message_id: metaResult.messageId || null,
-            })
-            .eq('id', messageId);
-        } else {
-          await supabase
-            .from('lead_messages')
-            .update({
+            }).eq('id', messageId);
+          } else {
+            await supabase.from('lead_messages').update({
               estado: 'ERRO',
               erro_detalhe: metaResult.error || 'Erro Meta Cloud',
-            })
-            .eq('id', messageId);
+            }).eq('id', messageId);
+          }
+          sendResult = metaResult;
         }
-        sendResult = metaResult;
       }
     } else {
       log.info('Roteando via MENSAGERIA', { empresa });

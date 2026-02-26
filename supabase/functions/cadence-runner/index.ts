@@ -44,6 +44,10 @@ interface MessageTemplate {
   codigo: string;
   conteudo: string;
   ativo: boolean;
+  meta_template_id?: string | null;
+  meta_status?: string | null;
+  meta_language?: string | null;
+  meta_components?: unknown;
 }
 
 interface ProcessResult {
@@ -217,7 +221,7 @@ async function resolverMensagem(
 
   const { data: template, error: templateError } = await supabase
     .from('message_templates')
-    .select('*')
+    .select('*, meta_template_id, meta_status, meta_language, meta_components')
     .eq('empresa', empresa)
     .eq('codigo', templateCodigo)
     .eq('ativo', true)
@@ -284,33 +288,65 @@ async function dispararMensagem(
   log.info('Enviando mensagem', { canal, to: to.substring(0, 5) + '***', bodyPreview: body.substring(0, 50) });
 
   if (canal === 'WHATSAPP') {
-    // ── Resolve channel: DIRECT (whatsapp-send) or BLUECHAT (Blue Chat API) ──
+    // ── Resolve channel: DIRECT (whatsapp-send) or BLUECHAT (Blue Chat API) or META_CLOUD ──
     const channelConfig = await resolveChannelConfig(supabase, empresa);
 
     if (channelConfig.mode === 'BLUECHAT') {
       return await dispararViaBluechat(supabase, channelConfig, body, leadId, empresa);
     }
 
-    // ── DIRECT mode: existing whatsapp-send behavior ──
+    // ── Check if template has Meta template info for META_CLOUD mode ──
+    let metaTemplateName: string | undefined;
+    let metaLanguage: string | undefined;
+    let metaComponents: unknown;
+
+    if (channelConfig.mode === 'META_CLOUD') {
+      // Look up the template to check for Meta template info
+      const { data: tmpl } = await supabase
+        .from('message_templates')
+        .select('meta_template_id, meta_status, meta_language, meta_components')
+        .eq('empresa', empresa)
+        .eq('codigo', templateCodigo)
+        .eq('ativo', true)
+        .maybeSingle();
+
+      if (tmpl?.meta_template_id && tmpl?.meta_status === 'APPROVED') {
+        metaTemplateName = tmpl.meta_template_id;
+        metaLanguage = tmpl.meta_language || 'pt_BR';
+        metaComponents = tmpl.meta_components;
+        log.info('Template Meta Cloud encontrado', { metaTemplateName, metaLanguage });
+      }
+    }
+
+    // ── Send via whatsapp-send (handles DIRECT + META_CLOUD routing) ──
     const supabaseUrl = envConfig.SUPABASE_URL;
     const supabaseServiceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
     
     try {
+      const payload: Record<string, unknown> = {
+        leadId,
+        telefone: to,
+        mensagem: body,
+        empresa,
+        runId,
+        stepOrdem,
+        templateCodigo,
+      };
+
+      // Add Meta template fields if available
+      if (metaTemplateName) {
+        payload.metaTemplateName = metaTemplateName;
+        payload.metaLanguage = metaLanguage;
+        if (metaComponents) payload.metaComponents = metaComponents;
+      }
+
       const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${supabaseServiceKey}`,
         },
-        body: JSON.stringify({
-          leadId,
-          telefone: to,
-          mensagem: body,
-          empresa,
-          runId,
-          stepOrdem,
-          templateCodigo,
-        }),
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
