@@ -1,44 +1,30 @@
 
 
-## Fase 4: Suporte a Mídia — Meta Cloud API ✅
+## Plano: Migrar `sdr-intent-classifier` para Claude Haiku 4.5
 
-### Contexto
-Sistema expandido para processar mensagens de mídia (imagem, documento, áudio, vídeo, sticker, location) além de texto.
+### Alteração única
 
-### Implementação Concluída
+**Arquivo:** `supabase/functions/sdr-ia-interpret/intent-classifier.ts` (linha 548-558)
 
-**1. Migração SQL** ✅
-- Colunas adicionadas: `tipo_midia`, `media_url`, `media_mime_type`, `media_filename`, `media_caption`, `media_meta_id`
-- Bucket `whatsapp-media` criado com RLS
+Adicionar `model: 'claude-haiku'` na chamada `callAI()`:
 
-**2. meta-webhook/index.ts** ✅
-- `extractMediaInfo()` processa todos os tipos de mídia da Meta
-- `downloadMetaMedia()` baixa mídia via Graph API → Storage bucket → URL pública
-- SDR-IA interpret só é chamado para mensagens de texto
+```typescript
+const aiResult = await callAI({
+  system: activeSystemPrompt,
+  prompt: userPrompt,
+  functionName: 'sdr-intent-classifier',
+  empresa,
+  temperature: 0.3,
+  maxTokens: 1500,
+  promptVersionId: selectedPromptVersionId || undefined,
+  supabase,
+  model: 'claude-haiku',  // Haiku 4.5 — menor custo, suficiente para classificação
+});
+```
 
-**3. channel-resolver.ts** ✅
-- `sendImageViaMetaCloud()`, `sendDocumentViaMetaCloud()`, `sendAudioViaMetaCloud()`, `sendVideoViaMetaCloud()`
-- Helper genérico `sendMediaViaMetaCloud()`
+### Impacto
+- **Custo**: Input cai de $3.00/M tokens (Sonnet) → $0.80/M tokens (Haiku) = **~73% redução**
+- **Output**: cai de $15.00/M → $4.00/M = **~73% redução**
+- **Fallback**: Se Haiku falhar, cai automaticamente para Sonnet → Gemini → GPT-4o (já implementado no `ai-provider.ts`)
+- **Deploy**: Edge function `sdr-ia-interpret` será redeployada automaticamente
 
-**4. whatsapp-send/index.ts** ✅
-- Aceita `mediaType`, `mediaUrl`, `mediaCaption`, `mediaFilename`
-- Roteia para helper correto baseado no tipo
-- Validação de janela 24h para envio de mídia
-
-**5. Frontend** ✅
-- Componente `MediaContent` renderiza: imagem (lightbox), vídeo (player), áudio (player), documento (download), sticker, location, contacts
-- `ConversationView` integrado com `MediaContent`
-- Tipos atualizados com `TipoMidia`
-
-### Arquivos impactados
-| Arquivo | Ação |
-|---------|------|
-| Migração SQL | Colunas mídia + bucket ✅ |
-| `supabase/functions/meta-webhook/index.ts` | Mídia inbound + download ✅ |
-| `supabase/functions/_shared/channel-resolver.ts` | Helpers de envio ✅ |
-| `supabase/functions/whatsapp-send/index.ts` | Roteamento de mídia ✅ |
-| `src/types/messaging.ts` | `TipoMidia` + campos media ✅ |
-| `src/components/messages/MediaContent.tsx` | Novo componente ✅ |
-| `src/components/messages/ConversationView.tsx` | Integrado ✅ |
-| `src/hooks/useLeadMessages.ts` | Campos media ✅ |
-| `src/hooks/useConversationMessages.ts` | Campos media ✅ |
