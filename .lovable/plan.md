@@ -1,30 +1,14 @@
 
 
-## Plano: Migrar `sdr-intent-classifier` para Claude Haiku 4.5
+## Plano: Atualizar MENSAGERIA_API_KEY
 
-### Alteração única
+O secret `MENSAGERIA_API_KEY` já está configurado no backend e já é usado pelas Edge Functions `whatsapp-send` e `integration-health-check`.
 
-**Arquivo:** `supabase/functions/sdr-ia-interpret/intent-classifier.ts` (linha 548-558)
-
-Adicionar `model: 'claude-haiku'` na chamada `callAI()`:
-
-```typescript
-const aiResult = await callAI({
-  system: activeSystemPrompt,
-  prompt: userPrompt,
-  functionName: 'sdr-intent-classifier',
-  empresa,
-  temperature: 0.3,
-  maxTokens: 1500,
-  promptVersionId: selectedPromptVersionId || undefined,
-  supabase,
-  model: 'claude-haiku',  // Haiku 4.5 — menor custo, suficiente para classificação
-});
-```
+### Ação única
+Atualizar o valor do secret `MENSAGERIA_API_KEY` para `conn_14320fd834ca3c0dbdca911799f4d43f1e6968df1d14e0b8`.
 
 ### Impacto
-- **Custo**: Input cai de $3.00/M tokens (Sonnet) → $0.80/M tokens (Haiku) = **~73% redução**
-- **Output**: cai de $15.00/M → $4.00/M = **~73% redução**
-- **Fallback**: Se Haiku falhar, cai automaticamente para Sonnet → Gemini → GPT-4o (já implementado no `ai-provider.ts`)
-- **Deploy**: Edge function `sdr-ia-interpret` será redeployada automaticamente
+- **`whatsapp-send`**: Passará a autenticar com a nova chave ao enviar mensagens via Baileys
+- **`integration-health-check`**: Health check da mensageria usará a nova chave
+- Nenhuma alteração de código necessária — as funções já lêem `MENSAGERIA_API_KEY` via `Deno.env.get()`
 
