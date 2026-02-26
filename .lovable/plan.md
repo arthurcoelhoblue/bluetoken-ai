@@ -1,69 +1,88 @@
 
 
-## Fase 1: Gestão de Templates via Meta Cloud API ✅
+## Fase 3: Webhook Meta Cloud — Inbound Messages + Status Updates
 
-### Status: CONCLUÍDA
+### Contexto
+O `whatsapp-inbound` atual recebe payloads simplificados (provavelmente do Blue Chat/Baileys). A Meta Cloud API envia webhooks com formato próprio (nested entries/changes). Precisamos criar um novo endpoint dedicado que:
+1. Responda ao **webhook verification** da Meta (GET com `hub.verify_token`)
+2. Processe **mensagens inbound** (type: messages)
+3. Processe **status updates** (type: statuses — sent, delivered, read, failed)
+4. Atualize `last_inbound_at` na `lead_conversation_state` para manter a janela 24h
 
-### O que foi implementado:
+### Implementação
 
-**1. Migração SQL** ✅
-- `whatsapp_connections` criada com RLS (authenticated read, service_role write)
-- `message_templates` expandida com: `meta_template_id`, `meta_status`, `meta_category`, `meta_language`, `meta_components`, `meta_rejected_reason`
+**1. Nova Edge Function `meta-webhook/index.ts`**
+- `GET` → Webhook verification da Meta (`hub.mode=subscribe`, `hub.verify_token`, `hub.challenge`)
+- `POST` → Processa webhook events:
+  - **messages**: Extrai `from`, `id`, `timestamp`, `text.body` → normaliza telefone → salva em `lead_messages` (reutilizando lógica do `whatsapp-inbound`) → atualiza `last_inbound_at` → dispara `sdr-ia-interpret`
+  - **statuses**: Extrai `id`, `status` (sent/delivered/read/failed) → atualiza `lead_messages.estado` pelo `whatsapp_message_id`
+- Secret: `META_WEBHOOK_VERIFY_TOKEN` para validação do handshake
+- Validação de assinatura via `X-Hub-Signature-256` (HMAC SHA256 com `META_APP_SECRET`)
 
-**2. Edge function `whatsapp-template-manager`** ✅
-- `GET` → Lista templates da WABA
-- `POST` → Cria template na Meta + sync local
-- `DELETE` → Remove template da Meta + reset local
-- `PATCH` → Sincroniza status batch dos templates locais com Meta
+**2. Atualizar `supabase/config.toml`**
+- Adicionar `[functions.meta-webhook]` com `verify_jwt = false`
 
-**3. Frontend — `useTemplates.ts`** ✅
-- Tipo `MessageTemplate` expandido com campos Meta
-- `useSyncMetaTemplates()` — sincroniza status via PATCH
-- `useSubmitTemplateToMeta()` — submete template LOCAL à Meta
+**3. Atualizar `lead_conversation_state.last_inbound_at`**
+- No handler de mensagens inbound, fazer upsert do `last_inbound_at` para o lead encontrado (valida janela 24h da Fase 2)
 
-**4. Frontend — `TemplateFormDialog.tsx`** ✅
-- Campo `meta_category` (UTILITY / MARKETING / AUTHENTICATION)
-- Campo `meta_language` (pt_BR / en_US / es)
-- Badge `meta_status` no header do dialog
-- Editor `MetaComponentsEditor` para HEADER / BODY / FOOTER / BUTTONS
+**4. Mapeamento de Status Meta → Estado interno**
+| Meta Status | `lead_messages.estado` |
+|-------------|----------------------|
+| sent | ENVIADO |
+| delivered | ENTREGUE |
+| read | LIDO |
+| failed | FALHA |
 
-**5. Frontend — `TemplatesPage.tsx`** ✅
-- Coluna "Status Meta" com badge colorido
-- Botão "Sincronizar Meta" no header
-- Botão "Submeter à Meta" (ícone Send) para templates LOCAL com categoria definida
-- Filtro por `meta_status`
+**5. Frontend — Adicionar webhook na lista de settings**
+- Novo entry em `WEBHOOKS` no `src/types/settings.ts` para `meta-webhook`
 
-**6. `whatsapp-send`** ✅
-- Ramo `meta_cloud` adicionado ao roteamento
+### Arquivos impactados
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/meta-webhook/index.ts` | **Novo** — handler GET+POST |
+| `supabase/config.toml` | Adicionar `meta-webhook` |
+| `src/types/settings.ts` | Novo webhook entry |
 
----
+### Detalhes técnicos
 
-## Fase 2: Envio de Templates Meta + Janela 24h ✅
+Payload Meta (mensagem):
+```json
+{
+  "object": "whatsapp_business_account",
+  "entry": [{
+    "id": "WABA_ID",
+    "changes": [{
+      "value": {
+        "messaging_product": "whatsapp",
+        "metadata": { "phone_number_id": "..." },
+        "messages": [{
+          "from": "5561998317422",
+          "id": "wamid.xxx",
+          "timestamp": "1234567890",
+          "type": "text",
+          "text": { "body": "Olá" }
+        }]
+      },
+      "field": "messages"
+    }]
+  }]
+}
+```
 
-### Status: CONCLUÍDA
+Payload Meta (status):
+```json
+{
+  "entry": [{
+    "changes": [{
+      "value": {
+        "statuses": [{
+          "id": "wamid.xxx",
+          "status": "delivered",
+          "timestamp": "1234567890"
+        }]
+      }
+    }]
+  }]
+}
+```
 
-### O que foi implementado:
-
-**1. Migração SQL** ✅
-- `lead_conversation_state.last_inbound_at` — rastreia última mensagem inbound para validação de janela 24h
-- `mass_action_jobs.template_id` — referência a template Meta para ações em massa baseadas em template
-- `mass_action_jobs.template_variables` — mapeamento de variáveis para placeholders do template
-
-**2. `whatsapp-send` atualizado** ✅
-- Aceita `metaTemplateName`, `metaLanguage`, `metaComponents` para envio de template
-- Envio de template via `sendTemplateViaMetaCloud()` quando parâmetros Meta presentes
-- Validação de janela 24h para texto livre via Meta Cloud: verifica `last_inbound_at` antes de permitir envio
-- Erro claro quando fora da janela: "Envie um template aprovado para reabrir a conversa"
-
-**3. `cadence-runner` atualizado** ✅
-- Busca `meta_template_id`, `meta_status`, `meta_language`, `meta_components` do template ao disparar
-- Quando template tem `meta_template_id` com `meta_status = 'APPROVED'`, envia como template Meta Cloud
-- Passa parâmetros Meta para `whatsapp-send` automaticamente
-
-**4. `amelia-mass-action` atualizado** ✅
-- Suporte a `template_id` no job para ações em massa baseadas em template
-- Quando `template_id` presente, busca info Meta e inclui no payload do `whatsapp-send`
-- Templates Meta Cloud são usados ao invés de mensagens geradas por IA
-
-### Próximas Fases
-- **Fase 3**: Inbound webhooks Meta (recepção de mensagens + status updates)
