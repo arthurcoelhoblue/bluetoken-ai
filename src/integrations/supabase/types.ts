@@ -3808,6 +3808,7 @@ export type Database = {
           framework_data: Json | null
           id: string
           idioma_preferido: string
+          last_inbound_at: string | null
           lead_id: string
           modo: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc: string | null
@@ -3831,6 +3832,7 @@ export type Database = {
           framework_data?: Json | null
           id?: string
           idioma_preferido?: string
+          last_inbound_at?: string | null
           lead_id: string
           modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
@@ -3854,6 +3856,7 @@ export type Database = {
           framework_data?: Json | null
           id?: string
           idioma_preferido?: string
+          last_inbound_at?: string | null
           lead_id?: string
           modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
@@ -4110,6 +4113,8 @@ export type Database = {
           started_by: string | null
           status: string
           succeeded: number
+          template_id: string | null
+          template_variables: Json | null
           tipo: string
           total: number
           updated_at: string
@@ -4130,6 +4135,8 @@ export type Database = {
           started_by?: string | null
           status?: string
           succeeded?: number
+          template_id?: string | null
+          template_variables?: Json | null
           tipo: string
           total?: number
           updated_at?: string
@@ -4150,6 +4157,8 @@ export type Database = {
           started_by?: string | null
           status?: string
           succeeded?: number
+          template_id?: string | null
+          template_variables?: Json | null
           tipo?: string
           total?: number
           updated_at?: string
@@ -4196,6 +4205,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
             referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "message_templates"
+            referencedColumns: ["id"]
           },
         ]
       }

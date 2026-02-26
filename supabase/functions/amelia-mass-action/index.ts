@@ -42,6 +42,23 @@ serve(async (req) => {
       const supabaseUrl = envConfig.SUPABASE_URL;
       const serviceKey = envConfig.SUPABASE_SERVICE_ROLE_KEY;
 
+      // Check if this is a template-based mass action
+      let metaTemplateInfo: { metaTemplateName: string; metaLanguage: string; metaComponents?: unknown } | null = null;
+      if (job.template_id) {
+        const { data: tmpl } = await supabase.from('message_templates')
+          .select('meta_template_id, meta_status, meta_language, meta_components, codigo')
+          .eq('id', job.template_id)
+          .single();
+        if (tmpl?.meta_template_id && tmpl?.meta_status === 'APPROVED') {
+          metaTemplateInfo = {
+            metaTemplateName: tmpl.meta_template_id,
+            metaLanguage: tmpl.meta_language || 'pt_BR',
+            metaComponents: tmpl.meta_components,
+          };
+          log.info('Template Meta Cloud para mass action', { template: tmpl.codigo });
+        }
+      }
+
       for (const msg of approved) {
         try {
           // Filter deal by tenant via pipeline_empresa
@@ -52,7 +69,17 @@ serve(async (req) => {
 
           if (canal === 'WHATSAPP') {
             if (!contact?.telefone) { errors++; continue; }
-            const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ to: contact.telefone, message: msg.message, deal_id: msg.deal_id, contact_id: contact?.id }) });
+            const payload: Record<string, unknown> = {
+              to: contact.telefone, message: msg.message, deal_id: msg.deal_id, contact_id: contact?.id,
+              leadId: msg.deal_id, telefone: contact.telefone, mensagem: msg.message, empresa: jobEmpresa,
+            };
+            // Add Meta template info if available
+            if (metaTemplateInfo) {
+              payload.metaTemplateName = metaTemplateInfo.metaTemplateName;
+              payload.metaLanguage = metaTemplateInfo.metaLanguage;
+              if (metaTemplateInfo.metaComponents) payload.metaComponents = metaTemplateInfo.metaComponents;
+            }
+            const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (resp.ok) sent++; else { log.error('whatsapp-send error', { error: await resp.text() }); errors++; }
           } else if (canal === 'EMAIL') {
             if (!contact?.email) { errors++; continue; }
