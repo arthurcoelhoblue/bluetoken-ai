@@ -34,6 +34,7 @@ const ROUTE_TITLES: Record<string, string> = {
   '/monitor/sgt-events': 'Monitor SGT',
   '/admin/leads-quentes': 'Leads Quentes',
   '/admin/access-control': 'Controle de Acesso',
+  '/admin/empresas': 'Gestão de Empresas',
   '/admin/settings': 'Configurações',
   '/admin/zadarma': 'Telefonia',
   '/settings/pipelines': 'Configuração de Funis',

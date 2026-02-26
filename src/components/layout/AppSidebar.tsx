@@ -134,6 +134,7 @@ const navGroups: NavGroup[] = [
       { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
       { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },
       { title: 'Controle de Acesso', url: '/admin/access-control', icon: Shield, screenKey: 'controle_acesso' },
+      { title: 'Empresas', url: '/admin/empresas', icon: Building2, screenKey: 'empresas_admin' },
       { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },
