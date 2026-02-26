@@ -24,6 +24,8 @@ import type { LeadMessageWithContext, MensagemEstado, MensagemDirecao } from '@/
 import type { CanalTipo } from '@/types/cadence';
 import { EmailPreviewDialog } from './EmailPreviewDialog';
 import { SentimentBadge } from './SentimentBadge';
+import { MediaContent } from './MediaContent';
+import type { TipoMidia } from '@/types/messaging';
 
 interface ConversationViewProps {
   messages: LeadMessageWithContext[];
@@ -159,9 +161,15 @@ function MessageBubble({
               />
             </div>
           ) : (
-            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
-              {message.conteudo}
-            </p>
+            <MediaContent
+              tipoMidia={(message.tipo_midia || 'text') as TipoMidia}
+              mediaUrl={message.media_url}
+              mediaMimeType={message.media_mime_type}
+              mediaFilename={message.media_filename}
+              mediaCaption={message.media_caption}
+              conteudo={message.conteudo}
+              isOutbound={isOutbound}
+            />
           )}
 
           {/* Footer */}

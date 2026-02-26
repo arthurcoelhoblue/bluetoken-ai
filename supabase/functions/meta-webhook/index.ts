@@ -7,6 +7,7 @@ import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 // Meta Cloud API — Webhook Handler
 // GET  → Verification handshake
 // POST → Inbound messages + Status updates
+// Supports: text, image, document, audio, video, sticker, location
 // ========================================
 
 const log = createLogger("meta-webhook");
@@ -22,7 +23,19 @@ const META_STATUS_MAP: Record<string, string> = {
   failed: "FALHA",
 };
 
-// ---- Phone normalization (same as whatsapp-inbound) ----
+// ---- Media type mapping ----
+type MediaType = "text" | "image" | "document" | "audio" | "video" | "sticker" | "location" | "contacts";
+
+interface MediaInfo {
+  tipo_midia: MediaType;
+  conteudo: string;
+  media_meta_id?: string;
+  media_mime_type?: string;
+  media_filename?: string;
+  media_caption?: string;
+}
+
+// ---- Phone normalization ----
 function normalizePhone(raw: string): string {
   let n = raw.replace(/\D/g, "");
   if (n.length === 11) n = "55" + n;
@@ -52,7 +65,7 @@ async function verifySignature(
   const appSecret = Deno.env.get("META_APP_SECRET");
   if (!appSecret) {
     log.warn("META_APP_SECRET not configured, skipping signature validation");
-    return true; // allow during initial setup
+    return true;
   }
   if (!signatureHeader) return false;
 
@@ -72,7 +85,7 @@ async function verifySignature(
   return hexSig === expectedSig;
 }
 
-// ---- Lead lookup (simplified from whatsapp-inbound) ----
+// ---- Lead lookup ----
 interface LeadContact {
   id: string;
   lead_id: string;
@@ -89,7 +102,6 @@ async function findLeadByPhone(
     ? phoneNormalized
     : `+${phoneNormalized}`;
 
-  // 1. Try telefone_e164
   const { data: e164Match } = await supabase
     .from("lead_contacts")
     .select("*")
@@ -99,7 +111,6 @@ async function findLeadByPhone(
     .maybeSingle();
   if (e164Match) return e164Match as LeadContact;
 
-  // 2. Try phone variations
   const variations = generatePhoneVariations(phoneNormalized);
   for (const variant of variations) {
     const { data } = await supabase
@@ -112,7 +123,6 @@ async function findLeadByPhone(
     if (data) return data as LeadContact;
   }
 
-  // 3. Last 8 digits fallback
   const last8 = phoneNormalized.slice(-8);
   const { data: partial } = await supabase
     .from("lead_contacts")
@@ -126,35 +136,214 @@ async function findLeadByPhone(
   return null;
 }
 
+// ---- Download media from Meta and upload to Storage ----
+async function downloadMetaMedia(
+  supabase: ReturnType<typeof createServiceClient>,
+  mediaId: string,
+  mimeType: string,
+): Promise<string | null> {
+  const accessToken = Deno.env.get("META_ACCESS_TOKEN_TOKENIZA") || Deno.env.get("META_ACCESS_TOKEN_BLUE");
+  if (!accessToken) {
+    // Try to get from whatsapp_connections
+    const { data: conn } = await supabase
+      .from("whatsapp_connections")
+      .select("empresa")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+
+    if (conn) {
+      const settingsKey = `meta_cloud_${(conn.empresa as string).toLowerCase()}`;
+      const { data: setting } = await supabase
+        .from("system_settings")
+        .select("value")
+        .eq("category", "integrations")
+        .eq("key", settingsKey)
+        .maybeSingle();
+      const token = (setting?.value as Record<string, unknown>)?.access_token as string | undefined;
+      if (token) return await doDownload(supabase, mediaId, mimeType, token);
+    }
+    log.error("No Meta access token available for media download");
+    return null;
+  }
+  return await doDownload(supabase, mediaId, mimeType, accessToken);
+}
+
+async function doDownload(
+  supabase: ReturnType<typeof createServiceClient>,
+  mediaId: string,
+  mimeType: string,
+  accessToken: string,
+): Promise<string | null> {
+  try {
+    // Step 1: Get media URL from Meta
+    const metaResp = await fetch(`https://graph.facebook.com/v21.0/${mediaId}`, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!metaResp.ok) {
+      log.error("Failed to get media URL", { mediaId, status: metaResp.status });
+      return null;
+    }
+    const metaData = await metaResp.json();
+    const mediaUrl = metaData.url;
+    if (!mediaUrl) return null;
+
+    // Step 2: Download the actual file
+    const fileResp = await fetch(mediaUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!fileResp.ok) {
+      log.error("Failed to download media file", { mediaId, status: fileResp.status });
+      return null;
+    }
+    const fileBlob = await fileResp.blob();
+
+    // Step 3: Upload to Supabase Storage
+    const ext = mimeType.split("/")[1]?.split(";")[0] || "bin";
+    const fileName = `${mediaId}.${ext}`;
+    const storagePath = `inbound/${new Date().toISOString().slice(0, 10)}/${fileName}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from("whatsapp-media")
+      .upload(storagePath, fileBlob, {
+        contentType: mimeType,
+        upsert: true,
+      });
+
+    if (uploadError) {
+      log.error("Storage upload failed", { error: uploadError.message });
+      return null;
+    }
+
+    // Step 4: Get public URL
+    const { data: publicUrl } = supabase.storage
+      .from("whatsapp-media")
+      .getPublicUrl(storagePath);
+
+    log.info("Media downloaded and stored", { mediaId, path: storagePath });
+    return publicUrl.publicUrl;
+  } catch (err) {
+    log.error("Media download error", { error: String(err) });
+    return null;
+  }
+}
+
+// ---- Extract media info from message ----
+function extractMediaInfo(msg: Record<string, unknown>): MediaInfo {
+  const type = msg.type as string;
+
+  switch (type) {
+    case "image": {
+      const img = msg.image as Record<string, unknown>;
+      return {
+        tipo_midia: "image",
+        conteudo: (img?.caption as string) || "[Imagem]",
+        media_meta_id: img?.id as string,
+        media_mime_type: img?.mime_type as string,
+        media_caption: img?.caption as string,
+      };
+    }
+    case "document": {
+      const doc = msg.document as Record<string, unknown>;
+      return {
+        tipo_midia: "document",
+        conteudo: (doc?.caption as string) || `[Documento: ${doc?.filename || "arquivo"}]`,
+        media_meta_id: doc?.id as string,
+        media_mime_type: doc?.mime_type as string,
+        media_filename: doc?.filename as string,
+        media_caption: doc?.caption as string,
+      };
+    }
+    case "audio": {
+      const audio = msg.audio as Record<string, unknown>;
+      return {
+        tipo_midia: "audio",
+        conteudo: "[Áudio]",
+        media_meta_id: audio?.id as string,
+        media_mime_type: audio?.mime_type as string,
+      };
+    }
+    case "video": {
+      const video = msg.video as Record<string, unknown>;
+      return {
+        tipo_midia: "video",
+        conteudo: (video?.caption as string) || "[Vídeo]",
+        media_meta_id: video?.id as string,
+        media_mime_type: video?.mime_type as string,
+        media_caption: video?.caption as string,
+      };
+    }
+    case "sticker": {
+      const sticker = msg.sticker as Record<string, unknown>;
+      return {
+        tipo_midia: "sticker",
+        conteudo: "[Sticker]",
+        media_meta_id: sticker?.id as string,
+        media_mime_type: sticker?.mime_type as string,
+      };
+    }
+    case "location": {
+      const loc = msg.location as Record<string, unknown>;
+      const lat = loc?.latitude;
+      const lng = loc?.longitude;
+      const name = loc?.name as string;
+      return {
+        tipo_midia: "location",
+        conteudo: name
+          ? `📍 ${name} (${lat}, ${lng})`
+          : `📍 Localização: ${lat}, ${lng}`,
+      };
+    }
+    case "contacts": {
+      return {
+        tipo_midia: "contacts",
+        conteudo: "[Contato compartilhado]",
+      };
+    }
+    case "text":
+    default: {
+      const text = msg.text as Record<string, unknown> | undefined;
+      return {
+        tipo_midia: "text",
+        conteudo: (text?.body as string) || `[${type}]`,
+      };
+    }
+  }
+}
+
 // ---- Handle inbound message ----
 async function handleMessage(
   supabase: ReturnType<typeof createServiceClient>,
-  msg: {
-    from: string;
-    id: string;
-    timestamp: string;
-    type: string;
-    text?: { body: string };
-  }
+  msg: Record<string, unknown>
 ): Promise<{ success: boolean; messageId?: string; status: string }> {
-  // Only handle text for now
-  const textContent = msg.text?.body || `[${msg.type}]`;
-  const phoneNormalized = normalizePhone(msg.from);
+  const from = msg.from as string;
+  const wamid = msg.id as string;
+  const timestamp = msg.timestamp as string;
+  const phoneNormalized = normalizePhone(from);
+
+  // Extract media info
+  const mediaInfo = extractMediaInfo(msg);
 
   // Dedup
   const { data: existing } = await supabase
     .from("lead_messages")
     .select("id")
-    .eq("whatsapp_message_id", msg.id)
+    .eq("whatsapp_message_id", wamid)
     .limit(1)
     .maybeSingle();
   if (existing) {
-    log.info("Duplicate message", { wamid: msg.id });
+    log.info("Duplicate message", { wamid });
     return { success: true, status: "DUPLICATE" };
   }
 
   const lead = await findLeadByPhone(supabase, phoneNormalized);
   const empresa: EmpresaTipo = lead?.empresa || "TOKENIZA";
+
+  // Download media if applicable
+  let mediaUrl: string | null = null;
+  if (mediaInfo.media_meta_id && mediaInfo.media_mime_type) {
+    mediaUrl = await downloadMetaMedia(supabase, mediaInfo.media_meta_id, mediaInfo.media_mime_type);
+  }
 
   // Find active cadence run
   let runId: string | null = null;
@@ -180,10 +369,16 @@ async function handleMessage(
       run_id: runId,
       canal: "WHATSAPP",
       direcao: "INBOUND",
-      conteudo: textContent,
+      conteudo: mediaInfo.conteudo,
       estado: lead ? "RECEBIDO" : "UNMATCHED",
-      whatsapp_message_id: msg.id,
-      recebido_em: new Date(parseInt(msg.timestamp) * 1000).toISOString(),
+      whatsapp_message_id: wamid,
+      recebido_em: new Date(parseInt(timestamp) * 1000).toISOString(),
+      tipo_midia: mediaInfo.tipo_midia,
+      media_url: mediaUrl,
+      media_mime_type: mediaInfo.media_mime_type || null,
+      media_filename: mediaInfo.media_filename || null,
+      media_caption: mediaInfo.media_caption || null,
+      media_meta_id: mediaInfo.media_meta_id || null,
     })
     .select("id")
     .single();
@@ -194,7 +389,7 @@ async function handleMessage(
   }
 
   const savedId = (saved as { id: string }).id;
-  log.info("Message saved", { id: savedId, leadId: lead?.lead_id });
+  log.info("Message saved", { id: savedId, leadId: lead?.lead_id, tipo_midia: mediaInfo.tipo_midia });
 
   // Update last_inbound_at for 24h window
   if (lead) {
@@ -223,15 +418,16 @@ async function handleMessage(
       tipo_evento: "RESPOSTA_DETECTADA",
       detalhes: {
         message_id: savedId,
-        whatsapp_message_id: msg.id,
-        preview: textContent.substring(0, 100),
+        whatsapp_message_id: wamid,
+        preview: mediaInfo.conteudo.substring(0, 100),
+        tipo_midia: mediaInfo.tipo_midia,
         source: "meta-webhook",
       },
     });
   }
 
-  // Trigger SDR-IA interpret (fire-and-forget with retry)
-  if (lead) {
+  // Trigger SDR-IA interpret (fire-and-forget, only for text messages)
+  if (lead && mediaInfo.tipo_midia === "text") {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
@@ -354,7 +550,6 @@ serve(async (req) => {
     );
   }
 
-  // Must be from WhatsApp Business Account
   if (body.object !== "whatsapp_business_account") {
     log.warn("Ignoring non-WABA object", { object: body.object });
     return new Response("OK", { status: 200 });
@@ -373,14 +568,7 @@ serve(async (req) => {
       const value = change.value;
 
       // Process messages
-      const messages = (value.messages as Array<{
-        from: string;
-        id: string;
-        timestamp: string;
-        type: string;
-        text?: { body: string };
-      }>) || [];
-
+      const messages = (value.messages as Array<Record<string, unknown>>) || [];
       for (const msg of messages) {
         log.info("Processing inbound message", {
           from: msg.from,

@@ -20,6 +20,9 @@ export type MensagemEstado =
   | 'ERRO' 
   | 'RECEBIDO';
 
+// Tipo de mídia
+export type TipoMidia = 'text' | 'image' | 'document' | 'audio' | 'video' | 'sticker' | 'location' | 'contacts';
+
 // Mensagem do lead (log centralizado)
 export interface LeadMessage {
   id: string;
@@ -40,6 +43,13 @@ export interface LeadMessage {
   enviado_em: string | null;
   entregue_em: string | null;
   lido_em: string | null;
+  // Media fields
+  tipo_midia: TipoMidia;
+  media_url: string | null;
+  media_mime_type: string | null;
+  media_filename: string | null;
+  media_caption: string | null;
+  media_meta_id: string | null;
 }
 
 // Mensagem com contexto (para UI)

@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { LeadMessageWithContext, MensagemDirecao, MensagemEstado } from '@/types/messaging';
+import type { LeadMessageWithContext, MensagemDirecao, MensagemEstado, TipoMidia } from '@/types/messaging';
 import type { EmpresaTipo } from '@/types/sgt';
 import type { CanalTipo } from '@/types/cadence';
 
@@ -59,6 +59,12 @@ export function useLeadMessages({ leadId, empresa, enabled = true }: UseLeadMess
         lido_em: msg.lido_em,
         created_at: msg.created_at,
         updated_at: msg.updated_at,
+        tipo_midia: ((msg as Record<string, unknown>).tipo_midia as TipoMidia) || 'text',
+        media_url: (msg as Record<string, unknown>).media_url as string | null || null,
+        media_mime_type: (msg as Record<string, unknown>).media_mime_type as string | null || null,
+        media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
+        media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
+        media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
         cadencia_nome: (msg.lead_cadence_runs as unknown as { cadences?: { nome?: string } } | null)?.cadences?.nome,
       }));
     },
@@ -102,6 +108,12 @@ export function useRunMessages({ runId, enabled = true }: UseRunMessagesOptions)
         lido_em: msg.lido_em,
         created_at: msg.created_at,
         updated_at: msg.updated_at,
+        tipo_midia: ((msg as Record<string, unknown>).tipo_midia as TipoMidia) || 'text',
+        media_url: (msg as Record<string, unknown>).media_url as string | null || null,
+        media_mime_type: (msg as Record<string, unknown>).media_mime_type as string | null || null,
+        media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
+        media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
+        media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
         template_nome: (msg.message_templates as unknown as { nome?: string } | null)?.nome,
       }));
     },

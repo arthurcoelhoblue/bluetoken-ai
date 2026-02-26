@@ -3996,12 +3996,18 @@ export type Database = {
           id: string
           lead_id: string | null
           lido_em: string | null
+          media_caption: string | null
+          media_filename: string | null
+          media_meta_id: string | null
+          media_mime_type: string | null
+          media_url: string | null
           recebido_em: string | null
           run_id: string | null
           sender_id: string | null
           sender_type: string
           step_ordem: number | null
           template_codigo: string | null
+          tipo_midia: string
           updated_at: string
           whatsapp_message_id: string | null
         }
@@ -4019,12 +4025,18 @@ export type Database = {
           id?: string
           lead_id?: string | null
           lido_em?: string | null
+          media_caption?: string | null
+          media_filename?: string | null
+          media_meta_id?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
           recebido_em?: string | null
           run_id?: string | null
           sender_id?: string | null
           sender_type?: string
           step_ordem?: number | null
           template_codigo?: string | null
+          tipo_midia?: string
           updated_at?: string
           whatsapp_message_id?: string | null
         }
@@ -4042,12 +4054,18 @@ export type Database = {
           id?: string
           lead_id?: string | null
           lido_em?: string | null
+          media_caption?: string | null
+          media_filename?: string | null
+          media_meta_id?: string | null
+          media_mime_type?: string | null
+          media_url?: string | null
           recebido_em?: string | null
           run_id?: string | null
           sender_id?: string | null
           sender_type?: string
           step_ordem?: number | null
           template_codigo?: string | null
+          tipo_midia?: string
           updated_at?: string
           whatsapp_message_id?: string | null
         }
