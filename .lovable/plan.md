@@ -1,69 +1,46 @@
 
 
-## Corrigir Alucinação de Planos/Preços pela Amélia
+## Substituir Gemini Flash por Claude Haiku 4.5
 
-### Problema
+### Escopo
 
-A Amélia está inventando planos e preços inexistentes (ex: "Plano Starter R$ 297") porque:
-1. A query de produtos usa colunas erradas (`nome, preco_texto, diferenciais`) que nao existem na tabela `product_knowledge` (colunas reais: `produto_nome, descricao_curta`)
-2. O prompt nao tem instrucao proibindo a IA de inventar informacoes
-3. A tabela `product_knowledge` da Blue tem apenas 1 registro generico sem planos/precos detalhados
+Todas as funcoes que hoje usam `model: 'gemini-flash'` (tarefas analiticas/internas) passarao a usar Claude Haiku 4.5 via API Anthropic.
 
-### Solucao em 3 partes
+### Arquivos afetados
 
-#### 1. Corrigir a query de produtos no response-generator.ts
+**Core (1 arquivo):**
 
-A query atual:
-```
-.select('nome, descricao_curta, preco_texto, diferenciais')
-```
+| Arquivo | Mudanca |
+|---------|---------|
+| `supabase/functions/_shared/ai-provider.ts` | Renomear opcao `'gemini-flash'` → `'claude-haiku'`; substituir bloco 0 (Gemini Flash via Google API) por chamada Claude Haiku 4.5 via Anthropic API; adicionar `'claude-haiku-4-5'` ao COST_TABLE |
 
-Precisa ser corrigida para usar as colunas reais da tabela:
-```
-.select('produto_nome, descricao_curta')
-```
+**Edge functions (12 arquivos) — trocar `model: 'gemini-flash'` por `model: 'claude-haiku'`:**
 
-E ajustar o `ProductRow` e o mapeamento para `productsText`.
+1. `cs-health-calculator/index.ts`
+2. `deal-loss-analysis/index.ts` (2 chamadas)
+3. `copilot-chat/index.ts`
+4. `revenue-forecast/index.ts`
+5. `amelia-learn/index.ts` (2 chamadas)
+6. `call-transcribe/index.ts`
+7. `call-coach/index.ts`
+8. `deal-context-summary/index.ts`
+9. `deal-scoring/index.ts`
+10. `weekly-report/index.ts`
+11. `faq-auto-review/index.ts`
+12. `icp-learner/index.ts`
 
-#### 2. Adicionar instrucao anti-alucinacao no system prompt
+**Teste:**
 
-Adicionar ao system prompt padrao (e como regra geral):
-```
-PROIBIDO INVENTAR: Nunca cite planos, precos, valores ou produtos que nao estejam listados na secao PRODUTOS. Se nao souber o preco ou plano exato, diga que vai verificar com a equipe.
-```
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/lib/__tests__/ai-provider-logic.test.ts` | Atualizar teste "Gemini cost is lower than Claude" para comparar claude-haiku-4-5 vs claude-sonnet-4-6 |
 
-#### 3. Enriquecer a tabela product_knowledge com dados reais
+### Detalhe tecnico — ai-provider.ts
 
-Adicionar colunas `preco_texto` e `diferenciais` na tabela `product_knowledge` para que os planos reais da Blue possam ser cadastrados e injetados no prompt. Isso evita que a IA precise "adivinhar".
+- `model` type muda de `'gemini-flash'` para `'claude-haiku'`
+- Bloco 0 passa a chamar `https://api.anthropic.com/v1/messages` com `model: 'claude-haiku-4-5'` usando `ANTHROPIC_API_KEY` (ja configurada)
+- COST_TABLE recebe entrada `'claude-haiku-4-5': { input: 0.80/1M, output: 4.0/1M }`
+- Cadeia de fallback continua: Claude Haiku → Claude Sonnet → Gemini Pro → GPT-4o
 
-### Detalhes Tecnicos
-
-**Arquivo: `supabase/functions/sdr-ia-interpret/response-generator.ts`**
-
-- Corrigir a interface `ProductRow` para refletir colunas reais: `produto_nome` em vez de `nome`
-- Corrigir a query `.select(...)` para usar `produto_nome, descricao_curta`
-- Atualizar o mapeamento em `productsText` para usar `p.produto_nome`
-- Adicionar ao system prompt (linha 180): instrucao clara proibindo inventar planos, precos ou informacoes nao fornecidas
-- Adicionar ao prompt do usuario (linha 207): reforco de que se os produtos listados nao tiverem preco, a Amelia deve dizer que vai confirmar com a equipe
-
-**Migration SQL**
-
-Adicionar colunas opcionais `preco_texto` e `diferenciais` na tabela `product_knowledge`:
-```sql
-ALTER TABLE product_knowledge ADD COLUMN IF NOT EXISTS preco_texto TEXT;
-ALTER TABLE product_knowledge ADD COLUMN IF NOT EXISTS diferenciais TEXT;
-```
-
-### Resultado Esperado
-
-- Amelia nunca mais inventa planos ou precos
-- Se nao tiver dados de produto suficientes, ela diz "vou verificar com a equipe"
-- Quando os planos reais forem cadastrados na tabela, a Amelia os utiliza corretamente
-
-### Arquivos Afetados
-
-| Arquivo | Acao |
-|---------|------|
-| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Corrigir query, prompt e tipos |
-| Migration SQL | Adicionar colunas `preco_texto` e `diferenciais` |
+### Nenhuma migration SQL necessaria
 
