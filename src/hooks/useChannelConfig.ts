@@ -1,9 +1,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+export type ActiveChannel = 'bluechat' | 'mensageria' | 'meta_cloud';
+
 export interface ChannelConfigResult {
+  activeChannel: ActiveChannel;
   isBluechat: boolean;
   isMensageria: boolean;
+  isMetaCloud: boolean;
   isLoading: boolean;
 }
 
@@ -22,18 +26,20 @@ export function useChannelConfig(empresa: string): ChannelConfigResult {
         .eq("enabled", true)
         .maybeSingle();
 
-      const activeChannel = (config as any)?.channel as string | undefined;
-      const isBluechat = activeChannel === "bluechat";
-
-      return { isBluechat };
+      const activeChannel = ((config as any)?.channel as ActiveChannel | undefined) ?? 'mensageria';
+      return { activeChannel };
     },
     enabled: !!empresa,
     staleTime: 60_000,
   });
 
+  const ch = data?.activeChannel ?? 'mensageria';
+
   return {
-    isBluechat: data?.isBluechat ?? false,
-    isMensageria: !(data?.isBluechat ?? false),
+    activeChannel: ch,
+    isBluechat: ch === 'bluechat',
+    isMensageria: ch === 'mensageria',
+    isMetaCloud: ch === 'meta_cloud',
     isLoading,
   };
 }
