@@ -15,11 +15,11 @@ export interface CallAIOptions {
   /** Optional user ID for rate limiting. If omitted (CRON/system calls), rate limiting is skipped. */
   userId?: string;
   /**
-   * When set to 'gemini-flash', tries gemini-3-flash-preview first (via GOOGLE_API_KEY)
-   * before falling through to the normal Claude → Gemini Pro → GPT-4o chain.
+   * When set to 'claude-haiku', tries Claude Haiku 4.5 first (via ANTHROPIC_API_KEY)
+   * before falling through to the normal Claude Sonnet → Gemini Pro → GPT-4o chain.
    * Functions in "Group A" (customer-facing) should NOT pass this flag.
    */
-  model?: 'gemini-flash';
+  model?: 'claude-haiku';
 }
 
 export interface CallAIResult {
@@ -32,9 +32,9 @@ export interface CallAIResult {
 }
 
 const COST_TABLE: Record<string, { input: number; output: number }> = {
+  'claude-haiku-4-5':       { input: 0.80   / 1_000_000, output: 4.0   / 1_000_000 },
   'claude-sonnet-4-6':      { input: 3.0    / 1_000_000, output: 15.0  / 1_000_000 },
   'gemini-3-pro-preview':   { input: 1.25   / 1_000_000, output: 10.0  / 1_000_000 },
-  'gemini-3-flash-preview': { input: 0.075  / 1_000_000, output: 0.30  / 1_000_000 },
   'gpt-4o':                 { input: 2.5    / 1_000_000, output: 10.0  / 1_000_000 },
 };
 
@@ -126,31 +126,31 @@ export async function callAI(opts: CallAIOptions): Promise<CallAIResult> {
   let tokensInput = 0;
   let tokensOutput = 0;
 
-  // 0. Gemini Flash (primary for analytical functions — pass model: 'gemini-flash')
-  const GOOGLE_API_KEY_FLASH = Deno.env.get('GOOGLE_API_KEY');
-  if (model === 'gemini-flash' && GOOGLE_API_KEY_FLASH) {
+  // 0. Claude Haiku (primary for analytical/internal functions — pass model: 'claude-haiku')
+  const ANTHROPIC_KEY_HAIKU = Deno.env.get('ANTHROPIC_API_KEY');
+  if (model === 'claude-haiku' && ANTHROPIC_KEY_HAIKU) {
     try {
-      const fullPrompt = messages
-        ? `${system}\n\n${messages.map(m => `[${m.role}]: ${m.content}`).join('\n')}`
-        : `${system}\n\n${prompt}`;
+      const haikuMessages = messages
+        ? messages.map(m => ({ role: m.role === 'assistant' ? 'assistant' : 'user', content: m.content }))
+        : [{ role: 'user', content: prompt }];
 
-      const resp = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key=${GOOGLE_API_KEY_FLASH}`, {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: fullPrompt }] }], generationConfig: { temperature, maxOutputTokens: maxTokens } }),
+        headers: { 'x-api-key': ANTHROPIC_KEY_HAIKU, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' },
+        body: JSON.stringify({ model: 'claude-haiku-4-5', max_tokens: maxTokens, temperature, system, messages: haikuMessages }),
       });
       if (resp.ok) {
         const data = await resp.json();
-        const flashContent = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        if (flashContent) {
-          content = flashContent;
-          usedModel = 'gemini-3-flash-preview';
-          provider = 'gemini';
-          tokensInput = data.usageMetadata?.promptTokenCount || 0;
-          tokensOutput = data.usageMetadata?.candidatesTokenCount || 0;
+        const haikuContent = data.content?.[0]?.text || '';
+        if (haikuContent) {
+          content = haikuContent;
+          usedModel = 'claude-haiku-4-5';
+          provider = 'claude';
+          tokensInput = data.usage?.input_tokens || 0;
+          tokensOutput = data.usage?.output_tokens || 0;
         }
       }
-    } catch (e) { console.warn(`[${functionName}] Gemini Flash failed, falling back:`, e); }
+    } catch (e) { console.warn(`[${functionName}] Claude Haiku failed, falling back:`, e); }
   }
 
   // 1. Claude (primary for conversational / Group A functions)

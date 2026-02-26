@@ -66,7 +66,7 @@ Retorne APENAS o JSON, sem markdown.`;
       maxTokens: 1024,
       empresa: resolvedEmpresa,
       supabase,
-      model: 'gemini-flash',
+      model: 'claude-haiku',
     });
 
     let coaching: Record<string, unknown>;

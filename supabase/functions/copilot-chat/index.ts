@@ -208,7 +208,7 @@ serve(async (req) => {
       promptVersionId: selectedPromptVersionId || undefined,
       supabase,
       messages,
-      model: 'gemini-flash',
+      model: 'claude-haiku',
     });
 
     let content = aiResult.content;

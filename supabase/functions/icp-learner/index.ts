@@ -66,7 +66,7 @@ serve(async (req) => {
         functionName: 'icp-learner',
         maxTokens: 1000,
         supabase,
-        model: 'gemini-flash',
+        model: 'claude-haiku',
       });
       icpNarrative = aiResult.content;
     }

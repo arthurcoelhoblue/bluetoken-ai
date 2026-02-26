@@ -108,7 +108,7 @@ serve(async (req) => {
         empresa: targetEmpresa,
         maxTokens: 1000,
         supabase,
-        model: 'gemini-flash',
+        model: 'claude-haiku',
       });
 
       if (aiResult.content) {

@@ -74,7 +74,7 @@ Resposta: ${resposta}`;
       temperature: 0.2,
       maxTokens: 500,
       supabase,
-      model: 'gemini-flash',
+      model: 'claude-haiku',
     });
 
     if (aiResult.content) {
