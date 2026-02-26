@@ -394,6 +394,36 @@ serve(async (req) => {
         mensagem,
         messageId,
       });
+    } else if (activeChannel === 'meta_cloud') {
+      log.info('Roteando via META CLOUD', { empresa });
+      // Import dynamically to avoid loading meta config when not needed
+      const { resolveMetaCloudConfig, sendTextViaMetaCloud } = await import('../_shared/channel-resolver.ts');
+      const metaConfig = await resolveMetaCloudConfig(supabase, empresa);
+
+      if (metaConfig.mode !== 'META_CLOUD') {
+        sendResult = { success: false, error: `Meta Cloud não configurado para ${empresa}` };
+      } else {
+        const metaResult = await sendTextViaMetaCloud(metaConfig, phoneToSend, mensagem);
+        if (metaResult.success) {
+          await supabase
+            .from('lead_messages')
+            .update({
+              estado: 'ENVIADO',
+              enviado_em: new Date().toISOString(),
+              whatsapp_message_id: metaResult.messageId || null,
+            })
+            .eq('id', messageId);
+        } else {
+          await supabase
+            .from('lead_messages')
+            .update({
+              estado: 'ERRO',
+              erro_detalhe: metaResult.error || 'Erro Meta Cloud',
+            })
+            .eq('id', messageId);
+        }
+        sendResult = metaResult;
+      }
     } else {
       log.info('Roteando via MENSAGERIA', { empresa });
       sendResult = await sendViaMensageria(supabase, {

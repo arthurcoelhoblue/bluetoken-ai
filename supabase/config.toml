@@ -138,3 +138,5 @@ verify_jwt = false
 [functions.cs-backfill-contracts]
 verify_jwt = false
 
+[functions.whatsapp-template-manager]
+verify_jwt = false

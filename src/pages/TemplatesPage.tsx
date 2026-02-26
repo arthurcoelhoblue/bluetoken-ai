@@ -6,13 +6,16 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Plus, Pencil, Trash2, FileText, MessageSquare, Mail } from 'lucide-react';
+import { Plus, Pencil, Trash2, FileText, MessageSquare, Mail, RefreshCw, Send } from 'lucide-react';
 import {
   useTemplates, useCreateTemplate, useUpdateTemplate, useDeleteTemplate,
+  useSyncMetaTemplates, useSubmitTemplateToMeta,
   TEMPLATE_PAGE_SIZE,
-  type MessageTemplate, type TemplateInsert, type TemplateUpdate,
+  type MessageTemplate, type TemplateInsert, type TemplateUpdate, type MetaStatus,
 } from '@/hooks/useTemplates';
+import { useCompany } from '@/contexts/CompanyContext';
 import { TemplateFormDialog } from '@/components/templates/TemplateFormDialog';
+import { MetaStatusBadge } from '@/components/templates/MetaStatusBadge';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
@@ -22,15 +25,19 @@ import { DataTablePagination } from '@/components/ui/data-table-pagination';
 export default function TemplatesPage() {
   const [canalFilter, setCanalFilter] = useState<'WHATSAPP' | 'EMAIL' | null>(null);
   const [ativoFilter, setAtivoFilter] = useState<'all' | 'active' | 'inactive'>('all');
+  const [metaStatusFilter, setMetaStatusFilter] = useState<MetaStatus | null>(null);
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  const { data, isLoading } = useTemplates(canalFilter, page);
+  const { activeCompanies } = useCompany();
+  const { data, isLoading } = useTemplates(canalFilter, page, metaStatusFilter);
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const deleteMutation = useDeleteTemplate();
+  const syncMutation = useSyncMetaTemplates();
+  const submitMetaMutation = useSubmitTemplateToMeta();
 
   const templates = data?.data ?? [];
   const totalCount = data?.totalCount ?? 0;
@@ -60,6 +67,27 @@ export default function TemplatesPage() {
     setDialogOpen(true);
   }
 
+  function handleSync() {
+    if (activeCompanies.length > 0) {
+      syncMutation.mutate(activeCompanies[0]);
+    }
+  }
+
+  function handleSubmitToMeta(t: MessageTemplate) {
+    if (!t.meta_category) {
+      return;
+    }
+    const components = (t.meta_components as Array<{ type: string }>) || [{ type: 'BODY', text: t.conteudo }];
+    submitMetaMutation.mutate({
+      empresa: t.empresa,
+      localTemplateId: t.id,
+      name: t.codigo,
+      category: t.meta_category,
+      language: t.meta_language || 'pt_BR',
+      components,
+    });
+  }
+
   return (
     <AppLayout>
       <div className="p-6 space-y-6">
@@ -68,7 +96,13 @@ export default function TemplatesPage() {
             <FileText className="h-6 w-6 text-primary" />
             <h1 className="text-2xl font-bold">Templates</h1>
           </div>
-          <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Template</Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" onClick={handleSync} disabled={syncMutation.isPending}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
+              Sincronizar Meta
+            </Button>
+            <Button onClick={openNew}><Plus className="h-4 w-4 mr-2" />Novo Template</Button>
+          </div>
         </div>
 
         {/* Filters */}
@@ -92,6 +126,19 @@ export default function TemplatesPage() {
               <SelectItem value="all">Todos</SelectItem>
               <SelectItem value="active">Ativos</SelectItem>
               <SelectItem value="inactive">Inativos</SelectItem>
+            </SelectContent>
+          </Select>
+
+          <Select value={metaStatusFilter ?? 'all'} onValueChange={(v) => { setMetaStatusFilter(v === 'all' ? null : v as MetaStatus); setPage(0); }}>
+            <SelectTrigger className="w-[170px]">
+              <SelectValue placeholder="Status Meta" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos os status</SelectItem>
+              <SelectItem value="LOCAL">Local</SelectItem>
+              <SelectItem value="PENDING">Pendente</SelectItem>
+              <SelectItem value="APPROVED">Aprovado</SelectItem>
+              <SelectItem value="REJECTED">Rejeitado</SelectItem>
             </SelectContent>
           </Select>
 
@@ -120,6 +167,7 @@ export default function TemplatesPage() {
                       <TableHead>Canal</TableHead>
                       <TableHead>Empresa</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Status Meta</TableHead>
                       <TableHead className="text-right">Ações</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -142,8 +190,18 @@ export default function TemplatesPage() {
                             {t.ativo ? 'Ativo' : 'Inativo'}
                           </Badge>
                         </TableCell>
+                        <TableCell>
+                          <MetaStatusBadge status={t.meta_status} rejectedReason={t.meta_rejected_reason} />
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1" onClick={(e) => e.stopPropagation()}>
+                            {t.canal === 'WHATSAPP' && t.meta_status === 'LOCAL' && t.meta_category && (
+                              <Button variant="ghost" size="icon" title="Submeter à Meta"
+                                disabled={submitMetaMutation.isPending}
+                                onClick={() => handleSubmitToMeta(t)}>
+                                <Send className="h-4 w-4 text-primary" />
+                              </Button>
+                            )}
                             <Button variant="ghost" size="icon" onClick={() => openEdit(t)}>
                               <Pencil className="h-4 w-4" />
                             </Button>
