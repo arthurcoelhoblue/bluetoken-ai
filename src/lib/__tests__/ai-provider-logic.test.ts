@@ -12,10 +12,10 @@ describe('AI Provider — Cost Table', () => {
     expect(cost).toBeCloseTo(0.015, 6);
   });
 
-  it('Gemini cost is lower than Claude', () => {
-    const claude = computeAICost('claude-sonnet-4-6', 1000, 1000);
-    const gemini = computeAICost('gemini-3-pro-preview', 1000, 1000);
-    expect(gemini).toBeLessThan(claude);
+  it('Haiku cost is lower than Sonnet', () => {
+    const sonnet = computeAICost('claude-sonnet-4-6', 1000, 1000);
+    const haiku = computeAICost('claude-haiku-4-5', 1000, 1000);
+    expect(haiku).toBeLessThan(sonnet);
   });
 
   it('unknown model returns 0 cost', () => {
