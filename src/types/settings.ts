@@ -216,12 +216,4 @@ export const WEBHOOKS: WebhookInfo[] = [
     method: 'POST',
     authType: 'None',
   },
-  {
-    id: 'meta-webhook',
-    name: 'Meta Cloud Webhook',
-    description: 'Recebe mensagens e status updates da Meta Cloud API (WhatsApp)',
-    path: '/functions/v1/meta-webhook',
-    method: 'POST',
-    authType: 'None',
-  },
 ];
