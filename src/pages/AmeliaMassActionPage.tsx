@@ -8,18 +8,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
-import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Bot, Send, ThumbsUp, ThumbsDown, Search, Zap, FileText, History, SlidersHorizontal, X, ChevronDown } from 'lucide-react';
+import { Bot, Send, ThumbsUp, ThumbsDown, Search, FileText, History, SlidersHorizontal, X, ChevronDown, ShieldCheck, XCircle, Clock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { usePipelines } from '@/hooks/usePipelines';
-import { useCadences } from '@/hooks/useCadences';
 import {
   useMassActionJobs,
   useMassActionJob,
@@ -27,8 +25,12 @@ import {
   useGenerateMessages,
   useUpdateMessageApproval,
   useExecuteMassAction,
+  usePendingApprovalJobs,
+  useAllPendingApprovalJobs,
+  useApproveJob,
+  useRejectJob,
 } from '@/hooks/useProjections';
-import type { MassActionJobStatus } from '@/types/projection';
+import type { MassActionJobStatus, MassActionJob } from '@/types/projection';
 import { toast } from '@/hooks/use-toast';
 import { subDays, isAfter } from 'date-fns';
 
@@ -42,12 +44,15 @@ const statusLabel: Record<MassActionJobStatus, string> = {
   COMPLETED: 'Concluído',
   FAILED: 'Falhou',
   PARTIAL: 'Parcial',
+  AGUARDANDO_APROVACAO: 'Aguardando Aprovação',
+  REJECTED: 'Rejeitado',
 };
 
 const statusVariant = (s: MassActionJobStatus) => {
   if (s === 'COMPLETED') return 'default' as const;
-  if (s === 'FAILED') return 'destructive' as const;
+  if (s === 'FAILED' || s === 'REJECTED') return 'destructive' as const;
   if (s === 'RUNNING' || s === 'GENERATING') return 'secondary' as const;
+  if (s === 'AGUARDANDO_APROVACAO') return 'outline' as const;
   return 'outline' as const;
 };
 
@@ -75,9 +80,12 @@ interface PipelineItem {
   nome: string;
 }
 
-interface CadenceItem {
+interface TemplateItem {
   id: string;
   nome: string;
+  codigo: string;
+  canal: string;
+  conteudo: string;
 }
 
 /** Fetch all open deals for a given empresa (across all pipelines) */
@@ -117,15 +125,94 @@ function useAllOpenDeals(empresa: string | undefined) {
   });
 }
 
+/** Fetch active templates for the empresa */
+function useTemplates(empresa: string | undefined, canal: string) {
+  return useQuery({
+    queryKey: ['templates-mass-action', empresa, canal],
+    enabled: !!empresa,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('message_templates')
+        .select('id, nome, codigo, canal, conteudo')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .eq('ativo', true)
+        .eq('canal', canal as 'WHATSAPP' | 'EMAIL' | 'SMS')
+        .order('nome');
+      if (error) throw error;
+      return (data ?? []) as TemplateItem[];
+    },
+  });
+}
+
+/** Fetch profile to get gestor_id */
+function useUserProfile(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['user-profile-gestor', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, gestor_id')
+        .eq('id', userId!)
+        .single();
+      if (error) throw error;
+      return data as { id: string; gestor_id: string | null };
+    },
+  });
+}
+
+/** Check if user is a gestor (has subordinates) */
+function useIsGestor(userId: string | undefined) {
+  return useQuery({
+    queryKey: ['is-gestor', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from('profiles')
+        .select('id', { count: 'exact', head: true })
+        .eq('gestor_id', userId!);
+      if (error) throw error;
+      return (count ?? 0) > 0;
+    },
+  });
+}
+
+/** Fetch started_by user name */
+function useProfileName(userId: string | null | undefined) {
+  return useQuery({
+    queryKey: ['profile-name', userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('profiles')
+        .select('nome, email')
+        .eq('id', userId!)
+        .single();
+      return data?.nome || data?.email || 'Usuário';
+    },
+  });
+}
+
 export default function AmeliaMassActionPage() {
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const { activeCompany } = useCompany();
   const empresa = activeCompany;
   const { data: allPipelines = [] } = usePipelines();
   const { data: deals = [], isLoading: loadingDeals } = useAllOpenDeals(empresa);
   const pipelines = allPipelines;
-  const { data: cadences = [] } = useCadences();
   const { data: jobs = [], isLoading: loadingJobs } = useMassActionJobs(empresa);
+  const { data: userProfile } = useUserProfile(user?.id);
+  const { data: isGestor } = useIsGestor(user?.id);
+  const isAdmin = hasRole('ADMIN');
+  const canApprove = isAdmin || !!isGestor;
+
+  // Pending approval jobs
+  const { data: myPendingJobs = [] } = usePendingApprovalJobs(user?.id, empresa);
+  const { data: allPendingJobs = [] } = useAllPendingApprovalJobs(empresa);
+  const pendingJobs = isAdmin ? allPendingJobs : myPendingJobs;
+
+  const approveJob = useApproveJob();
+  const rejectJob = useRejectJob();
 
   // ─── Filter state ───
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -144,11 +231,17 @@ export default function AmeliaMassActionPage() {
 
   // ─── Config dialog state ───
   const [showConfig, setShowConfig] = useState(false);
-  const [configTab, setConfigTab] = useState<'cadencia' | 'adhoc'>('adhoc');
-  const [selectedCadence, setSelectedCadence] = useState('');
+  const [selectedTemplate, setSelectedTemplate] = useState('');
   const [instrucao, setInstrucao] = useState('');
   const [canal, setCanal] = useState('WHATSAPP');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+
+  // ─── Reject dialog state ───
+  const [rejectDialogOpen, setRejectDialogOpen] = useState(false);
+  const [rejectingJobId, setRejectingJobId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState('');
+
+  const { data: templates = [] } = useTemplates(empresa, canal);
 
   const createAction = useCreateMassAction();
   const generateMsgs = useGenerateMessages();
@@ -170,7 +263,6 @@ export default function AmeliaMassActionPage() {
       if (d.origem) origens.add(d.origem);
     }
 
-    // When a pipeline is selected, only show stages from that pipeline
     const filteredStages = filterPipeline === 'ALL'
       ? Array.from(stages.entries())
       : deals
@@ -221,14 +313,12 @@ export default function AmeliaMassActionPage() {
   // ─── Filtering logic ───
   const filteredDeals = useMemo(() => {
     let d = deals;
-
     if (filterPipeline !== 'ALL') d = d.filter((deal) => deal.pipeline_id === filterPipeline);
     if (filterStage !== 'ALL') d = d.filter((deal) => deal.stage_id === filterStage);
     if (filterTemperatura !== 'ALL') d = d.filter((deal) => deal.temperatura === filterTemperatura);
     if (filterOwner !== 'ALL') d = d.filter((deal) => deal.owner_id === filterOwner);
     if (filterTag !== 'ALL') d = d.filter((deal) => deal.tags && Array.isArray(deal.tags) && deal.tags.includes(filterTag));
     if (filterOrigem !== 'ALL') d = d.filter((deal) => deal.origem === filterOrigem);
-
     if (filterValorMin) {
       const min = parseFloat(filterValorMin);
       if (!isNaN(min)) d = d.filter((deal) => (deal.valor ?? 0) >= min);
@@ -237,7 +327,6 @@ export default function AmeliaMassActionPage() {
       const max = parseFloat(filterValorMax);
       if (!isNaN(max)) d = d.filter((deal) => (deal.valor ?? 0) <= max);
     }
-
     if (filterPeriodo !== 'ALL') {
       const daysMap: Record<string, number> = { '1D': 1, '7D': 7, '30D': 30, '90D': 90 };
       const days = daysMap[filterPeriodo];
@@ -246,13 +335,11 @@ export default function AmeliaMassActionPage() {
         d = d.filter((deal) => isAfter(new Date(deal.created_at), cutoff));
       }
     }
-
     if (filterScore !== 'ALL') {
       if (filterScore === 'HIGH') d = d.filter((deal) => (deal.score_probabilidade ?? 0) >= 70);
       else if (filterScore === 'MED') d = d.filter((deal) => (deal.score_probabilidade ?? 0) >= 40 && (deal.score_probabilidade ?? 0) < 70);
       else if (filterScore === 'LOW') d = d.filter((deal) => (deal.score_probabilidade ?? 0) < 40);
     }
-
     if (search) {
       const s = search.toLowerCase();
       d = d.filter((deal) =>
@@ -261,7 +348,6 @@ export default function AmeliaMassActionPage() {
         deal.contacts?.email?.toLowerCase().includes(s)
       );
     }
-
     return d;
   }, [deals, filterPipeline, filterStage, filterTemperatura, filterOwner, filterTag, filterOrigem, filterValorMin, filterValorMax, filterPeriodo, filterScore, search]);
 
@@ -282,22 +368,69 @@ export default function AmeliaMassActionPage() {
 
   const handleCreate = async () => {
     if (!user?.id || !empresa) return;
+    const needsApproval = !canApprove;
+
     try {
       const job = await createAction.mutateAsync({
         empresa,
-        tipo: configTab === 'cadencia' ? 'CADENCIA_MODELO' : 'CAMPANHA_ADHOC',
+        tipo: 'CADENCIA_MODELO',
         deal_ids: Array.from(selected),
-        cadence_id: configTab === 'cadencia' ? selectedCadence : undefined,
-        instrucao: configTab === 'adhoc' ? instrucao : undefined,
+        template_id: selectedTemplate || undefined,
+        instrucao: instrucao.trim() || undefined,
         canal,
         started_by: user.id,
+        needs_approval: needsApproval,
       });
+
       setShowConfig(false);
-      setActiveJobId(job.id);
-      generateMsgs.mutate(job.id);
-      toast({ title: 'Amélia está gerando mensagens...' });
+
+      if (needsApproval) {
+        // Send notification to gestor
+        if (userProfile?.gestor_id) {
+          await supabase.from('notifications').insert({
+            user_id: userProfile.gestor_id,
+            empresa: empresa as 'BLUE' | 'TOKENIZA',
+            titulo: '⏳ Ação em Massa aguardando aprovação',
+            mensagem: `${user.email} criou uma ação em massa com ${job.total} deals aguardando sua aprovação.`,
+            tipo: 'APROVACAO',
+            referencia_tipo: 'MASS_ACTION',
+            referencia_id: job.id,
+            link: '/amelia/mass-action',
+          });
+        }
+        toast({ title: 'Ação criada', description: 'Aguardando aprovação do gestor.' });
+      } else {
+        setActiveJobId(job.id);
+        generateMsgs.mutate(job.id);
+        toast({ title: 'Amélia está gerando mensagens...' });
+      }
     } catch (e: unknown) {
       toast({ title: 'Erro', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleApprove = async (jobId: string) => {
+    if (!user?.id) return;
+    try {
+      await approveJob.mutateAsync({ jobId, approvedBy: user.id });
+      // After approval, generate messages
+      generateMsgs.mutate(jobId);
+      toast({ title: 'Ação aprovada!', description: 'Gerando mensagens...' });
+    } catch (e: unknown) {
+      toast({ title: 'Erro ao aprovar', description: (e as Error).message, variant: 'destructive' });
+    }
+  };
+
+  const handleReject = async () => {
+    if (!user?.id || !rejectingJobId) return;
+    try {
+      await rejectJob.mutateAsync({ jobId: rejectingJobId, rejectedBy: user.id, reason: rejectReason });
+      setRejectDialogOpen(false);
+      setRejectingJobId(null);
+      setRejectReason('');
+      toast({ title: 'Ação rejeitada' });
+    } catch (e: unknown) {
+      toast({ title: 'Erro ao rejeitar', description: (e as Error).message, variant: 'destructive' });
     }
   };
 
@@ -435,37 +568,69 @@ export default function AmeliaMassActionPage() {
           </Button>
         </div>
 
+        {/* ─── Pending Approval Panel (visible to admins/gestores) ─── */}
+        {canApprove && pendingJobs.length > 0 && (
+          <Card className="border-amber-500/30 bg-amber-50/50 dark:bg-amber-950/10">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-base flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                <Clock className="h-4 w-4" />
+                Pendências de Aprovação ({pendingJobs.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Data</TableHead>
+                    <TableHead>Criado por</TableHead>
+                    <TableHead>Canal</TableHead>
+                    <TableHead>Deals</TableHead>
+                    <TableHead>Ações</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {pendingJobs.map(j => (
+                    <PendingApprovalRow
+                      key={j.id}
+                      job={j}
+                      onApprove={() => handleApprove(j.id)}
+                      onReject={() => {
+                        setRejectingJobId(j.id);
+                        setRejectDialogOpen(true);
+                      }}
+                      isApproving={approveJob.isPending}
+                    />
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
+        )}
+
         {/* ─── Filters ─── */}
         <Card>
           <CardContent className="p-4 space-y-3">
-            {/* Row 1: always visible */}
             <div className="flex items-center gap-3 flex-wrap">
               <div className="relative flex-1 min-w-[180px] max-w-xs">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                 <Input placeholder="Buscar deal ou contato..." value={search} onChange={e => setSearch(e.target.value)} className="pl-9" />
               </div>
               <Select value={filterPipeline} onValueChange={v => { setFilterPipeline(v); setFilterStage('ALL'); }}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Pipeline" />
-                </SelectTrigger>
+                <SelectTrigger className="w-[180px]"><SelectValue placeholder="Pipeline" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos Pipelines</SelectItem>
                   {pipelines.map((p: PipelineItem) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filterStage} onValueChange={setFilterStage}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Estágio" />
-                </SelectTrigger>
+                <SelectTrigger className="w-[180px]"><SelectValue placeholder="Estágio" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todos Estágios</SelectItem>
                   {filterOptions.stages.map(([id, nome]) => <SelectItem key={id} value={id}>{nome}</SelectItem>)}
                 </SelectContent>
               </Select>
               <Select value={filterTemperatura} onValueChange={setFilterTemperatura}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Temperatura" />
-                </SelectTrigger>
+                <SelectTrigger className="w-[150px]"><SelectValue placeholder="Temperatura" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="ALL">Todas</SelectItem>
                   <SelectItem value="QUENTE">🔥 Quente</SelectItem>
@@ -475,7 +640,6 @@ export default function AmeliaMassActionPage() {
               </Select>
             </div>
 
-            {/* Row 2: collapsible advanced filters */}
             <Collapsible open={showMoreFilters} onOpenChange={setShowMoreFilters}>
               <div className="flex items-center gap-2">
                 <CollapsibleTrigger asChild>
@@ -483,9 +647,7 @@ export default function AmeliaMassActionPage() {
                     <SlidersHorizontal className="h-3.5 w-3.5" />
                     {showMoreFilters ? 'Menos filtros' : 'Mais filtros'}
                     {activeFilterCount > 0 && (
-                      <Badge variant="secondary" className="ml-1 h-5 min-w-[20px] px-1 text-[10px]">
-                        {activeFilterCount}
-                      </Badge>
+                      <Badge variant="secondary" className="ml-1 h-5 min-w-[20px] px-1 text-[10px]">{activeFilterCount}</Badge>
                     )}
                     <ChevronDown className={`h-3 w-3 transition-transform ${showMoreFilters ? 'rotate-180' : ''}`} />
                   </Button>
@@ -496,40 +658,31 @@ export default function AmeliaMassActionPage() {
                   </Button>
                 )}
               </div>
-
               <CollapsibleContent className="pt-3">
                 <div className="flex items-center gap-3 flex-wrap">
                   <Select value={filterOwner} onValueChange={setFilterOwner}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Vendedor" />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-[180px]"><SelectValue placeholder="Vendedor" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todos Vendedores</SelectItem>
                       {filterOptions.owners.map(([id, nome]) => <SelectItem key={id} value={id}>{nome}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Select value={filterTag} onValueChange={setFilterTag}>
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Tag" />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-[160px]"><SelectValue placeholder="Tag" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todas Tags</SelectItem>
                       {filterOptions.tags.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Select value={filterOrigem} onValueChange={setFilterOrigem}>
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Origem" />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-[160px]"><SelectValue placeholder="Origem" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todas Origens</SelectItem>
                       {filterOptions.origens.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}
                     </SelectContent>
                   </Select>
                   <Select value={filterPeriodo} onValueChange={setFilterPeriodo}>
-                    <SelectTrigger className="w-[150px]">
-                      <SelectValue placeholder="Período" />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-[150px]"><SelectValue placeholder="Período" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todo período</SelectItem>
                       <SelectItem value="1D">Hoje</SelectItem>
@@ -539,9 +692,7 @@ export default function AmeliaMassActionPage() {
                     </SelectContent>
                   </Select>
                   <Select value={filterScore} onValueChange={setFilterScore}>
-                    <SelectTrigger className="w-[160px]">
-                      <SelectValue placeholder="Score" />
-                    </SelectTrigger>
+                    <SelectTrigger className="w-[160px]"><SelectValue placeholder="Score" /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="ALL">Todos Scores</SelectItem>
                       <SelectItem value="HIGH">Alto (≥70)</SelectItem>
@@ -550,21 +701,9 @@ export default function AmeliaMassActionPage() {
                     </SelectContent>
                   </Select>
                   <div className="flex items-center gap-1.5">
-                    <Input
-                      type="number"
-                      placeholder="Valor mín"
-                      className="w-[110px]"
-                      value={filterValorMin}
-                      onChange={e => setFilterValorMin(e.target.value)}
-                    />
+                    <Input type="number" placeholder="Valor mín" className="w-[110px]" value={filterValorMin} onChange={e => setFilterValorMin(e.target.value)} />
                     <span className="text-xs text-muted-foreground">—</span>
-                    <Input
-                      type="number"
-                      placeholder="Valor máx"
-                      className="w-[110px]"
-                      value={filterValorMax}
-                      onChange={e => setFilterValorMax(e.target.value)}
-                    />
+                    <Input type="number" placeholder="Valor máx" className="w-[110px]" value={filterValorMax} onChange={e => setFilterValorMax(e.target.value)} />
                   </div>
                 </div>
               </CollapsibleContent>
@@ -596,10 +735,7 @@ export default function AmeliaMassActionPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead className="w-10">
-                      <Checkbox
-                        checked={selected.size === filteredDeals.length && filteredDeals.length > 0}
-                        onCheckedChange={toggleAll}
-                      />
+                      <Checkbox checked={selected.size === filteredDeals.length && filteredDeals.length > 0} onCheckedChange={toggleAll} />
                     </TableHead>
                     <TableHead>Deal</TableHead>
                     <TableHead>Contato</TableHead>
@@ -621,15 +757,11 @@ export default function AmeliaMassActionPage() {
                   ) : (
                     filteredDeals.slice(0, 100).map((d) => (
                       <TableRow key={d.id} className={selected.has(d.id) ? 'bg-primary/5' : ''}>
-                        <TableCell>
-                          <Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleSelect(d.id)} />
-                        </TableCell>
+                        <TableCell><Checkbox checked={selected.has(d.id)} onCheckedChange={() => toggleSelect(d.id)} /></TableCell>
                         <TableCell className="font-medium truncate max-w-[200px]">{d.titulo}</TableCell>
                         <TableCell className="text-sm">{d.contacts?.nome || '—'}</TableCell>
                         <TableCell><Badge variant="outline" className="text-xs">{d.pipeline_stages?.nome || '—'}</Badge></TableCell>
-                        <TableCell>
-                          {d.temperatura && <Badge variant="secondary" className="text-xs">{d.temperatura}</Badge>}
-                        </TableCell>
+                        <TableCell>{d.temperatura && <Badge variant="secondary" className="text-xs">{d.temperatura}</Badge>}</TableCell>
                         <TableCell className="text-sm truncate max-w-[120px]">{d.owner?.nome || d.owner?.email || '—'}</TableCell>
                         <TableCell className="text-sm">{d.origem || '—'}</TableCell>
                         <TableCell>
@@ -683,7 +815,7 @@ export default function AmeliaMassActionPage() {
                       <TableCell className="text-sm">{j.canal}</TableCell>
                       <TableCell className="text-sm">{j.total}</TableCell>
                       <TableCell className="text-sm">{j.succeeded}/{j.total}</TableCell>
-                      <TableCell><Badge variant={statusVariant(j.status as MassActionJobStatus)}>{statusLabel[j.status as MassActionJobStatus]}</Badge></TableCell>
+                      <TableCell><Badge variant={statusVariant(j.status as MassActionJobStatus)}>{statusLabel[j.status as MassActionJobStatus] || j.status}</Badge></TableCell>
                     </TableRow>
                   ))}
                 </TableBody>
@@ -692,60 +824,137 @@ export default function AmeliaMassActionPage() {
           </CardContent>
         </Card>
 
-        {/* Config dialog */}
+        {/* Config dialog — template obrigatório */}
         <Dialog open={showConfig} onOpenChange={setShowConfig}>
           <DialogContent className="sm:max-w-lg">
             <DialogHeader>
               <DialogTitle>Configurar Ação em Massa</DialogTitle>
             </DialogHeader>
-            <Tabs value={configTab} onValueChange={v => setConfigTab(v as 'cadencia' | 'adhoc')}>
-              <TabsList className="w-full">
-                <TabsTrigger value="cadencia" className="flex-1"><Zap className="h-4 w-4 mr-1" /> Cadência Modelo</TabsTrigger>
-                <TabsTrigger value="adhoc" className="flex-1"><FileText className="h-4 w-4 mr-1" /> Campanha Ad-hoc</TabsTrigger>
-              </TabsList>
-              <TabsContent value="cadencia" className="space-y-3 mt-3">
-                <Select value={selectedCadence} onValueChange={setSelectedCadence}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecionar cadência..." />
-                  </SelectTrigger>
+            <div className="space-y-4">
+              {/* Canal selector */}
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Canal</label>
+                <Select value={canal} onValueChange={v => { setCanal(v); setSelectedTemplate(''); }}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    {cadences.map((c: CadenceItem) => <SelectItem key={c.id} value={c.id}>{c.nome}</SelectItem>)}
+                    <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
+                    <SelectItem value="EMAIL">E-mail</SelectItem>
                   </SelectContent>
                 </Select>
-              </TabsContent>
-              <TabsContent value="adhoc" className="space-y-3 mt-3">
+              </div>
+
+              {/* Template selector (obrigatório) */}
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">
+                  Template de Mensagem <span className="text-destructive">*</span>
+                </label>
+                {templates.length === 0 ? (
+                  <p className="text-sm text-muted-foreground p-3 border rounded-md bg-muted/30">
+                    Nenhum template ativo encontrado para {canal === 'WHATSAPP' ? 'WhatsApp' : 'E-mail'}. Cadastre um template antes de criar ações em massa.
+                  </p>
+                ) : (
+                  <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecionar template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates.map(t => (
+                        <SelectItem key={t.id} value={t.id}>
+                          <div className="flex items-center gap-2">
+                            <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+                            {t.nome}
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+
+              {/* Instrução complementar (opcional) */}
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Instrução complementar (opcional)</label>
                 <Textarea
-                  placeholder="Instrução para a Amélia (ex: 'Oferecer desconto de 10% para fechamento esta semana')..."
+                  placeholder="Ex: 'Mencionar promoção de fim de ano'..."
                   value={instrucao}
                   onChange={e => setInstrucao(e.target.value)}
-                  rows={4}
+                  rows={3}
                 />
-              </TabsContent>
-            </Tabs>
-            <div className="mt-3">
-              <Select value={canal} onValueChange={setCanal}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="WHATSAPP">WhatsApp</SelectItem>
-                  <SelectItem value="EMAIL">E-mail</SelectItem>
-                </SelectContent>
-              </Select>
+              </div>
+
+              {/* Approval notice */}
+              {!canApprove && (
+                <div className="flex items-start gap-2 p-3 rounded-md bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800">
+                  <ShieldCheck className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                  <p className="text-xs text-amber-700 dark:text-amber-400">
+                    Esta ação precisará da aprovação do seu gestor antes de ser executada.
+                  </p>
+                </div>
+              )}
             </div>
             <DialogFooter className="mt-4">
               <Button variant="outline" onClick={() => setShowConfig(false)}>Cancelar</Button>
               <Button
                 onClick={handleCreate}
-                disabled={createAction.isPending || (configTab === 'cadencia' && !selectedCadence) || (configTab === 'adhoc' && !instrucao.trim())}
+                disabled={createAction.isPending || !selectedTemplate}
               >
                 <Bot className="h-4 w-4 mr-2" />
-                Gerar Mensagens
+                {canApprove ? 'Gerar Mensagens' : 'Solicitar Aprovação'}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Reject dialog */}
+        <Dialog open={rejectDialogOpen} onOpenChange={setRejectDialogOpen}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Rejeitar Ação em Massa</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-3">
+              <label className="text-sm font-medium">Motivo da rejeição</label>
+              <Textarea
+                placeholder="Descreva o motivo da rejeição..."
+                value={rejectReason}
+                onChange={e => setRejectReason(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setRejectDialogOpen(false)}>Cancelar</Button>
+              <Button variant="destructive" onClick={handleReject} disabled={!rejectReason.trim() || rejectJob.isPending}>
+                <XCircle className="h-4 w-4 mr-2" />
+                Rejeitar
               </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
     </AppLayout>
+  );
+}
+
+/** Row component for pending approval — fetches the creator's name */
+function PendingApprovalRow({ job, onApprove, onReject, isApproving }: { job: MassActionJob; onApprove: () => void; onReject: () => void; isApproving: boolean }) {
+  const { data: creatorName } = useProfileName(job.started_by);
+  return (
+    <TableRow>
+      <TableCell className="text-sm">{new Date(job.created_at).toLocaleDateString('pt-BR')}</TableCell>
+      <TableCell className="text-sm">{creatorName || '...'}</TableCell>
+      <TableCell className="text-sm">{job.canal}</TableCell>
+      <TableCell className="text-sm">{job.total}</TableCell>
+      <TableCell>
+        <div className="flex gap-2">
+          <Button size="sm" variant="default" onClick={onApprove} disabled={isApproving}>
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1" />
+            Aprovar
+          </Button>
+          <Button size="sm" variant="outline" className="text-destructive" onClick={onReject}>
+            <XCircle className="h-3.5 w-3.5 mr-1" />
+            Rejeitar
+          </Button>
+        </div>
+      </TableCell>
+    </TableRow>
   );
 }

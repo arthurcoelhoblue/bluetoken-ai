@@ -89,6 +89,8 @@ export function useCreateMassAction() {
       instrucao?: string;
       canal: string;
       started_by: string;
+      template_id?: string;
+      needs_approval?: boolean;
     }) => {
       const { data, error } = await supabase
         .from('mass_action_jobs')
@@ -101,6 +103,9 @@ export function useCreateMassAction() {
           canal: params.canal,
           total: params.deal_ids.length,
           started_by: params.started_by,
+          template_id: params.template_id || null,
+          needs_approval: params.needs_approval ?? false,
+          status: params.needs_approval ? 'AGUARDANDO_APROVACAO' : 'PENDING',
         })
         .select()
         .single();
@@ -108,6 +113,104 @@ export function useCreateMassAction() {
       return data as unknown as MassActionJob;
     },
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mass-action-jobs'] }),
+  });
+}
+
+// ── Approval hooks ──
+
+export function usePendingApprovalJobs(userId: string | undefined, empresa: string | undefined) {
+  return useQuery({
+    queryKey: ['pending-approval-jobs', userId, empresa],
+    enabled: !!userId && !!empresa,
+    refetchInterval: 15000,
+    queryFn: async () => {
+      // Get subordinates (users whose gestor_id = current user)
+      const { data: subordinates } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('gestor_id', userId!);
+      
+      const subIds = (subordinates ?? []).map(s => s.id);
+      if (subIds.length === 0) {
+        // Also check if admin — admins see all pending
+        return [] as MassActionJob[];
+      }
+
+      const { data, error } = await supabase
+        .from('mass_action_jobs')
+        .select('*')
+        .eq('empresa', empresa! as EmpresaTipo)
+        .eq('status', 'AGUARDANDO_APROVACAO')
+        .in('started_by', subIds)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as MassActionJob[];
+    },
+  });
+}
+
+export function useAllPendingApprovalJobs(empresa: string | undefined) {
+  return useQuery({
+    queryKey: ['all-pending-approval-jobs', empresa],
+    enabled: !!empresa,
+    refetchInterval: 15000,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('mass_action_jobs')
+        .select('*')
+        .eq('empresa', empresa! as EmpresaTipo)
+        .eq('status', 'AGUARDANDO_APROVACAO')
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as MassActionJob[];
+    },
+  });
+}
+
+export function useApproveJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ jobId, approvedBy }: { jobId: string; approvedBy: string }) => {
+      const { error } = await supabase
+        .from('mass_action_jobs')
+        .update({
+          status: 'PENDING',
+          approved_by: approvedBy,
+          approved_at: new Date().toISOString(),
+        })
+        .eq('id', jobId)
+        .eq('status', 'AGUARDANDO_APROVACAO');
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mass-action-jobs'] });
+      qc.invalidateQueries({ queryKey: ['pending-approval-jobs'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-approval-jobs'] });
+    },
+  });
+}
+
+export function useRejectJob() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ jobId, rejectedBy, reason }: { jobId: string; rejectedBy: string; reason: string }) => {
+      const { error } = await supabase
+        .from('mass_action_jobs')
+        .update({
+          status: 'REJECTED',
+          rejected_by: rejectedBy,
+          rejected_at: new Date().toISOString(),
+          rejection_reason: reason,
+        })
+        .eq('id', jobId)
+        .eq('status', 'AGUARDANDO_APROVACAO');
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['mass-action-jobs'] });
+      qc.invalidateQueries({ queryKey: ['pending-approval-jobs'] });
+      qc.invalidateQueries({ queryKey: ['all-pending-approval-jobs'] });
+    },
   });
 }
 

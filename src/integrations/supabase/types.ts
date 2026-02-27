@@ -4139,6 +4139,8 @@ export type Database = {
       }
       mass_action_jobs: {
         Row: {
+          approved_at: string | null
+          approved_by: string | null
           cadence_id: string | null
           canal: string
           completed_at: string | null
@@ -4149,7 +4151,11 @@ export type Database = {
           id: string
           instrucao: string | null
           messages_preview: Json | null
+          needs_approval: boolean | null
           processed: number
+          rejected_at: string | null
+          rejected_by: string | null
+          rejection_reason: string | null
           started_at: string | null
           started_by: string | null
           status: string
@@ -4161,6 +4167,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
           cadence_id?: string | null
           canal?: string
           completed_at?: string | null
@@ -4171,7 +4179,11 @@ export type Database = {
           id?: string
           instrucao?: string | null
           messages_preview?: Json | null
+          needs_approval?: boolean | null
           processed?: number
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           started_at?: string | null
           started_by?: string | null
           status?: string
@@ -4183,6 +4195,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          approved_at?: string | null
+          approved_by?: string | null
           cadence_id?: string | null
           canal?: string
           completed_at?: string | null
@@ -4193,7 +4207,11 @@ export type Database = {
           id?: string
           instrucao?: string | null
           messages_preview?: Json | null
+          needs_approval?: boolean | null
           processed?: number
+          rejected_at?: string | null
+          rejected_by?: string | null
+          rejection_reason?: string | null
           started_at?: string | null
           started_by?: string | null
           status?: string
@@ -4205,6 +4223,34 @@ export type Database = {
           updated_at?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "mass_action_jobs_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_approved_by_fkey"
+            columns: ["approved_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
           {
             foreignKeyName: "mass_action_jobs_cadence_id_fkey"
             columns: ["cadence_id"]
@@ -4218,6 +4264,34 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "cadencias_crm"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "mass_action_jobs_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
           {
             foreignKeyName: "mass_action_jobs_started_by_fkey"
