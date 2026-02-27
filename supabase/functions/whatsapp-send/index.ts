@@ -94,7 +94,7 @@ async function sendViaMensageria(
   });
 
   const responseText = await whatsappResponse.text();
-  log.info('Mensageria response', { status: whatsappResponse.status });
+  log.info('Mensageria response', { status: whatsappResponse.status, body: responseText.substring(0, 500) });
 
   let whatsappData;
   try {
