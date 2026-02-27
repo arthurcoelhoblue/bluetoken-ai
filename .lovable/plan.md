@@ -1,42 +1,42 @@
 
 
-## Diagnóstico
+## Plano: Filtrar conversas por ownership do vendedor
 
-O telefone `+5561998317422` está cadastrado em BLUE e TOKENIZA (contacts + lead_contacts), mas **não existe em BLUE_LABS**. A lógica atual do `whatsapp-inbound`:
+### Contexto
+- A página Conversas (`ConversasPage`) e o hook `useAtendimentos` atualmente mostram **todas** as conversas filtradas apenas por empresa
+- Não há filtro por vendedor/owner — todos veem tudo
+- A propriedade do lead está vinculada via `deals.owner_id` (contacts/lead_contacts não têm owner preenchido)
+- Apenas 9/130 deals abertos têm `owner_id` — dados esparsos
+- Conceito novo: conversas "abertas" = linked a deal ABERTO; deal GANHO/PERDIDO = conversa encerrada
 
-1. Busca contato por telefone → encontra TOKENIZA (mais recente)
-2. Verifica se mensageria está habilitada para TOKENIZA → **não está**
-3. Retorna 403 `CHANNEL_DISABLED`
+### Detalhes técnicos
 
-A função nunca considera BLUE_LABS porque não há contato com esse número lá.
+#### 1. Alterar `useAtendimentos` para aceitar `userId` e `isAdmin`
+- Receber `userId` e `isAdmin` como parâmetros opcionais
+- Quando `isAdmin = false`, filtrar apenas conversas onde:
+  - O lead tem um deal ABERTO com `owner_id = userId`
+  - OU o `lead_conversation_state.assumido_por = userId` (takeover manual)
+- Quando `isAdmin = true`, manter comportamento atual (ver tudo)
+- Adicionar join com `contacts` (via `legacy_lead_id`) e `deals` (via `contact_id`) para resolver ownership
 
-## Duas opções de solução
+#### 2. Filtrar apenas conversas com deal ABERTO
+- Após coletar os lead_ids, fazer query em `contacts` → `deals` para verificar se existe deal ABERTO
+- Excluir conversas cujo deal é GANHO/PERDIDO (conversa "encerrada")
+- Admins também veem apenas conversas com deals abertos (ou sem deal vinculado — para não perder leads novos)
 
-### Opção A: Criar contato de teste em BLUE_LABS (rápido, para testar agora)
-- Inserir um contato com telefone `+5561998317422` na empresa BLUE_LABS
-- Ajustar a lógica de match para priorizar empresas com mensageria habilitada
+#### 3. Atualizar `ConversasPage` e `Atendimentos`
+- Passar `user.id` e `isAdmin` do `useAuth()` para o hook `useAtendimentos`
+- Nenhuma mudança visual, apenas filtragem de dados
 
-### Opção B (recomendada): Alterar a lógica de matching para priorizar empresa com canal ativo
-- Quando múltiplos contatos existem para o mesmo telefone, ou quando o contato encontrado pertence a uma empresa sem mensageria, a função deve buscar um contato alternativo em empresa com mensageria habilitada
-- Isso resolve o problema de forma permanente para qualquer número compartilhado entre empresas
-
-## Plano de implementação (Opção B)
-
-### 1. Alterar `whatsapp-inbound/index.ts` — lógica de resolução de empresa
-
-Na seção de matching (linhas ~570-668), após encontrar os contatos, em vez de pegar apenas o mais recente:
-
-- Buscar **todos** os contatos que matcham o telefone (não apenas `limit(1)`)
-- Para cada contato, verificar se a empresa dele tem mensageria habilitada
-- Priorizar o contato cuja empresa tem `mensageria.enabled = true`
-- Se nenhuma empresa tem mensageria habilitada, manter o comportamento atual (403)
-
-Mudanças específicas:
-- Remover `.limit(1).maybeSingle()` das queries de contato e usar `.limit(10)` para pegar múltiplos
-- Após coletar candidatos, fazer um JOIN lógico com `integration_company_config` para filtrar empresa com canal ativo
-- Selecionar o contato da empresa com mensageria habilitada (mais recente se houver múltiplos)
-
-### 2. Redeployar a edge function
-
-### 3. Testar com o payload real
+#### Fluxo de dados (query)
+```text
+lead_messages (passive) → lead_ids
+  ↓
+contacts (legacy_lead_id = lead_id) → contact_ids
+  ↓
+deals (contact_id, status=ABERTO) → owner_ids
+  ↓
+Se !isAdmin: filtrar lead_ids onde deal.owner_id = userId
+  OU lead_conversation_state.assumido_por = userId
+```
 
