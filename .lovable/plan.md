@@ -1,42 +1,43 @@
 
+# Corrigir Priorização de Empresa no Inbound da Mensageria
 
-## Plano: Filtrar conversas por ownership do vendedor
+## Problema Identificado
 
-### Contexto
-- A página Conversas (`ConversasPage`) e o hook `useAtendimentos` atualmente mostram **todas** as conversas filtradas apenas por empresa
-- Não há filtro por vendedor/owner — todos veem tudo
-- A propriedade do lead está vinculada via `deals.owner_id` (contacts/lead_contacts não têm owner preenchido)
-- Apenas 9/130 deals abertos têm `owner_id` — dados esparsos
-- Conceito novo: conversas "abertas" = linked a deal ABERTO; deal GANHO/PERDIDO = conversa encerrada
+Quando uma mensagem inbound chega via Mensageria, o telefone pode existir em múltiplas empresas (ex: `+5561999999999` existe em TOKENIZA e BLUE). O código atual escolhe o lead com `updated_at` mais recente, ignorando qual empresa tem a Mensageria habilitada.
 
-### Detalhes técnicos
+Resultado: mensagens da Mensageria caem na empresa errada (TOKENIZA) em vez da BLUE_LABS (que é a única com mensageria configurada de verdade).
 
-#### 1. Alterar `useAtendimentos` para aceitar `userId` e `isAdmin`
-- Receber `userId` e `isAdmin` como parâmetros opcionais
-- Quando `isAdmin = false`, filtrar apenas conversas onde:
-  - O lead tem um deal ABERTO com `owner_id = userId`
-  - OU o `lead_conversation_state.assumido_por = userId` (takeover manual)
-- Quando `isAdmin = true`, manter comportamento atual (ver tudo)
-- Adicionar join com `contacts` (via `legacy_lead_id`) e `deals` (via `contact_id`) para resolver ownership
+## Causa Raiz
 
-#### 2. Filtrar apenas conversas com deal ABERTO
-- Após coletar os lead_ids, fazer query em `contacts` → `deals` para verificar se existe deal ABERTO
-- Excluir conversas cujo deal é GANHO/PERDIDO (conversa "encerrada")
-- Admins também veem apenas conversas com deals abertos (ou sem deal vinculado — para não perder leads novos)
+Na última alteração, removi a lógica que verificava `integration_company_config` para priorizar empresas com mensageria ativa. A intenção estava certa (não bloquear inbound), mas o efeito colateral foi perder o critério de desempate.
 
-#### 3. Atualizar `ConversasPage` e `Atendimentos`
-- Passar `user.id` e `isAdmin` do `useAuth()` para o hook `useAtendimentos`
-- Nenhuma mudança visual, apenas filtragem de dados
+## Solução
 
-#### Fluxo de dados (query)
+Modificar a função `findLeadByPhone` e o fallback de contacts CRM para **priorizar empresas com mensageria ativa** quando há múltiplos matches para o mesmo telefone, sem nunca bloquear a mensagem.
+
+### Lógica de priorização (3 níveis):
+1. Lead/Contact com **cadência ativa** (já existe)
+2. Lead/Contact em **empresa com mensageria habilitada** (novo)
+3. Lead/Contact **mais recente** por `updated_at` (fallback atual)
+
+### Alterações no arquivo `supabase/functions/whatsapp-inbound/index.ts`:
+
+1. **Criar função auxiliar `getEmpresasComMensageria`** - Consulta `integration_company_config` para obter empresas com `channel='mensageria'` e `enabled=true`
+
+2. **Alterar `findLeadByPhone`** - Na seção de E.164 matches (linha ~282), após verificar cadências ativas, adicionar segundo critério: priorizar lead cuja empresa está na lista de empresas com mensageria ativa, antes de cair no fallback de "mais recente"
+
+3. **Alterar fallback de contacts CRM** (linha ~608) - Mesmo princípio: quando buscar em contacts, priorizar matches de empresas com mensageria ativa
+
+4. **Manter a regra de nunca bloquear** - Se nenhuma empresa com mensageria ativa for encontrada, aceitar o match mais recente normalmente (comportamento atual preservado)
+
+### Pseudocódigo da priorização:
+
 ```text
-lead_messages (passive) → lead_ids
-  ↓
-contacts (legacy_lead_id = lead_id) → contact_ids
-  ↓
-deals (contact_id, status=ABERTO) → owner_ids
-  ↓
-Se !isAdmin: filtrar lead_ids onde deal.owner_id = userId
-  OU lead_conversation_state.assumido_por = userId
+matches = leads ordenados por updated_at DESC
+
+1. Buscar match com cadencia ativa -> retorna se encontrar
+2. Buscar match em empresa com mensageria ativa -> retorna se encontrar  
+3. Retorna o mais recente (fallback)
 ```
 
+Isso garante que mensagens da Mensageria da BLUE_LABS sempre caiam na BLUE_LABS quando o telefone existir em múltiplas empresas, sem bloquear nada.
