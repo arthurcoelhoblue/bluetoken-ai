@@ -60,19 +60,23 @@ async function sendViaMensageria(
     phoneToSend: string;
     mensagem: string;
     messageId: string;
+    apiKey?: string;
+    connectionName?: string;
   }
 ): Promise<{ success: boolean; error?: string; whatsappMessageId?: string }> {
   const { phoneToSend, mensagem, messageId } = opts;
 
-  const apiKey = getOptionalEnv('MENSAGERIA_API_KEY');
-  if (!apiKey) {
-    return { success: false, error: 'MENSAGERIA_API_KEY não configurada' };
+  const resolvedApiKey = opts.apiKey || getOptionalEnv('MENSAGERIA_API_KEY');
+  if (!resolvedApiKey) {
+    return { success: false, error: 'API Key da Mensageria não configurada para esta empresa' };
   }
+
+  const resolvedConnName = opts.connectionName || 'arthur';
 
   // Mensageria espera connectionName minúsculo e telefone sem '+'
   const phoneSanitized = phoneToSend.replace(/^\+/, '');
   const payloadToSend = {
-    connectionName: 'arthur',
+    connectionName: resolvedConnName.toLowerCase(),
     to: phoneSanitized,
     message: mensagem,
   };
@@ -84,7 +88,7 @@ async function sendViaMensageria(
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'X-API-Key': apiKey,
+      'X-API-Key': resolvedApiKey,
     },
     body: JSON.stringify(payloadToSend),
   });
@@ -201,7 +205,7 @@ serve(async (req) => {
     // Verificar canal ativo para esta empresa
     const { data: channelConfigs } = await supabase
       .from('integration_company_config')
-      .select('channel, enabled')
+      .select('channel, enabled, api_key, connection_name')
       .eq('empresa', empresa)
       .eq('enabled', true);
 
@@ -453,11 +457,14 @@ serve(async (req) => {
         }
       }
     } else {
-      log.info('Roteando via MENSAGERIA', { empresa });
+      const mensageriaConfig = channelConfigs?.find((c: any) => c.channel === 'mensageria');
+      log.info('Roteando via MENSAGERIA', { empresa, connectionName: mensageriaConfig?.connection_name });
       sendResult = await sendViaMensageria(supabase, {
         phoneToSend,
         mensagem,
         messageId,
+        apiKey: mensageriaConfig?.api_key || undefined,
+        connectionName: mensageriaConfig?.connection_name || undefined,
       });
     }
 

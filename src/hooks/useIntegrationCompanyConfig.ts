@@ -10,6 +10,8 @@ export interface IntegrationCompanyConfig {
   empresa: EmpresaTipo;
   channel: ChannelType;
   enabled: boolean;
+  api_key: string | null;
+  connection_name: string | null;
   updated_at: string;
   updated_by: string | null;
 }

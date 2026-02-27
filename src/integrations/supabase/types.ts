@@ -3112,7 +3112,9 @@ export type Database = {
       }
       integration_company_config: {
         Row: {
+          api_key: string | null
           channel: string
+          connection_name: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           enabled: boolean
           id: string
@@ -3120,7 +3122,9 @@ export type Database = {
           updated_by: string | null
         }
         Insert: {
+          api_key?: string | null
           channel: string
+          connection_name?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           enabled?: boolean
           id?: string
@@ -3128,7 +3132,9 @@ export type Database = {
           updated_by?: string | null
         }
         Update: {
+          api_key?: string | null
           channel?: string
+          connection_name?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           enabled?: boolean
           id?: string
