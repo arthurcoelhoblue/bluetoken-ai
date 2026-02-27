@@ -7,6 +7,7 @@ import type { CanalTipo } from '@/types/cadence';
 
 interface UseConversationMessagesOptions {
   leadId: string;
+  contactId?: string | null;
   empresa?: EmpresaTipo;
   telefone?: string | null;
   enabled?: boolean;
@@ -19,6 +20,7 @@ interface UseConversationMessagesOptions {
  */
 export function useConversationMessages({ 
   leadId, 
+  contactId,
   empresa, 
   telefone,
   enabled = true 
@@ -26,7 +28,7 @@ export function useConversationMessages({
   const queryClient = useQueryClient();
   
   const query = useQuery({
-    queryKey: ['conversation-messages', leadId, empresa, telefone],
+    queryKey: ['conversation-messages', leadId, contactId, empresa, telefone],
     queryFn: async () => {
       const messages: LeadMessageWithContext[] = [];
       
@@ -85,7 +87,50 @@ export function useConversationMessages({
         }
       }
       
-      // 2. Buscar mensagens INBOUND UNMATCHED pelo telefone (se fornecido)
+      // 2. Buscar mensagens por contact_id (para contatos sem legacy_lead_id)
+      if (contactId) {
+        const { data: contactMessages } = await supabase
+          .from('lead_messages')
+          .select('*')
+          .eq('contact_id', contactId)
+          .order('created_at', { ascending: true });
+        
+        if (contactMessages) {
+          const existingIds = new Set(messages.map(m => m.id));
+          for (const msg of contactMessages) {
+            if (!existingIds.has(msg.id)) {
+              messages.push({
+                id: msg.id,
+                lead_id: msg.lead_id,
+                empresa: msg.empresa as EmpresaTipo,
+                run_id: msg.run_id,
+                step_ordem: msg.step_ordem,
+                canal: msg.canal as CanalTipo,
+                direcao: msg.direcao as MensagemDirecao,
+                template_codigo: msg.template_codigo,
+                conteudo: msg.conteudo,
+                estado: msg.estado as MensagemEstado,
+                whatsapp_message_id: msg.whatsapp_message_id,
+                email_message_id: msg.email_message_id,
+                erro_detalhe: msg.erro_detalhe,
+                enviado_em: msg.enviado_em,
+                entregue_em: msg.entregue_em,
+                lido_em: msg.lido_em,
+                created_at: msg.created_at,
+                updated_at: msg.updated_at,
+                tipo_midia: ((msg as Record<string, unknown>).tipo_midia as TipoMidia) || 'text',
+                media_url: (msg as Record<string, unknown>).media_url as string | null || null,
+                media_mime_type: (msg as Record<string, unknown>).media_mime_type as string | null || null,
+                media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
+                media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
+                media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
+              });
+            }
+          }
+        }
+      }
+
+      // 3. Buscar mensagens INBOUND UNMATCHED pelo telefone (se fornecido)
       // Isso pega mensagens que chegaram mas não foram associadas ao lead
       if (telefone) {
         // Normalizar telefone para busca (remover tudo que não é dígito)
@@ -93,19 +138,17 @@ export function useConversationMessages({
         // Garantir que temos pelo menos os últimos 8 dígitos para match
         const phonePattern = phoneNormalized.slice(-8);
         
-        // Buscar por whatsapp_message_id que contenha o telefone
-        // O whatsapp_message_id segue padrão: wamid.xxx_5581987580922@xxx
         const { data: unmatchedMessages } = await supabase
           .from('lead_messages')
           .select('*')
           .is('lead_id', null)
+          .is('contact_id', null)
           .eq('direcao', 'INBOUND')
           .eq('canal', 'WHATSAPP')
           .ilike('whatsapp_message_id', `%${phonePattern}%`)
           .order('created_at', { ascending: true })
           .limit(50);
         
-        // Adicionar apenas se não já estiver na lista
         if (unmatchedMessages) {
           const existingIds = new Set(messages.map(m => m.id));
           
@@ -150,37 +193,63 @@ export function useConversationMessages({
       
       return messages;
     },
-    enabled: enabled && !!leadId,
+    enabled: enabled && (!!leadId || !!contactId),
   });
   
   // Realtime subscription para novas mensagens
   useEffect(() => {
-    if (!enabled || !leadId) return;
+    if (!enabled || (!leadId && !contactId)) return;
+    
+    const channels: ReturnType<typeof supabase.channel>[] = [];
     
     // Channel 1: Mensagens associadas ao lead
-    const leadChannel = supabase
-      .channel(`messages-lead-${leadId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'lead_messages',
-          filter: `lead_id=eq.${leadId}`,
-        },
-        (payload) => {
-          
-          queryClient.invalidateQueries({ 
-            queryKey: ['conversation-messages', leadId, empresa, telefone] 
-          });
-        }
-      )
-      .subscribe();
+    if (leadId) {
+      const leadChannel = supabase
+        .channel(`messages-lead-${leadId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'lead_messages',
+            filter: `lead_id=eq.${leadId}`,
+          },
+          () => {
+            queryClient.invalidateQueries({ 
+              queryKey: ['conversation-messages', leadId, contactId, empresa, telefone] 
+            });
+          }
+        )
+        .subscribe();
+      channels.push(leadChannel);
+    }
+    
+    // Channel 2: Mensagens associadas ao contact_id
+    if (contactId) {
+      const contactChannel = supabase
+        .channel(`messages-contact-${contactId}`)
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'lead_messages',
+            filter: `contact_id=eq.${contactId}`,
+          },
+          () => {
+            queryClient.invalidateQueries({ 
+              queryKey: ['conversation-messages', leadId, contactId, empresa, telefone] 
+            });
+          }
+        )
+        .subscribe();
+      channels.push(contactChannel);
+    }
     
     return () => {
-      supabase.removeChannel(leadChannel);
+      channels.forEach(ch => supabase.removeChannel(ch));
     };
-  }, [leadId, empresa, telefone, enabled, queryClient]);
+  }, [leadId, contactId, empresa, telefone, enabled, queryClient]);
   
   return query;
 }

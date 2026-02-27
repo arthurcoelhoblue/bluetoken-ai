@@ -18,7 +18,7 @@ const corsHeaders = getWebhookCorsHeaders("x-api-key");
 // ========================================
 // TIPOS
 // ========================================
-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'BLUE_LABS';
 
 interface InboundPayload {
   from: string;
@@ -35,6 +35,15 @@ interface LeadContact {
   empresa: EmpresaTipo;
   nome: string | null;
   telefone: string | null;
+}
+
+interface CrmContact {
+  id: string;
+  legacy_lead_id: string | null;
+  empresa: EmpresaTipo;
+  nome: string;
+  telefone: string | null;
+  telefone_e164: string | null;
 }
 
 interface LeadCadenceRun {
@@ -370,7 +379,9 @@ async function saveInboundMessage(
   supabase: SupabaseClient,
   payload: InboundPayload,
   leadContact: LeadContact | null,
-  activeRun: LeadCadenceRun | null
+  activeRun: LeadCadenceRun | null,
+  crmContactId?: string | null,
+  crmEmpresa?: EmpresaTipo | null
 ): Promise<InboundResult> {
   if (await isDuplicate(supabase, payload.message_id)) {
     log.info('Mensagem duplicada', { messageId: payload.message_id });
@@ -381,19 +392,25 @@ async function saveInboundMessage(
     };
   }
   
-  const empresa: EmpresaTipo = leadContact?.empresa || 'TOKENIZA';
+  const empresa: EmpresaTipo = leadContact?.empresa || crmEmpresa || 'TOKENIZA';
+  const isMatched = !!(leadContact || crmContactId);
   
-  const messageRecord = {
+  const messageRecord: Record<string, unknown> = {
     lead_id: leadContact?.lead_id || null,
     empresa,
     run_id: activeRun?.id || null,
     canal: 'WHATSAPP',
     direcao: 'INBOUND',
     conteudo: payload.text,
-    estado: leadContact ? 'RECEBIDO' : 'UNMATCHED',
+    estado: isMatched ? 'RECEBIDO' : 'UNMATCHED',
     whatsapp_message_id: payload.message_id,
     recebido_em: payload.timestamp,
   };
+  
+  // Set contact_id if we have a CRM contact match
+  if (crmContactId) {
+    messageRecord.contact_id = crmContactId;
+  }
   
   log.info('Salvando mensagem', {
     from: normalizePhone(payload.from),
@@ -521,21 +538,56 @@ serve(async (req) => {
 
     const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);
     
-    if (leadContact) {
+    // Fallback: buscar na tabela contacts (CRM) se não encontrou em lead_contacts
+    let crmContact: CrmContact | null = null;
+    if (!leadContact) {
+      const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
+      const { data: contactMatch } = await supabase
+        .from('contacts')
+        .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
+        .eq('telefone_e164', e164)
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      
+      if (contactMatch) {
+        crmContact = contactMatch as CrmContact;
+        log.info('Match via contacts CRM', { contactId: crmContact.id, empresa: crmContact.empresa });
+      } else {
+        // Tentar match parcial pelos últimos 8 dígitos
+        const last8 = phoneNormalized.slice(-8);
+        const { data: partialContact } = await supabase
+          .from('contacts')
+          .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
+          .like('telefone_e164', `%${last8}`)
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        
+        if (partialContact) {
+          crmContact = partialContact as CrmContact;
+          log.info('Match parcial via contacts CRM', { contactId: crmContact.id, empresa: crmContact.empresa });
+        }
+      }
+    }
+
+    const matchedEmpresa = leadContact?.empresa || crmContact?.empresa;
+    
+    if (matchedEmpresa) {
       const { data: channelConfig } = await supabase
         .from('integration_company_config')
         .select('enabled')
-        .eq('empresa', leadContact.empresa)
+        .eq('empresa', matchedEmpresa)
         .eq('channel', 'mensageria')
         .maybeSingle();
 
       if (channelConfig && !channelConfig.enabled) {
-        log.info('Canal mensageria desabilitado', { empresa: leadContact.empresa });
+        log.info('Canal mensageria desabilitado', { empresa: matchedEmpresa });
         return new Response(
           JSON.stringify({ 
             success: false, 
             status: 'CHANNEL_DISABLED',
-            error: `Mensageria não está habilitada para ${leadContact.empresa}`,
+            error: `Mensageria não está habilitada para ${matchedEmpresa}`,
           }),
           { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
         );
@@ -547,7 +599,7 @@ serve(async (req) => {
       activeRun = await findActiveRun(supabase, leadContact.lead_id, leadContact.empresa);
     }
     
-    const result = await saveInboundMessage(supabase, payload, leadContact, activeRun);
+    const result = await saveInboundMessage(supabase, payload, leadContact, activeRun, crmContact?.id, crmContact?.empresa);
     
     if (handoffInfo) {
       await clearHandoffFlag(supabase, handoffInfo.leadIdOrigem, handoffInfo.empresaOrigem);
