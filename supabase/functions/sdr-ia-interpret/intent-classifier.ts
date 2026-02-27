@@ -384,10 +384,11 @@ export interface ClassifyParams {
   leadNome?: string | null;
   cadenciaNome?: string | null;
   pessoaContext?: Record<string, unknown> | null;
+  reprocessContext?: string;
 }
 
 export async function classifyIntent(supabase: SupabaseClient, params: ClassifyParams): Promise<ClassifierResult> {
-  const { mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato, mode, triageSummary, leadNome, cadenciaNome, pessoaContext } = params;
+  const { mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato, mode, triageSummary, leadNome, cadenciaNome, pessoaContext, reprocessContext } = params;
   const isPassiveChat = mode === 'PASSIVE_CHAT';
 
   // A/B testing prompt
@@ -497,6 +498,7 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   const proximaPergunta = decidirProximaPergunta(empresa as EmpresaTipo, (conversation_state?.estado_funil as EstadoFunil) || 'SAUDACAO', fd.spin, fd.gpct, fd.bant, (classificacao?.temperatura as TemperaturaTipo) || 'FRIO', undefined, mensagem_normalizada);
 
   let userPrompt = `EMPRESA_CONTEXTO: ${empresa}\nMODO: ${isPassiveChat ? 'ATENDENTE PASSIVA' : 'QUALIFICAÇÃO ATIVA'}\n`;
+  if (reprocessContext) userPrompt += reprocessContext;
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
   if (cadenciaNome && !isPassiveChat) userPrompt += `CADÊNCIA: ${cadenciaNome}\n`;
 
@@ -514,8 +516,10 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     }
   }
 
-  if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia) {
+  if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && proximaPergunta.urgencia && !reprocessContext) {
     userPrompt += `\n🚨 ESCALAÇÃO: ${proximaPergunta.urgencia.tipo} — "${proximaPergunta.urgencia.frase_gatilho}" → ESCALAR_HUMANO\n`;
+  } else if (proximaPergunta.tipo === 'ESCALAR_IMEDIATO' && reprocessContext) {
+    userPrompt += `\n⚡ PRÓXIMA PERGUNTA: NENHUMA — Continue a conversa naturalmente (retomada pós-handoff).\n`;
   } else {
     userPrompt += `\n⚡ PRÓXIMA PERGUNTA: ${proximaPergunta.tipo} — ${proximaPergunta.instrucao}\n`;
   }
