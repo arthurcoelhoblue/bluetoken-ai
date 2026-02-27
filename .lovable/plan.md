@@ -1,59 +1,67 @@
 
 
-## Plano: Melhorias Inteligentes na SDR Amélia
+## Plano: Template obrigatório + Aprovação do gestor para ações em massa
 
-Baseado na análise da conversa do Arthur Coelho, há 4 problemas concretos a resolver.
+### 1. Migração: adicionar campos de aprovação na tabela `mass_action_jobs`
 
----
+Adicionar colunas:
+- `needs_approval BOOLEAN DEFAULT false` — indica se precisa de aprovação
+- `approved_by UUID REFERENCES profiles(id)` — quem aprovou
+- `approved_at TIMESTAMPTZ` — quando aprovou
+- `rejected_by UUID REFERENCES profiles(id)` — quem rejeitou (opcional)
+- `rejected_at TIMESTAMPTZ`
+- `rejection_reason TEXT`
 
-### 1. Proibir re-oferta de produtos rejeitados/ignorados
+Adicionar novo status `AGUARDANDO_APROVACAO` ao fluxo (campo `status` é TEXT, não precisa de enum migration).
 
-**Problema**: Lead escolheu SAFE e a IA insistiu em re-oferecer outros produtos.
+### 2. Refatorar dialog de configuração — template obrigatório
 
-**Solução**: No `intent-classifier.ts`, adicionar ao prompt do usuário a lista de produtos já mencionados/escolhidos pelo lead (extraída do `framework_data`). Adicionar regra explícita no system prompt: "Se o lead já escolheu um produto específico, foque EXCLUSIVAMENTE nele. NUNCA re-ofereça alternativas que o lead já ignorou ou rejeitou."
+No `AmeliaMassActionPage.tsx`, substituir o dialog atual (que tem tabs Cadência/Ad-hoc com Textarea livre) por:
 
-No `action-executor.ts`, ao detectar menção a produto específico na resposta sugerida + intent INTERESSE_COMPRA, gravar `produto_escolhido` no `framework_data`.
+- **Remover** a aba "Campanha Ad-hoc" com textarea livre
+- **Substituir** por um seletor de template (similar ao `TemplatePickerDialog`) que busca templates ativos da empresa na tabela `message_templates`
+- O campo `template_id` e `template_variables` já existem na tabela — serão preenchidos ao criar o job
+- Manter o seletor de canal (WhatsApp/Email) e filtrar templates pelo canal selecionado
+- A instrução livre (`instrucao`) passa a ser opcional, como complemento ao template selecionado
 
-**Arquivos**: `intent-classifier.ts`, `action-executor.ts`
+### 3. Lógica de aprovação no frontend
 
----
+No `handleCreate`:
+- Verificar se o usuário é ADMIN ou tem role de gestor (via `hasRole('ADMIN')` ou checando se o usuário é gestor de alguém)
+- Se **não** for admin/gestor: criar job com `status: 'AGUARDANDO_APROVACAO'` e `needs_approval: true`
+- Se **for** admin/gestor: fluxo normal (PENDING → gerar mensagens)
 
-### 2. Limitar perguntas de qualificação repetitivas
+### 4. Notificação para o gestor
 
-**Problema**: A IA fez perguntas de qualificação em loop sem avançar.
+Ao criar um job com `needs_approval: true`:
+- Buscar `gestor_id` do perfil do usuário que criou (`profiles.gestor_id`)
+- Inserir notificação na tabela `notifications` para o gestor, com link para `/amelia/mass-action`
+- Tipo: `'APROVACAO'`, referencia_tipo: `'MASS_ACTION'`, referencia_id: job.id
 
-**Solução**: No `intent-classifier.ts`, contar quantas mensagens OUTBOUND consecutivas terminam com `?` no histórico recente. Se >= 3 perguntas de qualificação sem avanço de funil, injetar no prompt: "LIMITE ATINGIDO: Você já fez 3+ perguntas. Avance para um próximo passo concreto (enviar material, propor call, apresentar proposta)."
+### 5. Painel de aprovação no gestor
 
-**Arquivos**: `intent-classifier.ts`
+Na mesma página `AmeliaMassActionPage`:
+- Adicionar uma seção "Pendências de Aprovação" visível apenas para admins/gestores
+- Listar jobs com status `AGUARDANDO_APROVACAO` onde o `started_by` é subordinado do gestor logado (via `profiles.gestor_id = auth.uid()`)
+- Botões: **Aprovar** (muda status para PENDING e dispara geração) e **Rejeitar** (muda status para REJECTED com motivo)
 
----
+### 6. Hooks novos em `useProjections.ts`
 
-### 3. Auto-escalar após erros consecutivos de envio
+- `usePendingApprovalJobs(gestorId)`: busca jobs AGUARDANDO_APROVACAO de subordinados
+- `useApproveJob()`: mutation que atualiza status → PENDING, preenche approved_by/approved_at, e dispara geração
+- `useRejectJob()`: mutation que atualiza status → FAILED, preenche rejected_by/rejected_at/rejection_reason
 
-**Problema**: Mensagens OUTBOUND ficaram com estado ERRO sem que ninguém fosse notificado.
+### 7. Edge function: validar aprovação antes de executar
 
-**Solução**: No `action-executor.ts`, quando `sendAutoResponse` retorna `false`, consultar as últimas 3 mensagens OUTBOUND do lead. Se 2+ consecutivas estão com status ERRO, executar `ESCALAR_HUMANO` automaticamente e criar notificação para o owner do contato.
+No `amelia-mass-action/index.ts`, no branch EXECUTE, verificar se `needs_approval && !approved_by` → rejeitar com erro.
 
-**Arquivos**: `action-executor.ts`
+### Arquivos impactados
 
----
-
-### 4. Escalar automaticamente quando lead pede profundidade técnica
-
-**Problema**: Lead pediu track record, milestones SAFE — a IA não escalou.
-
-**Solução**: No `intent-classifier.ts`, adicionar regra rule-based que detecta padrões de pedido técnico avançado (track record, rentabilidade passada, demonstração, cases, milestones) quando o funil já está em QUALIFICACAO ou superior. Nesses casos, classificar como `ESCALAR_HUMANO` com resposta: "Boa pergunta! Vou chamar alguém da equipe que pode te mostrar esses detalhes com mais profundidade."
-
-**Arquivos**: `intent-classifier.ts`
-
----
-
-### Resumo de impacto
-
-| Melhoria | Arquivo principal | Complexidade |
-|---|---|---|
-| Bloquear re-oferta de produto | intent-classifier + action-executor | Média |
-| Limitar perguntas repetitivas | intent-classifier | Baixa |
-| Auto-escalar após erros OUTBOUND | action-executor | Baixa |
-| Escalar pedido técnico avançado | intent-classifier | Baixa |
+| Arquivo | Mudança |
+|---|---|
+| Migration SQL | Adicionar colunas approved_by, approved_at, etc |
+| `src/pages/AmeliaMassActionPage.tsx` | Template picker, seção aprovações pendentes |
+| `src/hooks/useProjections.ts` | Hooks de aprovação/rejeição |
+| `src/types/projection.ts` | Novos campos no tipo MassActionJob |
+| `supabase/functions/amelia-mass-action/index.ts` | Validar aprovação |
 
