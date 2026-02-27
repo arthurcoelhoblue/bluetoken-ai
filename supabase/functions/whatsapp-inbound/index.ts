@@ -158,6 +158,18 @@ function validateAuth(req: Request, bodySecret?: string): boolean {
   return false;
 }
 
+async function getEmpresasComMensageria(supabase: SupabaseClient): Promise<string[]> {
+  const { data } = await supabase
+    .from('integration_company_config')
+    .select('empresa')
+    .eq('channel', 'mensageria')
+    .eq('enabled', true);
+  
+  const empresas = (data || []).map((e: { empresa: string }) => e.empresa);
+  log.info('Empresas com mensageria ativa', { empresas });
+  return empresas;
+}
+
 function generatePhoneVariations(phone: string): string[] {
   const variations: string[] = [phone];
   
@@ -298,6 +310,19 @@ async function findLeadByPhone(
       }
     }
     
+    // 2. Priorizar empresa com mensageria ativa
+    const empresasMensageria = await getEmpresasComMensageria(supabase);
+    if (empresasMensageria.length > 0) {
+      const mensageriaMatch = (e164Matches as LeadContact[]).find(
+        l => empresasMensageria.includes(l.empresa)
+      );
+      if (mensageriaMatch) {
+        log.info('Match por empresa com mensageria ativa', { leadId: mensageriaMatch.lead_id, empresa: mensageriaMatch.empresa });
+        return { lead: mensageriaMatch };
+      }
+    }
+    
+    // 3. Fallback: mais recente
     log.info('Match por telefone_e164 (mais recente)', { leadId: (e164Matches[0] as LeadContact).lead_id });
     return { lead: e164Matches[0] as LeadContact };
   }
@@ -329,6 +354,18 @@ async function findLeadByPhone(
         }
       }
       
+      // Priorizar empresa com mensageria ativa
+      const empresasMsgExato = await getEmpresasComMensageria(supabase);
+      if (empresasMsgExato.length > 0) {
+        const msgMatch = (matches as LeadContact[]).find(
+          l => empresasMsgExato.includes(l.empresa)
+        );
+        if (msgMatch) {
+          log.info('Match exato por empresa com mensageria ativa', { leadId: msgMatch.lead_id, empresa: msgMatch.empresa });
+          return { lead: msgMatch };
+        }
+      }
+      
       log.info('Match exato (mais recente)', { leadId: (matches[0] as LeadContact).lead_id });
       return { lead: matches[0] as LeadContact };
     }
@@ -355,6 +392,18 @@ async function findLeadByPhone(
       if (activeRun) {
         log.info('Match parcial com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
         return { lead };
+      }
+    }
+    
+    // Priorizar empresa com mensageria ativa
+    const empresasMsgParcial = await getEmpresasComMensageria(supabase);
+    if (empresasMsgParcial.length > 0) {
+      const msgMatch = (partialMatches as LeadContact[]).find(
+        l => empresasMsgParcial.includes(l.empresa)
+      );
+      if (msgMatch) {
+        log.info('Match parcial por empresa com mensageria ativa', { leadId: msgMatch.lead_id, empresa: msgMatch.empresa });
+        return { lead: msgMatch };
       }
     }
     
@@ -604,53 +653,64 @@ serve(async (req) => {
       const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
       const rawDigits = payload.from.replace(/\D/g, '');
       
-      // 1. Busca por telefone_e164
-      const { data: contactMatch } = await supabase
+      // Helper: dado múltiplos contacts, priorizar empresa com mensageria ativa
+      const pickBestCrmContact = async (contacts: CrmContact[]): Promise<CrmContact> => {
+        if (contacts.length === 1) return contacts[0];
+        const empresasMsg = await getEmpresasComMensageria(supabase);
+        if (empresasMsg.length > 0) {
+          const msgMatch = contacts.find(c => empresasMsg.includes(c.empresa));
+          if (msgMatch) {
+            log.info('CRM: priorizado por empresa com mensageria ativa', { contactId: msgMatch.id, empresa: msgMatch.empresa });
+            return msgMatch;
+          }
+        }
+        return contacts[0];
+      };
+      
+      // 1. Busca por telefone_e164 (múltiplos para priorizar)
+      const { data: contactMatches } = await supabase
         .from('contacts')
         .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
         .eq('telefone_e164', e164)
         .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(10);
       
-      if (contactMatch) {
-        crmContact = contactMatch as CrmContact;
+      if (contactMatches && contactMatches.length > 0) {
+        crmContact = await pickBestCrmContact(contactMatches as CrmContact[]);
         log.info('Match via contacts CRM (telefone_e164)', { contactId: crmContact.id, empresa: crmContact.empresa });
       }
       
-      // 2. Fallback: buscar pelo campo telefone raw (cobre telefone_e164 = NULL)
+      // 2. Fallback: buscar pelo campo telefone raw
       if (!crmContact) {
         const phonesToTry = [...new Set([rawDigits, phoneNormalized, e164])];
         for (const phone of phonesToTry) {
-          const { data: rawMatch } = await supabase
+          const { data: rawMatches } = await supabase
             .from('contacts')
             .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
             .eq('telefone', phone)
             .order('updated_at', { ascending: false })
-            .limit(1)
-            .maybeSingle();
+            .limit(10);
           
-          if (rawMatch) {
-            crmContact = rawMatch as CrmContact;
+          if (rawMatches && rawMatches.length > 0) {
+            crmContact = await pickBestCrmContact(rawMatches as CrmContact[]);
             log.info('Match via contacts CRM (telefone raw)', { contactId: crmContact.id, telefone: phone, empresa: crmContact.empresa });
             break;
           }
         }
       }
       
-      // 3. Fallback: últimos 8 dígitos em telefone_e164 OU telefone
+      // 3. Fallback: últimos 8 dígitos
       if (!crmContact) {
         const last8 = phoneNormalized.slice(-8);
-        const { data: partialContact } = await supabase
+        const { data: partialContacts } = await supabase
           .from('contacts')
           .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
           .or(`telefone_e164.like.%${last8},telefone.like.%${last8}`)
           .order('updated_at', { ascending: false })
-          .limit(1)
-          .maybeSingle();
+          .limit(10);
         
-        if (partialContact) {
-          crmContact = partialContact as CrmContact;
+        if (partialContacts && partialContacts.length > 0) {
+          crmContact = await pickBestCrmContact(partialContacts as CrmContact[]);
           log.info('Match parcial via contacts CRM', { contactId: crmContact.id, empresa: crmContact.empresa });
         }
       }
