@@ -1,67 +1,100 @@
 
 
-## Plano: Template obrigatório + Aprovação do gestor para ações em massa
+# Plano de Evolução da Amélia — Baseado nos Documentos de Análise
 
-### 1. Migração: adicionar campos de aprovação na tabela `mass_action_jobs`
+Analisei os dois documentos e cruzei com o código atual. Concordo com o diagnóstico: a base é sólida, mas há 4 melhorias de alto impacto e baixo custo que vão elevar o sistema significativamente. Aqui está o plano consolidado:
 
-Adicionar colunas:
-- `needs_approval BOOLEAN DEFAULT false` — indica se precisa de aprovação
-- `approved_by UUID REFERENCES profiles(id)` — quem aprovou
-- `approved_at TIMESTAMPTZ` — quando aprovou
-- `rejected_by UUID REFERENCES profiles(id)` — quem rejeitou (opcional)
-- `rejected_at TIMESTAMPTZ`
-- `rejection_reason TEXT`
+---
 
-Adicionar novo status `AGUARDANDO_APROVACAO` ao fluxo (campo `status` é TEXT, não precisa de enum migration).
+## 1. DISC Ativo no Response Generator (Gap Crítico)
 
-### 2. Refatorar dialog de configuração — template obrigatório
+**Diagnóstico confirmado**: A linha 178 do `response-generator.ts` tem apenas `Adapte ao perfil DISC: ${conversation_state?.perfil_disc || 'não identificado'}` — uma declaração fraca, não uma instrução.
 
-No `AmeliaMassActionPage.tsx`, substituir o dialog atual (que tem tabs Cadência/Ad-hoc com Textarea livre) por:
+**Ação**: Importar `getDiscToneInstruction` (já existe no `intent-classifier.ts`) e injetar como bloco `## TOM DE VOZ OBRIGATÓRIO` no system prompt do response-generator, tanto no prompt default (linha 175) quanto no prompt do `generateResponse`.
 
-- **Remover** a aba "Campanha Ad-hoc" com textarea livre
-- **Substituir** por um seletor de template (similar ao `TemplatePickerDialog`) que busca templates ativos da empresa na tabela `message_templates`
-- O campo `template_id` e `template_variables` já existem na tabela — serão preenchidos ao criar o job
-- Manter o seletor de canal (WhatsApp/Email) e filtrar templates pelo canal selecionado
-- A instrução livre (`instrucao`) passa a ser opcional, como complemento ao template selecionado
+**Arquivos**: `supabase/functions/sdr-ia-interpret/response-generator.ts`
 
-### 3. Lógica de aprovação no frontend
+---
 
-No `handleCreate`:
-- Verificar se o usuário é ADMIN ou tem role de gestor (via `hasRole('ADMIN')` ou checando se o usuário é gestor de alguém)
-- Se **não** for admin/gestor: criar job com `status: 'AGUARDANDO_APROVACAO'` e `needs_approval: true`
-- Se **for** admin/gestor: fluxo normal (PENDING → gerar mensagens)
+## 2. Follow-ups Personalizados por DISC no Cadence Runner
 
-### 4. Notificação para o gestor
+**Diagnóstico confirmado**: O `cadence-runner` resolve templates fixos via `resolverPlaceholders` (linha 264) sem qualquer adaptação DISC.
 
-Ao criar um job com `needs_approval: true`:
-- Buscar `gestor_id` do perfil do usuário que criou (`profiles.gestor_id`)
-- Inserir notificação na tabela `notifications` para o gestor, com link para `/amelia/mass-action`
-- Tipo: `'APROVACAO'`, referencia_tipo: `'MASS_ACTION'`, referencia_id: job.id
+**Ação**:
+- Adicionar coluna `usa_llm BOOLEAN DEFAULT false` na tabela `message_templates`
+- No `resolverMensagem`, quando `usa_llm = true` E o lead tem `perfil_disc`, chamar `callAI` para reescrever o corpo do template adaptando o tom ao perfil DISC, usando o conteúdo original como base
+- Templates com `usa_llm = false` continuam no fluxo atual (sem custo extra)
 
-### 5. Painel de aprovação no gestor
+**Arquivos**: Migration SQL, `supabase/functions/cadence-runner/index.ts`
 
-Na mesma página `AmeliaMassActionPage`:
-- Adicionar uma seção "Pendências de Aprovação" visível apenas para admins/gestores
-- Listar jobs com status `AGUARDANDO_APROVACAO` onde o `started_by` é subordinado do gestor logado (via `profiles.gestor_id = auth.uid()`)
-- Botões: **Aprovar** (muda status para PENDING e dispara geração) e **Rejeitar** (muda status para REJECTED com motivo)
+---
 
-### 6. Hooks novos em `useProjections.ts`
+## 3. Sumarização Progressiva do Histórico
 
-- `usePendingApprovalJobs(gestorId)`: busca jobs AGUARDANDO_APROVACAO de subordinados
-- `useApproveJob()`: mutation que atualiza status → PENDING, preenche approved_by/approved_at, e dispara geração
-- `useRejectJob()`: mutation que atualiza status → FAILED, preenche rejected_by/rejected_at/rejection_reason
+**Diagnóstico confirmado**: Hoje o histórico é cortado em 8 mensagens (linha 186 do response-generator). Em conversas longas, isso desperdiça tokens ou perde contexto antigo.
 
-### 7. Edge function: validar aprovação antes de executar
+**Ação**:
+- Adicionar coluna `summary TEXT` na tabela `lead_conversation_state`
+- No `message-parser.ts` (loadFullContext), se `historico.length > 10` e `summary` for nulo, chamar `callAI` com modelo leve para sumarizar os turnos antigos em 1 parágrafo
+- Salvar o resumo no `summary` e nas próximas chamadas usar `summary + últimas 5 mensagens` em vez de 8 mensagens brutas
 
-No `amelia-mass-action/index.ts`, no branch EXECUTE, verificar se `needs_approval && !approved_by` → rejeitar com erro.
+**Arquivos**: Migration SQL, `supabase/functions/sdr-ia-interpret/message-parser.ts`, `response-generator.ts`, `intent-classifier.ts`
 
-### Arquivos impactados
+---
 
-| Arquivo | Mudança |
-|---|---|
-| Migration SQL | Adicionar colunas approved_by, approved_at, etc |
-| `src/pages/AmeliaMassActionPage.tsx` | Template picker, seção aprovações pendentes |
-| `src/hooks/useProjections.ts` | Hooks de aprovação/rejeição |
-| `src/types/projection.ts` | Novos campos no tipo MassActionJob |
-| `supabase/functions/amelia-mass-action/index.ts` | Validar aprovação |
+## 4. Memória Semântica — lead_facts (CRM Vivo)
+
+**Diagnóstico confirmado**: A Amélia lembra estado do funil (BANT/SPIN) mas esquece fatos concretos (cargo, empresa, pain points).
+
+**Ação**:
+- Adicionar coluna `lead_facts JSONB DEFAULT '{}'` na tabela `lead_conversation_state`
+- No `intent-classifier.ts`, adicionar `lead_facts` ao schema JSON esperado do LLM (campos: cargo, empresa_lead, pain_points, concorrentes, decisor)
+- No `action-executor.ts`, persistir os `lead_facts` via merge (nunca sobrescrever, apenas enriquecer)
+- No `response-generator.ts`, injetar os `lead_facts` no prompt para que a Amélia sempre saiba com quem fala
+
+**Arquivos**: Migration SQL, `intent-classifier.ts`, `action-executor.ts`, `response-generator.ts`
+
+---
+
+## 5. Scoring de Engagement (Tempo de Resposta)
+
+**Diagnóstico confirmado**: O score atual é baseado apenas no conteúdo da mensagem, não no comportamento.
+
+**Ação**:
+- No `action-executor.ts`, calcular `tempo_resposta` (diferença entre última mensagem outbound e a inbound atual)
+- Ajustar `score_engajamento` do deal: resposta < 5 min = +15, < 30 min = +10, < 2h = +5, > 24h = -10
+- Utilizar o campo `score_engajamento` já existente na tabela `deals`
+
+**Arquivos**: `supabase/functions/sdr-ia-interpret/action-executor.ts`
+
+---
+
+## 6. Dashboard de Resolução Autônoma
+
+**Ação**:
+- Criar uma view SQL que agrega: total de conversas únicas vs conversas com `ESCALAR_HUMANO` ou `CRIAR_TAREFA_CLOSER`, por dia/semana/empresa
+- Exibir como card/gráfico no dashboard existente da Amélia (página de métricas)
+
+**Arquivos**: Migration SQL (view), componente React no dashboard
+
+---
+
+## Resumo de Impacto
+
+| Melhoria | Impacto | Esforço |
+|---|---|---|
+| 1. DISC no Response Generator | Alto — personalização real | Baixo (5 linhas) |
+| 2. DISC no Cadence Runner | Alto — follow-ups adaptados | Médio |
+| 3. Sumarização Progressiva | Alto — reduz custo ~40% | Médio |
+| 4. lead_facts (CRM Vivo) | Alto — contexto persistente | Médio |
+| 5. Scoring de Engagement | Médio — qualificação comportamental | Baixo |
+| 6. Dashboard Resolução | Médio — visibilidade operacional | Baixo |
+
+## Ordem de Implementação Sugerida
+
+1. DISC no Response Generator (impacto imediato, risco zero)
+2. lead_facts + Sumarização (migration conjunta)
+3. DISC no Cadence Runner
+4. Scoring de Engagement
+5. Dashboard de Resolução Autônoma
 
