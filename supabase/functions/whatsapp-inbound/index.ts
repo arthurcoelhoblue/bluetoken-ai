@@ -727,28 +727,42 @@ serve(async (req) => {
     const rawPayload = JSON.parse(rawBody);
     const bodySecret = rawPayload.auth_token || rawPayload.secret || null;
 
-    if (!validateAuth(req, bodySecret)) {
-      log.error('Acesso não autorizado');
+    const authOk = validateAuth(req, bodySecret);
+
+    // Se auth tradicional falhou, tentar HMAC X-Webhook-Signature como autenticação
+    let hmacValidated = false;
+    const webhookSignature = req.headers.get('X-Webhook-Signature');
+    if (!authOk && webhookSignature) {
+      const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
+      if (inboundSecret) {
+        hmacValidated = await verifyHmacSignature(rawBody, webhookSignature, inboundSecret);
+        if (hmacValidated) {
+          log.info('Auth via HMAC X-Webhook-Signature');
+        } else {
+          log.warn('HMAC signature presente mas inválida');
+        }
+      }
+    }
+
+    // Se nenhum método de auth passou, rejeitar
+    if (!authOk && !hmacValidated) {
+      log.error('Acesso não autorizado', { hasAuth: !!req.headers.get('Authorization'), hasHmac: !!webhookSignature });
       return new Response(
         JSON.stringify({ error: 'Unauthorized' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // Validação opcional de X-Webhook-Signature (HMAC-SHA256)
-    const webhookSignature = req.headers.get('X-Webhook-Signature');
-    if (webhookSignature) {
+    // Se auth OK mas HMAC presente, validar integridade (opcional)
+    if (authOk && webhookSignature && !hmacValidated) {
       const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
       if (inboundSecret) {
-        const isValidSignature = await verifyHmacSignature(rawBody, webhookSignature, inboundSecret);
-        if (!isValidSignature) {
-          log.error('HMAC signature inválida');
-          return new Response(
-            JSON.stringify({ error: 'Invalid webhook signature' }),
-            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-          );
+        const isValid = await verifyHmacSignature(rawBody, webhookSignature, inboundSecret);
+        if (!isValid) {
+          log.warn('HMAC integrity check falhou (auth OK, continuando)');
+        } else {
+          log.info('HMAC integrity check válido');
         }
-        log.info('HMAC signature válida');
       }
     }
 
