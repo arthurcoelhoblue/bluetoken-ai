@@ -1,43 +1,119 @@
 
-# Corrigir Priorização de Empresa no Inbound da Mensageria
 
-## Problema Identificado
+# Corrigir Arquitetura do Inbound: Empresa-First (em vez de Lead-First)
 
-Quando uma mensagem inbound chega via Mensageria, o telefone pode existir em múltiplas empresas (ex: `+5561999999999` existe em TOKENIZA e BLUE). O código atual escolhe o lead com `updated_at` mais recente, ignorando qual empresa tem a Mensageria habilitada.
+## Problema Raiz
 
-Resultado: mensagens da Mensageria caem na empresa errada (TOKENIZA) em vez da BLUE_LABS (que é a única com mensageria configurada de verdade).
+O codigo atual segue uma logica **Lead-First**: busca o lead pelo telefone em TODAS as empresas, depois tenta priorizar qual empresa. Isso falha porque:
 
-## Causa Raiz
+- O telefone `+5561999999999` existe em BLUE e TOKENIZA
+- A mensageria esta configurada para **BLUE_LABS**
+- Nenhum lead pertence a BLUE_LABS, entao a priorizacao por mensageria nao encontra nada
+- Cai no fallback "mais recente" = TOKENIZA
 
-Na última alteração, removi a lógica que verificava `integration_company_config` para priorizar empresas com mensageria ativa. A intenção estava certa (não bloquear inbound), mas o efeito colateral foi perder o critério de desempate.
+## Solucao: Logica Empresa-First
 
-## Solução
+Inverter completamente a abordagem:
 
-Modificar a função `findLeadByPhone` e o fallback de contacts CRM para **priorizar empresas com mensageria ativa** quando há múltiplos matches para o mesmo telefone, sem nunca bloquear a mensagem.
+1. **Primeiro**: Determinar qual empresa e dona deste webhook (consultando `integration_company_config` onde `channel='mensageria'`, `enabled=true` e `api_key IS NOT NULL`)
+2. **Depois**: Buscar o lead/contact **somente dentro dessa empresa**
+3. **Se nao encontrar**: Salvar como UNMATCHED, mas sempre na empresa correta
 
-### Lógica de priorização (3 níveis):
-1. Lead/Contact com **cadência ativa** (já existe)
-2. Lead/Contact em **empresa com mensageria habilitada** (novo)
-3. Lead/Contact **mais recente** por `updated_at` (fallback atual)
+### Passo 1: Criar funcao `resolveEmpresaFromWebhook`
 
-### Alterações no arquivo `supabase/functions/whatsapp-inbound/index.ts`:
-
-1. **Criar função auxiliar `getEmpresasComMensageria`** - Consulta `integration_company_config` para obter empresas com `channel='mensageria'` e `enabled=true`
-
-2. **Alterar `findLeadByPhone`** - Na seção de E.164 matches (linha ~282), após verificar cadências ativas, adicionar segundo critério: priorizar lead cuja empresa está na lista de empresas com mensageria ativa, antes de cair no fallback de "mais recente"
-
-3. **Alterar fallback de contacts CRM** (linha ~608) - Mesmo princípio: quando buscar em contacts, priorizar matches de empresas com mensageria ativa
-
-4. **Manter a regra de nunca bloquear** - Se nenhuma empresa com mensageria ativa for encontrada, aceitar o match mais recente normalmente (comportamento atual preservado)
-
-### Pseudocódigo da priorização:
+Nova funcao que consulta `integration_company_config` para encontrar a empresa com mensageria totalmente configurada (enabled + api_key). Se houver apenas uma (caso atual: BLUE_LABS), essa e a empresa-alvo. Se houver multiplas, usa a que tem `connection_name` configurado como criterio adicional.
 
 ```text
-matches = leads ordenados por updated_at DESC
-
-1. Buscar match com cadencia ativa -> retorna se encontrar
-2. Buscar match em empresa com mensageria ativa -> retorna se encontrar  
-3. Retorna o mais recente (fallback)
+resolveEmpresaFromWebhook():
+  1. Query integration_company_config WHERE channel='mensageria' AND enabled=true AND api_key IS NOT NULL
+  2. Se 1 resultado -> retorna essa empresa
+  3. Se multiplos -> retorna todas (para busca em qualquer uma delas)
+  4. Se nenhum -> fallback para comportamento atual (busca global)
 ```
 
-Isso garante que mensagens da Mensageria da BLUE_LABS sempre caiam na BLUE_LABS quando o telefone existir em múltiplas empresas, sem bloquear nada.
+### Passo 2: Refatorar `findLeadByPhone` para aceitar filtro de empresa
+
+Adicionar parametro opcional `targetEmpresas: string[]` que, quando presente, filtra TODAS as queries para buscar leads apenas nessas empresas.
+
+```text
+findLeadByPhone(supabase, phone, targetEmpresas?):
+  // E.164 match
+  query lead_contacts WHERE telefone_e164 = phone
+    AND empresa IN targetEmpresas   <-- FILTRO NOVO
+  
+  // Variacao match  
+  query lead_contacts WHERE telefone = variant
+    AND empresa IN targetEmpresas   <-- FILTRO NOVO
+  
+  // Parcial match
+  query lead_contacts WHERE telefone LIKE %last8
+    AND empresa IN targetEmpresas   <-- FILTRO NOVO
+  
+  // Outbound fallback
+  query lead_messages WHERE empresa IN targetEmpresas  <-- FILTRO NOVO
+```
+
+### Passo 3: Refatorar fallback CRM (contacts) com mesmo filtro
+
+O bloco que busca em `contacts` (linhas 651-717) tambem precisa filtrar por `targetEmpresas`:
+
+```text
+contacts WHERE telefone_e164 = e164
+  AND empresa IN targetEmpresas   <-- FILTRO NOVO
+```
+
+### Passo 4: Garantir que mensagens UNMATCHED usem a empresa correta
+
+Na linha 502, o fallback atual e:
+```text
+const empresa = leadContact?.empresa || crmEmpresa || 'TOKENIZA';
+```
+
+Deve mudar para:
+```text
+const empresa = leadContact?.empresa || crmEmpresa || targetEmpresa || 'BLUE_LABS';
+```
+
+Onde `targetEmpresa` vem da resolucao do passo 1.
+
+### Passo 5: Remover logica de priorizacao por mensageria
+
+As chamadas a `getEmpresasComMensageria` dentro de `findLeadByPhone` se tornam desnecessarias, pois o filtro de empresa ja e aplicado na raiz. O codigo fica mais simples e previsivel.
+
+## Fluxo Final
+
+```text
+Mensagem chega no webhook
+  |
+  v
+resolveEmpresaFromWebhook()
+  -> BLUE_LABS (unica com mensageria configurada)
+  |
+  v
+findLeadByPhone(phone, targetEmpresas=["BLUE_LABS"])
+  -> Busca APENAS em BLUE_LABS
+  -> Se encontrar lead -> MATCHED para BLUE_LABS
+  -> Se nao encontrar -> UNMATCHED para BLUE_LABS
+  |
+  v
+saveInboundMessage(empresa = BLUE_LABS)
+```
+
+## Alteracoes no Arquivo
+
+Somente um arquivo sera modificado: `supabase/functions/whatsapp-inbound/index.ts`
+
+1. Criar `resolveEmpresaFromWebhook()` (nova funcao, ~15 linhas)
+2. Alterar `findLeadByPhone()` para aceitar e usar `targetEmpresas` em todas as queries
+3. Alterar fallback CRM para filtrar por `targetEmpresas`
+4. No handler principal, chamar `resolveEmpresaFromWebhook()` antes de `findLeadByPhone()`
+5. Passar empresa resolvida para `saveInboundMessage` como fallback
+6. Remover chamadas redundantes a `getEmpresasComMensageria` dentro de `findLeadByPhone`
+
+## Resultado Esperado
+
+- Mensagens da Mensageria SEMPRE caem na empresa com mensageria configurada (BLUE_LABS)
+- Sem mistura entre empresas, mesmo que o telefone exista em outras
+- Mensagens UNMATCHED tambem ficam na empresa correta
+- Se no futuro outra empresa configurar mensageria, o sistema funciona para ambas (busca em todas as empresas com mensageria ativa)
+
