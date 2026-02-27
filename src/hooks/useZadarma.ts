@@ -2,16 +2,15 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { ZadarmaConfig, ZadarmaExtension, Call, CallStats, EmpresaTipo } from '@/types/telephony';
 
-// ─── Config ────────────────────────────────────────
-export function useZadarmaConfig(empresa: EmpresaTipo | null) {
+// ─── Config (global singleton) ─────────────────────
+export function useZadarmaConfig() {
   return useQuery({
-    queryKey: ['zadarma-config', empresa],
-    enabled: !!empresa,
+    queryKey: ['zadarma-config'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('zadarma_config')
         .select('*')
-        .eq('empresa', empresa!)
+        .limit(1)
         .maybeSingle();
       if (error) throw error;
       return data as ZadarmaConfig | null;
@@ -22,28 +21,47 @@ export function useZadarmaConfig(empresa: EmpresaTipo | null) {
 export function useSaveZadarmaConfig() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (config: { empresa: EmpresaTipo; api_key: string; api_secret: string; webhook_enabled?: boolean; webrtc_enabled?: boolean }) => {
-      const { data, error } = await supabase
-        .from('zadarma_config')
-        .upsert({
-          empresa: config.empresa,
-          api_key: config.api_key,
-          api_secret: config.api_secret,
-          webhook_enabled: config.webhook_enabled ?? true,
-          webrtc_enabled: config.webrtc_enabled ?? true,
-        }, { onConflict: 'empresa' })
-        .select()
-        .single();
-      if (error) throw error;
-      return data;
+    mutationFn: async (config: { id?: string; api_key: string; api_secret: string; webhook_enabled?: boolean; webrtc_enabled?: boolean; empresas_ativas?: string[] }) => {
+      if (config.id) {
+        // Update existing
+        const { data, error } = await supabase
+          .from('zadarma_config')
+          .update({
+            api_key: config.api_key,
+            api_secret: config.api_secret,
+            webhook_enabled: config.webhook_enabled ?? true,
+            webrtc_enabled: config.webrtc_enabled ?? true,
+            empresas_ativas: config.empresas_ativas ?? [],
+          })
+          .eq('id', config.id)
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      } else {
+        // Insert new singleton
+        const { data, error } = await supabase
+          .from('zadarma_config')
+          .insert({
+            api_key: config.api_key,
+            api_secret: config.api_secret,
+            webhook_enabled: config.webhook_enabled ?? true,
+            webrtc_enabled: config.webrtc_enabled ?? true,
+            empresas_ativas: config.empresas_ativas ?? [],
+          })
+          .select()
+          .single();
+        if (error) throw error;
+        return data;
+      }
     },
-    onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ['zadarma-config', vars.empresa] });
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['zadarma-config'] });
     },
   });
 }
 
-// ─── Extensions ────────────────────────────────────
+// ─── Extensions (per empresa) ──────────────────────
 export function useZadarmaExtensions(empresa: EmpresaTipo | null) {
   return useQuery({
     queryKey: ['zadarma-extensions', empresa],

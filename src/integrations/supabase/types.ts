@@ -5671,7 +5671,8 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at: string
-          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresas_ativas: string[] | null
           id: string
           updated_at: string
           webhook_enabled: boolean
@@ -5681,7 +5682,8 @@ export type Database = {
           api_key: string
           api_secret: string
           created_at?: string
-          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresas_ativas?: string[] | null
           id?: string
           updated_at?: string
           webhook_enabled?: boolean
@@ -5691,7 +5693,8 @@ export type Database = {
           api_key?: string
           api_secret?: string
           created_at?: string
-          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          empresa?: Database["public"]["Enums"]["empresa_tipo"] | null
+          empresas_ativas?: string[] | null
           id?: string
           updated_at?: string
           webhook_enabled?: boolean

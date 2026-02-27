@@ -7,14 +7,6 @@ import { createLogger } from "../_shared/logger.ts";
 const corsHeaders = getWebhookCorsHeaders();
 const log = createLogger('zadarma-webhook');
 
-function isZadarmaIP(ip: string): boolean {
-  if (!ip) return false;
-  const clean = ip.split(',')[0].trim();
-  const parts = clean.split('.').map(Number);
-  if (parts.length !== 4) return false;
-  return parts[0] === 185 && parts[1] === 45 && parts[2] === 152 && parts[3] >= 40 && parts[3] <= 47;
-}
-
 function normalizePhone(phone: string | null): string | null {
   if (!phone) return null;
   return phone.replace(/\D/g, '').replace(/^0+/, '');
@@ -45,6 +37,10 @@ Deno.serve(async (req) => {
 
     const supabase = createServiceClient();
 
+    // Get global config (singleton)
+    const { data: globalConfig } = await supabase.from('zadarma_config').select('empresas_ativas').limit(1).single();
+    const empresasAtivas: string[] = globalConfig?.empresas_ativas || [];
+
     const pbxCallId = params.get('pbx_call_id') || params.get('call_id_with_rec') || '';
     const callerNumber = params.get('caller_id') || params.get('caller_number') || '';
     const destinationNumber = params.get('called_did') || params.get('destination') || '';
@@ -59,14 +55,20 @@ Deno.serve(async (req) => {
       if (ext) { empresa = ext.empresa; userId = ext.user_id; }
     }
 
-    if (!empresa) {
-      const { data: configs } = await supabase.from('zadarma_config').select('empresa').limit(1);
-      if (configs && configs.length > 0) empresa = configs[0].empresa;
+    // Fallback: use first active empresa
+    if (!empresa && empresasAtivas.length > 0) {
+      empresa = empresasAtivas[0];
     }
 
     if (!empresa) {
-      log.error('No Zadarma config found');
+      log.error('No active empresa found in Zadarma config');
       return new Response(JSON.stringify({ error: 'no_config' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // Validate empresa is in empresas_ativas
+    if (!empresasAtivas.includes(empresa)) {
+      log.error('Empresa not active in Zadarma config', { empresa });
+      return new Response(JSON.stringify({ error: 'empresa_not_active' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Auto-link contact by phone

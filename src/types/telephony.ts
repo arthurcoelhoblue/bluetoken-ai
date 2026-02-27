@@ -1,20 +1,19 @@
 // ========================================
 // Telephony Types (Zadarma)
-// (formerly patch13.ts)
 // ========================================
 
 import type { EmpresaTipo } from './enums';
 
-// Re-export EmpresaTipo for backward compat
 export type { EmpresaTipo };
 
 export interface ZadarmaConfig {
   id: string;
-  empresa: EmpresaTipo;
+  empresa: EmpresaTipo | null;
   api_key: string;
   api_secret: string;
   webhook_enabled: boolean;
   webrtc_enabled: boolean;
+  empresas_ativas: string[];
   created_at: string;
   updated_at: string;
 }
