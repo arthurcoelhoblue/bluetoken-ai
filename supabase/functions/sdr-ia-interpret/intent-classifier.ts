@@ -409,6 +409,38 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
 
   // Rule-based shortcuts
 
+  // REGRA 4: Escalar automaticamente pedidos de profundidade técnica avançada
+  {
+    const estadoAtual = (conversation_state?.estado_funil as string) || 'SAUDACAO';
+    if (['QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'].includes(estadoAtual)) {
+      const msgLower = mensagem_normalizada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const technicalPatterns = [
+        /track\s*record/, /rentabilidade\s+passada/, /historico\s+de\s+rentabilidade/,
+        /demonstra[çc][aã]o\s+t[eé]cnica/, /cases?\s+de\s+sucesso/, /milestones?/,
+        /relat[oó]rio\s+(?:de\s+)?performance/, /backtest/, /due\s+diligence/,
+        /auditoria/, /dados\s+(?:hist[oó]ricos|reais)/, /resultado[s]?\s+(?:anteriores|passados)/,
+        /como\s+(?:funciona|opera)\s+(?:o|a)\s+(?:estrutura|opera[çc][aã]o)/,
+        /garantias?\s+reais?\s+(?:espec[ií]ficas|detalhad[ao]s)/,
+        /contrato\s+(?:modelo|padr[aã]o)/, /cota[çc][aã]o\s+personalizada/,
+      ];
+      if (technicalPatterns.some(p => p.test(msgLower))) {
+        log.info('Regra rule-based: pedido técnico avançado detectado', { estado: estadoAtual, mensagem: mensagem_normalizada.substring(0, 80) });
+        return {
+          intent: 'DUVIDA_TECNICA',
+          confidence: 0.95,
+          summary: 'Lead pediu profundidade técnica avançada',
+          acao: 'ESCALAR_HUMANO',
+          deve_responder: true,
+          resposta_sugerida: 'Boa pergunta! Vou chamar alguém da equipe que pode te mostrar esses detalhes com mais profundidade. Um momento! 🙂',
+          novo_estado_funil: 'FECHAMENTO',
+          departamento_destino: 'Comercial',
+          model: 'rule-based-technical-depth',
+          provider: 'rules',
+        };
+      }
+    }
+  }
+
   // REGRA: Pedido explícito de falar com pessoa/humano
   {
     const msgLower = mensagem_normalizada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -510,6 +542,25 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     if (fd.gpct?.t) userPrompt += `✅ GPCT_T: ${fd.gpct.t}\n`;
     if (fd.bant?.b) userPrompt += `✅ BANT_B: ${fd.bant.b}\n`;
     if (conversation_state.estado_funil !== 'SAUDACAO') userPrompt += `⚠️ NÃO reinicie. Continue de onde parou.\n`;
+  }
+
+  // MELHORIA 1: Produto escolhido — proibir re-oferta
+  const produtoEscolhido = (conversation_state?.framework_data as Record<string, unknown>)?.produto_escolhido as string | undefined;
+  if (produtoEscolhido) {
+    userPrompt += `\n🔒 PRODUTO ESCOLHIDO: "${produtoEscolhido}". O lead JÁ ESCOLHEU este produto. Foque EXCLUSIVAMENTE nele. NUNCA re-ofereça alternativas que o lead já ignorou ou rejeitou.\n`;
+  }
+
+  // MELHORIA 2: Limitar perguntas de qualificação repetitivas
+  {
+    const outboundMsgs = ((historico || []) as HistoricoMsg[]).filter(h => h.direcao === 'OUTBOUND');
+    let consecutiveQuestions = 0;
+    for (const msg of outboundMsgs) {
+      if (msg.conteudo.trim().endsWith('?')) consecutiveQuestions++;
+      else break;
+    }
+    if (consecutiveQuestions >= 3) {
+      userPrompt += `\n⚠️ LIMITE ATINGIDO: Você já fez ${consecutiveQuestions} perguntas consecutivas sem avanço. NÃO FAÇA MAIS PERGUNTAS. Avance para um próximo passo concreto: enviar material, propor call, apresentar proposta, ou escalar para humano.\n`;
+    }
   }
 
   userPrompt += `\n📱 CANAL: ${canalAtivo}\n${CHANNEL_RULES[canalAtivo]}\n`;
