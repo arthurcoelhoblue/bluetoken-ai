@@ -70,17 +70,25 @@ Deno.serve(async (req) => {
     const body = await req.json();
     const { action, empresa, payload = {} } = body;
 
-    // Get config for empresa
+    // Get global config (singleton)
     const supabase = createServiceClient();
     const { data: config, error: configError } = await supabase
       .from('zadarma_config')
       .select('*')
-      .eq('empresa', empresa)
+      .limit(1)
       .single();
 
     if (configError || !config) {
-      return new Response(JSON.stringify({ error: 'Configuração Zadarma não encontrada para esta empresa' }), {
+      return new Response(JSON.stringify({ error: 'Configuração Zadarma não encontrada' }), {
         status: 404, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    // Validate empresa is active
+    const empresasAtivas: string[] = config.empresas_ativas || [];
+    if (empresa && !empresasAtivas.includes(empresa)) {
+      return new Response(JSON.stringify({ error: 'Telefonia não habilitada para esta empresa' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 

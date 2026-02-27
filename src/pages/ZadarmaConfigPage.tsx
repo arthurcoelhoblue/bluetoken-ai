@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -6,6 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -24,13 +25,12 @@ import {
 } from '@/hooks/useZadarma';
 import type { EmpresaTipo } from '@/types/telephony';
 
-const EMPRESAS: EmpresaTipo[] = ['TOKENIZA', 'BLUE'];
-
 function ZadarmaConfigContent() {
-  const { activeCompany } = useCompany();
+  const { activeCompany, empresaRecords } = useCompany();
   const activeEmpresa: EmpresaTipo = activeCompany as EmpresaTipo;
+  const activeEmpresas = empresaRecords.filter(e => e.is_active);
 
-  const { data: config, isLoading: configLoading } = useZadarmaConfig(activeEmpresa);
+  const { data: config, isLoading: configLoading } = useZadarmaConfig();
   const saveConfig = useSaveZadarmaConfig();
   const { data: extensions = [], isLoading: extLoading } = useZadarmaExtensions(activeEmpresa);
   const saveExtension = useSaveExtension();
@@ -42,18 +42,23 @@ function ZadarmaConfigContent() {
   const [apiSecret, setApiSecret] = useState('');
   const [webhookEnabled, setWebhookEnabled] = useState(true);
   const [webrtcEnabled, setWebrtcEnabled] = useState(true);
-  const [newExt, setNewExt] = useState('');
-  const [newUserId, setNewUserId] = useState('');
-  const [newSipLogin, setNewSipLogin] = useState('');
+  const [empresasAtivas, setEmpresasAtivas] = useState<string[]>([]);
 
   // Sync form with loaded config
-  const initForm = () => {
+  useEffect(() => {
     if (config) {
-      setApiKey(config.api_key);
-      setApiSecret(config.api_secret);
+      setApiKey(config.api_key || '');
+      setApiSecret(config.api_secret || '');
       setWebhookEnabled(config.webhook_enabled);
       setWebrtcEnabled(config.webrtc_enabled);
+      setEmpresasAtivas(config.empresas_ativas || []);
     }
+  }, [config]);
+
+  const toggleEmpresa = (codigo: string) => {
+    setEmpresasAtivas(prev =>
+      prev.includes(codigo) ? prev.filter(e => e !== codigo) : [...prev, codigo]
+    );
   };
 
   const handleSaveConfig = () => {
@@ -62,11 +67,12 @@ function ZadarmaConfigContent() {
       return;
     }
     saveConfig.mutate({
-      empresa: activeEmpresa,
+      id: config?.id,
       api_key: apiKey.trim(),
       api_secret: apiSecret.trim(),
       webhook_enabled: webhookEnabled,
       webrtc_enabled: webrtcEnabled,
+      empresas_ativas: empresasAtivas,
     }, {
       onSuccess: () => toast.success('Configuração salva!'),
       onError: (e) => toast.error(`Erro: ${e.message}`),
@@ -89,7 +95,7 @@ function ZadarmaConfigContent() {
     <div className="p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Telefonia Zadarma</h1>
-        <p className="text-muted-foreground">Configure integração de telefonia VoIP</p>
+        <p className="text-muted-foreground">Configuração global de telefonia VoIP — canal único compartilhado entre empresas</p>
       </div>
       <Tabs defaultValue="config" className="space-y-4">
         <TabsList>
@@ -98,20 +104,12 @@ function ZadarmaConfigContent() {
           <TabsTrigger value="stats">Estatísticas</TabsTrigger>
         </TabsList>
 
-        {/* Config Tab */}
+        {/* Config Tab - Global */}
         <TabsContent value="config" className="space-y-4">
-          <div className="flex items-center gap-2 mb-2">
-            {EMPRESAS.map(e => (
-              <Badge key={e} variant={e === activeEmpresa ? 'default' : 'outline'} className="cursor-pointer">
-                {e}
-              </Badge>
-            ))}
-          </div>
-
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">API Zadarma — {activeEmpresa}</CardTitle>
-              <CardDescription>Credenciais obtidas no painel my.zadarma.com</CardDescription>
+              <CardTitle className="text-base">API Zadarma — Configuração Global</CardTitle>
+              <CardDescription>Credenciais únicas compartilhadas entre todas as empresas. Ative/desative por empresa abaixo.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               {configLoading ? (
@@ -120,12 +118,28 @@ function ZadarmaConfigContent() {
                 <>
                   <div className="space-y-2">
                     <Label>API Key</Label>
-                    <Input value={apiKey || config?.api_key || ''} onChange={e => setApiKey(e.target.value)} placeholder="Zadarma API Key" />
+                    <Input value={apiKey} onChange={e => setApiKey(e.target.value)} placeholder="Zadarma API Key" />
                   </div>
                   <div className="space-y-2">
                     <Label>API Secret</Label>
-                    <Input type="password" value={apiSecret || config?.api_secret || ''} onChange={e => setApiSecret(e.target.value)} placeholder="Zadarma API Secret" />
+                    <Input type="password" value={apiSecret} onChange={e => setApiSecret(e.target.value)} placeholder="Zadarma API Secret" />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label>Empresas com telefonia ativa</Label>
+                    <div className="flex flex-wrap gap-3">
+                      {activeEmpresas.map(emp => (
+                        <label key={emp.id} className="flex items-center gap-2 cursor-pointer">
+                          <Checkbox
+                            checked={empresasAtivas.includes(emp.id)}
+                            onCheckedChange={() => toggleEmpresa(emp.id)}
+                          />
+                          <span className="text-sm">{emp.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
                   <div className="flex items-center gap-6">
                     <div className="flex items-center gap-2">
                       <Switch checked={webhookEnabled} onCheckedChange={setWebhookEnabled} />
@@ -161,12 +175,12 @@ function ZadarmaConfigContent() {
           </Card>
         </TabsContent>
 
-        {/* Extensions Tab */}
+        {/* Extensions Tab - per empresa */}
         <TabsContent value="ramais" className="space-y-4">
           <Card>
             <CardHeader>
               <CardTitle className="text-base">Mapeamento de Ramais — {activeEmpresa}</CardTitle>
-              <CardDescription>Vincule ramais PBX a usuários do CRM</CardDescription>
+              <CardDescription>Vincule ramais PBX a usuários do CRM (filtrado pela empresa ativa)</CardDescription>
             </CardHeader>
             <CardContent>
               <Table>
@@ -202,7 +216,7 @@ function ZadarmaConfigContent() {
           </Card>
         </TabsContent>
 
-        {/* Stats Tab */}
+        {/* Stats Tab - per empresa */}
         <TabsContent value="stats" className="space-y-4">
           <Card>
             <CardHeader>
