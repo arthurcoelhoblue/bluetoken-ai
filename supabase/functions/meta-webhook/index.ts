@@ -85,6 +85,27 @@ async function verifySignature(
   return hexSig === expectedSig;
 }
 
+// ---- Resolve empresa from phone_number_id ----
+async function resolveEmpresa(
+  supabase: ReturnType<typeof createServiceClient>,
+  phoneNumberId: string | null
+): Promise<EmpresaTipo> {
+  if (!phoneNumberId) return "TOKENIZA";
+  const { data } = await supabase
+    .from("whatsapp_connections")
+    .select("empresa")
+    .eq("phone_number_id", phoneNumberId)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+  if (data) {
+    log.info("Empresa resolved via whatsapp_connections", { phoneNumberId, empresa: data.empresa });
+    return data.empresa as EmpresaTipo;
+  }
+  log.warn("No whatsapp_connection found for phone_number_id, defaulting to TOKENIZA", { phoneNumberId });
+  return "TOKENIZA";
+}
+
 // ---- Lead lookup ----
 interface LeadContact {
   id: string;
@@ -134,6 +155,42 @@ async function findLeadByPhone(
   if (partial) return partial as LeadContact;
 
   return null;
+}
+
+// ---- Auto-create lead_contact for unknown numbers ----
+async function autoCreateLead(
+  supabase: ReturnType<typeof createServiceClient>,
+  phoneNormalized: string,
+  empresa: EmpresaTipo,
+  profileName: string | null
+): Promise<LeadContact | null> {
+  const e164 = phoneNormalized.startsWith("+") ? phoneNormalized : `+${phoneNormalized}`;
+  const phoneHash = phoneNormalized.slice(-8);
+  const ts = Date.now();
+  const leadId = `inbound_${phoneHash}_${ts}`;
+
+  const nome = profileName || `WhatsApp ${phoneNormalized.slice(-4)}`;
+
+  const { data, error } = await supabase
+    .from("lead_contacts")
+    .insert({
+      lead_id: leadId,
+      empresa,
+      nome,
+      telefone: phoneNormalized,
+      telefone_e164: e164,
+      origem: "WHATSAPP_INBOUND",
+    })
+    .select("*")
+    .single();
+
+  if (error) {
+    log.error("Failed to auto-create lead_contact", { error: error.message, phone: phoneNormalized });
+    return null;
+  }
+
+  log.info("Auto-created lead_contact for unknown number", { leadId, empresa, phone: phoneNormalized });
+  return data as LeadContact;
 }
 
 // ---- Download media from Meta and upload to Storage ----
@@ -314,7 +371,9 @@ function extractMediaInfo(msg: Record<string, unknown>): MediaInfo {
 // ---- Handle inbound message ----
 async function handleMessage(
   supabase: ReturnType<typeof createServiceClient>,
-  msg: Record<string, unknown>
+  msg: Record<string, unknown>,
+  resolvedEmpresa: EmpresaTipo,
+  profileName: string | null
 ): Promise<{ success: boolean; messageId?: string; status: string }> {
   const from = msg.from as string;
   const wamid = msg.id as string;
@@ -336,8 +395,15 @@ async function handleMessage(
     return { success: true, status: "DUPLICATE" };
   }
 
-  const lead = await findLeadByPhone(supabase, phoneNormalized);
-  const empresa: EmpresaTipo = lead?.empresa || "TOKENIZA";
+  let lead = await findLeadByPhone(supabase, phoneNormalized);
+  
+  // Auto-create lead if not found
+  if (!lead) {
+    log.info("No lead found, auto-creating", { phone: phoneNormalized, empresa: resolvedEmpresa });
+    lead = await autoCreateLead(supabase, phoneNormalized, resolvedEmpresa, profileName);
+  }
+
+  const empresa: EmpresaTipo = lead?.empresa || resolvedEmpresa;
 
   // Download media if applicable
   let mediaUrl: string | null = null;
@@ -567,6 +633,19 @@ serve(async (req) => {
       if (change.field !== "messages") continue;
       const value = change.value;
 
+      // Extract phone_number_id for empresa resolution
+      const metadata = value.metadata as Record<string, unknown> | undefined;
+      const phoneNumberId = metadata?.phone_number_id as string | null;
+
+      // Resolve empresa from phone_number_id
+      const resolvedEmpresa = await resolveEmpresa(supabase, phoneNumberId);
+
+      // Extract profile name from contacts
+      const contacts = (value.contacts as Array<Record<string, unknown>>) || [];
+      const profileName = contacts.length > 0
+        ? ((contacts[0].profile as Record<string, unknown>)?.name as string) || null
+        : null;
+
       // Process messages
       const messages = (value.messages as Array<Record<string, unknown>>) || [];
       for (const msg of messages) {
@@ -574,8 +653,9 @@ serve(async (req) => {
           from: msg.from,
           wamid: msg.id,
           type: msg.type,
+          empresa: resolvedEmpresa,
         });
-        const res = await handleMessage(supabase, msg);
+        const res = await handleMessage(supabase, msg, resolvedEmpresa, profileName);
         results.push({ type: "message", result: res });
       }
 
