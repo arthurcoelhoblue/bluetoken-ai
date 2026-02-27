@@ -22,6 +22,8 @@ export interface Atendimento {
 
 interface UseAtendimentosOptions {
   empresaFilter?: ActiveCompany[];
+  userId?: string;
+  isAdmin?: boolean;
 }
 
 /**
@@ -30,12 +32,11 @@ interface UseAtendimentosOptions {
  * lead_conversation_state, lead_message_intents) no client, o que impede
  * o uso de .range() server-side. A alternativa seria criar uma view materializada.
  */
-export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) {
+export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimentosOptions = {}) {
   return useQuery({
-    queryKey: ['atendimentos', empresaFilter],
+    queryKey: ['atendimentos', empresaFilter, userId, isAdmin],
     queryFn: async (): Promise<Atendimento[]> => {
       // 1. Find leads with passive-mode messages (run_id IS NULL = passive)
-      // Use lead_messages directly instead of lead_message_intents to catch ALL passive conversations
       let passiveQuery = supabase
         .from('lead_messages')
         .select('lead_id, empresa')
@@ -74,8 +75,10 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
       const { data: contacts, error: contactsError } = await contactsQuery;
       if (contactsError) throw contactsError;
 
-      // 2. Fetch latest messages, conversation states, and intents in parallel
-      const [messagesRes, statesRes, intentsRes] = await Promise.all([
+      // 3. Fetch messages, conversation states, intents, AND ownership data in parallel
+      const contactLeadIds = contacts?.map(c => c.lead_id).filter(Boolean) ?? leadIds;
+
+      const [messagesRes, statesRes, intentsRes, crmContactsRes] = await Promise.all([
         supabase
           .from('lead_messages')
           .select('lead_id, conteudo, created_at, direcao')
@@ -83,18 +86,57 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
           .order('created_at', { ascending: false }),
         supabase
           .from('lead_conversation_state')
-          .select('lead_id, empresa, estado_funil, framework_ativo, perfil_disc')
+          .select('lead_id, empresa, estado_funil, framework_ativo, perfil_disc, assumido_por')
           .in('lead_id', leadIds),
         supabase
           .from('lead_message_intents')
           .select('lead_id, intent, created_at')
           .in('lead_id', leadIds)
           .order('created_at', { ascending: false }),
+        supabase
+          .from('contacts')
+          .select('id, legacy_lead_id, empresa')
+          .in('legacy_lead_id', contactLeadIds),
       ]);
 
       if (messagesRes.error) throw messagesRes.error;
       if (statesRes.error) throw statesRes.error;
       if (intentsRes.error) throw intentsRes.error;
+      if (crmContactsRes.error) throw crmContactsRes.error;
+
+      // 4. Fetch deals for ownership + open status filtering
+      const crmContacts = crmContactsRes.data ?? [];
+      const contactIdToLeadId = new Map<string, string>();
+      const crmContactIds: string[] = [];
+      for (const cc of crmContacts) {
+        if (cc.id && cc.legacy_lead_id) {
+          contactIdToLeadId.set(cc.id, cc.legacy_lead_id);
+          crmContactIds.push(cc.id);
+        }
+      }
+
+      // Map lead_id -> deal ownership info
+      const leadDealInfo = new Map<string, { hasOpenDeal: boolean; ownerIds: string[] }>();
+
+      if (crmContactIds.length > 0) {
+        const { data: deals, error: dealsErr } = await supabase
+          .from('deals')
+          .select('id, contact_id, owner_id, status')
+          .in('contact_id', crmContactIds);
+
+        if (dealsErr) throw dealsErr;
+
+        for (const deal of deals ?? []) {
+          const leadId = contactIdToLeadId.get(deal.contact_id);
+          if (!leadId) continue;
+          const existing = leadDealInfo.get(leadId) ?? { hasOpenDeal: false, ownerIds: [] };
+          if (deal.status === 'ABERTO') {
+            existing.hasOpenDeal = true;
+            if (deal.owner_id) existing.ownerIds.push(deal.owner_id);
+          }
+          leadDealInfo.set(leadId, existing);
+        }
+      }
 
       // Build maps
       const messagesByLead = new Map<string, { conteudo: string; created_at: string; direcao: string; inbound: number; outbound: number }>();
@@ -115,11 +157,11 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         }
       }
 
-      const statesByLead = new Map<string, { estado_funil: string; framework_ativo: string; perfil_disc: string | null }>();
+      const statesByLead = new Map<string, { estado_funil: string; framework_ativo: string; perfil_disc: string | null; assumido_por: string | null }>();
       for (const s of statesRes.data || []) {
         const key = `${s.lead_id}_${s.empresa}`;
         if (!statesByLead.has(key)) {
-          statesByLead.set(key, { estado_funil: s.estado_funil, framework_ativo: s.framework_ativo, perfil_disc: s.perfil_disc });
+          statesByLead.set(key, { estado_funil: s.estado_funil, framework_ativo: s.framework_ativo, perfil_disc: s.perfil_disc, assumido_por: s.assumido_por });
         }
       }
 
@@ -130,7 +172,7 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         }
       }
 
-      // Deduplicar contacts por lead_id (evitar espelhos cross-empresa)
+      // Deduplicar contacts por lead_id
       const contactsByLeadId = new Map<string, typeof contacts[0][]>();
       for (const c of contacts!) {
         const existing = contactsByLeadId.get(c.lead_id) || [];
@@ -148,13 +190,33 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
         }
       }
 
-      // 3. Merge
-      const atendimentos: Atendimento[] = deduplicatedContacts.map(c => {
+      // 5. Merge + filter by ownership
+      const atendimentos: Atendimento[] = [];
+      for (const c of deduplicatedContacts) {
         const msgs = messagesByLead.get(c.lead_id);
         const state = statesByLead.get(`${c.lead_id}_${c.empresa}`);
         const intent = intentsByLead.get(c.lead_id);
+        const dealInfo = leadDealInfo.get(c.lead_id);
 
-        return {
+        // Filter: only show conversations with open deals OR no deal at all (new leads)
+        // For admins: show all (open deals + no deal)
+        // For non-admins: only show if they own the deal OR assumed the conversation
+        if (dealInfo && !dealInfo.hasOpenDeal) {
+          // Has deals but none open → conversation is "closed"
+          continue;
+        }
+
+        if (!isAdmin && userId) {
+          const ownsOpenDeal = dealInfo?.ownerIds.includes(userId) ?? false;
+          const assumedConversation = state?.assumido_por === userId;
+          const noDealYet = !dealInfo; // New lead without deal — show to all sellers
+
+          if (!ownsOpenDeal && !assumedConversation && !noDealYet) {
+            continue;
+          }
+        }
+
+        atendimentos.push({
           lead_id: c.lead_id,
           empresa: c.empresa as 'TOKENIZA' | 'BLUE',
           nome: c.nome,
@@ -169,8 +231,8 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
           framework_ativo: state?.framework_ativo ?? null,
           perfil_disc: state?.perfil_disc ?? null,
           ultimo_intent: intent ?? null,
-        };
-      });
+        });
+      }
 
       // Sort by most recent contact
       atendimentos.sort((a, b) => {
@@ -182,7 +244,7 @@ export function useAtendimentos({ empresaFilter }: UseAtendimentosOptions = {}) 
 
       return atendimentos;
     },
-    refetchInterval: 60000, // Auto-refresh every 60s (reduced from 30s for cost optimization)
+    refetchInterval: 60000,
     refetchOnWindowFocus: true,
   });
 }
