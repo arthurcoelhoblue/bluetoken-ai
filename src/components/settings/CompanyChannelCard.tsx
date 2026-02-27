@@ -1,3 +1,4 @@
+import { useState } from "react";
 import {
   Card,
   CardContent,
@@ -8,20 +9,26 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
   Send,
   Headphones,
   Settings,
   Check,
   X,
+  Save,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { IntegrationInfo } from "@/types/settings";
 import {
   useIntegrationCompanyConfig,
   type ChannelType,
 } from "@/hooks/useIntegrationCompanyConfig";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Send,
@@ -38,9 +45,11 @@ export function CompanyChannelCard({
   onConfigure,
 }: CompanyChannelCardProps) {
   const { getConfig, toggleConfig } = useIntegrationCompanyConfig();
+  const queryClient = useQueryClient();
   const Icon = iconMap[integration.icon] || Settings;
   const channel = integration.id as ChannelType;
   const hasSecrets = integration.secrets.length > 0;
+  const isMensageria = channel === "mensageria";
 
   const { data: empresas = [] } = useQuery({
     queryKey: ["empresas-ativas"],
@@ -81,7 +90,7 @@ export function CompanyChannelCard({
         </div>
       </CardHeader>
       <CardContent className="pt-0">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 gap-4">
           {empresas.map((empresa: any) => {
             const config = getConfig(empresa.id, channel);
             const isEnabled = config?.enabled ?? false;
@@ -89,45 +98,150 @@ export function CompanyChannelCard({
             return (
               <div
                 key={empresa.id}
-                className="flex items-center justify-between rounded-lg border p-3"
+                className="rounded-lg border p-3 space-y-3"
               >
-                <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="text-xs font-medium">
-                    {empresa.label || empresa.id}
-                  </Badge>
-                  <Badge
-                    variant={isEnabled ? "default" : "secondary"}
-                    className="text-xs"
-                  >
-                    {isEnabled ? (
-                      <>
-                        <Check className="mr-1 h-3 w-3" />
-                        Ativo
-                      </>
-                    ) : (
-                      <>
-                        <X className="mr-1 h-3 w-3" />
-                        Inativo
-                      </>
-                    )}
-                  </Badge>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Badge variant="outline" className="text-xs font-medium">
+                      {empresa.label || empresa.id}
+                    </Badge>
+                    <Badge
+                      variant={isEnabled ? "default" : "secondary"}
+                      className="text-xs"
+                    >
+                      {isEnabled ? (
+                        <>
+                          <Check className="mr-1 h-3 w-3" />
+                          Ativo
+                        </>
+                      ) : (
+                        <>
+                          <X className="mr-1 h-3 w-3" />
+                          Inativo
+                        </>
+                      )}
+                    </Badge>
+                  </div>
+                  <Switch
+                    checked={isEnabled}
+                    onCheckedChange={(checked) =>
+                      toggleConfig.mutate({
+                        empresa: empresa.id,
+                        channel,
+                        enabled: checked,
+                      })
+                    }
+                    disabled={toggleConfig.isPending}
+                  />
                 </div>
-                <Switch
-                  checked={isEnabled}
-                  onCheckedChange={(checked) =>
-                    toggleConfig.mutate({
-                      empresa: empresa.id,
-                      channel,
-                      enabled: checked,
-                    })
-                  }
-                  disabled={toggleConfig.isPending}
-                />
+
+                {isMensageria && isEnabled && (
+                  <MensageriaConfigFields
+                    empresaId={empresa.id}
+                    config={config}
+                  />
+                )}
               </div>
             );
           })}
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+function MensageriaConfigFields({
+  empresaId,
+  config,
+}: {
+  empresaId: string;
+  config: any;
+}) {
+  const queryClient = useQueryClient();
+  const [apiKey, setApiKey] = useState(config?.api_key || "");
+  const [connectionName, setConnectionName] = useState(
+    config?.connection_name || ""
+  );
+  const [showApiKey, setShowApiKey] = useState(false);
+
+  const saveConfig = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("integration_company_config" as any)
+        .update({
+          api_key: apiKey || null,
+          connection_name: connectionName || null,
+          updated_at: new Date().toISOString(),
+        } as never)
+        .eq("empresa", empresaId)
+        .eq("channel", "mensageria");
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({
+        queryKey: ["integration-company-config"],
+      });
+      toast.success("Configuração da Mensageria salva");
+    },
+    onError: (error) => {
+      toast.error("Erro ao salvar", { description: error.message });
+    },
+  });
+
+  const hasChanges =
+    apiKey !== (config?.api_key || "") ||
+    connectionName !== (config?.connection_name || "");
+
+  return (
+    <div className="grid gap-3 border-t pt-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">API Key</Label>
+          <div className="relative">
+            <Input
+              type={showApiKey ? "text" : "password"}
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+              placeholder="conn_..."
+              className="pr-8 text-xs h-8"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKey(!showApiKey)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+            >
+              {showApiKey ? (
+                <EyeOff className="h-3.5 w-3.5" />
+              ) : (
+                <Eye className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs text-muted-foreground">
+            Connection Name
+          </Label>
+          <Input
+            type="text"
+            value={connectionName}
+            onChange={(e) => setConnectionName(e.target.value)}
+            placeholder="ex: arthur"
+            className="text-xs h-8"
+          />
+        </div>
+      </div>
+      {hasChanges && (
+        <Button
+          size="sm"
+          className="w-fit h-7 text-xs"
+          onClick={() => saveConfig.mutate()}
+          disabled={saveConfig.isPending}
+        >
+          <Save className="mr-1 h-3 w-3" />
+          Salvar
+        </Button>
+      )}
+    </div>
   );
 }
