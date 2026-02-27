@@ -117,22 +117,64 @@ interface LeadContact {
 
 async function findLeadByPhone(
   supabase: ReturnType<typeof createServiceClient>,
-  phoneNormalized: string
+  phoneNormalized: string,
+  preferredEmpresa?: EmpresaTipo
 ): Promise<LeadContact | null> {
   const e164 = phoneNormalized.startsWith("+")
     ? phoneNormalized
     : `+${phoneNormalized}`;
 
-  const { data: e164Match } = await supabase
-    .from("lead_contacts")
-    .select("*")
-    .eq("telefone_e164", e164)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (e164Match) return e164Match as LeadContact;
+  // Generate e164 variations (with/without 9th digit)
+  const e164Variations = [e164];
+  const rawDigits = e164.replace("+", "");
+  const ddd = rawDigits.startsWith("55") ? rawDigits.slice(2, 4) : null;
+  const numberPart = rawDigits.startsWith("55") ? rawDigits.slice(4) : null;
+  if (ddd && numberPart) {
+    if (numberPart.length === 8) {
+      e164Variations.push(`+55${ddd}9${numberPart}`);
+    } else if (numberPart.length === 9 && numberPart.startsWith("9")) {
+      e164Variations.push(`+55${ddd}${numberPart.slice(1)}`);
+    }
+  }
 
+  // Try e164 match (preferred empresa first)
+  for (const variant of e164Variations) {
+    if (preferredEmpresa) {
+      const { data } = await supabase
+        .from("lead_contacts")
+        .select("*")
+        .eq("telefone_e164", variant)
+        .eq("empresa", preferredEmpresa)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) return data as LeadContact;
+    }
+    const { data } = await supabase
+      .from("lead_contacts")
+      .select("*")
+      .eq("telefone_e164", variant)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as LeadContact;
+  }
+
+  // Try telefone variations (preferred empresa first)
   const variations = generatePhoneVariations(phoneNormalized);
+  for (const variant of variations) {
+    if (preferredEmpresa) {
+      const { data } = await supabase
+        .from("lead_contacts")
+        .select("*")
+        .eq("telefone", variant)
+        .eq("empresa", preferredEmpresa)
+        .order("updated_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (data) return data as LeadContact;
+    }
+  }
   for (const variant of variations) {
     const { data } = await supabase
       .from("lead_contacts")
@@ -144,7 +186,19 @@ async function findLeadByPhone(
     if (data) return data as LeadContact;
   }
 
+  // Partial match (last 8 digits)
   const last8 = phoneNormalized.slice(-8);
+  if (preferredEmpresa) {
+    const { data } = await supabase
+      .from("lead_contacts")
+      .select("*")
+      .like("telefone", `%${last8}`)
+      .eq("empresa", preferredEmpresa)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (data) return data as LeadContact;
+  }
   const { data: partial } = await supabase
     .from("lead_contacts")
     .select("*")
@@ -395,7 +449,7 @@ async function handleMessage(
     return { success: true, status: "DUPLICATE" };
   }
 
-  let lead = await findLeadByPhone(supabase, phoneNormalized);
+  let lead = await findLeadByPhone(supabase, phoneNormalized, resolvedEmpresa);
   
   // Auto-create lead if not found
   if (!lead) {
