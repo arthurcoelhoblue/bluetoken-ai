@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
 import { useAccessProfiles } from '@/hooks/useAccessControl';
+import { useCompany } from '@/contexts/CompanyContext';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -20,6 +21,7 @@ interface Props {
 const SUPER_ADMIN_NAME = 'Super Admin';
 
 export function CreateUserDialog({ open, onOpenChange }: Props) {
+  const { empresaRecords } = useCompany();
   const { data: profiles = [] } = useAccessProfiles();
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],
@@ -157,8 +159,9 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
                   <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                   <SelectContent>
                     <SelectItem value="all">Todas</SelectItem>
-                    <SelectItem value="BLUE">Blue</SelectItem>
-                    <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                    {empresaRecords.filter(e => e.is_active).map(e => (
+                      <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </FormItem>
