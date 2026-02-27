@@ -91,7 +91,7 @@ function useAllOpenDeals(empresa: string | undefined) {
         .select(`
           *,
           contacts:contact_id(id, nome, email, telefone),
-          pipeline_stages:stage_id!deals_stage_id_fkey(id, nome, cor, is_won, is_lost),
+          pipeline_stages:stage_id(id, nome, cor, is_won, is_lost),
           owner:owner_id(id, nome, email, avatar_url)
         `)
         .eq('status', 'ABERTO');
