@@ -559,20 +559,35 @@ async function handleMessage(
 
   // Update last_inbound_at for 24h window
   if (lead) {
-    await supabase
+    const now = new Date().toISOString();
+    const { error: upsertErr } = await supabase
       .from("lead_conversation_state")
       .upsert(
         {
           lead_id: lead.lead_id,
           empresa: lead.empresa,
           canal: "WHATSAPP",
-          last_inbound_at: new Date().toISOString(),
-          ultimo_contato_em: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+          last_inbound_at: now,
+          ultimo_contato_em: now,
+          updated_at: now,
         },
         { onConflict: "lead_id,empresa" }
       );
-    log.info("last_inbound_at updated", { leadId: lead.lead_id });
+    if (upsertErr) {
+      log.error("Upsert last_inbound_at failed, trying direct update", { error: upsertErr.message, leadId: lead.lead_id });
+      const { error: updateErr } = await supabase
+        .from("lead_conversation_state")
+        .update({ last_inbound_at: now, ultimo_contato_em: now, updated_at: now })
+        .eq("lead_id", lead.lead_id)
+        .eq("empresa", lead.empresa);
+      if (updateErr) {
+        log.error("Fallback update last_inbound_at also failed", { error: updateErr.message });
+      } else {
+        log.info("last_inbound_at updated via fallback", { leadId: lead.lead_id });
+      }
+    } else {
+      log.info("last_inbound_at updated", { leadId: lead.lead_id });
+    }
   }
 
   // Register cadence event

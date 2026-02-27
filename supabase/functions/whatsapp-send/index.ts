@@ -377,7 +377,25 @@ serve(async (req) => {
           .eq('empresa', empresa)
           .maybeSingle();
         const lastInbound2 = convState2?.last_inbound_at || convState2?.ultimo_contato_em;
-        const hoursAgo2 = lastInbound2 ? (Date.now() - new Date(lastInbound2).getTime()) / (1000 * 60 * 60) : Infinity;
+        // Fallback: if both are NULL, check lead_messages directly
+        let hoursAgo2: number;
+        if (lastInbound2) {
+          hoursAgo2 = (Date.now() - new Date(lastInbound2).getTime()) / (1000 * 60 * 60);
+        } else {
+          const { data: lastMsg } = await supabase
+            .from('lead_messages')
+            .select('created_at')
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa)
+            .eq('direcao', 'INBOUND')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          hoursAgo2 = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
+          if (lastMsg?.created_at) {
+            log.warn('last_inbound_at NULL, used lead_messages fallback', { leadId, hoursAgo: hoursAgo2 });
+          }
+        }
 
         if (hoursAgo2 > 24) {
           await supabase.from('lead_messages').update({
@@ -428,9 +446,25 @@ serve(async (req) => {
           .maybeSingle();
 
         const lastInbound = convState?.last_inbound_at || convState?.ultimo_contato_em;
-        const hoursAgo = lastInbound
-          ? (Date.now() - new Date(lastInbound).getTime()) / (1000 * 60 * 60)
-          : Infinity;
+        let hoursAgo: number;
+        if (lastInbound) {
+          hoursAgo = (Date.now() - new Date(lastInbound).getTime()) / (1000 * 60 * 60);
+        } else {
+          // Fallback: query lead_messages directly when conversation state has no timestamp
+          const { data: lastMsg } = await supabase
+            .from('lead_messages')
+            .select('created_at')
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa)
+            .eq('direcao', 'INBOUND')
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          hoursAgo = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
+          if (lastMsg?.created_at) {
+            log.warn('last_inbound_at NULL, used lead_messages fallback', { leadId, hoursAgo });
+          }
+        }
 
         if (hoursAgo > 24) {
           log.warn('Fora da janela 24h Meta Cloud', { hoursAgo, leadId });
