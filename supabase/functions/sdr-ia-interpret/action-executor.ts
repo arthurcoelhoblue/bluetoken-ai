@@ -264,6 +264,36 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
   if (resposta && resposta.length >= 10) {
     if (telefone) {
       respostaEnviada = await sendAutoResponse(telefone, empresa, resposta, lead_id, run_id);
+
+      // MELHORIA 3: Auto-escalar após erros consecutivos de envio
+      if (!respostaEnviada && lead_id) {
+        try {
+          const { data: recentOutbound } = await supabase
+            .from('lead_messages')
+            .select('id, status')
+            .eq('lead_id', lead_id)
+            .eq('direcao', 'OUTBOUND')
+            .order('created_at', { ascending: false })
+            .limit(3);
+          const erroCount = (recentOutbound || []).filter((m: { status: string | null }) => m.status === 'ERRO').length;
+          if (erroCount >= 2) {
+            log.warn('Auto-escalação: 2+ erros consecutivos de envio OUTBOUND', { lead_id, erroCount });
+            await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', updated_at: new Date().toISOString() }).eq('lead_id', lead_id).eq('empresa', empresa);
+            // Notificar owner
+            const { data: contact } = await supabase.from('contacts').select('owner_id, nome').eq('legacy_lead_id', lead_id).maybeSingle();
+            if (contact?.owner_id) {
+              await supabase.from('notifications').insert({
+                user_id: contact.owner_id, empresa, tipo: 'ALERTA',
+                titulo: `⚠️ Falha de envio: ${contact.nome || 'Lead'}`,
+                mensagem: `${erroCount} mensagens consecutivas falharam. Conversa escalada para atendimento manual.`,
+                link: `/leads/${lead_id}/${empresa}`, entity_id: lead_id, entity_type: 'lead',
+              });
+            }
+          }
+        } catch (e) {
+          log.error('Erro ao verificar erros consecutivos', { error: e instanceof Error ? e.message : String(e) });
+        }
+      }
     }
   }
 
@@ -290,6 +320,51 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
       }
     } catch (e) {
       log.error('Erro ao gravar ja_cumprimentou', { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // MELHORIA 1: Gravar produto_escolhido no framework_data
+  if (resposta && lead_id && intent) {
+    const intentsComProduto = ['INTERESSE_COMPRA', 'DUVIDA_PRODUTO', 'DUVIDA_PRECO'];
+    if (intentsComProduto.includes(intent)) {
+      const produtoPatterns: Array<{ regex: RegExp; produto: string }> = [
+        { regex: /\bsafe\b/i, produto: 'SAFE' },
+        { regex: /\bequity\b/i, produto: 'Equity' },
+        { regex: /\btoken(?:izado)?\b/i, produto: 'Token' },
+        { regex: /\bir\s+cripto\b/i, produto: 'IR Cripto' },
+        { regex: /\bgold\b/i, produto: 'Plano Gold' },
+        { regex: /\bdiamond\b/i, produto: 'Plano Diamond' },
+        { regex: /\brenda\s+fixa\b/i, produto: 'Renda Fixa' },
+        { regex: /\bdebenture\b/i, produto: 'Debênture' },
+      ];
+      const msgToCheck = mensagem_original.toLowerCase();
+      for (const { regex, produto } of produtoPatterns) {
+        if (regex.test(msgToCheck)) {
+          try {
+            const { data: curState } = await supabase
+              .from('lead_conversation_state')
+              .select('framework_data')
+              .eq('lead_id', lead_id)
+              .eq('empresa', empresa)
+              .maybeSingle();
+            const existingFd = (curState?.framework_data as Record<string, unknown>) || {};
+            if (!existingFd.produto_escolhido) {
+              await supabase
+                .from('lead_conversation_state')
+                .update({
+                  framework_data: { ...existingFd, produto_escolhido: produto },
+                  updated_at: new Date().toISOString(),
+                })
+                .eq('lead_id', lead_id)
+                .eq('empresa', empresa);
+              log.info('Produto escolhido gravado', { lead_id, produto });
+            }
+          } catch (e) {
+            log.error('Erro ao gravar produto_escolhido', { error: e instanceof Error ? e.message : String(e) });
+          }
+          break;
+        }
+      }
     }
   }
 
