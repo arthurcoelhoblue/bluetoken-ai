@@ -744,12 +744,13 @@ serve(async (req) => {
       }
     }
 
-    // AUTH DESABILITADA TEMPORARIAMENTE PARA TESTE
+    // Se nenhum método de auth passou, rejeitar
     if (!authOk && !hmacValidated) {
-      log.warn('AUTH DESABILITADA TEMPORARIAMENTE - requisição aceita sem auth', {
-        hasAuth: !!req.headers.get('Authorization'),
-        hasHmac: !!webhookSignature
-      });
+      log.error('Acesso não autorizado', { hasAuth: !!req.headers.get('Authorization'), hasHmac: !!webhookSignature });
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     // Se auth OK mas HMAC presente, validar integridade (opcional)
