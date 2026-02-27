@@ -7,7 +7,6 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
   Send,
@@ -19,16 +18,15 @@ import {
 import { IntegrationInfo } from "@/types/settings";
 import {
   useIntegrationCompanyConfig,
-  type EmpresaTipo,
   type ChannelType,
 } from "@/hooks/useIntegrationCompanyConfig";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
 
 const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
   Send,
   Headphones,
 };
-
-const EMPRESAS: EmpresaTipo[] = ["TOKENIZA", "BLUE"];
 
 interface CompanyChannelCardProps {
   integration: IntegrationInfo;
@@ -44,6 +42,18 @@ export function CompanyChannelCard({
   const channel = integration.id as ChannelType;
   const hasSecrets = integration.secrets.length > 0;
 
+  const { data: empresas = [] } = useQuery({
+    queryKey: ["empresas-ativas"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("empresas" as any)
+        .select("id, label, is_active")
+        .eq("is_active", true)
+        .order("label");
+      if (error) throw error;
+      return (data as any[]) ?? [];
+    },
+  });
 
   return (
     <Card className="relative col-span-1 md:col-span-2 lg:col-span-3">
@@ -72,18 +82,18 @@ export function CompanyChannelCard({
       </CardHeader>
       <CardContent className="pt-0">
         <div className="grid grid-cols-2 gap-4">
-          {EMPRESAS.map((empresa) => {
-            const config = getConfig(empresa, channel);
+          {empresas.map((empresa: any) => {
+            const config = getConfig(empresa.id, channel);
             const isEnabled = config?.enabled ?? false;
 
             return (
               <div
-                key={empresa}
+                key={empresa.id}
                 className="flex items-center justify-between rounded-lg border p-3"
               >
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs font-medium">
-                    {empresa}
+                    {empresa.label || empresa.id}
                   </Badge>
                   <Badge
                     variant={isEnabled ? "default" : "secondary"}
@@ -106,7 +116,7 @@ export function CompanyChannelCard({
                   checked={isEnabled}
                   onCheckedChange={(checked) =>
                     toggleConfig.mutate({
-                      empresa,
+                      empresa: empresa.id,
                       channel,
                       enabled: checked,
                     })
