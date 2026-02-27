@@ -1,48 +1,41 @@
 
 
-## Plano: Melhorar erro de 24h e adicionar seletor de templates
+## Diagnóstico
 
-### Problema atual
-Quando a janela de 24h da Meta expira, o `whatsapp-send` retorna `"Janela de 24h expirada. Envie um template aprovado para reabrir a conversa."` — mas o UI apenas exibe um toast genérico sem ação possível para o usuário.
+### Problema 1: Resposta do lead não chega
+TOKENIZA usa canal `meta_cloud` (API Oficial da Meta). O webhook que recebe mensagens inbound da Meta é a edge function `meta-webhook`. Ela tem **zero logs**, o que significa que **Meta não está enviando webhooks** para essa URL.
 
-### Mudanças
-
-**1. Criar componente `TemplatePickerDialog`**
-- Novo arquivo: `src/components/conversas/TemplatePickerDialog.tsx`
-- Dialog que lista templates aprovados (`meta_status = 'APPROVED'`, `ativo = true`) da empresa ativa
-- Mostra preview do conteúdo do template
-- Botão "Enviar Template" que invoca `whatsapp-send` com `metaTemplateName`, `metaLanguage`, e `metaComponents`
-- Campos de variáveis dinâmicos se o template tiver `variaveis`
-
-**2. Atualizar `ManualMessageInput`**
-- Detectar erro de janela 24h no retorno do `useSendManualMessage` (checar `error.message` contendo "Janela de 24h" ou "24h")
-- Quando detectado, exibir um banner inline (não apenas toast) com:
-  - Mensagem clara: "A janela de conversa expirou. Para reabrir, envie um template aprovado."
-  - Botão "Selecionar Template" que abre o `TemplatePickerDialog`
-- Desabilitar input de texto livre enquanto banner estiver ativo
-
-**3. Atualizar `useSendManualMessage` (hook)**
-- Propagar o erro completo (não apenas `message`) para que o componente consiga distinguir erros de 24h de erros genéricos
-
-**4. Adicionar botão de template ao lado do input**
-- Ícone de template (FileText) permanente ao lado do botão Send
-- Permite enviar templates mesmo dentro da janela de 24h (útil para mensagens padronizadas)
-
-### Fluxo do usuário
-```text
-Usuário digita mensagem → Envia → Erro 24h
-                                    ↓
-                          Banner: "Janela expirada"
-                          [Selecionar Template]
-                                    ↓
-                          Dialog com templates aprovados
-                          Usuário escolhe → Preenche variáveis → Envia
-                                    ↓
-                          Template enviado via whatsapp-send
+Isso é uma configuração no **Meta Business Manager**: você precisa registrar a URL do webhook lá:
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook
 ```
 
+Com o **Verify Token** que já está configurado no secret `META_WEBHOOK_VERIFY_TOKEN`.
+
+**Ação necessária (manual, fora do código):** No Meta Business Manager → WhatsApp → Configuration → Webhook URL, colocar a URL acima e o verify token. Assinar o campo "messages".
+
+### Problema 2: Conversa não aparece na aba /conversas
+O lead `aaaaaaaa-bbbb-cccc-dddd-000000000004` tem um deal ABERTO com `owner_id = 3eb15a6a-9856-4e21-a856-b87eeff933b1` (Arthur Coelho). O hook `useAtendimentos` filtra por ownership: para não-admins, só mostra se `userId` é o `owner_id` do deal ou `assumido_por` na conversation state. Se o usuário logado não é o Arthur ou admin, a conversa é filtrada.
+
+Além disso, o `meta-webhook` **não auto-cria lead_contacts** para números desconhecidos (diferente do `whatsapp-inbound` que já tem essa lógica). Precisa alinhar.
+
+### Plano de Implementação
+
+**1. Atualizar `meta-webhook` para auto-criar leads para números desconhecidos**
+- Adicionar lógica de auto-criação de `lead_contact` (igual ao `whatsapp-inbound`) quando `findLeadByPhone` retorna null
+- Garantir que o trigger `fn_sync_lead_to_contact` crie o contato CRM
+
+**2. Atualizar `meta-webhook` para resolver empresa via `whatsapp_connections`**
+- Usar o `phone_number_id` do payload Meta para resolver qual empresa é dona do número
+- Atualmente faz fallback hardcoded para "TOKENIZA"
+
+**3. Garantir que conversa apareça na aba /conversas**
+- O hook já funciona corretamente — a conversa aparecerá automaticamente assim que existirem mensagens com `run_id IS NULL` para leads com contatos válidos
+- Se o usuário logado é admin ou dono do deal, a conversa será visível
+
+**4. Instrução para configurar webhook no Meta**
+- Será preciso configurar manualmente no Meta Business Manager a URL do webhook
+
 ### Arquivos afetados
-- `src/components/conversas/TemplatePickerDialog.tsx` (novo)
-- `src/components/conversas/ManualMessageInput.tsx` (atualizado)
-- `src/hooks/useConversationMode.ts` (ajuste menor no error handling)
+- `supabase/functions/meta-webhook/index.ts` — adicionar auto-criação de lead + resolução de empresa via `whatsapp_connections`
 
