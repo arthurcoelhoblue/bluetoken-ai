@@ -403,10 +403,12 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
     if (ultima_pergunta_id) stateUpdates.ultima_pergunta_id = ultima_pergunta_id;
 
     if (Object.keys(stateUpdates).length > 0) {
+      const now = new Date().toISOString();
       await supabase.from('lead_conversation_state').update({
         ...stateUpdates,
-        ultimo_contato_em: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
+        ultimo_contato_em: now,
+        last_inbound_at: now, // Fallback: ensure last_inbound_at is set on inbound processing
+        updated_at: now,
       }).eq('lead_id', lead_id).eq('empresa', empresa);
     }
   }
