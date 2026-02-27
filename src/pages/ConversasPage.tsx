@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
+import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -33,6 +34,8 @@ type StatusFilter = 'TODOS' | 'AGUARDANDO' | 'RESPONDIDO' | 'VENDEDOR';
 function ConversasContent() {
   const navigate = useNavigate();
   const { activeCompanies } = useCompany();
+  const { user, hasRole } = useAuth();
+  const isAdmin = hasRole('ADMIN');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
   const [search, setSearch] = useState('');
   const { trackPageView } = useAnalyticsEvents();
@@ -41,7 +44,11 @@ function ConversasContent() {
     trackPageView('conversas');
   }, [trackPageView]);
 
-  const { data: atendimentos = [], isLoading, error } = useAtendimentos({ empresaFilter: activeCompanies });
+  const { data: atendimentos = [], isLoading, error } = useAtendimentos({
+    empresaFilter: activeCompanies,
+    userId: user?.id,
+    isAdmin,
+  });
 
   const filtered = useMemo(() => {
     let result = atendimentos;
