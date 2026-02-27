@@ -219,10 +219,56 @@ async function autoCreateLead(
   profileName: string | null
 ): Promise<LeadContact | null> {
   const e164 = phoneNormalized.startsWith("+") ? phoneNormalized : `+${phoneNormalized}`;
+
+  // Generate all phone variations for dedup check
+  const variations = generatePhoneVariations(phoneNormalized);
+  const e164WithNine = phoneNormalized.length >= 10
+    ? `+55${phoneNormalized.slice(phoneNormalized.startsWith("55") ? 2 : 0, phoneNormalized.startsWith("55") ? 4 : 2)}9${phoneNormalized.slice(phoneNormalized.startsWith("55") ? 4 : 2)}`
+    : null;
+
+  // Check all variations to prevent duplicates
+  const allPhones = [...new Set([...variations, phoneNormalized])];
+  for (const phone of allPhones) {
+    const { data: existing } = await supabase
+      .from("lead_contacts")
+      .select("*")
+      .eq("telefone", phone)
+      .eq("empresa", empresa)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      log.info("Dedup: found existing lead_contact by telefone", { phone, leadId: existing.lead_id });
+      return existing as LeadContact;
+    }
+  }
+
+  // Also check e164 variations
+  const e164Variants = [e164];
+  const rawDigits = e164.replace("+", "");
+  const ddd = rawDigits.startsWith("55") ? rawDigits.slice(2, 4) : null;
+  const numberPart = rawDigits.startsWith("55") ? rawDigits.slice(4) : null;
+  if (ddd && numberPart) {
+    if (numberPart.length === 8) e164Variants.push(`+55${ddd}9${numberPart}`);
+    if (numberPart.length === 9 && numberPart.startsWith("9")) e164Variants.push(`+55${ddd}${numberPart.slice(1)}`);
+  }
+  for (const ev of e164Variants) {
+    const { data: existing } = await supabase
+      .from("lead_contacts")
+      .select("*")
+      .eq("telefone_e164", ev)
+      .eq("empresa", empresa)
+      .limit(1)
+      .maybeSingle();
+    if (existing) {
+      log.info("Dedup: found existing lead_contact by e164", { e164: ev, leadId: existing.lead_id });
+      return existing as LeadContact;
+    }
+  }
+
+  // No duplicate found, create new lead
   const phoneHash = phoneNormalized.slice(-8);
   const ts = Date.now();
   const leadId = `inbound_${phoneHash}_${ts}`;
-
   const nome = profileName || `WhatsApp ${phoneNormalized.slice(-4)}`;
 
   const { data, error } = await supabase
