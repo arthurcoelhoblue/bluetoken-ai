@@ -60,6 +60,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   // Conversation messages for Chat tab
   const { data: chatMessages = [], isLoading: chatLoading } = useConversationMessages({
     leadId: contactBridge?.legacy_lead_id ?? '',
+    contactId: contactBridge?.id,
     empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | undefined,
     telefone: contactBridge?.telefone,
     enabled: hasChat,

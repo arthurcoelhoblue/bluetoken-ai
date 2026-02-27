@@ -38,12 +38,13 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
   // Bridge to legacy lead data
   const bridge = useContactLeadBridge(open ? contactId : null);
 
-  // Conversation messages via legacy_lead_id
+  // Conversation messages via legacy_lead_id or contact_id
   const { data: messages = [], isLoading: messagesLoading } = useConversationMessages({
     leadId: bridge.legacyLeadId || '',
+    contactId: contactId,
     empresa: bridge.empresa,
     telefone: bridge.telefone,
-    enabled: !!bridge.legacyLeadId && open,
+    enabled: (!!bridge.legacyLeadId || !!contactId) && open,
   });
 
   const startEdit = (field: string, currentValue: string) => {
