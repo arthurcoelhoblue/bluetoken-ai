@@ -100,7 +100,8 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
   const formatCurrency = (v: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
 
   const hasLegacyData = !!bridge.legacyLeadId;
-  const tabCount = 3 + (hasLegacyData ? 2 : 0); // dados, deals, campos + classificação + mensagens
+  const hasChat = hasLegacyData || !!contact?.telefone;
+  const tabCount = 3 + (hasLegacyData ? 1 : 0) + (hasChat ? 1 : 0); // dados, deals, campos + classificação + mensagens
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -139,7 +140,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
             </SheetHeader>
 
             <Tabs defaultValue="dados" className="flex-1 mt-4">
-              <TabsList className={`grid w-full ${hasLegacyData ? 'grid-cols-5' : 'grid-cols-3'}`}>
+              <TabsList className={`grid w-full ${hasLegacyData && hasChat ? 'grid-cols-5' : hasChat || hasLegacyData ? 'grid-cols-4' : 'grid-cols-3'}`}>
                 <TabsTrigger value="dados">Dados</TabsTrigger>
                 <TabsTrigger value="deals">Deals ({contact.deals_count})</TabsTrigger>
                 {hasLegacyData && (
@@ -147,7 +148,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                     <Target className="h-3 w-3 mr-1" />IA
                   </TabsTrigger>
                 )}
-                {hasLegacyData && (
+                {hasChat && (
                   <TabsTrigger value="mensagens">
                     <MessageCircle className="h-3 w-3 mr-1" />Chat
                   </TabsTrigger>
@@ -283,16 +284,17 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
               )}
 
               {/* Messages/Conversation tab */}
-              {hasLegacyData && (
+              {hasChat && (
                 <TabsContent value="mensagens" className="mt-4">
                   <ConversationPanel
-                    leadId={bridge.legacyLeadId!}
+                    leadId={bridge.legacyLeadId || ''}
                     empresa={bridge.empresa || contact.empresa}
                     telefone={bridge.telefone || contact.telefone}
                     leadNome={contact.nome}
+                    contactId={contactId}
                     messages={messages}
                     isLoading={messagesLoading}
-                    modo={(bridge.conversationState?.modo as 'SDR_IA' | 'MANUAL' | 'HIBRIDO') || 'SDR_IA'}
+                    modo={(bridge.conversationState?.modo as 'SDR_IA' | 'MANUAL' | 'HIBRIDO') || 'MANUAL'}
                     assumidoPorNome={null}
                     maxHeight="400px"
                   />

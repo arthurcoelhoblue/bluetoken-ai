@@ -14,7 +14,8 @@ const WHATSAPP_API_URL = 'https://dev-mensageria.grupoblue.com.br/api/whatsapp/s
 const DEFAULT_TEST_PHONE: string | null = null;
 
 interface WhatsAppSendRequest {
-  leadId: string;
+  leadId?: string;
+  contactId?: string;
   telefone: string;
   mensagem: string;
   empresa: string;
@@ -143,7 +144,8 @@ serve(async (req) => {
     const body: WhatsAppSendRequest = await req.json();
 
     // Normalizar campos
-    const leadId = body.leadId;
+    let leadId = body.leadId || '';
+    const contactId = body.contactId || '';
     const telefone = body.telefone || body.to || '';
     const mensagem = body.mensagem || body.message || '';
     const empresa = body.empresa;
@@ -161,12 +163,33 @@ serve(async (req) => {
     const isTemplateSend = !!metaTemplateName;
     const isMediaSend = !!mediaType && !!mediaUrl;
 
-    // Validações - mensagem não é obrigatória para envio de template
-    if (!leadId || !telefone || !empresa) {
+    // Validações - precisa de pelo menos leadId ou contactId
+    if (!leadId && !contactId) {
       return new Response(
-        JSON.stringify({ success: false, error: 'Campos obrigatórios: leadId, telefone, empresa' }),
+        JSON.stringify({ success: false, error: 'Campos obrigatórios: leadId ou contactId, telefone, empresa' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    }
+    if (!telefone || !empresa) {
+      return new Response(
+        JSON.stringify({ success: false, error: 'Campos obrigatórios: telefone, empresa' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Se temos contactId mas não leadId, tentar resolver legacy_lead_id
+    if (!leadId && contactId) {
+      const { data: contactData } = await supabase
+        .from('contacts')
+        .select('legacy_lead_id')
+        .eq('id', contactId)
+        .maybeSingle();
+      if (contactData?.legacy_lead_id) {
+        leadId = contactData.legacy_lead_id;
+        log.info('Resolved leadId from contact', { contactId, leadId });
+      } else {
+        log.info('Contact sem legacy_lead_id, usando contactId', { contactId });
+      }
     }
     if (!isTemplateSend && !mensagem) {
       return new Response(
@@ -220,20 +243,32 @@ serve(async (req) => {
 
     log.info('Configuração', { testMode: TEST_MODE, canal: activeChannel });
 
-    // Verificar opt-out
-    const { data: contact } = await supabase
-      .from('lead_contacts')
-      .select('opt_out, opt_out_em')
-      .eq('lead_id', leadId)
-      .eq('empresa', empresa)
-      .limit(1)
-      .maybeSingle();
+    // Verificar opt-out (via contacts se contactId disponível, senão via lead_contacts)
+    let optOut = false;
+    if (contactId) {
+      const { data: contactRecord } = await supabase
+        .from('contacts')
+        .select('opt_out')
+        .eq('id', contactId)
+        .maybeSingle();
+      optOut = contactRecord?.opt_out === true;
+    } else if (leadId) {
+      const { data: legacyContact } = await supabase
+        .from('lead_contacts')
+        .select('opt_out, opt_out_em')
+        .eq('lead_id', leadId)
+        .eq('empresa', empresa)
+        .limit(1)
+        .maybeSingle();
+      optOut = legacyContact?.opt_out === true;
+    }
 
-    if (contact?.opt_out === true) {
-      log.warn('Bloqueado - opt-out', { leadId });
+    if (optOut) {
+      log.warn('Bloqueado - opt-out', { leadId, contactId });
 
       await supabase.from('lead_messages').insert({
-        lead_id: leadId,
+        lead_id: leadId || null,
+        contact_id: contactId || null,
         empresa: empresa,
         canal: 'WHATSAPP',
         direcao: 'OUTBOUND',
@@ -267,7 +302,8 @@ serve(async (req) => {
     const { data: messageRecord, error: insertError } = await supabase
       .from('lead_messages')
       .insert({
-        lead_id: leadId,
+        lead_id: leadId || null,
+        contact_id: contactId || null,
         empresa: empresa,
         canal: 'WHATSAPP',
         direcao: 'OUTBOUND',
