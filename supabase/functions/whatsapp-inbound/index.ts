@@ -68,9 +68,13 @@ interface InboundResult {
 
 function normalizePhone(raw: string): string {
   let normalized = raw.replace(/\D/g, '');
-  if (normalized.length === 11) {
+  
+  // Só adiciona DDI 55 se tem exatamente 10-11 dígitos (DDD + número BR)
+  // Números com 12+ dígitos já têm DDI (ex: 351910506655 = Portugal)
+  if (normalized.length === 10 || normalized.length === 11) {
     normalized = '55' + normalized;
   }
+  
   return normalized;
 }
 
@@ -542,6 +546,9 @@ serve(async (req) => {
     let crmContact: CrmContact | null = null;
     if (!leadContact) {
       const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
+      const rawDigits = payload.from.replace(/\D/g, '');
+      
+      // 1. Busca por telefone_e164
       const { data: contactMatch } = await supabase
         .from('contacts')
         .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
@@ -552,14 +559,36 @@ serve(async (req) => {
       
       if (contactMatch) {
         crmContact = contactMatch as CrmContact;
-        log.info('Match via contacts CRM', { contactId: crmContact.id, empresa: crmContact.empresa });
-      } else {
-        // Tentar match parcial pelos últimos 8 dígitos
+        log.info('Match via contacts CRM (telefone_e164)', { contactId: crmContact.id, empresa: crmContact.empresa });
+      }
+      
+      // 2. Fallback: buscar pelo campo telefone raw (cobre telefone_e164 = NULL)
+      if (!crmContact) {
+        const phonesToTry = [...new Set([rawDigits, phoneNormalized, e164])];
+        for (const phone of phonesToTry) {
+          const { data: rawMatch } = await supabase
+            .from('contacts')
+            .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
+            .eq('telefone', phone)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          if (rawMatch) {
+            crmContact = rawMatch as CrmContact;
+            log.info('Match via contacts CRM (telefone raw)', { contactId: crmContact.id, telefone: phone, empresa: crmContact.empresa });
+            break;
+          }
+        }
+      }
+      
+      // 3. Fallback: últimos 8 dígitos em telefone_e164 OU telefone
+      if (!crmContact) {
         const last8 = phoneNormalized.slice(-8);
         const { data: partialContact } = await supabase
           .from('contacts')
           .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
-          .like('telefone_e164', `%${last8}`)
+          .or(`telefone_e164.like.%${last8},telefone.like.%${last8}`)
           .order('updated_at', { ascending: false })
           .limit(1)
           .maybeSingle();
