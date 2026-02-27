@@ -140,6 +140,13 @@ serve(async (req) => {
     // ========================================
     // 4. CLASSIFY INTENT (direct call, no HTTP)
     // ========================================
+
+    // When reprocessing after DEVOLVER, build resumption context
+    let reprocessContext: string | undefined;
+    if (isReprocess) {
+      reprocessContext = `\n🔄 RETOMADA DE ATENDIMENTO: Este lead estava sendo atendido manualmente por um humano e AGORA FOI DEVOLVIDO PARA VOCÊ (Amélia). VOCÊ É A ATENDENTE AGORA. NÃO escale, NÃO transfira, NÃO diga que vai chamar alguém. Continue a conversa naturalmente a partir do contexto existente. Analise o histórico e dê continuidade ao atendimento.\n`;
+    }
+
     const classifierResult = await classifyIntent(supabase, {
       mensagem_normalizada: msg.conteudo,
       empresa: msg.empresa,
@@ -152,6 +159,7 @@ serve(async (req) => {
       leadNome: parsedContext.leadNome,
       cadenciaNome: parsedContext.cadenciaNome,
       pessoaContext: parsedContext.pessoaContext,
+      reprocessContext,
     });
 
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
