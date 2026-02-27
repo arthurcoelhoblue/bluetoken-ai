@@ -70,6 +70,36 @@ export function useConversationTakeover() {
         });
 
       if (logError) throw logError;
+
+      // When returning to SDR_IA, find the last unanswered inbound message and reprocess it
+      if (acao === 'DEVOLVER') {
+        try {
+          // Find the last inbound message that was interpreted but not responded to
+          const { data: lastUnanswered } = await supabase
+            .from('lead_message_intents')
+            .select('message_id')
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+            .is('resposta_enviada_em', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (lastUnanswered?.message_id) {
+            // Trigger reprocessing so Amélia responds with full context
+            await supabase.functions.invoke('sdr-ia-interpret', {
+              body: {
+                messageId: lastUnanswered.message_id,
+                reprocess: true,
+                source: 'WHATSAPP',
+              },
+            });
+          }
+        } catch (reprocessError) {
+          // Don't fail the takeover if reprocessing fails
+          console.error('Reprocess after devolver failed:', reprocessError);
+        }
+      }
     },
     onSuccess: (_, { acao }) => {
       queryClient.invalidateQueries({ queryKey: ['atendimentos'] });
@@ -78,7 +108,7 @@ export function useConversationTakeover() {
         title: acao === 'ASSUMIR' ? 'Atendimento assumido' : 'Devolvido à Amélia',
         description: acao === 'ASSUMIR' 
           ? 'Você assumiu o atendimento. A Amélia não enviará respostas automáticas.'
-          : 'A Amélia retomou o atendimento automático.',
+          : 'A Amélia retomou o atendimento e já está respondendo ao lead.',
       });
     },
     onError: (error) => {

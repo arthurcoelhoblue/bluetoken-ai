@@ -57,6 +57,7 @@ interface InterpretRequest {
   triageSummary?: { clienteNome: string | null; email: string | null; resumoTriagem: string | null; historico: string | null };
   testMode?: string;
   mensagens?: string[];
+  reprocess?: boolean;
 }
 
 interface MessageRow {
@@ -75,6 +76,7 @@ serve(async (req) => {
 
   try {
     const body = await req.json() as InterpretRequest;
+    const isReprocess = body.reprocess === true;
 
     // Test mode (urgency detection — kept for backward compat)
     if (body.testMode === 'urgencia') {
@@ -106,9 +108,15 @@ serve(async (req) => {
     // ========================================
     // 2. QUICK CHECKS: duplicate
     // ========================================
-    const { data: existingIntent } = await supabase.from('lead_message_intents').select('id').eq('message_id', messageId).limit(1).maybeSingle();
-    if (existingIntent) {
-      return new Response(JSON.stringify({ success: true, intentId: existingIntent.id, skipped: 'already_interpreted' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    if (isReprocess) {
+      // Delete existing intent so we can reprocess
+      await supabase.from('lead_message_intents').delete().eq('message_id', messageId);
+      log.info('Reprocess mode: deleted existing intent for message', { messageId });
+    } else {
+      const { data: existingIntent } = await supabase.from('lead_message_intents').select('id').eq('message_id', messageId).limit(1).maybeSingle();
+      if (existingIntent) {
+        return new Response(JSON.stringify({ success: true, intentId: existingIntent.id, skipped: 'already_interpreted' }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // ========================================
@@ -122,9 +130,9 @@ serve(async (req) => {
       return new Response(JSON.stringify({ success: true, optOutBlocked: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    // Check manual mode
+    // Check manual mode — skip when reprocessing (mode already switched to SDR_IA)
     const convStateRaw = parsedContext.conversationState;
-    const isManualMode = (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
+    const isManualMode = !isReprocess && (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
     if (isManualMode) {
       log.info('Manual mode — interpreting but suppressing response', { source });
     }
