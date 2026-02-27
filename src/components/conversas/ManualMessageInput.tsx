@@ -122,6 +122,15 @@ export function ManualMessageInput({
     );
   }
 
+  if (!leadId) {
+    return (
+      <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground bg-muted/50 rounded-lg">
+        <AlertCircle className="h-4 w-4 shrink-0" />
+        Lead não vinculado — não é possível enviar mensagem por aqui.
+      </div>
+    );
+  }
+
   const isSDR = modo === 'SDR_IA';
   const placeholder = isSDR
     ? 'Enviar e assumir atendimento...'
