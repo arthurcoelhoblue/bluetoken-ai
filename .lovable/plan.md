@@ -1,32 +1,29 @@
 
 
-## Plano: Amélia retoma contexto ao devolver atendimento
+## Diagnóstico: Erro falso de janela 24h
 
-### Problema atual
-Quando o vendedor clica "Devolver à Amélia", o sistema apenas muda o `modo` para `SDR_IA`. Se o lead enviou mensagens durante o modo MANUAL, essas mensagens já foram interpretadas mas com resposta suprimida (`modoManual: true`). A Amélia fica muda até o próximo inbound.
+**Causa raiz**: O campo `last_inbound_at` está `NULL` no `lead_conversation_state` do Arthur Coelho, apesar de existirem mensagens INBOUND recentes (22:07, 22:08). O `whatsapp-send` interpreta NULL como "infinitas horas atrás" e bloqueia o envio.
 
-### Solução
+Isso aconteceu porque o upsert do `meta-webhook` que atualiza `last_inbound_at` provavelmente falhou silenciosamente (possivelmente relacionado à duplicação de leads que corrigimos antes — o lead original pode não ter tido o `last_inbound_at` propagado).
 
-**1. Adicionar flag `reprocess` ao `sdr-ia-interpret`** (edge function)
-- Quando `reprocess=true`, pular o duplicate check (linhas 109-112) e deletar o intent anterior da mensagem antes de reprocessar
-- Quando `reprocess=true`, NÃO verificar `modo === 'MANUAL'` (linhas 127-130) — o modo já foi atualizado antes da chamada
-- Isso permite que a IA reinterprete a última mensagem com contexto completo e envie resposta
+## Correções
 
-**2. Modificar `useConversationTakeover` no frontend** (`src/hooks/useConversationMode.ts`)
-- Após o `DEVOLVER` com sucesso (modo atualizado para `SDR_IA`), buscar a última mensagem inbound do lead que tem intent com `resposta_enviada_em IS NULL`
-- Chamar `sdr-ia-interpret` com `{ messageId, reprocess: true }` para que a Amélia processe e responda
+### 1. Corrigir dado imediato
+- UPDATE direto no `lead_conversation_state` para setar `last_inbound_at` com o timestamp da última mensagem INBOUND real
+
+### 2. Tornar meta-webhook resiliente
+- No `meta-webhook/index.ts`, após o upsert de `last_inbound_at`, checar o resultado e logar erro se falhar
+- Adicionar fallback: se o upsert falhar, tentar `.update()` direto
+
+### 3. Adicionar fallback no `update_conversation_with_intent`
+- Na função RPC `update_conversation_with_intent`, incluir `last_inbound_at = NOW()` no update quando a mensagem processada for inbound (detectável por parâmetro adicional)
+- Isso garante que mesmo se o meta-webhook falhar, o sdr-ia-interpret atualize o campo
+
+### 4. Tratar NULL como "sem restrição" no whatsapp-send
+- No `whatsapp-send`, quando `last_inbound_at` é NULL mas `ultimo_contato_em` é recente (< 24h), usar `ultimo_contato_em` como fallback ao invés de tratar como Infinity
 
 ### Arquivos afetados
-- `supabase/functions/sdr-ia-interpret/index.ts` — adicionar suporte a `reprocess` flag
-- `src/hooks/useConversationMode.ts` — trigger reprocessamento no DEVOLVER
-
-### Fluxo resultante
-```text
-Vendedor clica "Devolver à Amélia"
-  → modo atualizado para SDR_IA
-  → busca última msg inbound sem resposta
-  → chama sdr-ia-interpret(messageId, reprocess=true)
-  → Amélia lê contexto completo (histórico + framework)
-  → Amélia responde ao lead
-```
+- `supabase/functions/meta-webhook/index.ts` — log de erro no upsert
+- `supabase/functions/whatsapp-send/index.ts` — fallback para `ultimo_contato_em` quando `last_inbound_at` é NULL
+- Migração SQL — corrigir dado atual e adicionar lógica no RPC
 
