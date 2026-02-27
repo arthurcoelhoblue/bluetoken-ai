@@ -470,6 +470,19 @@ serve(async (req) => {
   try {
     const rawPayload = await req.json();
 
+    log.debug('Raw payload recebido', { keys: Object.keys(rawPayload), from: rawPayload.from });
+
+    // Normalizar campos: Mensageria envia 'message' e 'messageId',
+    // mas o schema interno espera 'text' e 'message_id'
+    const normalizedPayload = {
+      from: rawPayload.from,
+      message_id: rawPayload.message_id || rawPayload.messageId || '',
+      timestamp: rawPayload.timestamp,
+      text: rawPayload.text || rawPayload.message || '',
+      media_url: rawPayload.media_url,
+      media_type: rawPayload.media_type,
+    };
+
     const inboundSchema = z.object({
       from: z.string().min(8, 'Phone number required').max(20),
       message_id: z.string().min(1, 'message_id required').max(200),
@@ -479,8 +492,9 @@ serve(async (req) => {
       media_type: z.string().optional(),
     });
 
-    const parsed = inboundSchema.safeParse(rawPayload);
+    const parsed = inboundSchema.safeParse(normalizedPayload);
     if (!parsed.success) {
+      log.warn('Payload inválido', { errors: parsed.error.errors, rawKeys: Object.keys(rawPayload) });
       return new Response(
         JSON.stringify({ error: parsed.error.errors[0]?.message || 'Invalid payload' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
