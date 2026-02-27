@@ -136,11 +136,14 @@ export function useSendManualMessage() {
       queryClient.invalidateQueries({ queryKey: ['atendimentos'] });
     },
     onError: (error) => {
-      toast({
-        title: 'Erro ao enviar',
-        description: error.message,
-        variant: 'destructive',
-      });
+      const is24h = error.message?.includes('24h');
+      if (!is24h) {
+        toast({
+          title: 'Erro ao enviar',
+          description: error.message,
+          variant: 'destructive',
+        });
+      }
     },
   });
 }
