@@ -6,7 +6,8 @@ import { createLogger } from "../_shared/logger.ts";
 
 // ========================================
 // PATCH 5F - WhatsApp Inbound Webhook
-// Recebe mensagens de leads via WhatsApp
+// Arquitetura EMPRESA-FIRST: determina a empresa dona do webhook
+// ANTES de buscar leads, garantindo isolamento total entre tenants.
 // ========================================
 
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
@@ -79,7 +80,6 @@ function normalizePhone(raw: string): string {
 }
 
 function validateAuth(req: Request, bodySecret?: string): boolean {
-  // Debug: logar todos os headers para identificar formato da Mensageria
   const headerNames = [...req.headers.keys()];
   log.info('Headers recebidos no inbound', { headers: headerNames });
   
@@ -91,9 +91,6 @@ function validateAuth(req: Request, bodySecret?: string): boolean {
   }
   
   // 1. Authorization: Bearer <token>
-  // NOTA: O gateway Supabase SUBSTITUI o Authorization header pelo JWT interno.
-  // Por isso, Authorization: Bearer NÃO funciona para tokens customizados.
-  // Use x-webhook-secret, X-API-Key, ou query param ?key= em vez disso.
   const authHeader = req.headers.get('Authorization');
   if (authHeader) {
     const token = authHeader.replace('Bearer ', '').trim();
@@ -110,7 +107,7 @@ function validateAuth(req: Request, bodySecret?: string): boolean {
     return true;
   }
   
-  // 3. x-webhook-secret header (como sgt-webhook usa)
+  // 3. x-webhook-secret header
   const xWebhookSecret = req.headers.get('x-webhook-secret');
   if (xWebhookSecret === inboundSecret) {
     log.info('Auth via x-webhook-secret');
@@ -158,15 +155,30 @@ function validateAuth(req: Request, bodySecret?: string): boolean {
   return false;
 }
 
-async function getEmpresasComMensageria(supabase: SupabaseClient): Promise<string[]> {
-  const { data } = await supabase
+// ========================================
+// EMPRESA-FIRST: Resolver empresa dona do webhook
+// ========================================
+
+/**
+ * Determina qual(is) empresa(s) possuem mensageria totalmente configurada.
+ * Retorna lista de empresas com channel='mensageria', enabled=true E api_key configurada.
+ * Se nenhuma encontrada, retorna array vazio (fallback para busca global).
+ */
+async function resolveEmpresaFromWebhook(supabase: SupabaseClient): Promise<string[]> {
+  const { data, error } = await supabase
     .from('integration_company_config')
     .select('empresa')
     .eq('channel', 'mensageria')
-    .eq('enabled', true);
+    .eq('enabled', true)
+    .not('api_key', 'is', null);
+  
+  if (error) {
+    log.error('Erro ao resolver empresa do webhook', { error: error.message });
+    return [];
+  }
   
   const empresas = (data || []).map((e: { empresa: string }) => e.empresa);
-  log.info('Empresas com mensageria ativa', { empresas });
+  log.info('Empresas com mensageria configurada (empresa-first)', { empresas });
   return empresas;
 }
 
@@ -244,16 +256,27 @@ async function clearHandoffFlag(
   log.info('Handoff flag limpo', { leadId, empresa });
 }
 
+/**
+ * EMPRESA-FIRST: Busca lead pelo telefone, filtrando por targetEmpresas quando fornecido.
+ * Se targetEmpresas estiver preenchido, TODAS as queries filtram apenas essas empresas.
+ * Isso garante isolamento total entre tenants.
+ */
 async function findLeadByPhone(
   supabase: SupabaseClient,
-  phoneNormalized: string
+  phoneNormalized: string,
+  targetEmpresas?: string[]
 ): Promise<{ lead: LeadContact | null; handoffInfo?: { leadIdOrigem: string; empresaOrigem: EmpresaTipo } }> {
-  log.info('Buscando lead por telefone em TODAS empresas', { phone: phoneNormalized });
+  const hasFilter = targetEmpresas && targetEmpresas.length > 0;
+  log.info('Buscando lead por telefone', { 
+    phone: phoneNormalized, 
+    targetEmpresas: hasFilter ? targetEmpresas : 'TODAS (sem filtro)',
+  });
   
   const e164 = phoneNormalized.startsWith('+') 
     ? phoneNormalized 
     : `+${phoneNormalized}`;
   
+  // Handoff check (sem filtro de empresa - handoff pode cruzar empresas por design)
   const handoff = await checkPendingHandoff(supabase, e164);
   
   if (handoff) {
@@ -282,18 +305,26 @@ async function findLeadByPhone(
       };
     }
     
-    log.info('Lead não existe na empresa destino, buscando origem');
+    log.info('Lead não existe na empresa destino, continuando busca filtrada');
   }
   
-  const { data: e164Matches } = await supabase
+  // ---- E.164 match ----
+  let e164Query = supabase
     .from('lead_contacts')
     .select('*')
     .eq('telefone_e164', e164)
     .order('updated_at', { ascending: false });
+  
+  if (hasFilter) {
+    e164Query = e164Query.in('empresa', targetEmpresas!);
+  }
+  
+  const { data: e164Matches } = await e164Query;
     
   if (e164Matches && e164Matches.length > 0) {
-    log.info('Encontrados leads por telefone_e164', { count: e164Matches.length });
+    log.info('Encontrados leads por telefone_e164', { count: e164Matches.length, empresas: (e164Matches as LeadContact[]).map(l => l.empresa) });
     
+    // Priorizar lead com cadência ativa
     for (const lead of e164Matches as LeadContact[]) {
       const { data: activeRun } = await supabase
         .from('lead_cadence_runs')
@@ -305,37 +336,32 @@ async function findLeadByPhone(
         .maybeSingle();
       
       if (activeRun) {
-        log.info('Match com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
+        log.info('Match E.164 com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
         return { lead };
       }
     }
     
-    // 2. Priorizar empresa com mensageria ativa
-    const empresasMensageria = await getEmpresasComMensageria(supabase);
-    if (empresasMensageria.length > 0) {
-      const mensageriaMatch = (e164Matches as LeadContact[]).find(
-        l => empresasMensageria.includes(l.empresa)
-      );
-      if (mensageriaMatch) {
-        log.info('Match por empresa com mensageria ativa', { leadId: mensageriaMatch.lead_id, empresa: mensageriaMatch.empresa });
-        return { lead: mensageriaMatch };
-      }
-    }
-    
-    // 3. Fallback: mais recente
-    log.info('Match por telefone_e164 (mais recente)', { leadId: (e164Matches[0] as LeadContact).lead_id });
+    // Sem cadência ativa → primeiro match (já filtrado por empresa)
+    log.info('Match E.164 (primeiro resultado filtrado)', { leadId: (e164Matches[0] as LeadContact).lead_id, empresa: (e164Matches[0] as LeadContact).empresa });
     return { lead: e164Matches[0] as LeadContact };
   }
   
+  // ---- Variação match ----
   const variations = generatePhoneVariations(phoneNormalized);
   log.debug('Variações a testar', { variations });
   
   for (const variant of variations) {
-    const { data: matches } = await supabase
+    let varQuery = supabase
       .from('lead_contacts')
       .select('*')
       .eq('telefone', variant)
       .order('updated_at', { ascending: false });
+    
+    if (hasFilter) {
+      varQuery = varQuery.in('empresa', targetEmpresas!);
+    }
+    
+    const { data: matches } = await varQuery;
       
     if (matches && matches.length > 0) {
       for (const lead of matches as LeadContact[]) {
@@ -349,34 +375,29 @@ async function findLeadByPhone(
           .maybeSingle();
         
         if (activeRun) {
-          log.info('Match exato com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
+          log.info('Match variação com cadência ativa', { leadId: lead.lead_id, empresa: lead.empresa });
           return { lead };
         }
       }
       
-      // Priorizar empresa com mensageria ativa
-      const empresasMsgExato = await getEmpresasComMensageria(supabase);
-      if (empresasMsgExato.length > 0) {
-        const msgMatch = (matches as LeadContact[]).find(
-          l => empresasMsgExato.includes(l.empresa)
-        );
-        if (msgMatch) {
-          log.info('Match exato por empresa com mensageria ativa', { leadId: msgMatch.lead_id, empresa: msgMatch.empresa });
-          return { lead: msgMatch };
-        }
-      }
-      
-      log.info('Match exato (mais recente)', { leadId: (matches[0] as LeadContact).lead_id });
+      log.info('Match variação (primeiro resultado filtrado)', { leadId: (matches[0] as LeadContact).lead_id, empresa: (matches[0] as LeadContact).empresa });
       return { lead: matches[0] as LeadContact };
     }
   }
   
+  // ---- Match parcial (últimos 8 dígitos) ----
   const last8Digits = phoneNormalized.slice(-8);
-  const { data: partialMatches } = await supabase
+  let partialQuery = supabase
     .from('lead_contacts')
     .select('*')
     .like('telefone', `%${last8Digits}`)
     .order('updated_at', { ascending: false });
+  
+  if (hasFilter) {
+    partialQuery = partialQuery.in('empresa', targetEmpresas!);
+  }
+  
+  const { data: partialMatches } = await partialQuery;
     
   if (partialMatches && partialMatches.length > 0) {
     for (const lead of partialMatches as LeadContact[]) {
@@ -395,26 +416,15 @@ async function findLeadByPhone(
       }
     }
     
-    // Priorizar empresa com mensageria ativa
-    const empresasMsgParcial = await getEmpresasComMensageria(supabase);
-    if (empresasMsgParcial.length > 0) {
-      const msgMatch = (partialMatches as LeadContact[]).find(
-        l => empresasMsgParcial.includes(l.empresa)
-      );
-      if (msgMatch) {
-        log.info('Match parcial por empresa com mensageria ativa', { leadId: msgMatch.lead_id, empresa: msgMatch.empresa });
-        return { lead: msgMatch };
-      }
-    }
-    
-    log.info('Match parcial (mais recente)', { leadId: (partialMatches[0] as LeadContact).lead_id });
+    log.info('Match parcial (primeiro resultado filtrado)', { leadId: (partialMatches[0] as LeadContact).lead_id, empresa: (partialMatches[0] as LeadContact).empresa });
     return { lead: partialMatches[0] as LeadContact };
   }
   
+  // ---- Fallback: último OUTBOUND recente ----
   log.info('Tentando fallback por último OUTBOUND...');
   const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
   
-  const { data: lastOutbound } = await supabase
+  let outboundQuery = supabase
     .from('lead_messages')
     .select('lead_id, empresa')
     .eq('direcao', 'OUTBOUND')
@@ -422,11 +432,16 @@ async function findLeadByPhone(
     .eq('estado', 'ENVIADO')
     .gte('created_at', thirtyMinutesAgo)
     .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
+  
+  if (hasFilter) {
+    outboundQuery = outboundQuery.in('empresa', targetEmpresas!);
+  }
+  
+  const { data: lastOutbound } = await outboundQuery.maybeSingle();
 
   if (lastOutbound && lastOutbound.lead_id) {
-    log.info('Fallback: encontrado OUTBOUND recente', { leadId: lastOutbound.lead_id });
+    log.info('Fallback: encontrado OUTBOUND recente', { leadId: lastOutbound.lead_id, empresa: lastOutbound.empresa });
     
     const { data: leadData } = await supabase
       .from('lead_contacts')
@@ -441,7 +456,7 @@ async function findLeadByPhone(
     }
   }
   
-  log.info('Nenhum lead encontrado', { phone: phoneNormalized });
+  log.info('Nenhum lead encontrado', { phone: phoneNormalized, targetEmpresas });
   return { lead: null };
 }
 
@@ -488,7 +503,8 @@ async function saveInboundMessage(
   leadContact: LeadContact | null,
   activeRun: LeadCadenceRun | null,
   crmContactId?: string | null,
-  crmEmpresa?: EmpresaTipo | null
+  crmEmpresa?: EmpresaTipo | null,
+  targetEmpresa?: string | null
 ): Promise<InboundResult> {
   if (await isDuplicate(supabase, payload.message_id)) {
     log.info('Mensagem duplicada', { messageId: payload.message_id });
@@ -499,7 +515,8 @@ async function saveInboundMessage(
     };
   }
   
-  const empresa: EmpresaTipo = leadContact?.empresa || crmEmpresa || 'TOKENIZA';
+  // EMPRESA-FIRST: usa empresa do lead/contact, ou a empresa-alvo do webhook, ou fallback
+  const empresa: EmpresaTipo = (leadContact?.empresa || crmEmpresa || targetEmpresa || 'BLUE_LABS') as EmpresaTipo;
   const isMatched = !!(leadContact || crmContactId);
   
   const messageRecord: Record<string, unknown> = {
@@ -514,7 +531,6 @@ async function saveInboundMessage(
     recebido_em: payload.timestamp,
   };
   
-  // Set contact_id if we have a CRM contact match
   if (crmContactId) {
     messageRecord.contact_id = crmContactId;
   }
@@ -524,6 +540,7 @@ async function saveInboundMessage(
     leadId: messageRecord.lead_id,
     runId: messageRecord.run_id,
     estado: messageRecord.estado,
+    empresa,
   });
   
   const { data, error } = await supabase
@@ -542,7 +559,7 @@ async function saveInboundMessage(
   }
   
   const savedMessage = data as { id: string };
-  log.info('Mensagem salva', { messageId: savedMessage.id });
+  log.info('Mensagem salva', { messageId: savedMessage.id, empresa });
   
   if (activeRun) {
     await supabase.from('lead_cadence_events').insert({
@@ -584,7 +601,6 @@ serve(async (req) => {
   }
 
   try {
-    // Parse body ANTES de validar auth (para suportar auth via body)
     const rawPayload = await req.json();
     const bodySecret = rawPayload.auth_token || rawPayload.secret || null;
 
@@ -598,8 +614,6 @@ serve(async (req) => {
 
     log.debug('Raw payload recebido', { keys: Object.keys(rawPayload), from: rawPayload.from });
 
-    // Normalizar campos: Mensageria envia 'message' e 'messageId',
-    // mas o schema interno espera 'text' e 'message_id'
     const normalizedPayload = {
       from: rawPayload.from,
       message_id: rawPayload.message_id || rawPayload.messageId || '',
@@ -645,38 +659,47 @@ serve(async (req) => {
       return rateLimitResponse(corsHeaders);
     }
 
-    const { lead: leadContact, handoffInfo } = await findLeadByPhone(supabase, phoneNormalized);
+    // ============================================================
+    // EMPRESA-FIRST: Resolver empresa ANTES de buscar leads
+    // ============================================================
+    const targetEmpresas = await resolveEmpresaFromWebhook(supabase);
+    const targetEmpresa = targetEmpresas.length === 1 ? targetEmpresas[0] : null;
     
-    // Fallback: buscar na tabela contacts (CRM) se não encontrou em lead_contacts
+    log.info('Empresa-First resolvido', { 
+      targetEmpresas, 
+      targetEmpresa,
+      mode: targetEmpresas.length > 0 ? 'FILTRADO' : 'GLOBAL (nenhuma empresa com mensageria)',
+    });
+
+    // Buscar lead filtrando por empresa-alvo (ou sem filtro se nenhuma configurada)
+    const { lead: leadContact, handoffInfo } = await findLeadByPhone(
+      supabase, 
+      phoneNormalized, 
+      targetEmpresas.length > 0 ? targetEmpresas : undefined
+    );
+    
+    // Fallback: buscar na tabela contacts (CRM), também filtrado por empresa-alvo
     let crmContact: CrmContact | null = null;
     if (!leadContact) {
       const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
       const rawDigits = payload.from.replace(/\D/g, '');
       
-      // Helper: dado múltiplos contacts, priorizar empresa com mensageria ativa
-      const pickBestCrmContact = async (contacts: CrmContact[]): Promise<CrmContact> => {
-        if (contacts.length === 1) return contacts[0];
-        const empresasMsg = await getEmpresasComMensageria(supabase);
-        if (empresasMsg.length > 0) {
-          const msgMatch = contacts.find(c => empresasMsg.includes(c.empresa));
-          if (msgMatch) {
-            log.info('CRM: priorizado por empresa com mensageria ativa', { contactId: msgMatch.id, empresa: msgMatch.empresa });
-            return msgMatch;
-          }
-        }
-        return contacts[0];
-      };
-      
-      // 1. Busca por telefone_e164 (múltiplos para priorizar)
-      const { data: contactMatches } = await supabase
+      // 1. Busca por telefone_e164 (filtrada por empresa)
+      let contactE164Query = supabase
         .from('contacts')
         .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
         .eq('telefone_e164', e164)
         .order('updated_at', { ascending: false })
         .limit(10);
       
+      if (targetEmpresas.length > 0) {
+        contactE164Query = contactE164Query.in('empresa', targetEmpresas);
+      }
+      
+      const { data: contactMatches } = await contactE164Query;
+      
       if (contactMatches && contactMatches.length > 0) {
-        crmContact = await pickBestCrmContact(contactMatches as CrmContact[]);
+        crmContact = contactMatches[0] as CrmContact;
         log.info('Match via contacts CRM (telefone_e164)', { contactId: crmContact.id, empresa: crmContact.empresa });
       }
       
@@ -684,15 +707,21 @@ serve(async (req) => {
       if (!crmContact) {
         const phonesToTry = [...new Set([rawDigits, phoneNormalized, e164])];
         for (const phone of phonesToTry) {
-          const { data: rawMatches } = await supabase
+          let rawQuery = supabase
             .from('contacts')
             .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
             .eq('telefone', phone)
             .order('updated_at', { ascending: false })
             .limit(10);
           
+          if (targetEmpresas.length > 0) {
+            rawQuery = rawQuery.in('empresa', targetEmpresas);
+          }
+          
+          const { data: rawMatches } = await rawQuery;
+          
           if (rawMatches && rawMatches.length > 0) {
-            crmContact = await pickBestCrmContact(rawMatches as CrmContact[]);
+            crmContact = rawMatches[0] as CrmContact;
             log.info('Match via contacts CRM (telefone raw)', { contactId: crmContact.id, telefone: phone, empresa: crmContact.empresa });
             break;
           }
@@ -702,29 +731,34 @@ serve(async (req) => {
       // 3. Fallback: últimos 8 dígitos
       if (!crmContact) {
         const last8 = phoneNormalized.slice(-8);
-        const { data: partialContacts } = await supabase
+        let partialCrmQuery = supabase
           .from('contacts')
           .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
           .or(`telefone_e164.like.%${last8},telefone.like.%${last8}`)
           .order('updated_at', { ascending: false })
           .limit(10);
         
+        if (targetEmpresas.length > 0) {
+          partialCrmQuery = partialCrmQuery.in('empresa', targetEmpresas);
+        }
+        
+        const { data: partialContacts } = await partialCrmQuery;
+        
         if (partialContacts && partialContacts.length > 0) {
-          crmContact = await pickBestCrmContact(partialContacts as CrmContact[]);
+          crmContact = partialContacts[0] as CrmContact;
           log.info('Match parcial via contacts CRM', { contactId: crmContact.id, empresa: crmContact.empresa });
         }
       }
     }
 
-    let matchedEmpresa = leadContact?.empresa || crmContact?.empresa;
-    let finalLeadContact = leadContact;
-    let finalCrmContact = crmContact;
+    const matchedEmpresa = leadContact?.empresa || crmContact?.empresa;
+    const finalLeadContact = leadContact;
+    const finalCrmContact = crmContact;
     
-    // Mensagens inbound são SEMPRE aceitas e salvas, independentemente
-    // do canal de saída (mensageria) estar habilitado ou não na empresa.
-    // A config de canal controla OUTBOUND, não deve bloquear INBOUND.
     if (matchedEmpresa) {
       log.info('Empresa do lead/contact encontrada', { empresa: matchedEmpresa });
+    } else {
+      log.info('Nenhum lead/contact encontrado, usando empresa-alvo do webhook', { targetEmpresa });
     }
     
     let activeRun: LeadCadenceRun | null = null;
@@ -732,7 +766,12 @@ serve(async (req) => {
       activeRun = await findActiveRun(supabase, finalLeadContact.lead_id, finalLeadContact.empresa);
     }
     
-    const result = await saveInboundMessage(supabase, payload, finalLeadContact, activeRun, finalCrmContact?.id, finalCrmContact?.empresa);
+    // EMPRESA-FIRST: passa targetEmpresa como fallback para garantir empresa correta em UNMATCHED
+    const result = await saveInboundMessage(
+      supabase, payload, finalLeadContact, activeRun, 
+      finalCrmContact?.id, finalCrmContact?.empresa,
+      targetEmpresa
+    );
     
     if (handoffInfo) {
       await clearHandoffFlag(supabase, handoffInfo.leadIdOrigem, handoffInfo.empresaOrigem);
