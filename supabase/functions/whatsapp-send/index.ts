@@ -68,9 +68,11 @@ async function sendViaMensageria(
     return { success: false, error: 'MENSAGERIA_API_KEY não configurada' };
   }
 
+  // Mensageria espera connectionName minúsculo e telefone sem '+'
+  const phoneSanitized = phoneToSend.replace(/^\+/, '');
   const payloadToSend = {
-    connectionName: 'Arthur',
-    to: phoneToSend,
+    connectionName: 'arthur',
+    to: phoneSanitized,
     message: mensagem,
   };
 
