@@ -78,7 +78,7 @@ function normalizePhone(raw: string): string {
   return normalized;
 }
 
-function validateAuth(req: Request): boolean {
+function validateAuth(req: Request, bodySecret?: string): boolean {
   // Debug: logar todos os headers para identificar formato da Mensageria
   const headerNames = [...req.headers.keys()];
   log.info('Headers recebidos no inbound', { headers: headerNames });
@@ -91,9 +91,12 @@ function validateAuth(req: Request): boolean {
   }
   
   // 1. Authorization: Bearer <token>
+  // NOTA: O gateway Supabase SUBSTITUI o Authorization header pelo JWT interno.
+  // Por isso, Authorization: Bearer NÃO funciona para tokens customizados.
+  // Use x-webhook-secret, X-API-Key, ou query param ?key= em vez disso.
   const authHeader = req.headers.get('Authorization');
   if (authHeader) {
-    const token = authHeader.replace('Bearer ', '');
+    const token = authHeader.replace('Bearer ', '').trim();
     if (token === inboundSecret) {
       log.info('Auth via Authorization Bearer');
       return true;
@@ -138,12 +141,19 @@ function validateAuth(req: Request): boolean {
     }
   } catch (_) { /* ignore */ }
   
+  // 7. Auth via body field (auth_token ou secret)
+  if (bodySecret && bodySecret === inboundSecret) {
+    log.info('Auth via body secret');
+    return true;
+  }
+  
   log.warn('Token inválido', { 
     hasAuth: !!authHeader, 
     hasApiKey: !!apiKeyHeader,
     hasWebhookSecret: !!xWebhookSecret,
     hasApiKeyLower: !!apiKeyLower,
     hasToken: !!req.headers.get('token'),
+    hasBodySecret: !!bodySecret,
   });
   return false;
 }
@@ -524,16 +534,18 @@ serve(async (req) => {
     );
   }
 
-  if (!validateAuth(req)) {
-    log.error('Acesso não autorizado');
-    return new Response(
-      JSON.stringify({ error: 'Unauthorized' }),
-      { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
-  }
-
   try {
+    // Parse body ANTES de validar auth (para suportar auth via body)
     const rawPayload = await req.json();
+    const bodySecret = rawPayload.auth_token || rawPayload.secret || null;
+
+    if (!validateAuth(req, bodySecret)) {
+      log.error('Acesso não autorizado');
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
     log.debug('Raw payload recebido', { keys: Object.keys(rawPayload), from: rawPayload.from });
 
