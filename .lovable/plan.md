@@ -1,43 +1,48 @@
 
 
-## Plano: Suportar envio de WhatsApp para contatos sem `legacy_lead_id`
+## Plano: API Key e Connection Name por empresa para Mensageria
 
 ### Problema
-O `whatsapp-send` exige `leadId` (campo obrigatório), mas contatos criados diretamente no CRM não possuem `legacy_lead_id`. Isso bloqueia o envio de mensagens para esses contatos.
+Hoje o `whatsapp-send` usa uma única `MENSAGERIA_API_KEY` (env global) e `connectionName: 'arthur'` hardcoded. Cada empresa precisa de sua própria API key e nome de conexão.
+
+### Solução
+Armazenar `api_key` e `connection_name` na tabela `integration_company_config`, que já tem a relação empresa × canal.
 
 ### Alterações
 
-#### 1. Adicionar coluna `contact_id` na tabela `lead_messages`
-- Migration: `ALTER TABLE lead_messages ADD COLUMN contact_id UUID REFERENCES contacts(id)`
-- Isso permite registrar mensagens vinculadas a um contato mesmo sem lead legado
+#### 1. Migration: adicionar colunas na `integration_company_config`
+- `api_key TEXT` — API key da mensageria para aquela empresa
+- `connection_name TEXT` — nome da conexão Baileys (ex: `'arthur'`, `'bluelabs'`)
 
 #### 2. Atualizar edge function `whatsapp-send`
-- Aceitar `contactId` como alternativa a `leadId`
-- Validação: exigir **pelo menos um** dos dois (`leadId` ou `contactId`)
-- Se `contactId` for fornecido sem `leadId`, buscar `legacy_lead_id` do contato (se existir) para manter compatibilidade
-- Gravar `contact_id` em `lead_messages` quando disponível
-- Verificar opt-out via `contacts` quando `leadId` não estiver disponível
+- Em `sendViaMensageria`, receber `apiKey` e `connectionName` como parâmetros
+- No handler principal, buscar esses valores de `integration_company_config` onde `empresa = X` e `channel = 'mensageria'`
+- Fallback: se `api_key` estiver null na tabela, usar env `MENSAGERIA_API_KEY` (compatibilidade)
+- Remover `connectionName: 'arthur'` hardcoded
 
-#### 3. Atualizar `useSendManualMessage` hook
-- Adicionar `contactId` opcional ao `SendManualParams`
-- Enviar `contactId` no body do invoke quando disponível
+#### 3. Atualizar UI `CompanyChannelCard`
+- Para o canal `mensageria`, mostrar campos editáveis de `api_key` e `connection_name` dentro de cada card de empresa
+- Salvar diretamente na `integration_company_config`
 
-#### 4. Atualizar `ManualMessageInput`
-- Remover o bloqueio "Lead não vinculado"
-- Se `leadId` não existir mas `contactId` existir, usar `contactId` para enviar
-- Buscar telefone do contato via `contacts` quando necessário
-
-#### 5. Atualizar `ConversationPanel` e chamadores
-- `DealDetailSheet`: passar `contactId` e permitir chat mesmo sem `legacy_lead_id`
-- `ContactDetailSheet`: idem
+#### 4. Seed: popular Blue Labs com dados atuais
+- `UPDATE integration_company_config SET connection_name = 'arthur' WHERE empresa = 'BLUE_LABS' AND channel = 'mensageria'`
+- A api_key será inserida via UI (campo mascarado)
 
 ### Detalhes técnicos
 
-A lógica no edge function ficará:
+O fluxo no `whatsapp-send` ficará:
 ```
-if (!leadId && !contactId) → 400 error
-if (contactId && !leadId) → buscar legacy_lead_id do contact, usar se existir
+const { data: channelConfig } = await supabase
+  .from('integration_company_config')
+  .select('channel, enabled, api_key, connection_name')
+  .eq('empresa', empresa)
+  .eq('enabled', true)
+  .single();
+
+// Para mensageria:
+const apiKey = channelConfig.api_key || getOptionalEnv('MENSAGERIA_API_KEY');
+const connName = channelConfig.connection_name || 'arthur';
 ```
 
-O `lead_messages.lead_id` continuará preenchido quando disponível, e `contact_id` será gravado em paralelo para rastreabilidade.
+A UI terá inputs inline no card de cada empresa quando o canal for `mensageria`, permitindo configurar API key (campo password) e connection name por empresa.
 
