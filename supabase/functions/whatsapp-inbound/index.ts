@@ -79,6 +79,48 @@ function normalizePhone(raw: string): string {
   return normalized;
 }
 
+// ========================================
+// HMAC-SHA256 Signature Verification
+// ========================================
+
+async function verifyHmacSignature(
+  rawBody: string,
+  signature: string,
+  secret: string
+): Promise<boolean> {
+  try {
+    const encoder = new TextEncoder();
+    const keyData = encoder.encode(secret);
+    const bodyData = encoder.encode(rawBody);
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'raw',
+      keyData,
+      { name: 'HMAC', hash: 'SHA-256' },
+      false,
+      ['sign']
+    );
+
+    const signatureBuffer = await crypto.subtle.sign('HMAC', cryptoKey, bodyData);
+    const computedHex = Array.from(new Uint8Array(signatureBuffer))
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
+
+    // Compare case-insensitively
+    const isValid = computedHex.toLowerCase() === signature.toLowerCase();
+    if (!isValid) {
+      log.warn('HMAC signature mismatch', { 
+        expected: computedHex.substring(0, 12) + '...', 
+        received: signature.substring(0, 12) + '...' 
+      });
+    }
+    return isValid;
+  } catch (err) {
+    log.error('Erro ao verificar HMAC', { error: String(err) });
+    return false;
+  }
+}
+
 function validateAuth(req: Request, bodySecret?: string): boolean {
   const headerNames = [...req.headers.keys()];
   log.info('Headers recebidos no inbound', { headers: headerNames });
@@ -158,6 +200,37 @@ function validateAuth(req: Request, bodySecret?: string): boolean {
 // ========================================
 // EMPRESA-FIRST: Resolver empresa dona do webhook
 // ========================================
+
+/**
+ * Resolve empresa precisamente via connection_name.
+ * Busca na tabela integration_company_config onde connection_name = valor E channel = 'mensageria'.
+ */
+async function resolveEmpresaByConnectionName(
+  supabase: SupabaseClient,
+  connectionName: string
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .from('integration_company_config')
+    .select('empresa')
+    .eq('connection_name', connectionName)
+    .eq('channel', 'mensageria')
+    .eq('enabled', true)
+    .maybeSingle();
+
+  if (error) {
+    log.error('Erro ao resolver empresa por connection_name', { error: error.message, connectionName });
+    return null;
+  }
+
+  if (data) {
+    const empresa = (data as { empresa: string }).empresa;
+    log.info('Empresa resolvida via connection_name', { connectionName, empresa });
+    return empresa;
+  }
+
+  log.warn('Nenhuma empresa encontrada para connection_name', { connectionName });
+  return null;
+}
 
 /**
  * Determina qual(is) empresa(s) possuem mensageria totalmente configurada.
@@ -649,7 +722,9 @@ serve(async (req) => {
   }
 
   try {
-    const rawPayload = await req.json();
+    // Ler body como texto bruto ANTES do parse para HMAC validation
+    const rawBody = await req.text();
+    const rawPayload = JSON.parse(rawBody);
     const bodySecret = rawPayload.auth_token || rawPayload.secret || null;
 
     if (!validateAuth(req, bodySecret)) {
@@ -660,7 +735,33 @@ serve(async (req) => {
       );
     }
 
-    log.debug('Raw payload recebido', { keys: Object.keys(rawPayload), from: rawPayload.from });
+    // Validação opcional de X-Webhook-Signature (HMAC-SHA256)
+    const webhookSignature = req.headers.get('X-Webhook-Signature');
+    if (webhookSignature) {
+      const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
+      if (inboundSecret) {
+        const isValidSignature = await verifyHmacSignature(rawBody, webhookSignature, inboundSecret);
+        if (!isValidSignature) {
+          log.error('HMAC signature inválida');
+          return new Response(
+            JSON.stringify({ error: 'Invalid webhook signature' }),
+            { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
+        log.info('HMAC signature válida');
+      }
+    }
+
+    // Extrair connection_name do payload ou header
+    const connectionName: string | null = rawPayload.connection_name 
+      || req.headers.get('X-Connection-Name') 
+      || null;
+
+    log.debug('Raw payload recebido', { 
+      keys: Object.keys(rawPayload), 
+      from: rawPayload.from,
+      connection_name: connectionName,
+    });
 
     const normalizedPayload = {
       from: rawPayload.from,
@@ -694,6 +795,7 @@ serve(async (req) => {
       from: payload.from,
       message_id: payload.message_id,
       textPreview: payload.text?.substring(0, 50),
+      connection_name: connectionName,
     });
 
     const phoneNormalized = normalizePhone(payload.from);
@@ -709,14 +811,35 @@ serve(async (req) => {
 
     // ============================================================
     // EMPRESA-FIRST: Resolver empresa ANTES de buscar leads
+    // Prioridade: connection_name > fallback (todas com mensageria)
     // ============================================================
-    const targetEmpresas = await resolveEmpresaFromWebhook(supabase);
-    const targetEmpresa = targetEmpresas.length === 1 ? targetEmpresas[0] : null;
+    let targetEmpresas: string[] = [];
+    let targetEmpresa: string | null = null;
+
+    if (connectionName) {
+      const empresa = await resolveEmpresaByConnectionName(supabase, connectionName);
+      if (empresa) {
+        targetEmpresas = [empresa];
+        targetEmpresa = empresa;
+        log.info('Empresa resolvida via connection_name', { connectionName, empresa });
+      }
+    }
+
+    // Fallback: comportamento antigo (todas as empresas com mensageria habilitada)
+    if (targetEmpresas.length === 0) {
+      targetEmpresas = await resolveEmpresaFromWebhook(supabase);
+      targetEmpresa = targetEmpresas.length === 1 ? targetEmpresas[0] : null;
+    }
     
     log.info('Empresa-First resolvido', { 
       targetEmpresas, 
       targetEmpresa,
-      mode: targetEmpresas.length > 0 ? 'FILTRADO' : 'GLOBAL (nenhuma empresa com mensageria)',
+      connectionName,
+      mode: connectionName && targetEmpresa 
+        ? 'CONNECTION_NAME' 
+        : targetEmpresas.length > 0 
+          ? 'FILTRADO' 
+          : 'GLOBAL (nenhuma empresa com mensageria)',
     });
 
     // Buscar lead filtrando por empresa-alvo (ou sem filtro se nenhuma configurada)
