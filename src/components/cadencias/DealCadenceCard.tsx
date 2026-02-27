@@ -17,6 +17,7 @@ import {
   usePauseDealCadence,
   useResumeDealCadence,
   useCancelDealCadence,
+  validateCadenceTemplatesApproved,
 } from '@/hooks/useCadenciasCRM';
 import type { DealCadenciaStatus } from '@/types/cadence';
 
@@ -66,11 +67,28 @@ export function DealCadenceCard({ dealId, contactId, empresa }: Props) {
   const activeCadenceIds = new Set(activeCadences.map(s => s.cadence_id));
   const availableCadences = cadencias.filter(c => c.ativo && !activeCadenceIds.has(c.id));
 
-  const handleStart = () => {
+  const [validating, setValidating] = useState(false);
+
+  const handleStart = async () => {
     if (!selectedCadence || !leadId) {
       toast.error(leadId ? 'Selecione uma cadência' : 'Contato sem lead vinculado');
       return;
     }
+
+    // Pre-validate templates
+    setValidating(true);
+    try {
+      const validation = await validateCadenceTemplatesApproved(selectedCadence, empresa);
+      if (!validation.valid) {
+        toast.error(`Templates não aprovados na Meta: ${validation.unapproved.join(', ')}`);
+        setValidating(false);
+        return;
+      }
+    } catch {
+      // If validation fails, let the mutation handle it
+    }
+    setValidating(false);
+
     startCadence.mutate(
       { dealId, cadenceId: selectedCadence, leadId, empresa },
       {
@@ -79,7 +97,7 @@ export function DealCadenceCard({ dealId, contactId, empresa }: Props) {
           setSelectedCadence('');
           setShowSelector(false);
         },
-        onError: () => toast.error('Erro ao iniciar cadência'),
+        onError: (err) => toast.error(err instanceof Error ? err.message : 'Erro ao iniciar cadência'),
       }
     );
   };
@@ -148,7 +166,7 @@ export function DealCadenceCard({ dealId, contactId, empresa }: Props) {
                 )}
               </SelectContent>
             </Select>
-            <Button size="sm" className="h-8" onClick={handleStart} disabled={startCadence.isPending || !selectedCadence}>
+            <Button size="sm" className="h-8" onClick={handleStart} disabled={startCadence.isPending || validating || !selectedCadence}>
               <Play className="h-3 w-3 mr-1" /> Iniciar
             </Button>
             <Button size="sm" variant="ghost" className="h-8" onClick={() => { setShowSelector(false); setSelectedCadence(''); }}>

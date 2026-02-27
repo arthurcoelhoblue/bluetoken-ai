@@ -232,6 +232,12 @@ async function resolverMensagem(
     return { success: false, error: `Template ${templateCodigo} não encontrado ou inativo` };
   }
 
+  // Validate Meta approval for WhatsApp templates
+  if (canal === 'WHATSAPP' && template.meta_status !== 'APPROVED') {
+    log.error('Template não aprovado na Meta', { templateCodigo, meta_status: template.meta_status });
+    return { success: false, error: `Template "${template.nome || templateCodigo}" não está aprovado na Meta (status: ${template.meta_status}). Cadência bloqueada.` };
+  }
+
   if (template.canal !== canal) {
     log.warn('Canal diferente', { templateCanal: template.canal, stepCanal: canal });
   }
