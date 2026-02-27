@@ -32,10 +32,50 @@ export function useDealCadenciaStatus(dealId: string | null) {
   });
 }
 
+/** Check if all templates in a cadence are APPROVED in Meta */
+export async function validateCadenceTemplatesApproved(cadenceId: string, empresa: string): Promise<{ valid: boolean; unapproved: string[] }> {
+  // Get all template codes used in cadence steps
+  const { data: steps } = await supabase
+    .from('cadence_steps')
+    .select('template_codigo, canal')
+    .eq('cadence_id', cadenceId);
+
+  if (!steps || steps.length === 0) return { valid: true, unapproved: [] };
+
+  // Get unique template codes
+  const templateCodes = [...new Set(steps.map(s => s.template_codigo))];
+
+  // Check each template's meta_status
+  const { data: templates } = await supabase
+    .from('message_templates')
+    .select('codigo, nome, meta_status')
+    .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+    .eq('ativo', true)
+    .in('codigo', templateCodes);
+
+  const unapproved: string[] = [];
+  for (const code of templateCodes) {
+    const tmpl = templates?.find(t => t.codigo === code);
+    if (!tmpl) {
+      unapproved.push(code);
+    } else if (tmpl.meta_status !== 'APPROVED') {
+      unapproved.push(tmpl.nome || code);
+    }
+  }
+
+  return { valid: unapproved.length === 0, unapproved };
+}
+
 export function useStartDealCadence() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async ({ dealId, cadenceId, leadId, empresa }: StartDealCadencePayload) => {
+      // 0. Validate all templates are APPROVED in Meta
+      const validation = await validateCadenceTemplatesApproved(cadenceId, empresa);
+      if (!validation.valid) {
+        throw new Error(`Templates não aprovados na Meta: ${validation.unapproved.join(', ')}. Todos os templates da cadência precisam estar aprovados.`);
+      }
+
       // 1. Create lead_cadence_run (PT status)
       const { data: run, error: runErr } = await supabase
         .from('lead_cadence_runs')
