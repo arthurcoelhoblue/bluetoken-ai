@@ -8,6 +8,7 @@ import { usePipelines } from '@/hooks/usePipelines';
 import { useCreatePipeline, useUpdatePipeline, useDeletePipeline, useCreateStage, useUpdateStage, useDeleteStage, useDuplicatePipeline } from '@/hooks/usePipelineConfig';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
+import { useCompany } from '@/contexts/CompanyContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -20,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import type { PipelineStage } from '@/types/deal';
 
 function PipelineConfigContent() {
+  const { empresaRecords } = useCompany();
   const { data: pipelines, isLoading } = usePipelines();
   const { data: deals } = useQuery({
     queryKey: ['deals_existence_check'],
@@ -39,7 +41,7 @@ function PipelineConfigContent() {
 
   const [newDialogOpen, setNewDialogOpen] = useState(false);
   const [newName, setNewName] = useState('');
-  const [newEmpresa, setNewEmpresa] = useState<'BLUE' | 'TOKENIZA'>('BLUE');
+  const [newEmpresa, setNewEmpresa] = useState(empresaRecords[0]?.id ?? 'BLUE');
   const [newTipo, setNewTipo] = useState('COMERCIAL');
   const [cloneFromId, setCloneFromId] = useState<string | null>(null);
   const [newStageDialogOpen, setNewStageDialogOpen] = useState<string | null>(null);
@@ -53,9 +55,9 @@ function PipelineConfigContent() {
     if (!newName.trim()) return;
     try {
       if (cloneFromId) {
-        await duplicatePipeline.mutateAsync({ sourceId: cloneFromId, newName: newName.trim(), newEmpresa: newEmpresa });
+        await duplicatePipeline.mutateAsync({ sourceId: cloneFromId, newName: newName.trim(), newEmpresa: newEmpresa as any });
       } else {
-        await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa, tipo: newTipo });
+        await createPipeline.mutateAsync({ nome: newName.trim(), empresa: newEmpresa as any, tipo: newTipo });
       }
       toast.success(cloneFromId ? 'Pipeline clonado com sucesso' : 'Pipeline criado');
       setNewName('');
@@ -127,11 +129,12 @@ function PipelineConfigContent() {
               <DialogHeader><DialogTitle>Novo Pipeline</DialogTitle></DialogHeader>
               <div className="space-y-4">
                 <Input placeholder="Nome do funil" value={newName} onChange={e => setNewName(e.target.value)} />
-                <Select value={newEmpresa} onValueChange={v => setNewEmpresa(v as 'BLUE' | 'TOKENIZA')}>
+                <Select value={newEmpresa} onValueChange={setNewEmpresa}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="BLUE">Blue</SelectItem>
-                    <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                    {empresaRecords.filter(e => e.is_active).map(e => (
+                      <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
                 <Select value={newTipo} onValueChange={setNewTipo}>
