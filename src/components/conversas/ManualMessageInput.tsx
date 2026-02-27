@@ -75,7 +75,8 @@ export function ManualMessageInput({
     if (!message || !telefone) return;
     sendMutation.mutate(
       {
-        leadId,
+        ...(leadId ? { leadId } : {}),
+        ...(contactId ? { contactId } : {}),
         empresa,
         telefone,
         conteudo: message,
@@ -122,11 +123,11 @@ export function ManualMessageInput({
     );
   }
 
-  if (!leadId) {
+  if (!leadId && !contactId) {
     return (
       <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground bg-muted/50 rounded-lg">
         <AlertCircle className="h-4 w-4 shrink-0" />
-        Lead não vinculado — não é possível enviar mensagem por aqui.
+        Lead/Contato não vinculado — não é possível enviar mensagem por aqui.
       </div>
     );
   }

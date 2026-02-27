@@ -3984,6 +3984,7 @@ export type Database = {
       lead_messages: {
         Row: {
           canal: Database["public"]["Enums"]["canal_tipo"]
+          contact_id: string | null
           conteudo: string
           created_at: string
           direcao: string
@@ -4013,6 +4014,7 @@ export type Database = {
         }
         Insert: {
           canal: Database["public"]["Enums"]["canal_tipo"]
+          contact_id?: string | null
           conteudo: string
           created_at?: string
           direcao: string
@@ -4042,6 +4044,7 @@ export type Database = {
         }
         Update: {
           canal?: Database["public"]["Enums"]["canal_tipo"]
+          contact_id?: string | null
           conteudo?: string
           created_at?: string
           direcao?: string
@@ -4070,6 +4073,20 @@ export type Database = {
           whatsapp_message_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "lead_messages_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lead_messages_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "lead_messages_run_id_fkey"
             columns: ["run_id"]

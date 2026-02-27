@@ -55,7 +55,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
     },
   });
 
-  const hasChat = !!contactBridge?.legacy_lead_id || !!contactBridge?.telefone;
+  const hasChat = !!contactBridge?.telefone;
 
   // Conversation messages for Chat tab
   const { data: chatMessages = [], isLoading: chatLoading } = useConversationMessages({

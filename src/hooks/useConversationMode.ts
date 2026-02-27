@@ -92,7 +92,8 @@ export function useConversationTakeover() {
 }
 
 interface SendManualParams {
-  leadId: string;
+  leadId?: string;
+  contactId?: string;
   empresa: string;
   telefone: string;
   conteudo: string;
@@ -105,10 +106,10 @@ export function useSendManualMessage() {
   const takeover = useConversationTakeover();
 
   return useMutation({
-    mutationFn: async ({ leadId, empresa, telefone, conteudo, modoAtual }: SendManualParams) => {
+    mutationFn: async ({ leadId, contactId, empresa, telefone, conteudo, modoAtual }: SendManualParams) => {
       if (!user?.id) throw new Error('Usuário não autenticado');
 
-      if (modoAtual !== 'MANUAL') {
+      if (leadId && modoAtual !== 'MANUAL') {
         await takeover.mutateAsync({
           leadId,
           empresa,
@@ -119,7 +120,8 @@ export function useSendManualMessage() {
 
       const { data, error } = await supabase.functions.invoke('whatsapp-send', {
         body: {
-          leadId,
+          ...(leadId ? { leadId } : {}),
+          ...(contactId ? { contactId } : {}),
           telefone,
           mensagem: conteudo,
           empresa,
