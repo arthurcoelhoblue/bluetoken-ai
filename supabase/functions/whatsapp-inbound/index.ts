@@ -767,7 +767,10 @@ serve(async (req) => {
     }
 
     // Extrair connection_name do payload ou header
+    // Mensageria envia como "connection", normalizar para compatibilidade
     const connectionName: string | null = rawPayload.connection_name 
+      || rawPayload.connection
+      || rawPayload.connectionName
       || req.headers.get('X-Connection-Name') 
       || null;
 
