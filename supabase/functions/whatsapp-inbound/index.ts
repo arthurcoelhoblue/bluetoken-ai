@@ -79,8 +79,9 @@ function normalizePhone(raw: string): string {
 }
 
 function validateAuth(req: Request): boolean {
-  const authHeader = req.headers.get('Authorization');
-  const apiKeyHeader = req.headers.get('X-API-Key');
+  // Debug: logar todos os headers para identificar formato da Mensageria
+  const headerNames = [...req.headers.keys()];
+  log.info('Headers recebidos no inbound', { headers: headerNames });
   
   const inboundSecret = getOptionalEnv('WHATSAPP_INBOUND_SECRET');
   
@@ -89,18 +90,61 @@ function validateAuth(req: Request): boolean {
     return false;
   }
   
+  // 1. Authorization: Bearer <token>
+  const authHeader = req.headers.get('Authorization');
   if (authHeader) {
     const token = authHeader.replace('Bearer ', '');
     if (token === inboundSecret) {
+      log.info('Auth via Authorization Bearer');
       return true;
     }
   }
   
+  // 2. X-API-Key header
+  const apiKeyHeader = req.headers.get('X-API-Key');
   if (apiKeyHeader === inboundSecret) {
+    log.info('Auth via X-API-Key');
     return true;
   }
   
-  log.warn('Token inválido');
+  // 3. x-webhook-secret header (como sgt-webhook usa)
+  const xWebhookSecret = req.headers.get('x-webhook-secret');
+  if (xWebhookSecret === inboundSecret) {
+    log.info('Auth via x-webhook-secret');
+    return true;
+  }
+  
+  // 4. apikey header (padrão Supabase)
+  const apiKeyLower = req.headers.get('apikey');
+  if (apiKeyLower === inboundSecret) {
+    log.info('Auth via apikey');
+    return true;
+  }
+  
+  // 5. token header
+  const tokenHeader = req.headers.get('token');
+  if (tokenHeader === inboundSecret) {
+    log.info('Auth via token header');
+    return true;
+  }
+  
+  // 6. Query param ?key=<secret>
+  try {
+    const url = new URL(req.url);
+    const keyParam = url.searchParams.get('key');
+    if (keyParam === inboundSecret) {
+      log.info('Auth via query param key');
+      return true;
+    }
+  } catch (_) { /* ignore */ }
+  
+  log.warn('Token inválido', { 
+    hasAuth: !!authHeader, 
+    hasApiKey: !!apiKeyHeader,
+    hasWebhookSecret: !!xWebhookSecret,
+    hasApiKeyLower: !!apiKeyLower,
+    hasToken: !!req.headers.get('token'),
+  });
   return false;
 }
 
