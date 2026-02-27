@@ -24,6 +24,11 @@ serve(async (req) => {
       if (jobErr || !job) throw new Error('Job not found: ' + jobErr?.message);
       if (job.status !== 'PREVIEW') throw new Error('Job must be in PREVIEW status');
 
+      // Validate approval if needed
+      if (job.needs_approval && !job.approved_by) {
+        throw new Error('Job requires approval before execution');
+      }
+
       // Validate tenant
       assertEmpresa(job.empresa);
       const jobEmpresa = job.empresa;

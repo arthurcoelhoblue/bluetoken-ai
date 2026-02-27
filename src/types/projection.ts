@@ -28,7 +28,7 @@ export interface StageProjection {
 }
 
 export type MassActionJobType = 'CADENCIA_MODELO' | 'CAMPANHA_ADHOC';
-export type MassActionJobStatus = 'PENDING' | 'GENERATING' | 'PREVIEW' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PARTIAL';
+export type MassActionJobStatus = 'PENDING' | 'GENERATING' | 'PREVIEW' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PARTIAL' | 'AGUARDANDO_APROVACAO' | 'REJECTED';
 
 export interface MassActionMessagePreview {
   deal_id: string;
@@ -56,4 +56,11 @@ export interface MassActionJob {
   started_at: string | null;
   completed_at: string | null;
   updated_at: string;
+  needs_approval: boolean;
+  approved_by: string | null;
+  approved_at: string | null;
+  rejected_by: string | null;
+  rejected_at: string | null;
+  rejection_reason: string | null;
+  template_id?: string | null;
 }
