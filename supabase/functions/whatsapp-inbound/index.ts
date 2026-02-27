@@ -517,10 +517,58 @@ async function saveInboundMessage(
   
   // EMPRESA-FIRST: usa empresa do lead/contact, ou a empresa-alvo do webhook, ou fallback
   const empresa: EmpresaTipo = (leadContact?.empresa || crmEmpresa || targetEmpresa || 'BLUE_LABS') as EmpresaTipo;
-  const isMatched = !!(leadContact || crmContactId);
+  let isMatched = !!(leadContact || crmContactId);
+  let resolvedLeadId = leadContact?.lead_id || null;
+  
+  // Auto-criar lead_contact para números desconhecidos (UNMATCHED)
+  if (!isMatched) {
+    const phoneNormalized = normalizePhone(payload.from);
+    const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
+    const phoneHash = simpleHash(e164).toString(36);
+    const newLeadId = `inbound_${phoneHash}_${Date.now()}`;
+    
+    log.info('Auto-criando lead_contact para número desconhecido', { 
+      newLeadId, empresa, e164 
+    });
+    
+    // Verificar se já existe lead_contact com mesmo telefone_e164 + empresa (retry safety)
+    const { data: existing } = await supabase
+      .from('lead_contacts')
+      .select('lead_id')
+      .eq('telefone_e164', e164)
+      .eq('empresa', empresa)
+      .maybeSingle();
+    
+    if (existing) {
+      resolvedLeadId = (existing as { lead_id: string }).lead_id;
+      isMatched = true;
+      log.info('Lead já existente para este telefone+empresa', { leadId: resolvedLeadId });
+    } else {
+      const { data: newLead, error: createError } = await supabase
+        .from('lead_contacts')
+        .insert({
+          lead_id: newLeadId,
+          empresa,
+          telefone: phoneNormalized,
+          telefone_e164: e164,
+          origem_telefone: 'WHATSAPP_INBOUND',
+        })
+        .select('lead_id')
+        .single();
+      
+      if (createError) {
+        log.error('Erro ao auto-criar lead_contact', { error: createError.message });
+      } else if (newLead) {
+        resolvedLeadId = (newLead as { lead_id: string }).lead_id;
+        isMatched = true;
+        log.info('Lead auto-criado com sucesso', { leadId: resolvedLeadId, empresa });
+        // O trigger fn_sync_lead_to_contact criará automaticamente o registro em contacts
+      }
+    }
+  }
   
   const messageRecord: Record<string, unknown> = {
-    lead_id: leadContact?.lead_id || null,
+    lead_id: resolvedLeadId,
     empresa,
     run_id: activeRun?.id || null,
     canal: 'WHATSAPP',
@@ -579,9 +627,9 @@ async function saveInboundMessage(
   return {
     success: true,
     messageId: savedMessage.id,
-    leadId: leadContact?.lead_id || null,
+    leadId: resolvedLeadId,
     runId: activeRun?.id || null,
-    status: leadContact ? 'MATCHED' : 'UNMATCHED',
+    status: isMatched ? 'MATCHED' : 'UNMATCHED',
   };
 }
 
