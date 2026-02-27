@@ -39,7 +39,7 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
   const bridge = useContactLeadBridge(open ? contactId : null);
 
   // Conversation messages via legacy_lead_id or contact_id
-  const { data: messages = [], isLoading: messagesLoading } = useConversationMessages({
+  const { data: messages = [], isLoading: messagesLoading, refetch: refetchMessages, isFetching: messagesFetching } = useConversationMessages({
     leadId: bridge.legacyLeadId || '',
     contactId: contactId,
     empresa: bridge.empresa,
@@ -295,6 +295,8 @@ export function ContactDetailSheet({ contactId, open, onOpenChange }: Props) {
                     contactId={contactId}
                     messages={messages}
                     isLoading={messagesLoading}
+                    onRefresh={() => refetchMessages()}
+                    isRefreshing={messagesFetching}
                     modo={(bridge.conversationState?.modo as 'SDR_IA' | 'MANUAL' | 'HIBRIDO') || 'MANUAL'}
                     assumidoPorNome={null}
                     maxHeight="400px"

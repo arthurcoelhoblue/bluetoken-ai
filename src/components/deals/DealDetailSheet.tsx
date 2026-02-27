@@ -58,7 +58,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const hasChat = !!contactBridge?.telefone;
 
   // Conversation messages for Chat tab
-  const { data: chatMessages = [], isLoading: chatLoading } = useConversationMessages({
+  const { data: chatMessages = [], isLoading: chatLoading, refetch: refetchChat, isFetching: chatFetching } = useConversationMessages({
     leadId: contactBridge?.legacy_lead_id ?? '',
     contactId: contactBridge?.id,
     empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | undefined,
@@ -168,6 +168,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                       dealId={deal.id}
                       messages={chatMessages}
                       isLoading={chatLoading}
+                      onRefresh={() => refetchChat()}
+                      isRefreshing={chatFetching}
                       modo="MANUAL"
                       maxHeight="350px"
                     />
