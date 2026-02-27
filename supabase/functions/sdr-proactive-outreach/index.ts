@@ -7,7 +7,8 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { envConfig } from "../_shared/config.ts";
 import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
 import { callAI } from "../_shared/ai-provider.ts";
-import { resolveChannelConfig, sendTextViaMetaCloud } from "../_shared/channel-resolver.ts";
+import { resolveChannelConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud } from "../_shared/channel-resolver.ts";
+import type { ChannelConfig, MetaTemplateSendParams } from "../_shared/channel-resolver.ts";
 
 // ── helpers ──
 
@@ -255,6 +256,79 @@ Responda APENAS com o texto da mensagem, sem aspas.`;
   return { system, user };
 }
 
+// ── 24h window check ──
+
+async function isWithin24hWindow(
+  supabase: ReturnType<typeof createClient>,
+  leadId: string,
+  empresa: string,
+): Promise<boolean> {
+  const { data } = await supabase
+    .from("lead_conversation_state")
+    .select("last_inbound_at")
+    .eq("lead_id", leadId)
+    .eq("empresa", empresa)
+    .maybeSingle();
+
+  if (!data?.last_inbound_at) return false;
+
+  const lastInbound = new Date(data.last_inbound_at).getTime();
+  const now = Date.now();
+  return (now - lastInbound) < 24 * 60 * 60 * 1000;
+}
+
+// ── template selection ──
+
+interface ApprovedTemplate {
+  codigo: string;
+  meta_template_name: string;
+  meta_template_id: string;
+  idioma: string;
+  conteudo: string;
+  variaveis: Record<string, unknown> | null;
+}
+
+async function findApprovedTemplate(
+  supabase: ReturnType<typeof createClient>,
+  empresa: string,
+): Promise<ApprovedTemplate | null> {
+  const codePrefix = empresa.toUpperCase();
+  const priorityCodes = [
+    `${codePrefix}_PROACTIVE_OUTREACH`,
+    `${codePrefix}_INBOUND_DIA0`,
+  ];
+
+  // Try priority codes first
+  for (const code of priorityCodes) {
+    const { data } = await supabase
+      .from("message_templates")
+      .select("codigo, meta_template_name, meta_template_id, idioma, conteudo, variaveis")
+      .eq("empresa", empresa)
+      .eq("codigo", code)
+      .eq("meta_status", "APPROVED")
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (data?.meta_template_name) return data as ApprovedTemplate;
+  }
+
+  // Fallback: any approved template for this empresa
+  const { data: fallback } = await supabase
+    .from("message_templates")
+    .select("codigo, meta_template_name, meta_template_id, idioma, conteudo, variaveis")
+    .eq("empresa", empresa)
+    .eq("canal", "WHATSAPP")
+    .eq("meta_status", "APPROVED")
+    .eq("ativo", true)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (fallback?.meta_template_name) return fallback as ApprovedTemplate;
+
+  return null;
+}
+
 // ── send message via active channel ──
 
 async function sendViaActiveChannel(
@@ -263,12 +337,61 @@ async function sendViaActiveChannel(
   leadId: string,
   phone: string,
   message: string,
-): Promise<{ success: boolean; messageId?: string; error?: string; channel: string }> {
+): Promise<{ success: boolean; messageId?: string; error?: string; channel: string; usedTemplate?: string }> {
   const channelConfig = await resolveChannelConfig(supabase, empresa);
 
   if (channelConfig.mode === 'META_CLOUD') {
-    const result = await sendTextViaMetaCloud(channelConfig, phone, message);
-    return { ...result, channel: 'META_CLOUD' };
+    // Check 24h window before sending free text
+    const windowOpen = await isWithin24hWindow(supabase, leadId, empresa);
+
+    if (windowOpen) {
+      // Within 24h window — send free text as before
+      const result = await sendTextViaMetaCloud(channelConfig, phone, message);
+      return { ...result, channel: 'META_CLOUD' };
+    }
+
+    // Outside 24h window — must use approved template
+    console.log(`[sdr-proactive-outreach] Lead ${leadId} outside 24h window, searching for approved template...`);
+    
+    const template = await findApprovedTemplate(supabase, empresa);
+    
+    if (!template) {
+      return {
+        success: false,
+        error: "Nenhum template aprovado disponível para envio fora da janela de 24h. Submeta um template na Meta e aguarde aprovação.",
+        channel: 'META_CLOUD',
+      };
+    }
+
+    console.log(`[sdr-proactive-outreach] Using template "${template.codigo}" (${template.meta_template_name})`);
+
+    const templateParams: MetaTemplateSendParams = {
+      templateName: template.meta_template_name,
+      languageCode: template.idioma || 'pt_BR',
+      components: [], // Template body is fixed, no dynamic components needed unless configured
+    };
+
+    // If template has variables, try to fill them with lead context
+    if (template.variaveis && typeof template.variaveis === 'object') {
+      const vars = template.variaveis as Record<string, string>;
+      const bodyParams: Array<{ type: string; text: string }> = [];
+      
+      for (const [_key, value] of Object.entries(vars)) {
+        // Simple variable substitution
+        const resolved = String(value || '');
+        bodyParams.push({ type: 'text', text: resolved });
+      }
+
+      if (bodyParams.length > 0) {
+        templateParams.components = [{
+          type: 'body',
+          parameters: bodyParams,
+        }];
+      }
+    }
+
+    const result = await sendTemplateViaMetaCloud(channelConfig, phone, templateParams);
+    return { ...result, channel: 'META_CLOUD', usedTemplate: template.codigo };
   }
 
   // DIRECT mode — send via whatsapp-send edge function (Mensageria/Baileys)
@@ -428,14 +551,18 @@ Deno.serve(async (req) => {
     }
 
     // 6. Record outbound message in lead_messages
+    const messageContent = sendResult.usedTemplate
+      ? `[Template: ${sendResult.usedTemplate}] Enviado via template aprovado.`
+      : greetingMessage;
+
     const { data: savedMsg } = await serviceClient.from("lead_messages").insert({
       lead_id: effectiveLeadId,
       empresa,
       direcao: "OUTBOUND",
       canal: "WHATSAPP",
-      conteudo: greetingMessage,
+      conteudo: messageContent,
       estado: "ENVIADA",
-      template_codigo: "proactive_outreach",
+      template_codigo: sendResult.usedTemplate || "proactive_outreach",
       enviado_em: new Date().toISOString(),
       whatsapp_message_id: sendResult.messageId || undefined,
     }).select("id").maybeSingle();
@@ -489,7 +616,7 @@ Deno.serve(async (req) => {
     }
 
     console.log(
-      `[sdr-proactive-outreach] ✅ ${empresa} lead=${effectiveLeadId} channel=${sendResult.channel} synthetic=${lead.synthetic} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
+      `[sdr-proactive-outreach] ✅ ${empresa} lead=${effectiveLeadId} channel=${sendResult.channel} template=${sendResult.usedTemplate || 'none'} synthetic=${lead.synthetic} ctx={msgs:${ctx.messages.length},deal:${!!ctx.deal},fw:${ctx.convState?.framework_ativo}} msg="${greetingMessage.substring(0, 50)}..."`
     );
 
     return jsonResponse(
@@ -498,7 +625,8 @@ Deno.serve(async (req) => {
         lead_id: effectiveLeadId,
         contact_id: resolvedContactId || null,
         channel: sendResult.channel,
-        message_sent: greetingMessage,
+        used_template: sendResult.usedTemplate || null,
+        message_sent: sendResult.usedTemplate ? messageContent : greetingMessage,
         message_id: savedMsg?.id || null,
         whatsapp_message_id: sendResult.messageId || null,
         ai_model: aiResult.model,
