@@ -644,8 +644,12 @@ serve(async (req) => {
       }
     }
 
-    const matchedEmpresa = leadContact?.empresa || crmContact?.empresa;
+    let matchedEmpresa = leadContact?.empresa || crmContact?.empresa;
+    let finalLeadContact = leadContact;
+    let finalCrmContact = crmContact;
     
+    // Verificar se a empresa encontrada tem mensageria habilitada
+    // Se não tiver, buscar alternativa em empresa com canal ativo
     if (matchedEmpresa) {
       const { data: channelConfig } = await supabase
         .from('integration_company_config')
@@ -655,60 +659,128 @@ serve(async (req) => {
         .maybeSingle();
 
       if (channelConfig && !channelConfig.enabled) {
-        log.info('Canal mensageria desabilitado', { empresa: matchedEmpresa });
-        return new Response(
-          JSON.stringify({ 
-            success: false, 
-            status: 'CHANNEL_DISABLED',
-            error: `Mensageria não está habilitada para ${matchedEmpresa}`,
-          }),
-          { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-        );
+        log.info('Canal mensageria desabilitado para empresa inicial, buscando alternativa', { empresa: matchedEmpresa });
+        
+        // Buscar TODAS as empresas com mensageria habilitada
+        const { data: enabledEmpresas } = await supabase
+          .from('integration_company_config')
+          .select('empresa')
+          .eq('channel', 'mensageria')
+          .eq('enabled', true);
+        
+        const empresasAtivas = (enabledEmpresas || []).map((e: { empresa: string }) => e.empresa);
+        log.info('Empresas com mensageria ativa', { empresas: empresasAtivas });
+        
+        if (empresasAtivas.length > 0) {
+          let found = false;
+          
+          // Tentar encontrar lead_contact em empresa com mensageria ativa
+          const e164 = phoneNormalized.startsWith('+') ? phoneNormalized : `+${phoneNormalized}`;
+          
+          const { data: altLeads } = await supabase
+            .from('lead_contacts')
+            .select('*')
+            .eq('telefone_e164', e164)
+            .in('empresa', empresasAtivas)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          if (altLeads) {
+            finalLeadContact = altLeads as LeadContact;
+            finalCrmContact = null;
+            matchedEmpresa = finalLeadContact.empresa;
+            found = true;
+            log.info('Alternativa encontrada em lead_contacts', { empresa: matchedEmpresa, leadId: finalLeadContact.lead_id });
+          }
+          
+          // Tentar contacts CRM se não achou em lead_contacts
+          if (!found) {
+            const { data: altContact } = await supabase
+              .from('contacts')
+              .select('id, legacy_lead_id, empresa, nome, telefone, telefone_e164')
+              .or(`telefone_e164.eq.${e164},telefone.eq.${phoneNormalized}`)
+              .in('empresa', empresasAtivas)
+              .order('updated_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            
+            if (altContact) {
+              finalCrmContact = altContact as CrmContact;
+              finalLeadContact = null;
+              matchedEmpresa = finalCrmContact.empresa;
+              found = true;
+              log.info('Alternativa encontrada em contacts CRM', { empresa: matchedEmpresa, contactId: finalCrmContact.id });
+            }
+          }
+          
+          if (!found) {
+            log.info('Nenhuma alternativa com mensageria ativa encontrada');
+            return new Response(
+              JSON.stringify({ 
+                success: false, 
+                status: 'CHANNEL_DISABLED',
+                error: `Mensageria não está habilitada para nenhuma empresa com este telefone`,
+              }),
+              { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+            );
+          }
+        } else {
+          log.info('Nenhuma empresa tem mensageria ativa');
+          return new Response(
+            JSON.stringify({ 
+              success: false, 
+              status: 'CHANNEL_DISABLED',
+              error: `Mensageria não está habilitada para nenhuma empresa`,
+            }),
+            { status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
       }
     }
     
     let activeRun: LeadCadenceRun | null = null;
-    if (leadContact) {
-      activeRun = await findActiveRun(supabase, leadContact.lead_id, leadContact.empresa);
+    if (finalLeadContact) {
+      activeRun = await findActiveRun(supabase, finalLeadContact.lead_id, finalLeadContact.empresa);
     }
     
-    const result = await saveInboundMessage(supabase, payload, leadContact, activeRun, crmContact?.id, crmContact?.empresa);
+    const result = await saveInboundMessage(supabase, payload, finalLeadContact, activeRun, finalCrmContact?.id, finalCrmContact?.empresa);
     
     if (handoffInfo) {
       await clearHandoffFlag(supabase, handoffInfo.leadIdOrigem, handoffInfo.empresaOrigem);
       log.info('Handoff processado', {
         de: handoffInfo.empresaOrigem,
-        para: leadContact?.empresa,
+        para: finalLeadContact?.empresa,
         leadOrigem: handoffInfo.leadIdOrigem,
-        leadDestino: leadContact?.lead_id,
+        leadDestino: finalLeadContact?.lead_id,
       });
     }
     
     // Notificação para leads quentes
-    if (result.success && result.status === 'MATCHED' && leadContact) {
+    if (result.success && result.status === 'MATCHED' && finalLeadContact) {
       try {
         const { data: classif } = await supabase
           .from('lead_classifications')
           .select('temperatura')
-          .eq('lead_id', leadContact.lead_id)
+          .eq('lead_id', finalLeadContact.lead_id)
           .maybeSingle();
 
         if (classif && (classif as Record<string, unknown>).temperatura === 'QUENTE') {
           const { data: ownerData } = await supabase
             .from('contacts')
             .select('owner_id')
-            .eq('legacy_lead_id', leadContact.lead_id)
+            .eq('legacy_lead_id', finalLeadContact.lead_id)
             .maybeSingle();
 
           if (ownerData && (ownerData as Record<string, unknown>).owner_id) {
             await supabase.from('notifications').insert({
               user_id: (ownerData as Record<string, unknown>).owner_id,
-              empresa: leadContact.empresa,
+              empresa: finalLeadContact.empresa,
               tipo: 'LEAD_QUENTE',
-              titulo: `Lead quente respondeu: ${leadContact.nome || 'Sem nome'}`,
+              titulo: `Lead quente respondeu: ${finalLeadContact.nome || 'Sem nome'}`,
               mensagem: payload.text.substring(0, 200),
-              link: `/leads/${leadContact.lead_id}`,
-              entity_id: leadContact.lead_id,
+              link: `/leads/${finalLeadContact.lead_id}`,
+              entity_id: finalLeadContact.lead_id,
               entity_type: 'LEAD',
             });
             log.info('Notificação LEAD_QUENTE enviada');
