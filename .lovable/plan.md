@@ -1,47 +1,62 @@
 
 
-# Diagnóstico completo: Por que as datas ainda são `2026-02-24`
+# Corrigir datas de investimento usando `deals.start_date`
 
-## O que encontrei cruzando os dois projetos
+## Diagnóstico final
 
-Consultei o projeto [Tokeniza Gov](/projects/f8d2848a-cdde-44c2-8a72-46b4113f9a87) e confirmei o fluxo completo:
+A cadeia de datas está assim:
 
-### Cadeia de dados
 ```text
-API Tokeniza → sync-tokeniza → positions.invested_at → investor-export → tokeniza-gov-sync → cs_contracts.data_contratacao
+API Tokeniza → pos.createdAt (2026-02-24, data do batch)
+            → sync-tokeniza → positions.invested_at = createdAt do batch
+            → investor-export → subscribed_at = invested_at || created_at
+            → tokeniza-gov-sync → cs_contracts.data_contratacao = subscribed_at
 ```
 
-### Onde o problema está
+As datas de 2024/2025 que existem no banco do Gov estão na tabela **deals**, no campo `start_date`, que vem de `proj.startDate` da API Tokeniza. São as datas de início de cada projeto/oferta de investimento.
 
-O `sync-tokeniza` (linha 491) captura `pos.createdAt` da API Tokeniza e salva em `invested_at`. Porém, o campo `createdAt` da API **não é a data do investimento** — é o timestamp de criação do registro na plataforma Tokeniza. Todas as posições foram criadas em lote no dia `2026-02-24T20:31:20`, e é exatamente esse valor que aparece em todos os 7.836 contratos.
+O `investor-export` busca `deals ( name, asset_type, status )` mas **não inclui `start_date`**. Esse campo é o melhor proxy disponível para a data real do investimento.
 
-**Evidência nos logs diagnósticos deste projeto:** Cada `subscribed_at` retornado pelo `investor-export` é `2026-02-24T20:31:20.966145+00:00` (ou variantes de poucos segundos), confirmando que são timestamps de criação em batch, não datas históricas de investimento.
+## Alterações necessárias
 
-### O que precisa mudar
+### 1. No projeto Tokeniza Gov — `investor-export/index.ts`
 
-A API da Tokeniza precisa ter um campo com a data real do investimento (algo como `investedAt`, `paidAt`, `confirmedAt`, ou similar). O `createdAt` que está sendo usado é apenas a data em que a posição foi registrada no sistema.
+Duas mudanças:
 
-## Ações necessárias
-
-### 1. Investigar a API da Tokeniza (manual)
-Verificar na documentação ou com o time da Tokeniza qual campo retorna a data real do aporte. Possíveis candidatos:
-- `paidAt` / `paid_at`
-- `confirmedAt` / `confirmed_at`  
-- `investedAt` / `invested_at`
-- Algum campo dentro de `subscriptions` que tenha a data real
-
-### 2. Atualizar `sync-tokeniza` no projeto Tokeniza Gov
-Depois de identificar o campo correto, alterar a linha 491:
+**a)** Adicionar `start_date` ao select de deals (linha 59):
 ```typescript
-// De:
-const posDate = pos.createdAt || (posAny.created_at as string) || null;
-// Para (exemplo se o campo for paidAt):
-const posDate = posAny.paidAt || posAny.paid_at || pos.createdAt || null;
+deals ( name, asset_type, status, start_date )
 ```
 
-### 3. Re-rodar sync + orchestrator
-Após o ajuste, rodar `sync-tokeniza` no Tokeniza Gov e depois `tokeniza-gov-sync-orchestrator` aqui.
+**b)** Usar `start_date` do deal como fallback na construção do `subscribed_at` (linha 126):
+```typescript
+subscribed_at: pos.invested_at || subscriptionData?.subscribed_at || pos.deals?.start_date || pos.created_at,
+```
 
-## Resumo
-O código dos dois projetos está correto em termos de lógica de mapeamento. O problema é que a **fonte de dados** (`createdAt` da API Tokeniza) não contém a data real do investimento — contém a data de criação do registro no batch de `2026-02-24`.
+Prioridade de fallback:
+1. `invested_at` — data específica da posição (quando preenchida corretamente)
+2. `subscriptions.subscribed_at` — data de subscrição (tabela vazia hoje)
+3. `deals.start_date` — **data de início do projeto** (datas reais de 2024/2025)
+4. `created_at` — último recurso
+
+### 2. Neste projeto (Amélia) — nenhuma mudança de código
+
+O `tokeniza-gov-sync` já mapeia `pos.subscribed_at` para `cs_contracts.data_contratacao`. Basta re-rodar o orchestrator após o deploy no Gov.
+
+### 3. Passos de execução
+
+1. Aplicar a alteração no `investor-export` do Tokeniza Gov (2 linhas)
+2. Deploy da function no Gov
+3. Rodar `tokeniza-gov-sync-orchestrator` aqui na Amélia
+4. Verificar que as datas dos contratos agora refletem 2024/2025
+
+## Código para aplicar no Tokeniza Gov
+
+```typescript
+// investor-export/index.ts — linha 59: adicionar start_date
+deals ( name, asset_type, status, start_date )
+
+// investor-export/index.ts — linha 126: adicionar fallback
+subscribed_at: pos.invested_at || subscriptionData?.subscribed_at || pos.deals?.start_date || pos.created_at,
+```
 
