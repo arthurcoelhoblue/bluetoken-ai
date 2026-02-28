@@ -119,6 +119,12 @@ Deno.serve(async (req) => {
         result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/record/request/', { call_id: String(call_id), lifetime: String(lifetime || 5400) });
         break;
       }
+      case 'get_transcript': {
+        const { call_id } = payload;
+        if (!call_id) throw new Error('call_id required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/record/transcript/', { call_id: String(call_id) });
+        break;
+      }
       case 'test_connection':
         result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/info/balance/');
         break;
