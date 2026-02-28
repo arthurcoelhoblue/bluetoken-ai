@@ -1,43 +1,82 @@
-# Corrigir Alucinação do Processo de Investimento Tokeniza
 
-## Problema
 
-A Amélia está inventando um fluxo falso de investimento: pede CPF, promete gerar contratos, promete enviar dados bancários para transferência. Na realidade, **investimentos na Tokeniza são feitos exclusivamente pela plataforma** (plataforma.tokeniza.com.br). A IA não tem nenhuma instrução sobre isso.
+# RAG para a Base de Conhecimento — Onde se aplica
 
-## Causa Raiz
+## Problema Atual
 
-O prompt tem "PROIBIDO INVENTAR" para preços/produtos, mas **não tem nenhuma regra sobre o processo de investimento**. Quando o lead diz "quero investir", a IA improvisa um fluxo inteiro que não existe.
+Hoje a Amelia carrega **TODO** o conhecimento no prompt a cada mensagem:
+- 31 seções (~22k caracteres) concatenadas em texto bruto
+- Sem relevância: se o lead pergunta sobre "rentabilidade do CRA", ela recebe também objeções de IR cripto, pitch de Blue, estrutura jurídica, etc.
+- Quanto mais conteúdo cadastrar, mais tokens gasta e mais lenta fica
+- Documentos uploaded (PDFs) não são usados — estão no storage mas nunca são lidos pela IA
 
-## Alterações
+## Onde RAG se aplica (3 pontos)
 
-### 1. `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
+### 1. SDR IA — Busca semântica de conhecimento relevante
+**Maior impacto.** Em vez de injetar 22k chars no prompt, buscar apenas os 3-5 trechos mais relevantes para a pergunta do lead.
 
-- Adicionar ao `TOKENIZA_KNOWLEDGE` uma seção `processoInvestimento` com as regras:
-  - Investimentos são feitos **exclusivamente pela plataforma** (app.tokeniza.com.br)
-  - A Amélia NÃO gera contratos, NÃO coleta CPF, NÃO envia dados bancários
-  - Fluxo correto: cadastro na plataforma → escolher oferta → investir pela plataforma
-- Injetar no `SYSTEM_PROMPT` e `PASSIVE_CHAT_PROMPT` uma regra específica para Tokeniza:
-  ```
-  ## 🚫 PROCESSO TOKENIZA — REGRA CRÍTICA
-  Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
-  PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancários, simular processo de fechamento fora da plataforma.
-  Quando o lead quiser investir: direcione-o para a plataforma com o link e ofereça ajuda para dúvidas.
-  ```
-- Adicionar **regra rule-based** para DECISAO_TOMADA quando empresa = TOKENIZA: em vez de escalar, responder direcionando para a plataforma
+- Lead pergunta "qual a rentabilidade do CRA?" → busca retorna apenas seções sobre CRA, rentabilidade, riscos associados
+- Lead pergunta "quanto custa o IR cripto?" → retorna apenas pricing da Blue e FAQ de preços
+- Reduz tokens em ~70%, melhora precisão, elimina ruído
 
-### 2. `supabase/functions/sdr-ia-interpret/response-generator.ts`
+### 2. FAQ — Auto-resposta com busca semântica
+Em vez de match exato pergunta-pergunta, buscar a FAQ mais similar semanticamente.
+- "Quanto rende?" → match com "Qual a rentabilidade esperada dos investimentos?"
+- Permite resposta instantânea sem chamar IA quando confiança > 0.9
 
-- Adicionar no `systemPrompt` default (quando empresa = TOKENIZA) a mesma regra crítica sobre processo exclusivo via plataforma
-- Garantir que o prompt de geração inclua instrução: "Se o lead quer investir, direcione para app.tokeniza.com.br. NUNCA simule um processo de fechamento."
+### 3. Documentos (PDFs) — Indexação e consulta
+Os PDFs uploaded hoje são decorativos. Com RAG:
+- Upload de PDF → extrai texto → chunka → gera embeddings → armazena
+- Amelia consulta documentos quando não encontra resposta nas seções manuais
 
-### Fluxo corrigido
+## Alterações Técnicas
+
+### Banco de dados
+- Habilitar extensão `vector` (pgvector)
+- Nova tabela `knowledge_embeddings`:
+  - `id`, `source_type` (section/faq/document), `source_id`, `chunk_text`, `embedding vector(1536)`, `metadata jsonb`
+- Índice `ivfflat` ou `hnsw` para busca rápida
+
+### Edge Function: `knowledge-embed` (nova)
+- Trigger: quando seção/FAQ é criada/atualizada
+- Chunka o texto (500 tokens por chunk com overlap de 50)
+- Gera embedding via Lovable AI (modelo embedding)
+- Salva em `knowledge_embeddings`
+
+### Edge Function: `knowledge-search` (nova)
+- Input: query text + empresa + top_k
+- Gera embedding da query
+- Busca por similaridade coseno no pgvector
+- Retorna top_k chunks mais relevantes
+
+### Modificar `sdr-ia-interpret`
+- `intent-classifier.ts`: substituir `fetchProductKnowledge()` (que carrega tudo) por chamada a `knowledge-search` com a mensagem do lead como query
+- `response-generator.ts`: injetar apenas os chunks relevantes no prompt em vez de todos os produtos
+
+### Modificar `copilot-chat`
+- Usar `knowledge-search` para enriquecer contexto do Copilot com conhecimento relevante
+
+### Frontend: indicador de indexação
+- Na página de Base de Conhecimento, mostrar status de indexação (embeddings gerados vs pendentes)
+- Botão "Reindexar" para forçar re-embedding
+
+## Fluxo Resultante
 
 ```text
-Lead: "Quero investir 10k"
-    │
-    ├── ANTES (alucinação): "Me manda CPF e email, vou gerar contrato..."
-    │
-    └── DEPOIS: "Para investir, acesse app.tokeniza.com.br, 
-                 crie sua conta e escolha a oferta. Posso te ajudar
-                 com dúvidas sobre as ofertas disponíveis!"
+Admin cadastra seção "Rentabilidade CRA Agro"
+    → knowledge-embed gera chunks + embeddings
+    → Salva em knowledge_embeddings
+
+Lead pergunta: "Quanto rende o CRA?"
+    → knowledge-search("Quanto rende o CRA?", empresa=TOKENIZA, top_k=5)
+    → Retorna: chunk sobre rentabilidade CRA, chunk sobre riscos CRA
+    → Prompt da Amelia recebe APENAS esses 2 chunks (~800 tokens vs 22k)
+    → Resposta precisa e rápida
 ```
+
+## Impacto
+- **Tokens por mensagem**: ~22k → ~2-3k (economia de ~85%)
+- **Precisão**: respostas baseadas apenas em conteúdo relevante
+- **Escalabilidade**: pode cadastrar 100 produtos sem degradar performance
+- **Documentos**: PDFs passam a ser consultáveis pela IA
+
