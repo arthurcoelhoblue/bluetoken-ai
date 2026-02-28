@@ -142,7 +142,7 @@ function RedirectionTab({ empresa, extensions, proxy }: { empresa: EmpresaTipo; 
         const result = await proxy.mutateAsync({
           action: 'get_redirection',
           empresa,
-          payload: { sip_id: ext.sip_login },
+          payload: { sip_id: ext.extension_number },
         });
         results[ext.extension_number] = {
           type: result?.info?.condition || result?.condition || '—',
