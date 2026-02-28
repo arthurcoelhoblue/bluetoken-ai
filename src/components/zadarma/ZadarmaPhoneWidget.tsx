@@ -339,11 +339,12 @@ export function ZadarmaPhoneWidget() {
           ) : (
             <Button
               className="w-full gap-2"
-              disabled={!number.trim() || proxy.isPending || (isWebRTCMode && webrtc.status === 'loading')}
+              disabled={!number.trim() || proxy.isPending}
               onClick={handleDial}
             >
               <Phone className="h-4 w-4" />
-              {isWebRTCMode && webrtc.isReady ? 'Ligar (WebRTC)' : 'Ligar'}
+              Ligar
+            </Button>
             </Button>
           )}
         </div>
