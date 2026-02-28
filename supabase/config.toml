@@ -153,3 +153,6 @@ verify_jwt = false
 [functions.knowledge-feedback-learner]
 verify_jwt = false
 
+[functions.tokeniza-gov-sync]
+verify_jwt = false
+
