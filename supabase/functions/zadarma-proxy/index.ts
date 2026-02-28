@@ -151,14 +151,14 @@ Deno.serve(async (req) => {
 
       // ─── TARIFF ──────────────────────────────────────
       case 'get_current_tariff':
-        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/info/current_tariff/');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/tariff/');
         break;
 
       // ─── EXTENSION STATUS ────────────────────────────
       case 'get_extension_status': {
         const { extension } = payload;
         if (!extension) throw new Error('extension required');
-        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extension)}/status/`);
+        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extension)}/status`);
         break;
       }
 
@@ -236,7 +236,7 @@ Deno.serve(async (req) => {
       case 'get_extension_info': {
         const { extension: extNum } = payload;
         if (!extNum) throw new Error('extension required');
-        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extNum)}/info/`);
+        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extNum)}/info`);
         break;
       }
 
