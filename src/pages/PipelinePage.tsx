@@ -133,14 +133,14 @@ function PipelineContent() {
       </div>
 
       {pipelinesLoading ? (
-        <div className="text-sm text-muted-foreground">Carregando pipelines...</div>
+        <div className="text-sm text-muted-foreground p-6">Carregando pipelines...</div>
       ) : !pipelines || pipelines.length === 0 ? (
         <div className="flex flex-col items-center justify-center min-h-[40vh] text-center gap-2">
           <Kanban className="h-12 w-12 text-muted-foreground/40" />
           <p className="text-muted-foreground">Nenhum pipeline encontrado para esta empresa.</p>
         </div>
       ) : (
-        <>
+        <div className="flex flex-1 min-h-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6">
           <PipelineFilters
             pipelines={pipelines}
             selectedPipelineId={selectedPipelineId}
@@ -159,7 +159,7 @@ function PipelineContent() {
             onEtiquetaIAChange={setEtiquetaIA}
           />
 
-          <div className="flex-1 min-h-0 flex flex-col">
+          <div className="flex-1 min-h-0 flex flex-col p-4 md:p-6">
             <KanbanBoard
               columns={columns}
               wonLost={wonLost}
@@ -182,7 +182,7 @@ function PipelineContent() {
               stages={selectedPipeline.pipeline_stages}
             />
           )}
-        </>
+        </div>
       )}
     </div>
   );
