@@ -206,11 +206,15 @@ Deno.serve(async (req) => {
         if (csErr || !csCustomer) { console.error(`[sync] cs_customer ${cpfClean}:`, csErr?.message); stats.errors++; continue; }
         if (existingCustomer) stats.cs_customers_updated++; else stats.cs_customers_created++;
 
-        // Upsert cs_contracts for confirmed/settled positions
+        // Upsert cs_contracts for active positions
         if (investor.positions?.length) {
+          // DEBUG: Log ALL position statuses before filtering
+          const allStatuses = [...new Set(investor.positions.map(p => p.status))];
+          console.log(`[sync] ${cpfClean} has ${investor.positions.length} positions, statuses: [${allStatuses.join(',')}], is_active: [${investor.positions.map(p => p.is_active).join(',')}]`);
+
           const confirmedPositions = investor.positions.filter(p => {
             const s = (p.status || "").toLowerCase();
-            return s === "confirmed" || s === "settled";
+            return s === "confirmed" || s === "settled" || p.is_active === true;
           });
 
           if (confirmedPositions.length > 0) {
