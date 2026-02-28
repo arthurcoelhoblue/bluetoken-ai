@@ -312,7 +312,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       const combined = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ').toLowerCase();
 
       // INCOMING: only match specific Zadarma incoming-call patterns
-      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received')) {
+      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received') || (combined.includes('incoming') && combined.includes('caller'))) {
         origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
         triggerAutoAnswer();
       }
