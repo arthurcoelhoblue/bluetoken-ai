@@ -1,40 +1,64 @@
 
-# Mapeamento Completo da API Zadarma — O que usamos vs O que está disponível
 
-## Endpoints implementados no proxy
+# Separação de Transcrição por Canal + Talk Ratio
 
-| Endpoint | Action no proxy | Uso |
-|---|---|---|
-| `/v1/info/balance/` | `get_balance`, `test_connection` | Saldo e teste de conexão |
-| `/v1/pbx/internal/` | `get_pbx_internals` | Lista de ramais |
-| `/v1/webrtc/get_key/` | `get_webrtc_key` | Chave WebRTC 72h |
-| `/v1/request/callback/` | `click_to_call` | Click-to-call |
-| `/v1/pbx/record/request/` | `get_recording` | URL de gravação |
-| `/v1/pbx/record/transcript/` | `get_transcript` | Transcrição pós-chamada |
-| `/v1/statistics/pbx/` | `get_pbx_statistics` | ✅ Dashboard financeiro |
-| `/v1/statistics/` | `get_statistics` | ✅ Estatísticas detalhadas |
-| `/v1/info/current_tariff/` | `get_current_tariff` | ✅ Info do plano |
-| `/v1/pbx/internal/<N>/status/` | `get_extension_status` | ✅ Status online ramais |
-| `/v1/pbx/callinfo/` | `get_webhooks`, `set_webhooks` | ✅ Auto-config webhook |
-| `/v1/info/price/` | `get_price` | ✅ Custo por destino (preview antes de ligar) |
-| `/v1/direct_numbers/` | `get_direct_numbers` | ✅ Números virtuais (inventário admin) |
-| `/v1/sip/redirection/` | `get_redirection`, `set_redirection` | ✅ Encaminhamento de chamadas |
-| `/v1/pbx/internal/<N>/info/` | `get_extension_info` | ✅ Info detalhada de extensão |
+## Contexto
 
-## Status de implementação
+A API Zadarma (`GET /v1/pbx/record/transcript/`) retorna dados separados por canal:
+- `phrases[].result` = texto da frase, `phrases[].channel` = 1 (vendedor) ou 2 (cliente)
+- `words[].result[]` = palavras com `s` (início) e `e` (fim), `words[].channel`
 
-### ✅ Prioridade 1 (Concluída)
-- Dashboard financeiro com custos por chamada/período
-- Status online dos ramais (polling 30s)
-- Auto-configuração de webhook via API
-- Info do tarifário atual
-- ❌ SMS (descartado — pouco usado no Brasil)
+Atualmente o `call-transcribe` trata a transcrição como texto plano único.
 
-### ✅ Prioridade 2 (Concluída)
-- Custo por destino → Preview antes de ligar (botão $ no ClickToCallButton)
-- Números virtuais → Aba "Números" no admin
-- Encaminhamento → Aba "Encaminhamento" no admin com config por ramal
+## Plano de Implementação
 
-### Pendente (Prioridade 3 — nice-to-have)
-- IVR/URA → Config avançada
-- Info detalhada de extensão → Admin avançado (proxy pronto, falta UI)
+### 1. Atualizar `fetchZadarmaTranscript` no edge function `call-transcribe`
+
+- Alterar para solicitar `return=words,phrases` na chamada ao proxy
+- Parsear a resposta estruturada (phrases por canal) em vez de texto plano
+- Retornar objeto `{ plainText, dialogue, talkRatio }` em vez de string
+  - `dialogue`: array `[{ speaker: 'VENDEDOR'|'CLIENTE', text, startTime, endTime }]`
+  - `talkRatio`: `{ seller_pct, client_pct, seller_words, client_words }`
+- Calcular talk ratio baseado no tempo total de fala por canal (soma dos `e - s` de cada word)
+
+### 2. Atualizar proxy `get_transcript` action
+
+- Passar parâmetros `return: 'words,phrases'` para a API Zadarma para obter dados completos por canal
+
+### 3. Atualizar tabela `calls` — migração DB
+
+- Adicionar coluna `transcription_channels` (JSONB, nullable) — armazena o diálogo formatado
+- Adicionar coluna `talk_ratio` (JSONB, nullable) — `{ seller_pct, client_pct, seller_words, client_words }`
+
+### 4. Atualizar lógica de salvamento no `call-transcribe`
+
+- Salvar `transcription_channels` e `talk_ratio` no update da call
+- Incluir `talk_ratio` no metadata da deal_activity
+- Manter `transcription` (texto plano) como fallback para backward compat
+
+### 5. Atualizar tipo `Call` em `src/types/telephony.ts`
+
+- Adicionar campos `transcription_channels` e `talk_ratio`
+
+### 6. Atualizar `DealCallsPanel.tsx` — UI de diálogo
+
+- No dialog de transcrição, se `transcription_channels` existir, renderizar como diálogo formatado:
+  - Vendedor: bolhas alinhadas à direita (cor primária)
+  - Cliente: bolhas alinhadas à esquerda (cor neutra)
+- Mostrar badge de talk ratio na lista de chamadas (ex: "🎙 65/35")
+- Fallback para texto plano se só tiver `transcription`
+
+### 7. Atualizar query em `useDealCalls`
+
+- Incluir `transcription_channels, talk_ratio` no select
+
+## Arquitetura de Dados
+
+```text
+calls table (new columns):
+├─ transcription_channels: JSONB
+│  [{ speaker: "VENDEDOR"|"CLIENTE", text: "...", start: 0.02, end: 3.5 }]
+└─ talk_ratio: JSONB
+   { seller_pct: 65, client_pct: 35, seller_words: 120, client_words: 64 }
+```
+
