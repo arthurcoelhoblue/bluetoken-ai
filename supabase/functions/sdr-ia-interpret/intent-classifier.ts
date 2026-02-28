@@ -89,7 +89,20 @@ const TOKENIZA_KNOWLEDGE = {
   produtoInvestidor: { tipo: 'Investimentos tokenizados lastreados em garantia real', lastros: ['Imóveis', 'Recebíveis', 'Contratos firmados', 'Alienação fiduciária'] },
   garantias: { tipos: ['Alienação fiduciária de imóvel', 'Cessão fiduciária de recebíveis', 'Caução', 'Penhor'] },
   diferenciais: ['Operações com garantia real', 'Plataforma regulada pela CVM 88', 'Transparência e lastro claro', 'Due diligence completa'],
+  processoInvestimento: {
+    regra: 'Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br',
+    fluxo: ['Cadastro na plataforma', 'Escolher oferta disponível', 'Investir pela plataforma'],
+    proibido: ['Gerar contratos', 'Coletar CPF/documentos', 'Enviar dados bancários', 'Simular processo de fechamento fora da plataforma'],
+    linkPlataforma: 'plataforma.tokeniza.com.br',
+  },
 };
+
+const TOKENIZA_CRITICAL_RULE = `
+## 🚫 PROCESSO TOKENIZA — REGRA CRÍTICA
+Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
+PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancários, simular processo de fechamento fora da plataforma.
+Quando o lead quiser investir: direcione-o para a plataforma com o link plataforma.tokeniza.com.br e ofereça ajuda para dúvidas sobre ofertas disponíveis.
+NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.`;
 
 const CHANNEL_RULES: Record<string, string> = {
   WHATSAPP: `REGRAS WHATSAPP: Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem. PROIBIDO: blocos longos, listas extensas, múltiplas perguntas.`,
@@ -412,6 +425,11 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
 
   let activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
 
+  // Inject Tokeniza critical rule into system prompt
+  if (empresa === 'TOKENIZA') {
+    activeSystemPrompt += TOKENIZA_CRITICAL_RULE;
+  }
+
   // Inject off-hours instruction into system prompt
   if (foraDoHorario) {
     activeSystemPrompt += `\n\n## ⏰ FORA DO HORÁRIO COMERCIAL
@@ -425,6 +443,33 @@ REGRAS FORA DO HORÁRIO:
   }
 
   // Rule-based shortcuts
+
+  // REGRA: DECISAO_TOMADA para Tokeniza — direcionar para plataforma em vez de escalar
+  if (empresa === 'TOKENIZA') {
+    const msgLower = mensagem_normalizada.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const decisaoTokenizaPatterns = [
+      /quero investir/, /quero aportar/, /como (faco|faço) (pra|para) investir/,
+      /manda o contrato/, /manda o pix/, /onde (pago|deposito)/,
+      /quais documentos/, /o que preciso enviar/, /me manda os dados/,
+      /como (comeco|começo)/, /proximo passo/, /to dentro/, /bora/,
+      /quero fechar/, /aceito/, /quero comprar/, /como (pago|faco o pagamento)/,
+      /meu cpf/, /meu rg/, /meus dados/,
+    ];
+    if (decisaoTokenizaPatterns.some(p => p.test(msgLower))) {
+      log.info('Regra rule-based: DECISAO_TOMADA Tokeniza — direcionando para plataforma', { mensagem: mensagem_normalizada.substring(0, 80) });
+      return {
+        intent: 'INTERESSE_COMPRA',
+        confidence: 0.95,
+        summary: 'Lead quer investir — direcionado para plataforma Tokeniza',
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+        deve_responder: true,
+        resposta_sugerida: 'Que bom que quer investir! 🎉 O processo é todo feito pela nossa plataforma — é rápido e seguro. Acesse plataforma.tokeniza.com.br, crie sua conta e escolha a oferta que mais combina com você. Se tiver qualquer dúvida sobre as ofertas, estou aqui pra te ajudar! 😊',
+        novo_estado_funil: 'FECHAMENTO',
+        model: 'rule-based-tokeniza-plataforma',
+        provider: 'rules',
+      };
+    }
+  }
 
   // REGRA 4: Escalar automaticamente pedidos de profundidade técnica avançada
   {
