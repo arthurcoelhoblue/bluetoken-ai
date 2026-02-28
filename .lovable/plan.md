@@ -1,38 +1,28 @@
 
 
-# Orquestrador tokeniza-gov-sync + cron diário
+# Reprocessar sync completo + debug de contratos
 
-## O que será feito
+## Diagnóstico
 
-### 1. Criar edge function `tokeniza-gov-sync-orchestrator`
-Uma função leve que chama `tokeniza-gov-sync` sequencialmente, página por página (500 investidores cada), até `has_more = false`. Usa `fetch()` interno para chamar a própria função de sync.
+- **cs_contracts: 0 registros** para TOKENIZA (confirmado)
+- **cs_customers: 1.002** com dados de investimentos no `sgt_dados_extras` (18 com qtd > 0)
+- O filtro de status (`confirmed`/`settled`) está **correto** conforme a API documentada
+- A causa provável: o sync anterior processou apenas page 0 antes do código de contratos estar estável, ou os investidores com positions `confirmed` estão em páginas posteriores
 
-- Busca página 0 → lê `has_more` e `next_page` → chama página 1 → repete
-- Timeout safety: máximo 25 páginas por execução (12.500 investidores)
-- Retorna stats consolidados de todas as páginas
+## Plano
 
-### 2. Registrar cron job diário via pg_cron
-SQL (via insert tool, não migration) para agendar execução diária às 04:00 UTC:
-```sql
-SELECT cron.schedule(
-  'tokeniza-gov-daily-sync',
-  '0 4 * * *',
-  $$ SELECT net.http_post(
-    url := '...',
-    headers := '{"Content-Type":"application/json","Authorization":"Bearer ..."}'::jsonb,
-    body := '{}'::jsonb
-  ) $$
-);
+### 1. Adicionar debug logging temporário no `tokeniza-gov-sync`
+Antes do filtro de status (linha 207), logar os status reais das positions de cada investidor para confirmar o que a API retorna:
+```
+console.log(`[sync] ${cpfClean} positions: ${investor.positions?.map(p => p.status).join(',')}`)
 ```
 
-### 3. Adicionar ao `config.toml`
-```toml
-[functions.tokeniza-gov-sync-orchestrator]
-verify_jwt = false
-```
+### 2. Rodar teste com page_size=5 para validar contratos
+Chamar `tokeniza-gov-sync` com `{ page: 0, page_size: 5 }` e verificar nos logs se contratos estão sendo criados.
 
-### Detalhes técnicos
-- O orchestrator faz fetch interno para `${SUPABASE_URL}/functions/v1/tokeniza-gov-sync` com `Authorization: Bearer ${SERVICE_ROLE_KEY}` e body `{ page: N, page_size: 500 }`
-- Consolida stats de todas as páginas num único response
-- Cron chama o orchestrator (não o sync direto), garantindo processamento completo
+### 3. Rodar orchestrator completo
+Chamar `tokeniza-gov-sync-orchestrator` para reprocessar todos os ~7.200 investidores e popular os `cs_contracts`.
+
+### 4. Validar resultado final
+Consultar `cs_contracts` para confirmar que os registros foram criados corretamente.
 
