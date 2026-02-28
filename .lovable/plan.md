@@ -1,81 +1,38 @@
 
 
-# Plano de Evolução da Amélia — Baseado nos Documentos de Análise
+# Implementação do Dashboard de Resolução Autônoma (Item 6 — componente React pendente)
 
-## Status: ✅ IMPLEMENTADO (2026-02-28)
-
----
-
-## 1. ✅ DISC Ativo no Response Generator (Gap Crítico)
-
-**Implementado**: `getDiscToneInstruction` injetado como bloco `## TOM DE VOZ OBRIGATÓRIO` no system prompt do response-generator, tanto no prompt default quanto em prompts A/B testados.
-
-**Arquivos**: `supabase/functions/sdr-ia-interpret/response-generator.ts`
+A view SQL `amelia_resolution_stats` já está criada e populada com dados reais. Falta apenas o componente React e a integração na página da Amélia.
 
 ---
 
-## 2. ✅ Follow-ups Personalizados por DISC no Cadence Runner
+## Arquivos a criar
 
-**Implementado**: 
-- Coluna `usa_llm BOOLEAN DEFAULT false` adicionada à tabela `message_templates`
-- No `resolverMensagem`, quando `usa_llm = true` E o lead tem `perfil_disc`, chama `callAI` para reescrever o corpo do template adaptando o tom ao perfil DISC
-- Templates com `usa_llm = false` continuam no fluxo atual (sem custo extra)
+### 1. `src/hooks/useResolutionStats.ts`
+- Hook que consulta a view `amelia_resolution_stats` filtrando por `activeCompanies`
+- Agrega totais: conversas, resolvidas autonomamente, escaladas, taxa média de resolução (%)
+- Retorna `dailyStats` (últimos 30 dias) + resumo agregado
+- Refresh automático a cada 60s
 
-**Arquivos**: Migration SQL, `supabase/functions/cadence-runner/index.ts`
-
----
-
-## 3. ✅ Sumarização Progressiva do Histórico
-
-**Implementado**:
-- Coluna `summary TEXT` adicionada à tabela `lead_conversation_state`
-- No `message-parser.ts` (loadFullContext), se `historico.length > 10` e `summary` for nulo, chama `callAI` para sumarizar os turnos antigos em 1 parágrafo
-- `response-generator.ts` usa `summary + últimas 5 mensagens` em vez de 8 mensagens brutas quando summary disponível
-
-**Arquivos**: Migration SQL, `message-parser.ts`, `response-generator.ts`
+### 2. `src/components/dashboard/ResolutionStatsCard.tsx`
+- Card com 3 KPIs no topo: total de conversas, resolvidas autônomas (verde), escaladas (âmbar)
+- Badge com a taxa de resolução percentual (ex: 87%)
+- Gráfico de barras empilhadas (Recharts `BarChart`) com os últimos 7 dias: barras verdes (autônomas) vs âmbar (escaladas)
+- Estados de loading (Skeleton) e vazio tratados
 
 ---
 
-## 4. ✅ Memória Semântica — lead_facts (CRM Vivo)
+## Arquivo a modificar
 
-**Implementado**:
-- Coluna `lead_facts JSONB DEFAULT '{}'` adicionada à tabela `lead_conversation_state`
-- No `intent-classifier.ts`, `lead_facts_extraidos` adicionado ao schema JSON esperado do LLM
-- No `action-executor.ts`, `lead_facts` persistidos via merge (nunca sobrescreve, apenas enriquece)
-- No `response-generator.ts`, `lead_facts` injetados no prompt como `## FATOS CONHECIDOS DO LEAD`
-
-**Arquivos**: Migration SQL, `intent-classifier.ts`, `action-executor.ts`, `response-generator.ts`, `index.ts`
+### 3. `src/pages/AmeliaPage.tsx`
+- Importar `ResolutionStatsCard`
+- Adicionar dentro do grid de 2 colunas existente, como um novo card ao lado de um dos gráficos atuais
 
 ---
 
-## 5. ✅ Scoring de Engagement (Tempo de Resposta)
+## Detalhes técnicos
 
-**Implementado**:
-- No `action-executor.ts`, calcula `tempo_resposta` (diferença entre última mensagem outbound e a inbound atual)
-- Ajusta `score_engajamento` do deal: resposta < 5 min = +15, < 30 min = +10, < 2h = +5, > 24h = -10
+- A view retorna dados por dia/empresa; o componente agrega as empresas ativas para o gráfico
+- Usa `parseISO` + `format` do date-fns para labels do eixo X
+- Nenhuma alteração de banco necessária — a view já existe e tem dados
 
-**Arquivos**: `supabase/functions/sdr-ia-interpret/action-executor.ts`
-
----
-
-## 6. ✅ Dashboard de Resolução Autônoma
-
-**Implementado**:
-- View SQL `amelia_resolution_stats` criada com agregação por dia/empresa
-- Métricas: total_conversas, escaladas, resolvidas_autonomamente, taxa_resolucao_pct
-
-**Arquivos**: Migration SQL (view)
-**Pendente**: Componente React no dashboard (próxima iteração)
-
----
-
-## Resumo de Impacto
-
-| Melhoria | Impacto | Status |
-|---|---|---|
-| 1. DISC no Response Generator | Alto — personalização real | ✅ |
-| 2. DISC no Cadence Runner | Alto — follow-ups adaptados | ✅ |
-| 3. Sumarização Progressiva | Alto — reduz custo ~40% | ✅ |
-| 4. lead_facts (CRM Vivo) | Alto — contexto persistente | ✅ |
-| 5. Scoring de Engagement | Médio — qualificação comportamental | ✅ |
-| 6. Dashboard Resolução | Médio — visibilidade operacional | ✅ (view SQL) |
