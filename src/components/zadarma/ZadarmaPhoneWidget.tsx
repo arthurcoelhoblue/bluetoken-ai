@@ -93,32 +93,28 @@ export function ZadarmaPhoneWidget() {
       setCallTimer(0);
       setOnHold(false);
 
-      if (isWebRTCMode && webrtc.isReady) {
-        setPhoneState('dialing');
-        webrtc.dial(number);
-        toast.info('Iniciando chamada via WebRTC...');
-      } else {
-        setPhoneState('dialing');
-        toast.info('Iniciando chamada...');
-        proxy.mutate({
-          action: 'click_to_call',
-          empresa,
-          payload: { from: myExtension.extension_number, to: number },
-        }, {
-          onSuccess: (data) => {
-            console.log('[ZadarmaWidget] click_to_call success:', data);
-            toast.success('Callback solicitado. Atenda seu ramal para conectar a chamada.');
-          },
-          onError: (error) => {
-            console.error('[ZadarmaWidget] click_to_call error:', error);
-            toast.error('Erro ao iniciar chamada: ' + (error instanceof Error ? error.message : String(error)));
-            setPhoneState('idle');
-          },
-          onSettled: (data, error) => {
-            console.log('[ZadarmaWidget] click_to_call settled', { data, error });
-          },
-        });
-      }
+      setPhoneState('dialing');
+      toast.info('Iniciando chamada...');
+      proxy.mutate({
+        action: 'click_to_call',
+        empresa,
+        payload: { from: myExtension.extension_number, to: number },
+      }, {
+        onSuccess: (data) => {
+          console.log('[ZadarmaWidget] click_to_call success:', data);
+          toast.success(isWebRTCMode
+            ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
+            : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
+        },
+        onError: (error) => {
+          console.error('[ZadarmaWidget] click_to_call error:', error);
+          toast.error('Erro ao iniciar chamada: ' + (error instanceof Error ? error.message : String(error)));
+          setPhoneState('idle');
+        },
+        onSettled: (data, error) => {
+          console.log('[ZadarmaWidget] click_to_call settled', { data, error });
+        },
+      });
     } catch (err) {
       console.error('[ZadarmaWidget] handleDial exception:', err);
       toast.error('Erro inesperado ao iniciar chamada.');

@@ -115,7 +115,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }
 
       // 4. Initialize widget in hidden mode (false = invisible)
-      window.zadarmaWidgetFn(key, sipLogin, 'rounded', 'pt', false, {right:'10px',bottom:'5px'});
+      window.zadarmaWidgetFn(key, sipLogin, 'rounded', 'pt', true, {right:'10px',bottom:'5px'});
 
       initializedRef.current = true;
       setStatus('ready');
@@ -127,7 +127,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           keyRef.current = newKey;
           // Re-initialize with new key
           if (window.zadarmaWidgetFn) {
-            window.zadarmaWidgetFn(newKey, sipLogin, 'rounded', 'pt', false, {right:'10px',bottom:'5px'});
+            window.zadarmaWidgetFn(newKey, sipLogin, 'rounded', 'pt', true, {right:'10px',bottom:'5px'});
           }
         }
       }, KEY_REFRESH_MS);
