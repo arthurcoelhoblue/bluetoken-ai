@@ -1,42 +1,42 @@
 
 
-# Horário Comercial Inteligente para a Amélia
+# Respostas mais rápidas no Copilot Chat
 
-## Problema
-Atualmente a Amélia escala para humano a qualquer hora. Fora do expediente, ninguém atende e o lead fica abandonado.
+## Diagnóstico
+O copilot hoje espera a resposta COMPLETA da IA antes de mostrar qualquer coisa ao usuário. Com respostas de 200-500 tokens, isso significa 3-8 segundos de tela de "bolinhas pulando". Além disso, o enriquecimento de contexto faz múltiplas queries sequenciais ao banco antes de chamar a IA.
 
-## Solução
-Dois modos de operação baseados no horário:
-- **Horário comercial (Seg-Sex 08h-18h)**: comportamento atual — pode escalar para humano
-- **Fora do horário**: Amélia NÃO escala, informa que não há atendimento humano e conduz a venda do início ao fim sozinha
+## Solução: Streaming token-a-token + paralelização
 
-## Alterações
+### 1. `supabase/functions/copilot-chat/index.ts` — Streaming SSE
+- Em vez de usar `callAI()` (que retorna tudo de uma vez), chamar a API do Claude Haiku diretamente com `stream: true`
+- Retornar `Response` com `Content-Type: text/event-stream` e fazer pipe do stream da Anthropic
+- Manter o fallback para Gemini/GPT-4o (sem streaming) caso Claude falhe
+- Fazer log de telemetria no `ai_usage_log` ao final do stream
 
-### 1. `supabase/functions/_shared/business-hours.ts`
-- Alterar horário de 09h para **08h** (início do expediente)
+### 2. `src/components/copilot/CopilotPanel.tsx` — Renderização progressiva
+- Substituir `supabase.functions.invoke()` por `fetch()` com leitura de SSE
+- Renderizar tokens conforme chegam (atualizar última mensagem assistant progressivamente)
+- Mostrar o primeiro token em ~300ms em vez de esperar 3-8s
 
-### 2. `supabase/functions/sdr-ia-interpret/intent-classifier.ts`
-- Importar `isHorarioComercial` de `business-hours.ts`
-- Receber flag `foraDoHorario` nos `ClassifyParams`
-- Nos **rule-based shortcuts** (pedido de humano, profundidade técnica, etc.): se `foraDoHorario`, NÃO retornar `ESCALAR_HUMANO` — em vez disso, retornar `ENVIAR_RESPOSTA_AUTOMATICA` com resposta explicando que não há humanos disponíveis mas que ela pode resolver
-- Injetar no **prompt da IA** (tanto `SYSTEM_PROMPT` quanto `PASSIVE_CHAT_PROMPT`): instrução condicional informando que está fora do horário, que NÃO deve escalar, e que deve conduzir a venda sozinha
-
-### 3. `supabase/functions/sdr-ia-interpret/index.ts`
-- Importar `isHorarioComercial` 
-- Passar flag `foraDoHorario: !isHorarioComercial()` para o classifier
-- **Guardrail final**: se `acao === 'ESCALAR_HUMANO'` e `!isHorarioComercial()`, converter para `ENVIAR_RESPOSTA_AUTOMATICA` e ajustar resposta para informar indisponibilidade humana
+### 3. `src/hooks/useCopilotMessages.ts` — Salvar ao final do stream
+- Salvar mensagem assistant no DB apenas quando o stream terminar (não a cada token)
 
 ### Fluxo resultante
 
 ```text
-Lead envia mensagem
+Usuário envia mensagem
     │
-    ├── Horário comercial? ──► SIM ──► Comportamento normal (pode escalar)
+    ├── Salva msg user no DB
+    ├── fetch() com SSE para copilot-chat
+    │     ├── Backend: enriquece contexto (queries paralelas — já existente)
+    │     ├── Backend: chama Claude Haiku com stream:true
+    │     └── Backend: pipe dos tokens via SSE
     │
-    └── NÃO ──► Prompt ajustado: "Fora do horário, conduza a venda"
-                 Rule-based: bloqueia ESCALAR_HUMANO
-                 Guardrail: converte escalações residuais
-                 Resposta: "Nosso time não está disponível agora,
-                           mas posso te ajudar com tudo!"
+    ├── Frontend: renderiza cada token ao chegar (~300ms pro primeiro)
+    └── Ao [DONE]: salva resposta completa no DB
 ```
+
+### Impacto esperado
+- **Tempo até primeiro token**: de ~5s para ~0.5s
+- **Percepção de velocidade**: resposta aparece "instantaneamente" e vai sendo escrita
 
