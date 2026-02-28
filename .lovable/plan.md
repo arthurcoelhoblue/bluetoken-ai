@@ -1,83 +1,34 @@
 
 
-# Plano: Expansão 4 Empresas (Blue, Tokeniza, MPuppe, Axia)
+# Plano: Correções Build Errors + Base de Conhecimento Tokeniza
 
-O diff contém ~1457 linhas de alterações em ~35 arquivos. As mudanças dividem-se em 4 categorias:
+## 1. Corrigir Build Errors (4 arquivos com tipo empresa restrito)
 
-## 1. Tipos e Classificação (`src/types/classification.ts`)
-- Expandir `IcpMpuppe` com 5 ICPs reais: `MPUPPE_FINTECH_REG`, `MPUPPE_DATA_HEAVY`, `MPUPPE_AI_PIONEER`, `MPUPPE_LEGAL_DEPT`, `MPUPPE_NAO_CLASSIFICADO`
-- Expandir `IcpAxia` com 5 ICPs: `AXIA_FINTECH_LAUNCH`, `AXIA_EXCHANGE_BUILDER`, `AXIA_ASSET_TOKENIZER`, `AXIA_MARKETPLACE_PAY`, `AXIA_NAO_CLASSIFICADO`
-- Adicionar tipos `PersonaMpuppe` e `PersonaAxia` com 3 personas cada
-- Expandir `ICP_LABELS`, `PERSONA_LABELS` com labels para os novos ICPs/Personas
-- Renomear labels existentes (ex: "Investidor Serial" → "Investidor Recorrente")
-- Adicionar arrays `ICPS_MPUPPE`, `ICPS_AXIA`, `PERSONAS_MPUPPE`, `PERSONAS_AXIA`
+Três locais ainda usam `'BLUE' | 'TOKENIZA'` em vez de `'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'`:
 
-## 2. Type casts em ~25 arquivos frontend
-Substituir `'BLUE' | 'TOKENIZA'` por `'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'` nos type casts de todos os hooks e componentes listados no diff.
+- **`src/types/contactsPage.ts`**: Expandir `OrganizationWithStats.empresa` (line 49), `ContactFormData.empresa` (line 80), `OrganizationFormData.empresa` (line 96)
+- **`src/components/templates/TemplateFormDialog.tsx`**: Expandir o `z.enum(['BLUE', 'TOKENIZA'])` no schema (line 23) para incluir MPUPPE e AXIA
 
-Arquivos afetados:
-- `src/components/contacts/ContactCreateDialog.tsx`
-- `src/components/conversas/ConversationTakeoverBar.tsx`
-- `src/components/conversas/ManualMessageInput.tsx`
-- `src/components/cs/CSCustomerCreateDialog.tsx`
-- `src/components/cs/SGTSyncDialog.tsx`
-- `src/components/deals/DealDetailSheet.tsx`
-- `src/components/leads/EditClassificationModal.tsx`
-- `src/components/organizations/OrgCreateDialog.tsx`
-- `src/components/pipeline/CreateDealDialog.tsx`
-- `src/components/pipeline/QuickCreateContactDialog.tsx`
-- `src/components/settings/UserAccessList.tsx`
-- `src/hooks/useAtendimentos.ts`
-- `src/hooks/useCSContracts.ts`
-- `src/hooks/useCSCustomers.ts`
-- `src/hooks/useCadenceRunsWithPendingActions.ts`
-- `src/hooks/useCadenciasCRM.ts`
-- `src/hooks/useContactDuplicateCheck.ts`
-- `src/hooks/useContactLeadBridge.ts`
-- `src/hooks/useContacts.ts`
-- `src/hooks/useConversationMode.ts`
-- `src/hooks/useConversationState.ts`
-- `src/hooks/useLeadClassification.ts`
-- `src/hooks/useLeadContactIssues.ts`
-- `src/hooks/useLeadDetail.ts`
-- `src/hooks/useLeadsWithPendingActions.ts`
-- `src/hooks/usePessoaContext.ts`
-- `src/hooks/usePipelineConfig.ts`
-- `src/hooks/useProductKnowledge.ts`
-- `src/hooks/useSgtEvents.ts`
-- `src/hooks/useTemplates.ts`
-- `src/pages/AmeliaMassActionPage.tsx`
-- `src/pages/CustomFieldsConfigPage.tsx`
-- `src/lib/sdr-logic.ts`
-- `src/types/contactsPage.ts`, `conversation.ts`, `customFields.ts`, `deal.ts`, `pessoa.ts`, `settings.ts`, `sgt.ts`
+## 2. Popular Base de Conhecimento Tokeniza via SQL
 
-## 3. Testes (`src/contexts/CompanyContext.test.tsx`, `src/hooks/__tests__/useLeadClassification.test.ts`)
-- Wrap test renders com `QueryClientProvider`
-- Remover assertion de label hardcoded
-- Adicionar testes para ICPs/Personas de MPuppe e Axia
+Executar o SQL do arquivo `tokeniza_knowledge_base.sql` como migration, **com as correções solicitadas pelo usuário**:
 
-## 4. Edge Functions (SDR-IA)
+### Correções a aplicar no SQL antes de inserir:
+1. **7 mil investidores, 30 milhões captados (TVL)** — substituir "72 mil investidores" por "7 mil investidores cadastrados com mais de R$ 30 milhões captados (TVL)"
+2. **Taxa de 1.5% sobre vendas no mercado de transações subsequentes** — remover referência a "10% sobre o lucro do investidor"
+3. **Nunca "mercado secundário"** → sempre "mercado de transações subsequentes"
+4. **Não somos a única plataforma com selo da CVM** — remover afirmações de exclusividade/única
+5. **Taxas pagas na maioria pelo captador** — ajustar FAQ de taxas
 
-### `intent-classifier.ts`
-- Expandir `EmpresaTipo` com MPuppe/Axia
-- `computeClassificationUpgrade`: ICP default por empresa (4 empresas)
-- `decidirProximaPergunta`: lógica de framework por empresa (Blue=SPIN, MPuppe=BANT, Axia=GPCT+BANT, Tokeniza=GPCT)
-- `detectCrossCompanyInterest`: cross-sell 4x4 com mapa de keywords
-- Adicionar `EMPRESA_IDENTIDADE` (identidade IA por empresa)
-- Atualizar `SYSTEM_PROMPT` com descrição multi-vertical e detecção DISC
-- Injetar identidade no prompt ativo antes de enviar à IA
-- Mudar `if/else` do pricing para `else if` chain com MPUPPE/AXIA via product_knowledge
+### Dados a inserir:
+- 7 produtos (TOKENIZA_PLATFORM, IMOVEL, AGRO, FINANCE, STARTUP, AUTO, ATLETA)
+- Seções de conhecimento (GERAL, PITCH, RISCOS, ESTRUTURA_JURIDICA) para o produto principal
+- 8 FAQs aprovadas e visíveis para a Amélia
+- 4 cadências (Inbound, MQL Quente, Carrinho Abandonado, Upsell)
+- 14 templates de mensagem (WhatsApp + Email)
+- Steps das cadências vinculados aos templates
 
-### `response-generator.ts`
-- Expandir `empresaDesc` para 4 empresas
-- Adicionar regras críticas para MPuppe (sem preço fixo, agendar com Dr. Rodrigo)
-- Adicionar regras críticas para Axia (R$ 14.900/mês primeiro módulo, agendar demo técnica)
+## 3. Atualizar regras da Tokeniza no response-generator
 
-## 5. Migration necessária (não incluída no diff)
-Os novos ICPs precisam ser adicionados ao enum `icp_tipo` no banco. Verificar se já existem — o `types.ts` no diff sugere que `MPUPPE_NAO_CLASSIFICADO` e `AXIA_NAO_CLASSIFICADO` já existem, mas os novos valores (`MPUPPE_FINTECH_REG`, etc.) precisam de migration.
-
-## Notas técnicas
-- O diff tem duplicatas redundantes em alguns tipos (`'MPUPPE' | 'AXIA' | 'MPUPPE' | 'AXIA'`) — serão corrigidos para `'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'`
-- `src/integrations/supabase/types.ts` NÃO pode ser editado manualmente — será atualizado pela migration
-- O `useContactDuplicateCheck.ts` no diff tem duplicata no tipo — corrigiremos
+Ajustar o bloco `empresa === 'TOKENIZA'` no `response-generator.ts` para incluir a instrução de nunca usar "mercado secundário".
 
