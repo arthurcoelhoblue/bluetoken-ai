@@ -12,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { useProductKnowledgeList, useDeleteProductKnowledge } from "@/hooks/useProductKnowledge";
 import { FaqListTab } from "@/components/knowledge/FaqListTab";
+import { KnowledgeRAGStatus } from "@/components/knowledge/KnowledgeRAGStatus";
 import { toast } from "sonner";
 
 export default function ProductKnowledgeList() {
@@ -55,6 +56,8 @@ export default function ProductKnowledgeList() {
           </TabsList>
 
           <TabsContent value="produtos" className="space-y-4 mt-4">
+            {/* RAG Status */}
+            <KnowledgeRAGStatus />
             {/* Filters */}
             <div className="flex flex-col sm:flex-row gap-4">
               <div className="flex-1 flex gap-4">
