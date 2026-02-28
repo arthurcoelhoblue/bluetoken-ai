@@ -1,33 +1,38 @@
 
 
-# Diagnóstico: Widget de telefonia "morto"
+# Diagnóstico: Botão "Ligar" não funciona + WebRTC
 
-## Causa Raiz
-A política RLS de SELECT na tabela `zadarma_extensions` está configurada para o role `public` (anon), mas o usuário logado usa o role `authenticated`. Resultado: a query retorna vazio, `hasExtension = false`, e o widget mostra "Nenhum ramal configurado" mesmo com o ramal existindo no banco.
+## Dois problemas identificados
 
-**Todas as outras tabelas** (contacts, deals, pipelines) usam `roles: {authenticated}` — a `zadarma_extensions` é a exceção com bug.
+### Problema 1: Botão "Ligar" não responde (Callback mode)
+O `handleDial` está sendo chamado mas `proxy.mutate()` falha silenciosamente. Não há `try/catch` ao redor da chamada, então se o mutate falhar antes de chegar à rede (ex: erro de serialização, auth expirada), nenhum toast aparece. A correção é:
 
-## Correção
+- Envolver todo o bloco `handleDial` em `try/catch`
+- Adicionar `toast.info('Iniciando chamada...')` **antes** de chamar `proxy.mutate` para feedback imediato
+- Adicionar `onSettled` no mutate para capturar qualquer estado final
+- Adicionar `console.log` no início da função para confirmar execução
 
-### 1. Corrigir RLS policy da `zadarma_extensions`
-Migração SQL para dropar a policy atual de SELECT e recriá-la com `TO authenticated`:
+### Problema 2: WebRTC não ativo (falta `sip_login`)
+O ramal 108 tem `sip_login = null`. Sem ele, o sistema opera em modo Callback. Para ativar WebRTC nativo no navegador (como a documentação Zadarma descreve no "Passo 1 - Cópia da chave"):
 
-```sql
-DROP POLICY "Authenticated SELECT zadarma_extensions" ON zadarma_extensions;
-CREATE POLICY "Authenticated SELECT zadarma_extensions" 
-  ON zadarma_extensions FOR SELECT TO authenticated
-  USING (
-    has_role(auth.uid(), 'ADMIN'::user_role) 
-    OR (empresa::text = ANY(get_user_empresas(auth.uid())))
-  );
-```
+- O `sip_login` precisa ser preenchido no banco (formato: `XXXXXX-108` onde XXXXXX é o ID da conta Zadarma)
+- Com `sip_login` preenchido, o hook `useZadarmaWebRTC` automaticamente busca a chave via `/v1/webrtc/get_key/`, carrega os scripts do widget Zadarma e inicializa o softphone
 
-### 2. Adicionar loading state ao widget
-Enquanto a query de extension está carregando (`isLoading`), mostrar indicador de carregamento em vez de "Nenhum ramal configurado" — evita flash de erro durante o carregamento.
+## Correções planejadas
 
-### 3. Verificar policy de `zadarma_config` também
-A policy de SELECT em `zadarma_config` pode ter o mesmo bug — verificar e corrigir se necessário.
+### 1. Corrigir handleDial com feedback robusto
+No `ZadarmaPhoneWidget.tsx`, adicionar try/catch, toast imediato, e logging no início da função para garantir que qualquer erro seja visível.
 
-## Resultado Esperado
-Após a correção, o widget detecta o ramal 108 do usuário, mostra o botão "Ligar" em modo Callback (já que `sip_login` está null), e as chamadas funcionam normalmente.
+### 2. Preencher sip_login do ramal 108
+Executar UPDATE no banco para definir o `sip_login` do ramal — **preciso que você me informe o login SIP do ramal 108** (encontra-se no painel Zadarma em Centralita > Extensões, formato tipo `123456-108`).
+
+## Detalhes técnicos
+
+O fluxo WebRTC completo (conforme documentação Zadarma) já está implementado no código:
+1. `useZadarmaWebRTC` chama edge function `zadarma-proxy` com action `get_webrtc_key` → proxy chama `/v1/webrtc/get_key/` com o `sip_login`
+2. Carrega scripts `loader-phone-lib.js` e `loader-phone-fn.js` do Zadarma
+3. Inicializa `zadarmaWidgetFn(key, sipLogin, ...)` em modo invisível
+4. Renova a chave a cada 70h (chave expira em 72h)
+
+O código está correto — só falta o dado `sip_login` no banco para ativar o fluxo.
 
