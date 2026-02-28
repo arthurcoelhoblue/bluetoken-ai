@@ -48,13 +48,20 @@ export function UserAccessList() {
     if (ramalValue === current) return;
 
     if (ramalValue) {
+      const { data: assignments } = await supabase
+        .from('user_access_assignments')
+        .select('empresa')
+        .eq('user_id', userId);
+      const empresas = [...new Set(assignments?.map(a => a.empresa) ?? [])];
       await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
-      const { error } = await supabase.from('zadarma_extensions').insert({
-        user_id: userId,
-        extension_number: ramalValue,
-        empresa: 'BLUE',
-      });
-      if (error) { toast.error('Erro ao salvar ramal'); return; }
+      for (const emp of empresas) {
+        const { error } = await supabase.from('zadarma_extensions').insert({
+          user_id: userId,
+          extension_number: ramalValue,
+          empresa: emp as any,
+        });
+        if (error) { toast.error('Erro ao salvar ramal'); return; }
+      }
     } else if (current) {
       const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
       if (error) { toast.error('Erro ao remover ramal'); return; }

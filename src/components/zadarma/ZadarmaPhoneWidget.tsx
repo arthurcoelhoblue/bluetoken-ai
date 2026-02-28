@@ -100,7 +100,7 @@ export function ZadarmaPhoneWidget() {
     return (
       <button
         onClick={() => setMinimized(false)}
-        className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105"
+        className="fixed bottom-6 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105"
       >
         <Phone className="h-5 w-5" />
       </button>
@@ -112,7 +112,7 @@ export function ZadarmaPhoneWidget() {
     return (
       <button
         onClick={() => setMinimized(false)}
-        className="fixed bottom-6 right-6 z-50 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105 animate-pulse"
+        className="fixed bottom-6 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105 animate-pulse"
       >
         <Phone className="h-5 w-5" />
       </button>
@@ -125,7 +125,7 @@ export function ZadarmaPhoneWidget() {
   // Maximized with coaching sidebar
   if (maximized && isInCall) {
     return (
-      <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
           {/* Phone panel */}
           <div className="w-72 shrink-0 border-r border-border flex flex-col">
@@ -186,7 +186,7 @@ export function ZadarmaPhoneWidget() {
 
   // Normal compact widget
   return (
-    <div className="fixed bottom-6 right-6 z-50 w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
+    <div className="fixed bottom-6 right-6 z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
         <div className="flex items-center gap-2">

@@ -77,15 +77,22 @@ export function EditUserDialog({
 
       if (profileError) throw profileError;
 
-      // Update ramal
+      // Update ramal — insert for all empresas assigned to user
       if (data.ramal) {
+        const { data: assignments } = await supabase
+          .from('user_access_assignments')
+          .select('empresa')
+          .eq('user_id', userId);
+        const empresas = [...new Set(assignments?.map(a => a.empresa) ?? [])];
         await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
-        const { error } = await supabase.from('zadarma_extensions').insert({
-          user_id: userId,
-          extension_number: data.ramal,
-          empresa: 'BLUE',
-        });
-        if (error) throw error;
+        for (const emp of empresas) {
+          const { error } = await supabase.from('zadarma_extensions').insert({
+            user_id: userId,
+            extension_number: data.ramal,
+            empresa: emp as any,
+          });
+          if (error) throw error;
+        }
       } else if (currentRamal) {
         const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
         if (error) throw error;
