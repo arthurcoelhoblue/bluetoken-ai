@@ -28,13 +28,15 @@ export interface StageProjection {
 }
 
 export type MassActionJobType = 'CADENCIA_MODELO' | 'CAMPANHA_ADHOC';
-export type MassActionJobStatus = 'PENDING' | 'GENERATING' | 'PREVIEW' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PARTIAL' | 'AGUARDANDO_APROVACAO' | 'REJECTED';
+export type MassActionJobStatus = 'PENDING' | 'GENERATING' | 'PREVIEW' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'PARTIAL' | 'AGUARDANDO_APROVACAO' | 'REJECTED' | 'AGUARDANDO_TEMPLATE' | 'SENDING' | 'DONE';
 
 export interface MassActionMessagePreview {
   deal_id: string;
   contact_name: string;
   message: string;
   approved: boolean;
+  template_status?: 'APPROVED' | 'PENDING_META' | null;
+  suggested_template_id?: string | null;
 }
 
 export interface MassActionJob {
