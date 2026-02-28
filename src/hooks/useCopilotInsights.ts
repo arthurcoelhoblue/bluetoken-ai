@@ -46,6 +46,10 @@ export function useCopilotInsights(empresa: string) {
 
   const generateInsights = useCallback(async (force = false) => {
     if (!user?.id || !empresa) return;
+    // Ensure we have a valid user session (not just the anon key)
+    const { data: sessionData } = await supabase.auth.getSession();
+    if (!sessionData?.session?.access_token) return;
+
     const now = Date.now();
     if (!force && now - lastFetchRef.current < CACHE_DURATION_MS) return;
     lastFetchRef.current = now;
