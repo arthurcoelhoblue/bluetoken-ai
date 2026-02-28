@@ -1,64 +1,32 @@
 
 
-# Separação de Transcrição por Canal + Talk Ratio
+# Criação Automática de Ramais via API Zadarma
 
 ## Contexto
+A API Zadarma oferece `POST /v1/pbx/internal/create/` para criar ramais e `GET /v1/pbx/internal/` para listar os existentes (já implementado no proxy). O fluxo proposto permite criar ramais diretamente do CRM sem acessar o painel Zadarma.
 
-A API Zadarma (`GET /v1/pbx/record/transcript/`) retorna dados separados por canal:
-- `phrases[].result` = texto da frase, `phrases[].channel` = 1 (vendedor) ou 2 (cliente)
-- `words[].result[]` = palavras com `s` (início) e `e` (fim), `words[].channel`
+## Plano
 
-Atualmente o `call-transcribe` trata a transcrição como texto plano único.
+### 1. Adicionar actions no `zadarma-proxy`
+- **`create_extension`**: `POST /v1/pbx/internal/create/` — cria ramal no PBX Zadarma (precisa usar método POST em vez de GET)
+- **`delete_pbx_extension`**: `POST /v1/pbx/internal/delete/` — remove ramal do PBX
+- Refatorar `zadarmaRequest` para aceitar método HTTP (GET/POST), já que criação/deleção exigem POST
 
-## Plano de Implementação
+### 2. Adicionar action "Sincronizar Ramais" no proxy
+- **`sync_extensions`**: chama `GET /v1/pbx/internal/` para listar todos os ramais do PBX, retorna lista com `extension_number` e `sip_login` (formato `XXXXXX-NNN`)
 
-### 1. Atualizar `fetchZadarmaTranscript` no edge function `call-transcribe`
+### 3. Atualizar aba "Ramais" no `ZadarmaConfigPage.tsx`
+- **Botão "Sincronizar do Zadarma"**: puxa ramais via `sync_extensions`, mostra lista com checkbox para selecionar quais importar
+- **Botão "Criar Ramal"**: formulário inline com campo de número (3 dígitos), chama `create_extension` via proxy, depois sincroniza automaticamente
+- **Auto-preenchimento de SIP Login**: ao sincronizar, preenche automaticamente o `sip_login` de cada ramal já mapeado no CRM
+- **Vincular a usuário**: após importar/criar, permite selecionar o usuário CRM para vincular
 
-- Alterar para solicitar `return=words,phrases` na chamada ao proxy
-- Parsear a resposta estruturada (phrases por canal) em vez de texto plano
-- Retornar objeto `{ plainText, dialogue, talkRatio }` em vez de string
-  - `dialogue`: array `[{ speaker: 'VENDEDOR'|'CLIENTE', text, startTime, endTime }]`
-  - `talkRatio`: `{ seller_pct, client_pct, seller_words, client_words }`
-- Calcular talk ratio baseado no tempo total de fala por canal (soma dos `e - s` de cada word)
+### 4. Fluxo do usuário
+1. Clica "Criar Ramal" → digita número (ex: 108) → API cria no Zadarma
+2. Sistema busca automaticamente o SIP login gerado
+3. Seleciona o vendedor do CRM para vincular
+4. Salva na tabela `zadarma_extensions` com `sip_login` preenchido
 
-### 2. Atualizar proxy `get_transcript` action
-
-- Passar parâmetros `return: 'words,phrases'` para a API Zadarma para obter dados completos por canal
-
-### 3. Atualizar tabela `calls` — migração DB
-
-- Adicionar coluna `transcription_channels` (JSONB, nullable) — armazena o diálogo formatado
-- Adicionar coluna `talk_ratio` (JSONB, nullable) — `{ seller_pct, client_pct, seller_words, client_words }`
-
-### 4. Atualizar lógica de salvamento no `call-transcribe`
-
-- Salvar `transcription_channels` e `talk_ratio` no update da call
-- Incluir `talk_ratio` no metadata da deal_activity
-- Manter `transcription` (texto plano) como fallback para backward compat
-
-### 5. Atualizar tipo `Call` em `src/types/telephony.ts`
-
-- Adicionar campos `transcription_channels` e `talk_ratio`
-
-### 6. Atualizar `DealCallsPanel.tsx` — UI de diálogo
-
-- No dialog de transcrição, se `transcription_channels` existir, renderizar como diálogo formatado:
-  - Vendedor: bolhas alinhadas à direita (cor primária)
-  - Cliente: bolhas alinhadas à esquerda (cor neutra)
-- Mostrar badge de talk ratio na lista de chamadas (ex: "🎙 65/35")
-- Fallback para texto plano se só tiver `transcription`
-
-### 7. Atualizar query em `useDealCalls`
-
-- Incluir `transcription_channels, talk_ratio` no select
-
-## Arquitetura de Dados
-
-```text
-calls table (new columns):
-├─ transcription_channels: JSONB
-│  [{ speaker: "VENDEDOR"|"CLIENTE", text: "...", start: 0.02, end: 3.5 }]
-└─ talk_ratio: JSONB
-   { seller_pct: 65, client_pct: 35, seller_words: 120, client_words: 64 }
-```
+## Detalhe técnico
+A função `zadarmaRequest` atual só faz GET. Para POST, precisa de uma variante que envie parâmetros no body em vez de query string, mantendo a mesma assinatura HMAC.
 
