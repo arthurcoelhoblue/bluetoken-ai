@@ -1,21 +1,40 @@
 
 
-# Diagnóstico: Templates Tokeniza não foram inseridos
+# Submeter 7 templates WhatsApp da Tokeniza à Meta
 
-A migration anterior que deveria popular os templates, cadências, FAQs e produtos da Tokeniza **não foi efetivamente criada no banco**. Atualmente existem apenas 17 templates, todos da empresa BLUE.
-
-Como o hook `useTemplates` filtra por `activeCompanies`, se você está com TOKENIZA selecionada, a lista aparece vazia.
+## Situação atual
+7 templates WhatsApp da Tokeniza com `meta_status = LOCAL`, prontos para submissão. A edge function `whatsapp-template-manager` já suporta POST individual para criar templates na Meta.
 
 ## Plano
 
-Recriar a migration SQL para inserir todos os dados da Tokeniza com as correções já discutidas:
+Criar uma nova edge function `whatsapp-template-batch-submit` que:
 
-1. **7 produtos** (TOKENIZA_PLATFORM, IMOVEL, AGRO, FINANCE, STARTUP, AUTO, ATLETA)
-2. **Seções de conhecimento** (GERAL, PITCH, RISCOS, ESTRUTURA_JURIDICA)
-3. **8 FAQs** com terminologia corrigida
-4. **14 templates de mensagem** (WhatsApp + Email) com dados atualizados (7 mil investidores, 30M TVL, taxa 1.5%, "mercado de transações subsequentes")
-5. **4 cadências** (Inbound, MQL Quente, Carrinho Abandonado, Upsell)
-6. **Steps das cadências** vinculados aos templates
+1. Recebe `empresa` como parâmetro
+2. Busca todos os templates `LOCAL` + `WHATSAPP` dessa empresa
+3. Para cada template, extrai as variáveis `{{1}}`, `{{2}}` do conteúdo e monta os `components` no formato Meta (BODY com parâmetros exemplo)
+4. Submete cada um via API Meta (`POST /message_templates`)
+5. Atualiza o `meta_status` para `PENDING` no banco
+6. Retorna resumo (quantos submetidos, erros)
 
-Todos os dados serão inseridos com `ON CONFLICT DO NOTHING` para segurança.
+### Mapeamento dos templates → Meta components
+
+Cada template será submetido como categoria `MARKETING` com componente BODY contendo as variáveis detectadas automaticamente. Exemplo para `tkn_saudacao_inbound` (1 variável):
+
+```json
+{
+  "name": "tkn_saudacao_inbound",
+  "category": "MARKETING",
+  "language": "pt_BR",
+  "components": [
+    {
+      "type": "BODY",
+      "text": "Olá {{1}}! 👋 Sou da equipe Tokeniza...",
+      "example": { "body_text": [["João"]] }
+    }
+  ]
+}
+```
+
+### Após deploy
+Invocar a função para submeter todos os 7 templates de uma vez.
 
