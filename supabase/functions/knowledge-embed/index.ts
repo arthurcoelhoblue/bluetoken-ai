@@ -104,7 +104,7 @@ async function generateEmbedding(text: string, openaiKey: string): Promise<numbe
   try {
     const resp = await fetch("https://api.openai.com/v1/embeddings", {
       method: "POST",
-      headers: { "Authorization": `Bearer ${openaiKey.trim()}`, "Content-Type": "application/json" },
+      headers: { "Authorization": `Bearer ${openaiKey.replace(/[^\x20-\x7E]/g, '')}`, "Content-Type": "application/json" },
       body: JSON.stringify({ model: "text-embedding-3-small", input: text.slice(0, 8000) }),
     });
     if (!resp.ok) { console.error("Embedding API error:", resp.status, await resp.text()); return null; }
@@ -185,7 +185,7 @@ serve(async (req) => {
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")?.trim();
+    const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")?.replace(/[^\x20-\x7E]/g, '');
 
     if (!OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY not configured" }), {
