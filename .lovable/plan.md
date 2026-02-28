@@ -1,35 +1,20 @@
 
 
-# Correções: Z-index do widget + Ramal multi-tenant + Dados do Arthur
+# Diagnose: Botão "Ligar" sem efeito
 
-## 1. Z-index do widget (`src/components/zadarma/ZadarmaPhoneWidget.tsx`)
-Trocar `z-50` por `z-[60]` nas 4 ocorrências:
-- Linha 103: FAB minimizado
-- Linha 115: FAB com dial pendente  
-- Linha 128: Overlay maximizado
-- Linha 189: Widget expandido compacto
+## Causa raiz
 
-## 2. Ramal multi-tenant (`src/components/settings/EditUserDialog.tsx`, linhas 80-88)
-Substituir insert hardcoded para BLUE por busca das empresas do usuário:
-```typescript
-if (data.ramal) {
-  const { data: assignments } = await supabase
-    .from('user_access_assignments')
-    .select('empresa')
-    .eq('user_id', userId);
-  const empresas = [...new Set(assignments?.map(a => a.empresa) ?? [])];
-  await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
-  for (const emp of empresas) {
-    const { error } = await supabase.from('zadarma_extensions').insert({
-      user_id: userId, extension_number: data.ramal, empresa: emp as any,
-    });
-    if (error) throw error;
-  }
-```
+A tabela `zadarma_config` tem `empresas_ativas = ['BLUE_LABS']`. TOKENIZA **nao** esta na lista.
 
-## 3. Ramal multi-tenant (`src/components/settings/UserAccessList.tsx`, linhas 50-57)
-Mesma lógica: buscar empresas do usuário e inserir para todas.
+Quando o usuario clica "Ligar", `handleDial` chama `proxy.mutate()` que invoca a edge function `zadarma-proxy`. A edge function verifica se a empresa esta em `empresas_ativas` e retorna **403** porque TOKENIZA nao esta la. O codigo trata esse erro com `onError: () => setPhoneState('idle')` — sem nenhum toast ou feedback visual, dando a impressao de que "nada acontece".
 
-## 4. Correção imediata dos dados
-Inserir ramal 108 para TOKENIZA e BLUE_LABS para o Arthur (user_id `3eb15a6a-9856-4e21-a856-b87eeff933b1`), já que atualmente só existe para BLUE.
+## Correcoes
+
+### 1. Adicionar TOKENIZA e BLUE a `empresas_ativas`
+- SQL: `UPDATE zadarma_config SET empresas_ativas = ARRAY['BLUE_LABS','TOKENIZA','BLUE'] WHERE id = 'fb9fd840-18db-4517-bf3f-72932b24ba11';`
+
+### 2. Adicionar feedback de erro no `handleDial` (`ZadarmaPhoneWidget.tsx`)
+- Importar `toast` de sonner
+- No `onError` do `proxy.mutate`, exibir `toast.error('Erro ao iniciar chamada')` alem de resetar o estado
+- Isso garante que o usuario veja feedback caso algo falhe no futuro
 
