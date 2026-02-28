@@ -140,7 +140,7 @@ function PipelineContent() {
           <p className="text-muted-foreground">Nenhum pipeline encontrado para esta empresa.</p>
         </div>
       ) : (
-        <div className="flex flex-1 min-h-0 -mx-4 md:-mx-6 -mb-4 md:-mb-6">
+        <>
           <PipelineFilters
             pipelines={pipelines}
             selectedPipelineId={selectedPipelineId}
@@ -159,7 +159,7 @@ function PipelineContent() {
             onEtiquetaIAChange={setEtiquetaIA}
           />
 
-          <div className="flex-1 min-h-0 flex flex-col p-4 md:p-6">
+          <div className="flex-1 min-h-0 flex flex-col">
             <KanbanBoard
               columns={columns}
               wonLost={wonLost}
@@ -182,7 +182,7 @@ function PipelineContent() {
               stages={selectedPipeline.pipeline_stages}
             />
           )}
-        </div>
+        </>
       )}
     </div>
   );
