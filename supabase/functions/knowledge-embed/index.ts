@@ -6,29 +6,99 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const CHUNK_SIZE = 500;
-const CHUNK_OVERLAP = 50;
+const MAX_CHUNK_TOKENS = 500;
 const CHARS_PER_TOKEN = 4;
+const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
 
-function chunkText(text: string, chunkSize = CHUNK_SIZE, overlap = CHUNK_OVERLAP): string[] {
-  const maxChars = chunkSize * CHARS_PER_TOKEN;
-  const overlapChars = overlap * CHARS_PER_TOKEN;
-  if (text.length <= maxChars) return [text];
-  const chunks: string[] = [];
-  let start = 0;
-  while (start < text.length) {
-    let end = start + maxChars;
-    if (end < text.length) {
-      const lastPeriod = text.lastIndexOf('.', end);
-      const lastNewline = text.lastIndexOf('\n', end);
-      const breakPoint = Math.max(lastPeriod, lastNewline);
-      if (breakPoint > start + maxChars * 0.5) end = breakPoint + 1;
+// ============================================
+// SEMANTIC CHUNKING — Split by structure first
+// ============================================
+
+function semanticChunk(text: string, titlePrefix: string): string[] {
+  if (!text || text.trim().length < 20) return [];
+
+  // Step 1: Split by headings (##, ###) and double newlines
+  const sections = text.split(/(?=^#{2,3}\s)/m);
+  const rawParagraphs: string[] = [];
+
+  for (const section of sections) {
+    const paragraphs = section.split(/\n{2,}/);
+    for (const p of paragraphs) {
+      const trimmed = p.trim();
+      if (trimmed.length > 10) rawParagraphs.push(trimmed);
     }
-    chunks.push(text.slice(start, end).trim());
-    start = end - overlapChars;
   }
-  return chunks.filter(c => c.length > 20);
+
+  // Step 2: Merge small paragraphs, split large ones
+  const chunks: string[] = [];
+  let buffer = '';
+
+  for (const para of rawParagraphs) {
+    const candidateLen = buffer ? buffer.length + 2 + para.length : para.length;
+
+    if (candidateLen <= MAX_CHUNK_CHARS) {
+      buffer = buffer ? `${buffer}\n\n${para}` : para;
+    } else {
+      // Flush buffer
+      if (buffer) chunks.push(buffer);
+      
+      // If paragraph itself exceeds limit, split it
+      if (para.length > MAX_CHUNK_CHARS) {
+        const subChunks = splitLargeParagraph(para);
+        chunks.push(...subChunks);
+        buffer = '';
+      } else {
+        buffer = para;
+      }
+    }
+  }
+  if (buffer) chunks.push(buffer);
+
+  // Step 3: Add title prefix and semantic overlap
+  const result: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    let chunk = titlePrefix ? `${titlePrefix}\n${chunks[i]}` : chunks[i];
+    
+    // Add last sentence of previous chunk as overlap (except first chunk)
+    if (i > 0) {
+      const prevLastSentence = extractLastSentence(chunks[i - 1]);
+      if (prevLastSentence && prevLastSentence.length > 15) {
+        chunk = `${titlePrefix}\n[contexto anterior] ${prevLastSentence}\n\n${chunks[i]}`;
+      }
+    }
+    
+    result.push(chunk);
+  }
+
+  return result.filter(c => c.length > 30);
 }
+
+function splitLargeParagraph(text: string): string[] {
+  const sentences = text.match(/[^.!?]+[.!?]+\s*/g) || [text];
+  const chunks: string[] = [];
+  let buffer = '';
+
+  for (const sentence of sentences) {
+    if (buffer.length + sentence.length > MAX_CHUNK_CHARS) {
+      if (buffer) chunks.push(buffer.trim());
+      buffer = sentence;
+    } else {
+      buffer += sentence;
+    }
+  }
+  if (buffer.trim()) chunks.push(buffer.trim());
+  return chunks;
+}
+
+function extractLastSentence(text: string): string {
+  const sentences = text.match(/[^.!?]+[.!?]+/g);
+  if (!sentences || sentences.length === 0) return '';
+  return sentences[sentences.length - 1].trim();
+}
+
+// ============================================
+// EMBEDDING GENERATION
+// ============================================
 
 async function generateEmbedding(text: string, openaiKey: string): Promise<number[] | null> {
   try {
@@ -52,6 +122,7 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
       const { error } = await supabase.from("knowledge_embeddings").insert({
         source_type: sourceType, source_id: sourceId, chunk_index: i,
         chunk_text: chunks[i], embedding: JSON.stringify(embedding), metadata, empresa,
+        // fts is auto-populated by trigger
       });
       if (error) { console.error("Insert error:", error); errors++; } else embedded++;
     } else errors++;
@@ -59,32 +130,28 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
   return { embedded, errors };
 }
 
-// Extract text from PDF stored in Supabase Storage
+// ============================================
+// PDF TEXT EXTRACTION
+// ============================================
+
 async function extractPdfText(supabase: any, storagePath: string): Promise<string | null> {
   try {
     const { data, error } = await supabase.storage.from("knowledge-documents").download(storagePath);
     if (error || !data) { console.error("Storage download error:", error); return null; }
-
     const arrayBuffer = await data.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
-
-    // Simple PDF text extraction — extract text between BT/ET blocks and parentheses
     const textDecoder = new TextDecoder("latin1");
     const raw = textDecoder.decode(bytes);
     const textParts: string[] = [];
-
-    // Method 1: Extract from stream objects (works for most PDFs)
     const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
     let match;
     while ((match = streamRegex.exec(raw)) !== null) {
       const content = match[1];
-      // Extract text from Tj and TJ operators
       const tjRegex = /\(([^)]*)\)\s*Tj/g;
       let tjMatch;
       while ((tjMatch = tjRegex.exec(content)) !== null) {
         if (tjMatch[1].trim()) textParts.push(tjMatch[1]);
       }
-      // Extract from TJ arrays
       const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
       let tjArrayMatch;
       while ((tjArrayMatch = tjArrayRegex.exec(content)) !== null) {
@@ -96,25 +163,21 @@ async function extractPdfText(supabase: any, storagePath: string): Promise<strin
         }
       }
     }
-
-    // Method 2: Simple parenthesis extraction as fallback
     if (textParts.length === 0) {
       const parenRegex = /\(([^)]{3,})\)/g;
       while ((match = parenRegex.exec(raw)) !== null) {
         const text = match[1].replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\/g, '');
-        if (text.trim().length > 2 && !/^[0-9.]+$/.test(text.trim())) {
-          textParts.push(text);
-        }
+        if (text.trim().length > 2 && !/^[0-9.]+$/.test(text.trim())) textParts.push(text);
       }
     }
-
     const fullText = textParts.join(' ').replace(/\s+/g, ' ').trim();
     return fullText.length > 10 ? fullText : null;
-  } catch (e) {
-    console.error("PDF extraction failed:", e);
-    return null;
-  }
+  } catch (e) { console.error("PDF extraction failed:", e); return null; }
 }
+
+// ============================================
+// MAIN HANDLER
+// ============================================
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
@@ -140,38 +203,39 @@ serve(async (req) => {
       if (!section) return new Response(JSON.stringify({ error: "Section not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const { data: product } = await supabase.from("product_knowledge").select("empresa, produto_nome").eq("id", section.product_knowledge_id).single();
       if (!product) return new Response(JSON.stringify({ error: "Product not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const fullText = `[${product.produto_nome}] ${section.titulo}\n${section.conteudo}`;
-      const r = await embedChunks(supabase, chunkText(fullText), "section", source_id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
+      
+      const titlePrefix = `[${product.produto_nome}] ${section.titulo}`;
+      const chunks = semanticChunk(section.conteudo, titlePrefix);
+      const r = await embedChunks(supabase, chunks, "section", source_id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_faq" && source_id) {
       const { data: faq } = await supabase.from("knowledge_faq").select("id, pergunta, resposta, categoria, empresa").eq("id", source_id).single();
       if (!faq) return new Response(JSON.stringify({ error: "FAQ not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const fullText = `Pergunta: ${faq.pergunta}\nResposta: ${faq.resposta}`;
-      const r = await embedChunks(supabase, chunkText(fullText), "faq", source_id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
+      const chunks = semanticChunk(fullText, `[FAQ] ${faq.categoria}`);
+      const r = await embedChunks(supabase, chunks, "faq", source_id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_document" && source_id) {
-      // === FASE 1: PDF Document Indexing ===
       const { data: doc } = await supabase.from("knowledge_documents").select("id, product_knowledge_id, nome_arquivo, storage_path, tipo_documento, descricao").eq("id", source_id).single();
       if (!doc) return new Response(JSON.stringify({ error: "Document not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const { data: product } = await supabase.from("product_knowledge").select("empresa, produto_nome").eq("id", doc.product_knowledge_id).single();
       if (!product) return new Response(JSON.stringify({ error: "Product not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-
       const extractedText = await extractPdfText(supabase, doc.storage_path);
       if (!extractedText) {
         return new Response(JSON.stringify({ error: "Could not extract text from document", document: doc.nome_arquivo }), {
           status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-
-      const fullText = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}\n${doc.descricao ? doc.descricao + '\n' : ''}${extractedText}`;
-      const r = await embedChunks(supabase, chunkText(fullText), "document", source_id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
+      const titlePrefix = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}`;
+      const fullText = doc.descricao ? `${doc.descricao}\n\n${extractedText}` : extractedText;
+      const chunks = semanticChunk(fullText, titlePrefix);
+      const r = await embedChunks(supabase, chunks, "document", source_id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_all" || action === "reindex") {
       const targetEmpresa = empresa || null;
-
       if (action === "reindex") {
         let deleteQuery = supabase.from("knowledge_embeddings").delete();
         if (targetEmpresa) deleteQuery = deleteQuery.eq("empresa", targetEmpresa);
@@ -189,8 +253,9 @@ serve(async (req) => {
       for (const section of (allSections || [])) {
         const product = productMap.get(section.product_knowledge_id);
         if (!product) continue;
-        const fullText = `[${product.produto_nome}] ${section.titulo}\n${section.conteudo}`;
-        const r = await embedChunks(supabase, chunkText(fullText), "section", section.id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
+        const titlePrefix = `[${product.produto_nome}] ${section.titulo}`;
+        const chunks = semanticChunk(section.conteudo, titlePrefix);
+        const r = await embedChunks(supabase, chunks, "section", section.id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
@@ -200,20 +265,22 @@ serve(async (req) => {
       const { data: allFaqs } = await faqQuery;
       for (const faq of (allFaqs || [])) {
         const fullText = `Pergunta: ${faq.pergunta}\nResposta: ${faq.resposta}`;
-        const r = await embedChunks(supabase, chunkText(fullText), "faq", faq.id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
+        const chunks = semanticChunk(fullText, `[FAQ] ${faq.categoria}`);
+        const r = await embedChunks(supabase, chunks, "faq", faq.id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
-      // === FASE 1: Embed Documents (PDFs) ===
-      let docQuery = supabase.from("knowledge_documents").select("id, product_knowledge_id, nome_arquivo, storage_path, tipo_documento, descricao");
-      const { data: allDocs } = await docQuery;
+      // Embed Documents (PDFs)
+      const { data: allDocs } = await supabase.from("knowledge_documents").select("id, product_knowledge_id, nome_arquivo, storage_path, tipo_documento, descricao");
       for (const doc of (allDocs || [])) {
         const product = productMap.get(doc.product_knowledge_id);
         if (!product) continue;
         const extractedText = await extractPdfText(supabase, doc.storage_path);
         if (!extractedText) { totalErrors++; continue; }
-        const fullText = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}\n${doc.descricao ? doc.descricao + '\n' : ''}${extractedText}`;
-        const r = await embedChunks(supabase, chunkText(fullText), "document", doc.id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
+        const titlePrefix = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}`;
+        const fullText = doc.descricao ? `${doc.descricao}\n\n${extractedText}` : extractedText;
+        const chunks = semanticChunk(fullText, titlePrefix);
+        const r = await embedChunks(supabase, chunks, "document", doc.id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
@@ -223,7 +290,7 @@ serve(async (req) => {
       });
     }
 
-    return new Response(JSON.stringify({ success: true, embedded: totalEmbedded, errors: totalErrors }), {
+    return new Response(JSON.stringify({ success: true, embedded: totalEmbedded, errors: totalErrors, chunking: 'semantic' }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
