@@ -1,34 +1,57 @@
 
 
-# Diagnóstico: API aceitou mas chamada não conectou
+# Implementação WebRTC Nativo via Widget Zadarma
 
-## O que aconteceu
-A API Zadarma retornou `status: success` — ela aceitou o pedido de callback. O fluxo do callback Zadarma funciona assim:
+## Contexto
+O Zadarma fornece um widget WebRTC oficial (scripts JS externos) que encapsula toda a complexidade SIP/WebRTC. A abordagem mais confiável é carregar esse widget e integrá-lo ao nosso phone widget, em vez de reimplementar SIP.js do zero.
 
-1. Zadarma liga para o ramal `from` (108) via SIP
-2. Quando o ramal atende, Zadarma conecta ao número `to`
+## Pré-requisito
+O campo `sip_login` dos ramais precisa estar preenchido no banco. Sem ele, o widget WebRTC não consegue se registrar.
 
-O problema: **o ramal 108 não está registrado em nenhum cliente SIP/WebRTC**. O campo `sip_login` está `null` para todas as 3 extensões do Arthur. Sem um cliente SIP conectado, o Zadarma tenta ligar para o ramal 108 mas não encontra ninguém online.
+## Arquitetura
 
-## O que precisa ser feito
+```text
+ZadarmaPhoneWidget (nosso UI)
+  │
+  ├── useZadarmaWebRTC (novo hook)
+  │     ├── Busca WebRTC key via proxy (/v1/webrtc/get_key/)
+  │     ├── Carrega scripts Zadarma dinamicamente
+  │     └── Inicializa zadarmaWidgetFn(key, sipLogin, ...)
+  │
+  ├── Modo WebRTC (sip_login preenchido)
+  │     └── Usa widget Zadarma para chamadas diretas no browser
+  │
+  └── Modo Callback (fallback, sem sip_login)
+        └── Mantém fluxo atual via /v1/request/callback/
+```
 
-### 1. Configurar `sip_login` no banco
-O `sip_login` é o identificador SIP do Zadarma (ex: `123456-108`). Precisa ser preenchido com o valor correto do painel Zadarma.
+## Implementação
 
-### 2. Implementar WebRTC no widget (futuro)
-Para chamadas direto do navegador, o widget precisa:
-- Obter a chave WebRTC via `/v1/webrtc/get_key/` (já existe no proxy)
-- Inicializar uma sessão WebRTC com a lib Zadarma
-- Registrar o ramal SIP no navegador
+### 1. Novo hook `src/hooks/useZadarmaWebRTC.ts`
+- Recebe `empresa`, `sipLogin` como parâmetros
+- Chama proxy com `action: 'get_webrtc_key'` + `sip_login` ao montar
+- Armazena key em state (renovação a cada 70h, key dura 72h)
+- Carrega scripts Zadarma via `document.createElement('script')`:
+  - `https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-lib.js`
+  - `https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-fn.js`
+- Inicializa `zadarmaWidgetFn(key, sipLogin, 'square', 'pt', false, ...)` com `false` para esconder a UI padrão do Zadarma (usamos a nossa)
+- Expõe funções: `dial(number)`, `hangup()`, `isReady`
 
-Sem isso, o widget é apenas um atalho para o callback — que precisa de um softphone externo (como Zoiper ou o app Zadarma) logado no ramal 108.
+### 2. Atualizar `ZadarmaPhoneWidget.tsx`
+- Importar `useZadarmaWebRTC`
+- Se `myExtension.sip_login` existe: usar modo WebRTC (dial direto via widget Zadarma)
+- Se não tem `sip_login`: manter modo callback atual como fallback
+- No `handleDial`: se WebRTC pronto, chamar via widget Zadarma; senão, callback
+- Mostrar indicador visual "WebRTC" ou "Callback" no header
 
-### 3. Ação imediata: feedback correto no UI
-Atualmente o widget mostra "Discando..." e um timer como se a chamada estivesse ativa. Na realidade, ele só enviou o pedido de callback. Devemos:
-- Mudar o texto para "Callback solicitado — atenda seu ramal"
-- Não iniciar o timer até receber confirmação via webhook de que a chamada foi atendida
+### 3. Configuração no Zadarma
+O domínio do CRM precisa estar cadastrado em **Settings > Integrations and API > WebRTC widget integration** no painel Zadarma. Sem isso, o widget será bloqueado por CORS.
 
-### Resumo das opções
-- **Curto prazo**: Instalar um softphone externo (Zoiper/app Zadarma) no ramal 108 e preencher o `sip_login`. O widget funciona como botão de callback.
-- **Médio prazo**: Implementar WebRTC nativo no widget para chamadas direto do navegador.
+## Detalhe Técnico
+O widget Zadarma expõe a função global `zadarmaWidgetFn()` que cria um iframe SIP no DOM. Passando o 5o parâmetro como `false`, o widget fica invisível (hidden mode). Chamadas são controladas programaticamente via eventos DOM customizados do widget (`zadarmaWidgetEvent`).
+
+## Limitações
+- O domínio precisa ser HTTPS e estar registrado no painel Zadarma
+- `sip_login` precisa ser preenchido manualmente (ex: `123456-108`)
+- A key WebRTC expira em 72h, o hook renova automaticamente
 
