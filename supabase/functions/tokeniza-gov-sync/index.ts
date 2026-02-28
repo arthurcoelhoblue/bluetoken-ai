@@ -1,6 +1,6 @@
 // ========================================
 // tokeniza-gov-sync — Consome API do Tokeniza Gov e popula contacts, cs_customers, cs_contracts
-// Suporta paginação: POST { page: 0, page_size: 500 }
+// Suporta paginação: POST { page: 0, page_size: 50 }
 // ========================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -68,45 +68,51 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Parse pagination params
     let page = 0;
-    let pageSize = 500;
+    let pageSize = 50;
+    let cachedData: ExportResponse | null = null;
     try {
       const body = await req.json();
       page = body.page ?? 0;
-      pageSize = Math.min(body.page_size ?? 500, 1000);
+      pageSize = Math.min(body.page_size ?? 50, 200);
+      if (body._cached_data) cachedData = body._cached_data as ExportResponse;
     } catch { /* empty body = page 0 */ }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
 
-    console.log(`[tokeniza-gov-sync] Fetching investors from Tokeniza Gov (page=${page}, size=${pageSize})...`);
+    let data: ExportResponse;
 
-    // 1. Fetch all data from Tokeniza Gov API (API returns all at once)
-    const apiResp = await fetch(TOKENIZA_GOV_API_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": TOKENIZA_GOV_API_KEY.replace(/[^\x20-\x7E]/g, ''),
-      },
-      body: JSON.stringify({}),
-    });
+    if (cachedData) {
+      data = cachedData;
+      console.log(`[tokeniza-gov-sync] Using cached data (${data.investors.length} investors)`);
+    } else {
+      console.log(`[tokeniza-gov-sync] Fetching from Tokeniza Gov (page=${page}, size=${pageSize})...`);
+      const apiResp = await fetch(TOKENIZA_GOV_API_URL, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": TOKENIZA_GOV_API_KEY.replace(/[^\x20-\x7E]/g, ''),
+        },
+        body: JSON.stringify({}),
+      });
 
-    if (!apiResp.ok) {
-      const errText = await apiResp.text();
-      console.error("[tokeniza-gov-sync] API error:", apiResp.status, errText);
-      return new Response(
-        JSON.stringify({ error: `Tokeniza Gov API returned ${apiResp.status}`, detail: errText }),
-        { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+      if (!apiResp.ok) {
+        const errText = await apiResp.text();
+        console.error("[tokeniza-gov-sync] API error:", apiResp.status, errText);
+        return new Response(
+          JSON.stringify({ error: `Tokeniza Gov API returned ${apiResp.status}`, detail: errText }),
+          { status: 502, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      data = await apiResp.json();
     }
 
-    const data: ExportResponse = await apiResp.json();
     const totalInvestors = data.investors.length;
     const startIdx = page * pageSize;
     const endIdx = Math.min(startIdx + pageSize, totalInvestors);
     const slice = data.investors.slice(startIdx, endIdx);
 
-    console.log(`[tokeniza-gov-sync] Total: ${totalInvestors}, processing slice [${startIdx}..${endIdx}] (${slice.length} investors)`);
+    console.log(`[tokeniza-gov-sync] Total: ${totalInvestors}, slice [${startIdx}..${endIdx}] (${slice.length})`);
 
     if (slice.length === 0) {
       return new Response(
@@ -115,7 +121,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 2. Process each investor in this slice
     const stats = {
       contacts_created: 0, contacts_updated: 0,
       cs_customers_created: 0, cs_customers_updated: 0,
@@ -132,7 +137,7 @@ Deno.serve(async (req) => {
         const isCliente = hasActivePositions && investor.is_active;
         const tags = buildContactTags(investor, isCliente);
 
-        // 2a. Upsert contact
+        // Check existing contact
         const { data: existingContact } = await supabase
           .from("contacts").select("id").eq("cpf", cpfClean).eq("empresa", "TOKENIZA").maybeSingle();
 
@@ -164,7 +169,7 @@ Deno.serve(async (req) => {
           stats.contacts_created++;
         }
 
-        // 2b. Upsert cs_customer
+        // Upsert cs_customer
         const activePositions = investor.positions?.filter((p) => p.is_active) ?? [];
         const totalInvested = activePositions.reduce((sum, p) => sum + (p.invested_amount || 0), 0);
         const firstInvestmentDate = investor.positions
@@ -201,18 +206,22 @@ Deno.serve(async (req) => {
         if (csErr || !csCustomer) { console.error(`[sync] cs_customer ${cpfClean}:`, csErr?.message); stats.errors++; continue; }
         if (existingCustomer) stats.cs_customers_updated++; else stats.cs_customers_created++;
 
-        // 2c. Upsert cs_contracts
+        // Upsert cs_contracts for confirmed/settled positions
         if (investor.positions?.length) {
-          for (const pos of investor.positions) {
-            const posStatus = (pos.status || "").toLowerCase();
-            if (posStatus !== "confirmed" && posStatus !== "settled") continue;
+          const confirmedPositions = investor.positions.filter(p => {
+            const s = (p.status || "").toLowerCase();
+            return s === "confirmed" || s === "settled";
+          });
 
+          if (confirmedPositions.length > 0) {
+            console.log(`[sync] ${cpfClean}: ${confirmedPositions.length} confirmed out of ${investor.positions.length}`);
+          }
+
+          for (const pos of confirmedPositions) {
+            const posStatus = (pos.status || "").toLowerCase();
             const subscDate = new Date(pos.subscribed_at || "");
             const anoFiscal = isNaN(subscDate.getTime()) ? new Date().getFullYear() : subscDate.getFullYear();
             const ofertaId = `${investor.external_id}-${pos.deal_name}-${pos.subscribed_at || "unknown"}`;
-
-            const { data: existingContract } = await supabase
-              .from("cs_contracts").select("id").eq("customer_id", csCustomer.id).eq("oferta_id", ofertaId).maybeSingle();
 
             const { error: contractErr } = await supabase.from("cs_contracts").upsert({
               customer_id: csCustomer.id, empresa: "TOKENIZA",
@@ -226,7 +235,7 @@ Deno.serve(async (req) => {
             }, { onConflict: "customer_id,ano_fiscal,oferta_id" });
 
             if (contractErr) { console.error(`[sync] contract:`, contractErr.message); stats.errors++; }
-            else if (existingContract) stats.cs_contracts_updated++; else stats.cs_contracts_created++;
+            else stats.cs_contracts_created++;
           }
         }
       } catch (investorErr) {

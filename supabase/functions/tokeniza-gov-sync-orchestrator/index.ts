@@ -2,8 +2,10 @@ import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors
 
 const corsHeaders = getWebhookCorsHeaders();
 
-const MAX_PAGES = 25;
-const PAGE_SIZE = 500;
+// Each sync call fetches API data (~5s) + processes 50 investors (~5s) = ~10s.
+// Process 1 page per batch to stay safely under 30s. Self-chains for next page.
+const PAGES_PER_BATCH = 1;
+const PAGE_SIZE = 50;
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return handleWebhookCorsOptions();
@@ -12,11 +14,20 @@ Deno.serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+    let startPage = 0;
+    try {
+      const body = await req.json();
+      startPage = body.start_page ?? 0;
+    } catch { /* default to 0 */ }
+
     const syncUrl = `${SUPABASE_URL}/functions/v1/tokeniza-gov-sync`;
+    const orchestratorUrl = `${SUPABASE_URL}/functions/v1/tokeniza-gov-sync-orchestrator`;
     const headers = {
       "Content-Type": "application/json",
       "Authorization": `Bearer ${SERVICE_ROLE_KEY}`,
     };
+
+    console.log(`[orchestrator] Starting from page ${startPage}, ${PAGES_PER_BATCH} pages of ${PAGE_SIZE}`);
 
     const consolidated = {
       contacts_created: 0, contacts_updated: 0,
@@ -25,13 +36,15 @@ Deno.serve(async (req) => {
       errors: 0, skipped: 0,
     };
 
-    let page = 0;
+    let lastPage = startPage;
+    let hasMore = true;
     let totalInvestors = 0;
-    let totalProcessed = 0;
     let exportedAt = "";
 
-    while (page < MAX_PAGES) {
-      console.log(`[orchestrator] Calling tokeniza-gov-sync page=${page}...`);
+    for (let i = 0; i < PAGES_PER_BATCH; i++) {
+      const page = startPage + i;
+
+      console.log(`[orchestrator] Calling sync page ${page}...`);
 
       const resp = await fetch(syncUrl, {
         method: "POST",
@@ -47,14 +60,12 @@ Deno.serve(async (req) => {
       }
 
       const data = await resp.json();
-
       if (!data.success) {
-        console.error(`[orchestrator] Page ${page} returned error:`, data.error);
+        console.error(`[orchestrator] Page ${page} error:`, data.error);
         consolidated.errors++;
         break;
       }
 
-      // Consolidate stats
       if (data.stats) {
         for (const key of Object.keys(consolidated) as (keyof typeof consolidated)[]) {
           consolidated[key] += data.stats[key] || 0;
@@ -62,26 +73,39 @@ Deno.serve(async (req) => {
       }
 
       totalInvestors = data.total_investors || totalInvestors;
-      totalProcessed += data.processed || 0;
       exportedAt = data.exported_at || exportedAt;
+      lastPage = page;
+      hasMore = data.has_more ?? false;
+      console.log(`[orchestrator] Page ${page}: processed=${data.processed}, contracts=${data.stats?.cs_contracts_created || 0}`);
 
-      console.log(`[orchestrator] Page ${page} done: processed=${data.processed}, has_more=${data.has_more}`);
+      if (!hasMore) break;
+    }
 
-      if (!data.has_more) break;
-      page = data.next_page;
+    const nextPage = hasMore ? lastPage + 1 : null;
+
+    // Self-chain: fire next batch without waiting
+    if (hasMore && nextPage !== null) {
+      console.log(`[orchestrator] Chaining to page ${nextPage}...`);
+      fetch(orchestratorUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify({ start_page: nextPage }),
+      }).catch(err => console.error(`[orchestrator] Chain failed:`, err));
     }
 
     const result = {
       success: true,
-      pages_processed: page + 1,
+      batch_start_page: startPage,
+      batch_end_page: lastPage,
       total_investors: totalInvestors,
-      total_processed: totalProcessed,
       stats: consolidated,
+      has_more: hasMore,
+      next_page: nextPage,
       exported_at: exportedAt,
       completed_at: new Date().toISOString(),
     };
 
-    console.log(`[orchestrator] Complete:`, JSON.stringify(result));
+    console.log(`[orchestrator] Batch done:`, JSON.stringify(result));
 
     return new Response(JSON.stringify(result), {
       status: 200,
