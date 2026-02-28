@@ -54,6 +54,197 @@ function StatusDot({ status }: { status?: string }) {
   return <Badge variant="secondary" className="text-[10px] px-1.5">Offline</Badge>;
 }
 
+// ─── Direct Numbers Tab ──────────────────────────────
+function DirectNumbersTab({ empresa, proxy }: { empresa: EmpresaTipo; proxy: ReturnType<typeof useZadarmaProxy> }) {
+  const [numbers, setNumbers] = useState<Array<Record<string, unknown>>>([]);
+  const [loading, setLoading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  const loadNumbers = async () => {
+    setLoading(true);
+    try {
+      const result = await proxy.mutateAsync({ action: 'get_direct_numbers', empresa });
+      const list = result?.info?.direct_numbers || result?.direct_numbers || [];
+      setNumbers(Array.isArray(list) ? list : []);
+      setLoaded(true);
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { if (!loaded) loadNumbers(); }, [loaded]);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          🌐 Números Virtuais
+        </CardTitle>
+        <CardDescription>Números comprados no Zadarma — inventário e status</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="mb-3">
+          <Button variant="outline" size="sm" onClick={loadNumbers} disabled={loading}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+          </Button>
+        </div>
+        {loading && !loaded ? (
+          <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
+        ) : numbers.length === 0 ? (
+          <p className="text-center text-muted-foreground py-6">Nenhum número virtual encontrado.</p>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Número</TableHead>
+                <TableHead>País</TableHead>
+                <TableHead className="text-center">Status</TableHead>
+                <TableHead className="text-center">Canais</TableHead>
+                <TableHead className="text-right">Custo/mês</TableHead>
+                <TableHead className="text-center">Auto-renovar</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {numbers.map((n, i) => (
+                <TableRow key={i}>
+                  <TableCell className="font-mono font-medium">{String(n.number || n.did || '—')}</TableCell>
+                  <TableCell>{String(n.country || '—')}</TableCell>
+                  <TableCell className="text-center">
+                    <Badge variant={n.status === 'on' || n.status === 'active' ? 'default' : 'secondary'}>
+                      {String(n.status || '—')}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-center">{String(n.channels || n.lines || '—')}</TableCell>
+                  <TableCell className="text-right">{n.monthly_cost ? `${n.monthly_cost} ${n.currency || 'USD'}` : '—'}</TableCell>
+                  <TableCell className="text-center">{n.auto_renewal ? '✅' : '❌'}</TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Redirection Tab ─────────────────────────────────
+function RedirectionTab({ empresa, extensions, proxy }: { empresa: EmpresaTipo; extensions: Array<{ id: string; extension_number: string; user_nome?: string; sip_login?: string | null }>; proxy: ReturnType<typeof useZadarmaProxy> }) {
+  const [redirections, setRedirections] = useState<Record<string, { type?: string; destination?: string; loading?: boolean }>>({});
+  const [loaded, setLoaded] = useState(false);
+
+  const loadRedirections = async () => {
+    const results: Record<string, { type?: string; destination?: string }> = {};
+    for (const ext of extensions) {
+      if (!ext.sip_login) continue;
+      try {
+        const result = await proxy.mutateAsync({
+          action: 'get_redirection',
+          empresa,
+          payload: { sip_id: ext.sip_login },
+        });
+        results[ext.extension_number] = {
+          type: result?.info?.condition || result?.condition || '—',
+          destination: result?.info?.destination || result?.destination || '—',
+        };
+      } catch {
+        results[ext.extension_number] = { type: 'erro', destination: '—' };
+      }
+    }
+    setRedirections(results);
+    setLoaded(true);
+  };
+
+  useEffect(() => { if (!loaded && extensions.length > 0) loadRedirections(); }, [loaded, extensions.length]);
+
+  const handleSetRedirection = async (ext: typeof extensions[0], type: string, destination: string) => {
+    if (!ext.sip_login) { toast.error('SIP Login necessário para configurar encaminhamento'); return; }
+    setRedirections(prev => ({ ...prev, [ext.extension_number]: { ...prev[ext.extension_number], loading: true } }));
+    try {
+      await proxy.mutateAsync({
+        action: 'set_redirection',
+        empresa,
+        payload: { sip_id: ext.sip_login, type, destination },
+      });
+      toast.success(`Encaminhamento do ramal ${ext.extension_number} atualizado!`);
+      setRedirections(prev => ({ ...prev, [ext.extension_number]: { type, destination, loading: false } }));
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+      setRedirections(prev => ({ ...prev, [ext.extension_number]: { ...prev[ext.extension_number], loading: false } }));
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">↪️ Encaminhamento de Chamadas — {empresa}</CardTitle>
+        <CardDescription>Configure para onde redirecionar quando o vendedor não atende (fallback)</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {extensions.length === 0 ? (
+          <p className="text-center text-muted-foreground py-6">Nenhum ramal mapeado.</p>
+        ) : (
+          <div className="space-y-4">
+            {extensions.map(ext => {
+              const redir = redirections[ext.extension_number] || {};
+              return (
+                <Card key={ext.id} className="border">
+                  <CardContent className="p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-sm font-medium">{ext.user_nome || 'Sem usuário'}</p>
+                        <p className="text-xs text-muted-foreground font-mono">Ramal {ext.extension_number} {ext.sip_login ? `(${ext.sip_login})` : '(sem SIP)'}</p>
+                      </div>
+                      {redir.type && redir.type !== 'erro' && (
+                        <Badge variant="secondary" className="text-xs">
+                          {redir.type === 'noanswer' ? 'Sem resposta' : redir.type === 'always' ? 'Sempre' : redir.type}
+                        </Badge>
+                      )}
+                    </div>
+                    {ext.sip_login ? (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <Select
+                          value={redir.type || 'noanswer'}
+                          onValueChange={(val) => setRedirections(prev => ({ ...prev, [ext.extension_number]: { ...prev[ext.extension_number], type: val } }))}
+                        >
+                          <SelectTrigger className="w-36">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="noanswer">Sem resposta</SelectItem>
+                            <SelectItem value="always">Sempre</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          className="w-44 font-mono text-sm"
+                          placeholder="Número destino"
+                          value={redir.destination === '—' ? '' : redir.destination || ''}
+                          onChange={e => setRedirections(prev => ({ ...prev, [ext.extension_number]: { ...prev[ext.extension_number], destination: e.target.value } }))}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={redir.loading || !redir.destination || redir.destination === '—'}
+                          onClick={() => handleSetRedirection(ext, redir.type || 'noanswer', redir.destination || '')}
+                        >
+                          {redir.loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
+                        </Button>
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Configure o SIP Login para gerenciar encaminhamento.</p>
+                    )}
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ZadarmaConfigContent() {
   const { activeCompany, empresaRecords } = useCompany();
   const activeEmpresa: EmpresaTipo = activeCompany as EmpresaTipo;
@@ -195,11 +386,13 @@ function ZadarmaConfigContent() {
         <p className="text-muted-foreground">Configuração global de telefonia VoIP — canal único compartilhado entre empresas</p>
       </div>
       <Tabs defaultValue="dashboard" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
           <TabsTrigger value="status">🟢 Status Ramais</TabsTrigger>
           <TabsTrigger value="config">⚙️ Configuração</TabsTrigger>
           <TabsTrigger value="ramais">📞 Ramais</TabsTrigger>
+          <TabsTrigger value="numeros">🌐 Números</TabsTrigger>
+          <TabsTrigger value="encaminhamento">↪️ Encaminhamento</TabsTrigger>
           <TabsTrigger value="stats">📈 Estatísticas CRM</TabsTrigger>
         </TabsList>
 
@@ -495,6 +688,16 @@ function ZadarmaConfigContent() {
               </Table>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        {/* ─── Direct Numbers Tab ───────────────────── */}
+        <TabsContent value="numeros" className="space-y-4">
+          <DirectNumbersTab empresa={activeEmpresa} proxy={proxy} />
+        </TabsContent>
+
+        {/* ─── Redirection Tab ──────────────────────── */}
+        <TabsContent value="encaminhamento" className="space-y-4">
+          <RedirectionTab empresa={activeEmpresa} extensions={extensions} proxy={proxy} />
         </TabsContent>
       </Tabs>
     </div>

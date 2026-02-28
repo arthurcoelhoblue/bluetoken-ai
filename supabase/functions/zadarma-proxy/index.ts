@@ -203,6 +203,43 @@ Deno.serve(async (req) => {
         result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/direct_numbers/');
         break;
 
+      // ─── REDIRECTION ─────────────────────────────────
+      case 'get_redirection': {
+        const { sip_id } = payload;
+        if (!sip_id) throw new Error('sip_id required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', { id: String(sip_id) });
+        break;
+      }
+      case 'set_redirection': {
+        const { sip_id, type: redirType, destination } = payload;
+        if (!sip_id || !redirType || !destination) throw new Error('sip_id, type and destination required');
+        const redirParams: Record<string, string> = {
+          id: String(sip_id),
+          type: String(redirType),
+          destination: String(destination),
+          format: 'json',
+        };
+        const redirSignature = await signRequest('/v1/sip/redirection/', redirParams, config.api_secret);
+        const redirQS = new URLSearchParams(
+          Object.keys(redirParams).sort().reduce((acc, k) => { acc[k] = redirParams[k]; return acc; }, {} as Record<string, string>)
+        ).toString();
+        const redirResponse = await fetch(`${ZADARMA_API_URL}/v1/sip/redirection/?${redirQS}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `${config.api_key}:${redirSignature}` },
+        });
+        const redirText = await redirResponse.text();
+        try { result = JSON.parse(redirText); } catch { result = { raw: redirText }; }
+        break;
+      }
+
+      // ─── EXTENSION INFO ───────────────────────────────
+      case 'get_extension_info': {
+        const { extension: extNum } = payload;
+        if (!extNum) throw new Error('extension required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extNum)}/info/`);
+        break;
+      }
+
       default:
         return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
