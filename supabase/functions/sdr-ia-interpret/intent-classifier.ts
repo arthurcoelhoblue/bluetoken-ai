@@ -462,6 +462,12 @@ Amélia, 32 anos, economista, Grupo Blue Labs (3 anos). Atua em 4 verticais: Blu
 - C (Conforme): Perguntas técnicas, "me manda os dados", "qual a rentabilidade exata", comparações, ceticismo
 Retorne em disc_estimado: D, I, S ou C. Se não for possível determinar, retorne null.
 
+## DISC → RESPOSTA OBRIGATÓRIA
+Quando disc_estimado = "C": a resposta_sugerida DEVE conter dados numéricos concretos (rentabilidade, prazos, valores exatos da seção PRODUTOS). NUNCA use frases vagas como "boa rentabilidade" ou "retorno atrativo". Cite números específicos. Se não houver dados, diga "vou levantar os números exatos com a equipe".
+Quando disc_estimado = "D": a resposta_sugerida DEVE ser ≤3 frases, direto ao ponto, sem rodeios, sem perguntas desnecessárias.
+Quando disc_estimado = "S": a resposta_sugerida DEVE enfatizar segurança, garantias reais e regulação. Não apresse o lead.
+Quando disc_estimado = "I": a resposta_sugerida DEVE incluir exemplos de sucesso ou histórias. Tom entusiasmado mas profissional.
+
 ## FORMATO JSON OBRIGATÓRIO:
 {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
 
@@ -947,6 +953,53 @@ REGRAS FORA DO HORÁRIO:
 
   if (result.frameworks_atualizados) {
     result.frameworks_atualizados = normalizeFrameworkKeys(result.frameworks_atualizados);
+  }
+
+  // ========================================
+  // POST-CLASSIFICATION: Auto-advance estado_funil based on framework data
+  // Prevents funnel from getting stuck in SAUDACAO when data is already collected
+  // ========================================
+  {
+    const currentEstado = (result.novo_estado_funil || conversation_state?.estado_funil || 'SAUDACAO') as EstadoFunil;
+    const mergedFd = normalizeFrameworkKeys({
+      ...(conversation_state?.framework_data as Record<string, unknown> || {}),
+      ...(result.frameworks_atualizados || {}),
+    });
+
+    // Count filled framework fields
+    const gpctFilled = ['g', 'p', 'c', 't'].filter(k => mergedFd.gpct?.[k]).length;
+    const bantFilled = ['b', 'a', 'n', 't'].filter(k => mergedFd.bant?.[k]).length;
+    const spinFilled = ['s', 'p', 'i', 'n'].filter(k => mergedFd.spin?.[k]).length;
+    const totalFrameworkFields = gpctFilled + bantFilled + spinFilled;
+
+    let computedEstado: EstadoFunil = currentEstado;
+
+    // Objeção explícita → OBJECOES (takes priority)
+    if (['OBJECAO_PRECO', 'OBJECAO_RISCO'].includes(result.intent)) {
+      computedEstado = 'OBJECOES';
+    }
+    // FECHAMENTO intents
+    else if (['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO'].includes(result.intent) && result.confidence >= 0.8) {
+      computedEstado = 'FECHAMENTO';
+    }
+    // Enough framework data → QUALIFICACAO
+    else if (currentEstado === 'SAUDACAO' || currentEstado === 'DIAGNOSTICO') {
+      if (totalFrameworkFields >= 3 || (gpctFilled >= 2 && bantFilled >= 1)) {
+        computedEstado = 'QUALIFICACAO';
+      } else if (totalFrameworkFields >= 1 && currentEstado === 'SAUDACAO') {
+        computedEstado = 'DIAGNOSTICO';
+      }
+    }
+
+    // Only advance, never regress (except for OBJECOES which is lateral)
+    const FUNIL_ORDER: EstadoFunil[] = ['SAUDACAO', 'DIAGNOSTICO', 'QUALIFICACAO', 'OBJECOES', 'FECHAMENTO', 'POS_VENDA'];
+    const currentIdx = FUNIL_ORDER.indexOf(currentEstado);
+    const computedIdx = FUNIL_ORDER.indexOf(computedEstado);
+
+    if (computedIdx > currentIdx || computedEstado === 'OBJECOES') {
+      result.novo_estado_funil = computedEstado;
+      log.info('Auto-advanced estado_funil', { from: currentEstado, to: computedEstado, totalFrameworkFields, intent: result.intent });
+    }
   }
 
   return {
