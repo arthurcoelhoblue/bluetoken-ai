@@ -237,6 +237,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   const originalConsoleLog = useRef<typeof console.log>(console.log);
   const autoAnswerAttemptsRef = useRef(0);
   const autoAnswerDoneRef = useRef(false);
+  const lastAutoAnswerTriggerRef = useRef(0);
 
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -259,8 +260,14 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, [empresa, sipLogin]);
 
-  // Auto-answer: staggered click attempts
+  // Auto-answer: staggered click attempts (debounced — ignores calls within 2s)
   const triggerAutoAnswer = useCallback(() => {
+    const now = Date.now();
+    if (now - lastAutoAnswerTriggerRef.current < 2000) {
+      console.log('[WebRTC] ⏳ triggerAutoAnswer debounced (called within 2s)');
+      return;
+    }
+    lastAutoAnswerTriggerRef.current = now;
     autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
     console.log('[WebRTC] 🟢 Triggering auto-answer sequence...');
@@ -287,7 +294,6 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }
     };
 
-    // Single delayed attempt — no parallel scheduling
     setTimeout(attempt, 500);
   }, []);
 
