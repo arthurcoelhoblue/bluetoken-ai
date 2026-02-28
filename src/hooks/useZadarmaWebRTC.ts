@@ -364,6 +364,20 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     callStartedAtRef.current = 0;
     if (duracao < 1) return;
     try {
+      // First, find the most recent open call record ID
+      const { data: openCall, error: selectError } = await supabase
+        .from('calls')
+        .select('id')
+        .eq('empresa', empresa)
+        .is('ended_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (selectError) { console.error('[WebRTC] Failed to find open call:', selectError); return; }
+      if (!openCall) { console.log('[WebRTC] No open call record to close'); return; }
+
+      // Then update by specific ID
       const { error: updateError } = await supabase
         .from('calls')
         .update({
@@ -371,12 +385,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           duracao_segundos: duracao,
           status: 'ANSWERED',
         })
-        .eq('empresa', empresa)
-        .is('ended_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1);
+        .eq('id', openCall.id);
+
       if (updateError) console.error('[WebRTC] Failed to close call record:', updateError);
-      else console.log(`[WebRTC] ✅ Closed call record locally (${duracao}s)`);
+      else console.log(`[WebRTC] ✅ Closed call record ${openCall.id} locally (${duracao}s)`);
     } catch (err) {
       console.error('[WebRTC] Error closing call record:', err);
     }
