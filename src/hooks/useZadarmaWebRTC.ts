@@ -286,7 +286,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   const lastAutoAnswerTriggerRef = useRef(0);
   const incomingDetectedRef = useRef(false);
   const hangupCooldownRef = useRef(0);
-
+  const callStartedAtRef = useRef<number>(0);
   const statusRef = useRef(status);
   statusRef.current = status;
 
@@ -357,6 +357,31 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     setTimeout(attempt, 300);
   }, [safeSetStatus]);
 
+  // Close active call record in DB when call ends locally (fallback for missing webhook)
+  const closeActiveCallRecord = useCallback(async () => {
+    if (!callStartedAtRef.current || !empresa) return;
+    const duracao = Math.round((Date.now() - callStartedAtRef.current) / 1000);
+    callStartedAtRef.current = 0;
+    if (duracao < 1) return;
+    try {
+      const { error: updateError } = await supabase
+        .from('calls')
+        .update({
+          ended_at: new Date().toISOString(),
+          duracao_segundos: duracao,
+          status: 'ANSWERED',
+        })
+        .eq('empresa', empresa)
+        .is('ended_at', null)
+        .order('created_at', { ascending: false })
+        .limit(1);
+      if (updateError) console.error('[WebRTC] Failed to close call record:', updateError);
+      else console.log(`[WebRTC] ✅ Closed call record locally (${duracao}s)`);
+    } catch (err) {
+      console.error('[WebRTC] Error closing call record:', err);
+    }
+  }, [empresa]);
+
   // console.log interceptor — STRICT keyword matching
   useEffect(() => {
     if (!enabled) return;
@@ -373,19 +398,23 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
         triggerAutoAnswer();
       }
-      // ACTIVE: only match specific call-confirmed patterns, WITH state guard
+      // ACTIVE: match specific call-confirmed patterns AND bare words from Zadarma v9, WITH state guard
       else if (
-        (combined.includes('call confirmed') || combined.includes('call accepted') || combined.includes('in_call') || combined.includes('session confirmed')) &&
+        (combined === 'confirmed' || combined === 'accepted' ||
+         combined.includes('call confirmed') || combined.includes('call accepted') ||
+         combined.includes('in_call') || combined.includes('session confirmed')) &&
         canTransitionToActive(statusRef.current)
       ) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
         autoAnswerDoneRef.current = true;
         incomingDetectedRef.current = false;
+        callStartedAtRef.current = Date.now();
         safeSetStatus('active');
       }
       // ENDED: match specific termination patterns
       else if (combined.includes('terminated') || combined.includes('call_end') || combined.includes('session ended') || combined.includes('call ended')) {
         origLog('[WebRTC] 📴 CALL ENDED detected via console.log');
+        closeActiveCallRecord();
         incomingDetectedRef.current = false;
         autoAnswerDoneRef.current = false;
         safeSetStatus('ready');
@@ -400,7 +429,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     return () => {
       console.log = origLog;
     };
-  }, [enabled, triggerAutoAnswer, safeSetStatus]);
+  }, [enabled, triggerAutoAnswer, safeSetStatus, closeActiveCallRecord]);
 
   // MutationObserver — handles CSS re-hiding + inert marking
   useEffect(() => {
@@ -446,19 +475,22 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         triggerAutoAnswer();
       }
       else if (
-        (combined.includes('call confirmed') || combined.includes('call accepted')) &&
+        (combined === 'confirmed' || combined === 'accepted' ||
+         combined.includes('call confirmed') || combined.includes('call accepted')) &&
         canTransitionToActive(statusRef.current)
       ) {
+        callStartedAtRef.current = Date.now();
         safeSetStatus('active');
       }
       else if (combined.includes('terminated') || combined.includes('call ended') || combined.includes('session ended')) {
+        closeActiveCallRecord();
         safeSetStatus('ready');
       }
     };
 
     window.addEventListener('message', handlePostMessage);
     return () => window.removeEventListener('message', handlePostMessage);
-  }, [triggerAutoAnswer, safeSetStatus]);
+  }, [triggerAutoAnswer, safeSetStatus, closeActiveCallRecord]);
 
   // Initialize widget
   const initialize = useCallback(async () => {
@@ -542,6 +574,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     incomingDetectedRef.current = false;
     autoAnswerDoneRef.current = false;
 
+    closeActiveCallRecord();
     clickHangupButton();
 
     window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'hangup' } }));
@@ -551,7 +584,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } catch { /* ignore */ }
     });
     setStatus('ready');
-  }, []);
+  }, [closeActiveCallRecord]);
 
   const answer = useCallback(() => {
     triggerAutoAnswer();
