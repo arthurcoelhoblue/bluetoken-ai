@@ -1,31 +1,45 @@
 
 
-# Diagnóstico: Auto-answer não funciona
+# Plano: Esconder widget nativo + auto-atender via DOM click
 
-## Problema raiz
-Os logs mostram claramente a sequência:
-1. `click_to_call` → `success` 
-2. `incoming {caller: "351910506655"}` (widget recebe a chamada)
-3. 29 segundos depois → `canceled` (ninguém atendeu)
+## Diagnóstico real (dos logs)
 
-O `autoAnswer()` **nunca executou** porque nosso listener escuta `zadarmaWidgetEvent` (CustomEvent), mas o widget Zadarma **não dispara** CustomEvents. Os logs `incoming`, `registered`, `connected` são console.logs internos do widget, não eventos que chegam ao nosso listener.
+Os logs do console mostram que os eventos `incoming`, `accepted`, `confirmed` são **console.logs internos do widget Zadarma** — NÃO são postMessages nem CustomEvents. O widget v9 cria elementos diretamente no DOM da página (não num iframe cross-origin), por isso:
 
-O widget Zadarma se comunica via `postMessage` do iframe, não via CustomEvent no window.
+1. **CSS não esconde** — os seletores `[id*="zadarma"]` não correspondem aos elementos reais do widget
+2. **postMessage não funciona** — o widget não usa iframe cross-origin para a UI, os botões estão no DOM principal
+3. **Auto-answer nunca executa** — nenhum dos listeners (postMessage/CustomEvent) detecta o `incoming`
 
-## Solução em 2 partes
+## Solução: MutationObserver + auto-click no botão de atender
 
-### 1. Interceptar eventos via `postMessage` (window 'message' listener)
-No `useZadarmaWebRTC.ts`, adicionar `window.addEventListener('message', ...)` para capturar mensagens do iframe Zadarma. Quando detectar um evento de chamada recebida, executar o auto-answer.
+Como o widget Zadarma injeta botões diretamente no DOM, podemos:
 
-### 2. Auto-answer robusto com múltiplas estratégias
-Quando detectar incoming call via postMessage:
-- Enviar `postMessage({ action: 'answer' })` de volta ao iframe
-- Tentar `postMessage({ command: 'accept' })` (formato alternativo)
-- Fazer o widget visível momentaneamente (`visible: true`) para que o auto-answer funcione, e esconder via CSS overlay (posicionar nosso botão flutuante por cima)
+### 1. MutationObserver para detectar botão de atender (`useZadarmaWebRTC.ts`)
+- Observar o DOM com `MutationObserver` para detectar quando o botão de atender (answer/accept) aparece
+- Quando detectado, fazer `.click()` automaticamente nele
+- Procurar seletores como: `.answer-btn`, `[class*="answer"]`, `[class*="accept"]`, botões com ícone de telefone verde dentro do container do widget
 
-### 3. Adicionar logging de debug
-Logar TODOS os postMessages recebidos para entender o formato exato que o Zadarma usa. Isso vai nos permitir ajustar a detecção na próxima iteração.
+### 2. CSS agressivo para esconder o widget (`useZadarmaWebRTC.ts`)
+- Além dos seletores atuais, adicionar seletores mais genéricos que capturem o container real do widget:
+  - `#phone_widget`, `#webphone`, `.phone-widget`, `.webphone-container`
+  - Qualquer div com `position:fixed` que contenha elementos de telefone
+- Manter `visibility: hidden` + `opacity: 0` + `position: fixed; left: -9999px` mas **sem** `pointer-events: none` (para que o auto-click funcione)
+- Usar `overflow: hidden; width: 0; height: 0` como alternativa
 
-### Arquivos alterados
-- `src/hooks/useZadarmaWebRTC.ts` — adicionar message listener, melhorar auto-answer, widget visible=true com CSS overlay
+### 3. Interceptar console.log do widget (debug + detecção)
+- Monkey-patch `console.log` temporariamente para capturar as mensagens `incoming`, `registered`, etc. que o widget emite
+- Quando detectar `incoming`, disparar o auto-click no botão de atender
+- Isso é a forma mais confiável de detectar chamadas recebidas, já que os logs confirmam que o widget usa console.log
+
+### 4. Manter widget `visible: true` (necessário para funcionar)
+- O widget precisa estar visible=true para processar chamadas
+- A ocultação é feita apenas via CSS
+
+### Arquivo alterado
+- `src/hooks/useZadarmaWebRTC.ts` — MutationObserver, console.log interceptor, CSS corrigido
+
+## Resultado esperado
+- Widget Zadarma completamente invisível para o usuário
+- Chamadas auto-atendidas via click programático no botão do widget
+- Fluxo: Ligar → callback API → widget toca → auto-click answer → chamada conecta
 
