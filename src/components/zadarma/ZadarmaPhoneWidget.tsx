@@ -44,7 +44,7 @@ export function ZadarmaPhoneWidget() {
   const [transcriptionChunk, setTranscriptionChunk] = useState('');
 
   const proxy = useZadarmaProxy();
-  const autoDialRef = useRef(false);
+  // autoDialRef removed — dial is now called directly from event handler
   const speech = useSpeechRecognition();
 
   // Sync WebRTC status to phone state
@@ -63,7 +63,39 @@ export function ZadarmaPhoneWidget() {
     }
   }, [webrtc.status, isWebRTCMode]);
 
-  // Listen for dial events
+  // handleDialDirect — accepts number as param to preserve user gesture chain
+  const handleDialDirect = useCallback((dialNumber: string, dialDealId?: string) => {
+    console.log('[ZadarmaWidget] handleDialDirect called', { dialNumber, empresa, myExtension, isWebRTCMode });
+    if (!dialNumber.trim() || !empresa || !myExtension) {
+      if (!dialNumber.trim()) toast.error('Digite um número para ligar.');
+      else if (!empresa) toast.error('Nenhuma empresa ativa selecionada.');
+      else if (!myExtension) toast.error('Ramal não encontrado. Recarregue a página.');
+      return;
+    }
+    setCallTimer(0);
+    setOnHold(false);
+    setPhoneState('dialing');
+    toast.info('Iniciando chamada...');
+    proxy.mutate({
+      action: 'click_to_call',
+      empresa,
+      payload: { from: myExtension.extension_number, to: dialNumber },
+    }, {
+      onSuccess: (data) => {
+        console.log('[ZadarmaWidget] click_to_call success:', data);
+        toast.success(isWebRTCMode
+          ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
+          : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
+      },
+      onError: (error) => {
+        console.error('[ZadarmaWidget] click_to_call error:', error);
+        toast.error('Erro ao iniciar chamada: ' + (error instanceof Error ? error.message : String(error)));
+        setPhoneState('idle');
+      },
+    });
+  }, [empresa, myExtension, proxy, isWebRTCMode]);
+
+  // Listen for dial events — call handleDialDirect synchronously to preserve user gesture
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<DialEvent>).detail;
@@ -71,12 +103,12 @@ export function ZadarmaPhoneWidget() {
       setContactName(detail.contactName || '');
       setDealId(detail.dealId);
       setMinimized(false);
-      setPhoneState('idle');
-      autoDialRef.current = true;
+      // Call dial directly in the event handler (preserves user gesture chain)
+      handleDialDirect(detail.number, detail.dealId);
     };
     window.addEventListener('bluecrm:dial', handler);
     return () => window.removeEventListener('bluecrm:dial', handler);
-  }, []);
+  }, [handleDialDirect]);
 
   // Call timer + speech recognition lifecycle
   useEffect(() => {
@@ -145,13 +177,7 @@ export function ZadarmaPhoneWidget() {
     }
   }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
 
-  // Auto-dial when triggered via ClickToCallButton
-  useEffect(() => {
-    if (autoDialRef.current && number.trim() && phoneState === 'idle' && empresa && myExtension) {
-      autoDialRef.current = false;
-      handleDial();
-    }
-  }, [number, phoneState, empresa, myExtension, handleDial]);
+  // Auto-dial removed — handleDialDirect is called synchronously from the event handler
 
   const handleHangup = useCallback(() => {
     if (isWebRTCMode) {

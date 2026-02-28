@@ -18,6 +18,11 @@ export function ClickToCallButton({ phone, contactName, dealId, customerId, size
 
   const handleClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Unlock AudioContext within user gesture so WebRTC audio works
+    try {
+      const ctx = new AudioContext();
+      ctx.resume().then(() => ctx.close()).catch(() => {});
+    } catch { /* browser doesn't support AudioContext */ }
     const detail: DialEvent = {
       number: phone,
       contactName,
