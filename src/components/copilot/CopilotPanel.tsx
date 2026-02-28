@@ -67,7 +67,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
   const {
     messages, isLoading: historyLoading, saveMessage, clearHistory,
-    addLocalMessage, sessionBreaks,
+    addLocalMessage, updateLastMessage, sessionBreaks,
   } = useCopilotMessages({
     contextType: context.type,
     contextId: context.id,
@@ -131,33 +131,86 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
     try {
       const allMsgs = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: trimmed }];
 
-      const { data, error } = await supabase.functions.invoke('copilot-chat', {
-        body: {
+      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const resp = await fetch(`${supabaseUrl}/functions/v1/copilot-chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({
           messages: allMsgs,
           contextType: context.type,
           contextId: context.id,
           empresa: context.empresa,
-        },
+        }),
       });
 
-      if (error) {
-        const status = (error as { status?: number })?.status ?? (error as { context?: { status?: number } })?.context?.status;
-        if (status === 429) {
+      if (!resp.ok) {
+        if (resp.status === 429) {
           toast({ title: 'Rate limit', description: 'Muitas requisições. Aguarde alguns segundos.', variant: 'destructive' });
-        } else if (status === 402) {
+        } else if (resp.status === 402) {
           toast({ title: 'Créditos insuficientes', description: 'Adicione créditos de IA ao workspace.', variant: 'destructive' });
         }
-        throw error;
+        throw new Error(`HTTP ${resp.status}`);
       }
 
-      const responseContent = data?.content || 'Sem resposta da IA.';
-      await saveMessage('assistant', responseContent, {
-        model_used: data?.model,
-        tokens_input: data?.tokens_input,
-        tokens_output: data?.tokens_output,
-        latency_ms: data?.latency_ms,
-      });
-      trackFeatureUse('copilot_message_sent', { context: context.type, model: data?.model });
+      if (!resp.body) throw new Error('No response body');
+
+      // Create placeholder assistant message
+      addLocalMessage('assistant', '');
+      let assistantContent = '';
+      let metaData: { model?: string; tokens_input?: number; tokens_output?: number; latency_ms?: number } = {};
+
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+          let line = buffer.slice(0, newlineIndex);
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line.startsWith('data: ')) continue;
+
+          const jsonStr = line.slice(6).trim();
+          if (jsonStr === '[DONE]') break;
+          if (!jsonStr) continue;
+
+          try {
+            const parsed = JSON.parse(jsonStr);
+            const delta = parsed.choices?.[0]?.delta?.content;
+            if (delta) {
+              assistantContent += delta;
+              updateLastMessage(assistantContent);
+            }
+            if (parsed.meta) {
+              metaData = parsed.meta;
+            }
+          } catch {
+            // Incomplete JSON, skip
+          }
+        }
+      }
+
+      // Save final assistant message to DB
+      if (assistantContent) {
+        await saveMessage('assistant', assistantContent, {
+          model_used: metaData.model,
+          tokens_input: metaData.tokens_input,
+          tokens_output: metaData.tokens_output,
+          latency_ms: metaData.latency_ms,
+        });
+      }
+
+      trackFeatureUse('copilot_message_sent', { context: context.type, model: metaData.model });
     } catch (_err) {
       addLocalMessage('assistant', '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
     } finally {

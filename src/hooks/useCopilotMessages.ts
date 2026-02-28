@@ -133,6 +133,15 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
     return msg;
   }, []);
 
+  const updateLastMessage = useCallback((content: string) => {
+    setMessages(prev => {
+      if (prev.length === 0) return prev;
+      const last = prev[prev.length - 1];
+      if (last.role !== 'assistant') return prev;
+      return prev.map((m, i) => i === prev.length - 1 ? { ...m, content } : m);
+    });
+  }, []);
+
   // Compute session breaks for UI
   const sessionBreaks = new Set<number>();
   for (let i = 1; i < messages.length; i++) {
@@ -149,6 +158,7 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
     saveMessage,
     clearHistory,
     addLocalMessage,
+    updateLastMessage,
     sessionBreaks,
     reload: loadHistory,
   };
