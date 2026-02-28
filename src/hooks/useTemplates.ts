@@ -131,13 +131,6 @@ export function useSyncMetaTemplates() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (empresa: string) => {
-      const { data, error } = await supabase.functions.invoke('whatsapp-template-manager', {
-        method: 'PATCH',
-        body: {},
-        headers: {},
-      });
-      // supabase.functions.invoke doesn't support query params natively,
-      // so we use the full URL approach
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
       const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${empresa}`;
       const session = await supabase.auth.getSession();
