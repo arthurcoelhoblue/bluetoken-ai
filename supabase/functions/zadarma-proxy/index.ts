@@ -128,6 +128,81 @@ Deno.serve(async (req) => {
       case 'test_connection':
         result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/info/balance/');
         break;
+
+      // ─── STATISTICS ──────────────────────────────────
+      case 'get_statistics': {
+        const { start, end: endDate, skip, limit: lim } = payload;
+        if (!start || !endDate) throw new Error('start and end required (YYYY-MM-DD)');
+        const statsParams: Record<string, string> = { start: String(start), end: String(endDate) };
+        if (skip) statsParams.skip = String(skip);
+        if (lim) statsParams.limit = String(lim);
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/statistics/', statsParams);
+        break;
+      }
+      case 'get_pbx_statistics': {
+        const { start, end: endDate, skip, limit: lim } = payload;
+        if (!start || !endDate) throw new Error('start and end required (YYYY-MM-DD)');
+        const pbxParams: Record<string, string> = { start: String(start), end: String(endDate) };
+        if (skip) pbxParams.skip = String(skip);
+        if (lim) pbxParams.limit = String(lim);
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/statistics/pbx/', pbxParams);
+        break;
+      }
+
+      // ─── TARIFF ──────────────────────────────────────
+      case 'get_current_tariff':
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/info/current_tariff/');
+        break;
+
+      // ─── EXTENSION STATUS ────────────────────────────
+      case 'get_extension_status': {
+        const { extension } = payload;
+        if (!extension) throw new Error('extension required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extension)}/status/`);
+        break;
+      }
+
+      // ─── WEBHOOK CONFIG ──────────────────────────────
+      case 'get_webhooks':
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/callinfo/');
+        break;
+      case 'set_webhooks': {
+        const { webhook_url, ...notifyFlags } = payload;
+        if (!webhook_url) throw new Error('webhook_url required');
+        const whParams: Record<string, string> = { webhook_url: String(webhook_url) };
+        // Map notify flags (notify_start, notify_end, etc.)
+        for (const [key, val] of Object.entries(notifyFlags)) {
+          if (key.startsWith('notify_') || key === 'speech_recognition') {
+            whParams[key] = val ? 'true' : 'false';
+          }
+        }
+        // Use PUT method for setting webhooks
+        const whSignature = await signRequest('/v1/pbx/callinfo/', whParams, config.api_secret);
+        const whQueryString = new URLSearchParams(
+          Object.keys({ ...whParams, format: 'json' }).sort().reduce((acc, k) => { acc[k] = ({ ...whParams, format: 'json' })[k]; return acc; }, {} as Record<string, string>)
+        ).toString();
+        const whResponse = await fetch(`${ZADARMA_API_URL}/v1/pbx/callinfo/?${whQueryString}`, {
+          method: 'PUT',
+          headers: { 'Authorization': `${config.api_key}:${whSignature}` },
+        });
+        const whText = await whResponse.text();
+        try { result = JSON.parse(whText); } catch { result = { raw: whText }; }
+        break;
+      }
+
+      // ─── PRICE CHECK ─────────────────────────────────
+      case 'get_price': {
+        const { number } = payload;
+        if (!number) throw new Error('number required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/info/price/', { number: String(number) });
+        break;
+      }
+
+      // ─── DIRECT NUMBERS ──────────────────────────────
+      case 'get_direct_numbers':
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/direct_numbers/');
+        break;
+
       default:
         return new Response(JSON.stringify({ error: `Unknown action: ${action}` }), {
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },

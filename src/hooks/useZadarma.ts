@@ -188,3 +188,63 @@ export function useZadarmaProxy() {
     },
   });
 }
+
+// ─── Statistics (Zadarma API) ─────────────────────
+export function useZadarmaStatistics(empresa: EmpresaTipo | null, start: string, end: string) {
+  const proxy = useZadarmaProxy();
+  return useQuery({
+    queryKey: ['zadarma-statistics', empresa, start, end],
+    enabled: !!empresa && !!start && !!end,
+    queryFn: async () => {
+      const result = await proxy.mutateAsync({
+        action: 'get_pbx_statistics',
+        empresa: empresa!,
+        payload: { start, end },
+      });
+      return result;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+// ─── Tariff ───────────────────────────────────────
+export function useZadarmaTariff(empresa: EmpresaTipo | null) {
+  const proxy = useZadarmaProxy();
+  return useQuery({
+    queryKey: ['zadarma-tariff', empresa],
+    enabled: !!empresa,
+    queryFn: async () => {
+      const result = await proxy.mutateAsync({
+        action: 'get_current_tariff',
+        empresa: empresa!,
+      });
+      return result;
+    },
+    staleTime: 10 * 60 * 1000,
+  });
+}
+
+// ─── Extension Status (batch) ─────────────────────
+export function useExtensionStatuses(empresa: EmpresaTipo | null, extensions: { extension_number: string; user_nome?: string }[]) {
+  const proxy = useZadarmaProxy();
+  return useQuery({
+    queryKey: ['zadarma-ext-statuses', empresa, extensions.map(e => e.extension_number).join(',')],
+    enabled: !!empresa && extensions.length > 0,
+    queryFn: async () => {
+      const results = await Promise.allSettled(
+        extensions.map(ext =>
+          proxy.mutateAsync({
+            action: 'get_extension_status',
+            empresa: empresa!,
+            payload: { extension: ext.extension_number },
+          }).then(r => ({ extension: ext.extension_number, user_nome: ext.user_nome, ...r }))
+        )
+      );
+      return results
+        .filter((r): r is PromiseFulfilledResult<Record<string, unknown>> => r.status === 'fulfilled')
+        .map(r => r.value);
+    },
+    refetchInterval: 30_000,
+    staleTime: 15_000,
+  });
+}

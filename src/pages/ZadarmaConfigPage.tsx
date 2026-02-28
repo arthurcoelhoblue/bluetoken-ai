@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -10,10 +10,11 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Phone, Plus, Trash2, RefreshCw, Check, Copy, TestTube2 } from 'lucide-react';
+import { Phone, Plus, Trash2, RefreshCw, Check, Copy, TestTube2, BarChart3, Wifi, WifiOff, Settings2, Loader2, DollarSign, Clock, PhoneIncoming, PhoneOutgoing, PhoneMissed } from 'lucide-react';
 import { toast } from 'sonner';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCompany } from '@/contexts/CompanyContext';
+import { format, subDays, startOfMonth, endOfMonth } from 'date-fns';
 import {
   useZadarmaConfig,
   useSaveZadarmaConfig,
@@ -22,8 +23,36 @@ import {
   useDeleteExtension,
   useCallStats,
   useZadarmaProxy,
+  useZadarmaStatistics,
+  useZadarmaTariff,
+  useExtensionStatuses,
 } from '@/hooks/useZadarma';
 import type { EmpresaTipo } from '@/types/telephony';
+
+// ─── Stats Cards ─────────────────────────────────────
+function StatCard({ icon: Icon, label, value, sub, color = 'text-primary' }: { icon: React.ElementType; label: string; value: string | number; sub?: string; color?: string }) {
+  return (
+    <Card>
+      <CardContent className="p-4 flex items-center gap-3">
+        <div className={`p-2 rounded-lg bg-muted ${color}`}>
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <p className="text-xs text-muted-foreground">{label}</p>
+          <p className="text-lg font-bold">{value}</p>
+          {sub && <p className="text-xs text-muted-foreground">{sub}</p>}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Extension Status Indicator ──────────────────────
+function StatusDot({ status }: { status?: string }) {
+  if (status === 'online') return <Badge variant="default" className="bg-green-500 text-white text-[10px] px-1.5">Online</Badge>;
+  if (status === 'busy') return <Badge variant="default" className="bg-amber-500 text-white text-[10px] px-1.5">Ocupado</Badge>;
+  return <Badge variant="secondary" className="text-[10px] px-1.5">Offline</Badge>;
+}
 
 function ZadarmaConfigContent() {
   const { activeCompany, empresaRecords } = useCompany();
@@ -38,13 +67,29 @@ function ZadarmaConfigContent() {
   const { data: stats = [] } = useCallStats(activeEmpresa);
   const proxy = useZadarmaProxy();
 
+  // ─── Form state ───
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [webhookEnabled, setWebhookEnabled] = useState(true);
   const [webrtcEnabled, setWebrtcEnabled] = useState(true);
   const [empresasAtivas, setEmpresasAtivas] = useState<string[]>([]);
 
-  // Sync form with loaded config
+  // ─── Stats period ───
+  const now = new Date();
+  const [statsStart, setStatsStart] = useState(format(startOfMonth(now), 'yyyy-MM-dd'));
+  const [statsEnd, setStatsEnd] = useState(format(endOfMonth(now), 'yyyy-MM-dd'));
+
+  // ─── Zadarma API data ───
+  const { data: zadarmaStats, isLoading: zadarmaStatsLoading, refetch: refetchStats } = useZadarmaStatistics(activeEmpresa, statsStart, statsEnd);
+  const { data: tariff, isLoading: tariffLoading } = useZadarmaTariff(activeEmpresa);
+  const { data: extStatuses = [] } = useExtensionStatuses(
+    activeEmpresa,
+    extensions.map(e => ({ extension_number: e.extension_number, user_nome: e.user_nome }))
+  );
+
+  // ─── Webhook auto-config state ───
+  const [isConfiguringWebhook, setIsConfiguringWebhook] = useState(false);
+
   useEffect(() => {
     if (config) {
       setApiKey(config.api_key || '');
@@ -89,7 +134,59 @@ function ZadarmaConfigContent() {
     });
   };
 
-  const webhookUrl = `${window.location.origin.replace('localhost', 'YOUR_SUPABASE_URL')}/functions/v1/zadarma-webhook`;
+  // ─── Auto-configure webhook ───
+  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
+  const webhookUrl = `${supabaseUrl}/functions/v1/zadarma-webhook`;
+
+  const handleAutoConfigWebhook = async () => {
+    setIsConfiguringWebhook(true);
+    try {
+      await proxy.mutateAsync({
+        action: 'set_webhooks',
+        empresa: activeEmpresa,
+        payload: {
+          webhook_url: webhookUrl,
+          notify_start: true,
+          notify_end: true,
+          notify_answer: true,
+          notify_out_start: true,
+          notify_out_end: true,
+          notify_internal: false,
+          speech_recognition: true,
+        },
+      });
+      toast.success('Webhook configurado automaticamente no Zadarma!');
+    } catch (e: unknown) {
+      toast.error(`Erro ao configurar webhook: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setIsConfiguringWebhook(false);
+    }
+  };
+
+  // ─── Parse Zadarma stats ───
+  const parsedStats = useMemo(() => {
+    if (!zadarmaStats?.stats) return [];
+    const items = Array.isArray(zadarmaStats.stats) ? zadarmaStats.stats : [];
+    return items as Array<{
+      id?: string;
+      sip?: string;
+      callstart?: string;
+      from?: string;
+      to?: string;
+      duration?: number;
+      billseconds?: number;
+      disposition?: string;
+      cost?: number;
+      currency?: string;
+      pbx_call_id?: string;
+      is_recorded?: number;
+    }>;
+  }, [zadarmaStats]);
+
+  const totalCost = useMemo(() => parsedStats.reduce((sum, s) => sum + (Number(s.cost) || 0), 0), [parsedStats]);
+  const totalCalls = parsedStats.length;
+  const answeredCalls = parsedStats.filter(s => s.disposition === 'answered').length;
+  const totalDuration = parsedStats.reduce((sum, s) => sum + (Number(s.billseconds) || 0), 0);
 
   return (
     <div className="p-6 space-y-6">
@@ -97,14 +194,145 @@ function ZadarmaConfigContent() {
         <h1 className="text-2xl font-bold">Telefonia Zadarma</h1>
         <p className="text-muted-foreground">Configuração global de telefonia VoIP — canal único compartilhado entre empresas</p>
       </div>
-      <Tabs defaultValue="config" className="space-y-4">
+      <Tabs defaultValue="dashboard" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="config">Configuração</TabsTrigger>
-          <TabsTrigger value="ramais">Ramais</TabsTrigger>
-          <TabsTrigger value="stats">Estatísticas</TabsTrigger>
+          <TabsTrigger value="dashboard">📊 Dashboard</TabsTrigger>
+          <TabsTrigger value="status">🟢 Status Ramais</TabsTrigger>
+          <TabsTrigger value="config">⚙️ Configuração</TabsTrigger>
+          <TabsTrigger value="ramais">📞 Ramais</TabsTrigger>
+          <TabsTrigger value="stats">📈 Estatísticas CRM</TabsTrigger>
         </TabsList>
 
-        {/* Config Tab - Global */}
+        {/* ─── Dashboard Tab ────────────────────────── */}
+        <TabsContent value="dashboard" className="space-y-4">
+          {/* Period selector */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">De:</Label>
+              <Input type="date" value={statsStart} onChange={e => setStatsStart(e.target.value)} className="w-40" />
+            </div>
+            <div className="flex items-center gap-2">
+              <Label className="text-sm whitespace-nowrap">Até:</Label>
+              <Input type="date" value={statsEnd} onChange={e => setStatsEnd(e.target.value)} className="w-40" />
+            </div>
+            <Button variant="outline" size="sm" onClick={() => refetchStats()} disabled={zadarmaStatsLoading}>
+              <RefreshCw className={`h-4 w-4 mr-1 ${zadarmaStatsLoading ? 'animate-spin' : ''}`} /> Atualizar
+            </Button>
+          </div>
+
+          {/* Summary cards */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <StatCard icon={Phone} label="Total Chamadas" value={totalCalls} color="text-primary" />
+            <StatCard icon={PhoneIncoming} label="Atendidas" value={answeredCalls} sub={totalCalls > 0 ? `${Math.round(answeredCalls / totalCalls * 100)}%` : '—'} color="text-green-600" />
+            <StatCard icon={Clock} label="Duração Total" value={`${Math.floor(totalDuration / 60)}min`} sub={totalCalls > 0 ? `Média: ${Math.floor(totalDuration / Math.max(answeredCalls, 1))}s` : '—'} color="text-blue-600" />
+            <StatCard icon={DollarSign} label="Custo Total" value={`${totalCost.toFixed(2)}`} sub={parsedStats[0]?.currency || 'USD'} color="text-amber-600" />
+          </div>
+
+          {/* Tariff info */}
+          {tariff && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Plano Atual</CardTitle>
+              </CardHeader>
+              <CardContent className="text-sm space-y-1">
+                <p><span className="text-muted-foreground">Plano:</span> {tariff.info?.tariff_name || '—'}</p>
+                <p><span className="text-muted-foreground">Minutos usados:</span> {tariff.info?.used_seconds ? Math.floor(Number(tariff.info.used_seconds) / 60) : 0}min</p>
+                <p><span className="text-muted-foreground">Custo mensal:</span> {tariff.info?.cost || '—'} {tariff.info?.currency || ''}</p>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Detailed call list */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Chamadas Detalhadas (Zadarma PBX)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {zadarmaStatsLoading ? (
+                <div className="space-y-2"><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /><Skeleton className="h-8 w-full" /></div>
+              ) : parsedStats.length === 0 ? (
+                <p className="text-center text-muted-foreground py-6">Sem dados para o período selecionado.</p>
+              ) : (
+                <div className="max-h-[400px] overflow-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Data</TableHead>
+                        <TableHead>De</TableHead>
+                        <TableHead>Para</TableHead>
+                        <TableHead className="text-right">Duração</TableHead>
+                        <TableHead className="text-center">Status</TableHead>
+                        <TableHead className="text-right">Custo</TableHead>
+                        <TableHead className="text-center">Gravação</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {parsedStats.slice(0, 100).map((s, i) => (
+                        <TableRow key={s.id || i}>
+                          <TableCell className="text-xs whitespace-nowrap">{s.callstart || '—'}</TableCell>
+                          <TableCell className="font-mono text-xs">{s.from || '—'}</TableCell>
+                          <TableCell className="font-mono text-xs">{s.to || '—'}</TableCell>
+                          <TableCell className="text-right text-xs">{s.billseconds ? `${Math.floor(Number(s.billseconds) / 60)}:${(Number(s.billseconds) % 60).toString().padStart(2, '0')}` : '0:00'}</TableCell>
+                          <TableCell className="text-center">
+                            {s.disposition === 'answered' ? (
+                              <Badge variant="default" className="bg-green-500 text-white text-[10px]">Atendida</Badge>
+                            ) : s.disposition === 'busy' ? (
+                              <Badge variant="secondary" className="text-[10px]">Ocupado</Badge>
+                            ) : (
+                              <Badge variant="destructive" className="text-[10px]">{s.disposition || 'N/A'}</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell className="text-right text-xs">{s.cost ? `${Number(s.cost).toFixed(3)}` : '—'}</TableCell>
+                          <TableCell className="text-center">{s.is_recorded ? '🎙️' : '—'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── Status Ramais Tab ────────────────────── */}
+        <TabsContent value="status" className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Wifi className="h-4 w-4" /> Disponibilidade dos Ramais — {activeEmpresa}
+              </CardTitle>
+              <CardDescription>Status em tempo real dos vendedores (atualiza a cada 30s)</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {extensions.length === 0 ? (
+                <p className="text-center text-muted-foreground py-6">Nenhum ramal mapeado para esta empresa.</p>
+              ) : (
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+                  {extensions.map(ext => {
+                    const statusInfo = extStatuses.find((s: Record<string, unknown>) => s.extension === ext.extension_number);
+                    const onlineStatus = statusInfo?.status as string | undefined;
+                    return (
+                      <Card key={ext.id} className="border">
+                        <CardContent className="p-4 flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <Phone className="h-4 w-4 text-muted-foreground" />
+                            <div>
+                              <p className="text-sm font-medium">{ext.user_nome || 'Sem usuário'}</p>
+                              <p className="text-xs text-muted-foreground font-mono">Ramal {ext.extension_number}</p>
+                            </div>
+                          </div>
+                          <StatusDot status={onlineStatus} />
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* ─── Config Tab ───────────────────────────── */}
         <TabsContent value="config" className="space-y-4">
           <Card>
             <CardHeader>
@@ -151,15 +379,28 @@ function ZadarmaConfigContent() {
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>URL do Webhook (copiar para Zadarma)</Label>
-                    <div className="flex items-center gap-2">
-                      <Input readOnly value={webhookUrl} className="text-xs font-mono" />
-                      <Button variant="outline" size="icon" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('Copiado!'); }}>
-                        <Copy className="h-4 w-4" />
+                  {/* Webhook auto-config section */}
+                  <Card className="border-dashed">
+                    <CardContent className="p-4 space-y-3">
+                      <div className="flex items-center gap-2">
+                        <Settings2 className="h-4 w-4 text-muted-foreground" />
+                        <p className="text-sm font-medium">Auto-configuração de Webhook</p>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Clique para configurar automaticamente a URL do webhook e ativar todas as notificações necessárias no Zadarma (sem precisar acessar o painel).
+                      </p>
+                      <div className="flex items-center gap-2">
+                        <Input readOnly value={webhookUrl} className="text-xs font-mono flex-1" />
+                        <Button variant="outline" size="icon" onClick={() => { navigator.clipboard.writeText(webhookUrl); toast.success('Copiado!'); }}>
+                          <Copy className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      <Button variant="secondary" onClick={handleAutoConfigWebhook} disabled={isConfiguringWebhook || !config}>
+                        {isConfiguringWebhook ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Settings2 className="h-4 w-4 mr-1" />}
+                        Configurar Webhook Automaticamente
                       </Button>
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
 
                   <div className="flex gap-2">
                     <Button onClick={handleSaveConfig} disabled={saveConfig.isPending}>
@@ -175,7 +416,7 @@ function ZadarmaConfigContent() {
           </Card>
         </TabsContent>
 
-        {/* Extensions Tab - per empresa */}
+        {/* ─── Extensions Tab ───────────────────────── */}
         <TabsContent value="ramais" className="space-y-4">
           <Card>
             <CardHeader>
@@ -216,11 +457,11 @@ function ZadarmaConfigContent() {
           </Card>
         </TabsContent>
 
-        {/* Stats Tab - per empresa */}
+        {/* ─── CRM Stats Tab ────────────────────────── */}
         <TabsContent value="stats" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Estatísticas de Chamadas — {activeEmpresa}</CardTitle>
+              <CardTitle className="text-base">Estatísticas de Chamadas CRM — {activeEmpresa}</CardTitle>
             </CardHeader>
             <CardContent>
               <Table>
@@ -239,7 +480,7 @@ function ZadarmaConfigContent() {
                     <TableRow key={`${s.user_id}-${s.ano}-${s.mes}`}>
                       <TableCell>{s.user_nome || '—'}</TableCell>
                       <TableCell className="text-right">{s.total_chamadas}</TableCell>
-                      <TableCell className="text-right text-success">{s.atendidas}</TableCell>
+                      <TableCell className="text-right text-green-600">{s.atendidas}</TableCell>
                       <TableCell className="text-right text-destructive">{s.perdidas}</TableCell>
                       <TableCell className="text-right">{Math.floor(s.duracao_media / 60)}:{(s.duracao_media % 60).toString().padStart(2, '0')}</TableCell>
                       <TableCell className="text-right">{Math.floor(s.duracao_total / 60)}min</TableCell>
