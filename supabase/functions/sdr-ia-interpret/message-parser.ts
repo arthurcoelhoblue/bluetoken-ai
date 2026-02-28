@@ -1,9 +1,14 @@
 // ========================================
 // MESSAGE PARSER MODULE — Extracted from sdr-message-parser Edge Function
 // Loads full context for a lead message and enriches with urgency/cross-company detection
+// Also handles progressive summarization of long conversations
 // ========================================
 
 import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { callAI } from "../_shared/ai-provider.ts";
+import { createLogger } from "../_shared/logger.ts";
+
+const log = createLogger('sdr-message-parser');
 
 // ========================================
 // TYPES
@@ -252,6 +257,34 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
       .insert({ lead_id: leadId, empresa, canal: 'WHATSAPP', estado_funil: 'SAUDACAO', framework_ativo: frameworkAtivo, framework_data: {}, idioma_preferido: 'PT' })
       .select().single();
     conversationState = newState;
+  }
+
+  // Progressive summarization: if history is long and no summary exists, summarize old turns
+  if (historico.length > 10 && conversationState && !conversationState.summary) {
+    try {
+      const oldTurns = historico.slice(5); // messages beyond the 5 most recent
+      const turnsText = oldTurns.map((m: HistoricoMessage) => `[${m.direcao}] ${m.conteudo}`).join('\n');
+      const summaryResult = await callAI({
+        system: 'Você é um sumarizador. Resuma a conversa abaixo em 1 parágrafo curto (máx 150 palavras) mantendo: nome do lead, produto de interesse, dúvidas levantadas, objeções, dados SPIN/BANT/GPCT coletados. Responda APENAS com o resumo, sem prefixos.',
+        prompt: turnsText,
+        functionName: 'sdr-message-parser-summary',
+        empresa: message.empresa,
+        temperature: 0.2,
+        maxTokens: 300,
+        supabase,
+      });
+      if (summaryResult.content && summaryResult.content.length > 20) {
+        await supabase
+          .from('lead_conversation_state')
+          .update({ summary: summaryResult.content, updated_at: new Date().toISOString() })
+          .eq('lead_id', leadId)
+          .eq('empresa', message.empresa);
+        conversationState.summary = summaryResult.content;
+        log.info('Progressive summary saved', { leadId, summaryLength: summaryResult.content.length });
+      }
+    } catch (e) {
+      log.error('Summary generation failed', { error: e instanceof Error ? e.message : String(e) });
+    }
   }
 
   // Load cadence name if run_id exists

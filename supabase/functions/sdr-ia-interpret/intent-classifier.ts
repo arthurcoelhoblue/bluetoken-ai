@@ -63,6 +63,7 @@ export interface ClassifierResult {
   urgencia_detectada?: UrgenciaResult;
   perfil_investidor_inferido?: PerfilInvestidor;
   cross_company?: { detected: boolean; targetCompany: EmpresaTipo | null; reason: string };
+  lead_facts_extraidos?: Record<string, unknown> | null;
 }
 
 // ========================================
@@ -363,7 +364,9 @@ Amélia, 32 anos, economista, Grupo Blue (3 anos). Conhece IR cripto e investime
 ## FRAMEWORK: Extraia SPIN/GPCT/BANT de TODA mensagem. Quando S+P preenchidos, INFIRA I (riscos) e N (ação necessária) com prefixo "[Inferido]".
 
 ## FORMATO JSON OBRIGATÓRIO:
-{"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null}
+{"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
+
+## LEAD_FACTS: Extraia SEMPRE quaisquer fatos concretos mencionados pelo lead (cargo, empresa do lead, dores, concorrentes, decisor, volume de operações, patrimônio). Retorne em "lead_facts_extraidos". Campos sem informação = null ou [].
 
 ## INTENÇÕES: INTERESSE_COMPRA, INTERESSE_IR, DUVIDA_PRODUTO, DUVIDA_PRECO, DUVIDA_TECNICA, SOLICITACAO_CONTATO, AGENDAMENTO_REUNIAO, RECLAMACAO, OPT_OUT, OBJECAO_PRECO, OBJECAO_RISCO, SEM_INTERESSE, NAO_ENTENDI, CUMPRIMENTO, AGRADECIMENTO, FORA_CONTEXTO, OUTRO
 ## AÇÕES: ENVIAR_RESPOSTA_AUTOMATICA, ESCALAR_HUMANO, AJUSTAR_TEMPERATURA, PAUSAR_CADENCIA, CANCELAR_CADENCIA, CRIAR_TAREFA_CLOSER, MARCAR_OPT_OUT, DESQUALIFICAR_LEAD, NENHUMA`;

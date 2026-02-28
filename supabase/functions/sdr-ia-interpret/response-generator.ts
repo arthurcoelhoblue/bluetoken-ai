@@ -87,6 +87,46 @@ const CHANNEL_RULES: Record<string, string> = {
   EMAIL: 'Mensagens ESTRUTURADAS. Tom consultivo. 3-4 parágrafos. Retomar contexto no início.',
 };
 
+// ========================================
+// DISC TONE INSTRUCTIONS (mirrored from intent-classifier)
+// ========================================
+
+type PerfilDISC = 'D' | 'I' | 'S' | 'C';
+
+function getDiscToneInstruction(disc: PerfilDISC | string | null | undefined): string | null {
+  if (!disc) return null;
+  const instrucoes: Record<string, string> = {
+    'D': `## TOM DE VOZ OBRIGATÓRIO (DISC D)\nSeja DIRETO e objetivo. Foque em RESULTADOS e números. Mensagens CURTAS. Evite rodeios. Vá direto ao ponto. O lead D valoriza eficiência e detesta enrolação.`,
+    'I': `## TOM DE VOZ OBRIGATÓRIO (DISC I)\nSeja AMIGÁVEL e entusiasmado. Use HISTÓRIAS e exemplos de sucesso. Conecte emocionalmente. O lead I quer se sentir especial e parte de algo maior.`,
+    'S': `## TOM DE VOZ OBRIGATÓRIO (DISC S)\nSeja CALMO e acolhedor. Enfatize SEGURANÇA e estabilidade. Não apresse decisão. O lead S precisa de tempo e confiança antes de decidir.`,
+    'C': `## TOM DE VOZ OBRIGATÓRIO (DISC C)\nSeja PRECISO e técnico. Forneça NÚMEROS, dados, prazos, comparativos. O lead C decide com base em lógica e evidências concretas.`,
+  };
+  return instrucoes[disc] || null;
+}
+
+// ========================================
+// LEAD FACTS FORMATTING
+// ========================================
+
+function formatLeadFacts(leadFacts: Record<string, unknown> | null | undefined): string {
+  if (!leadFacts || Object.keys(leadFacts).length === 0) return '';
+  const lines: string[] = ['\n## FATOS CONHECIDOS DO LEAD'];
+  if (leadFacts.cargo) lines.push(`- Cargo: ${leadFacts.cargo}`);
+  if (leadFacts.empresa_lead) lines.push(`- Empresa: ${leadFacts.empresa_lead}`);
+  if (leadFacts.pain_points) {
+    const pains = Array.isArray(leadFacts.pain_points) ? leadFacts.pain_points : [leadFacts.pain_points];
+    lines.push(`- Pain points: ${pains.join(', ')}`);
+  }
+  if (leadFacts.concorrentes) {
+    const conc = Array.isArray(leadFacts.concorrentes) ? leadFacts.concorrentes : [leadFacts.concorrentes];
+    lines.push(`- Concorrentes mencionados: ${conc.join(', ')}`);
+  }
+  if (leadFacts.decisor) lines.push(`- Decisor: ${leadFacts.decisor}`);
+  if (leadFacts.volume_operacoes) lines.push(`- Volume operações: ${leadFacts.volume_operacoes}`);
+  if (leadFacts.patrimonio_faixa) lines.push(`- Patrimônio (faixa): ${leadFacts.patrimonio_faixa}`);
+  return lines.join('\n');
+}
+
 interface HistoricoMsg {
   direcao: string;
   conteudo: string;
@@ -171,19 +211,34 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
     }
   } catch { /* use default */ }
 
+  // Build DISC tone block
+  const discTone = getDiscToneInstruction(conversation_state?.perfil_disc as string | null);
+
   if (!systemPrompt) {
     systemPrompt = `Você é a Amélia, SDR IA do ${empresa === 'TOKENIZA' ? 'Tokeniza (investimentos tokenizados)' : 'Blue (IR/tributação cripto)'}.
 Tom: profissional, acolhedor, direto. Nunca robótica.
 ${canal === 'WHATSAPP' ? CHANNEL_RULES.WHATSAPP : CHANNEL_RULES.EMAIL}
-Adapte ao perfil DISC: ${conversation_state?.perfil_disc || 'não identificado'}.
+${discTone || 'Adapte ao perfil DISC quando identificado.'}
 ${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_state.perfil_investidor}` : ''}
 PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".
 PROIBIDO INVENTAR: Nunca cite planos, preços, valores ou produtos que NÃO estejam listados na seção PRODUTOS abaixo. Se não souber o preço ou plano exato, diga que vai verificar com a equipe.`;
+  } else if (discTone) {
+    // Inject DISC tone into A/B tested prompts too
+    systemPrompt += `\n\n${discTone}`;
   }
 
   const contactName = contato?.nome || contato?.primeiro_nome || 'Lead';
   const typedHistorico = (historico || []) as HistoricoMsg[];
-  const historicoText = typedHistorico.slice(0, 8).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n');
+
+  // Use summary + recent messages if available, else fallback to last 8
+  const summary = conversation_state?.summary as string | undefined;
+  const historicoText = summary
+    ? `[RESUMO ANTERIOR] ${summary}\n` + typedHistorico.slice(0, 5).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n')
+    : typedHistorico.slice(0, 8).map((m) => `[${m.direcao}] ${m.conteudo}`).join('\n');
+
+  // Format lead_facts for prompt injection
+  const leadFacts = conversation_state?.lead_facts as Record<string, unknown> | undefined;
+  const leadFactsText = formatLeadFacts(leadFacts);
   const typedProducts = (products || []) as ProductRow[];
   const productsText = typedProducts.map((p) => {
     let line = `${p.produto_nome}: ${p.descricao_curta || ''}`;
@@ -200,6 +255,7 @@ Sentimento: ${sentimento}
 Ação recomendada: ${acao_recomendada}
 Estado funil: ${conversation_state?.estado_funil || 'SAUDACAO'}
 Canal: ${canal}
+${leadFactsText}
 
 PRODUTOS:
 ${productsText}

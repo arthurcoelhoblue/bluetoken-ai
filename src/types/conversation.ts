@@ -76,6 +76,8 @@ export interface ConversationState {
   assumido_por?: string | null;
   assumido_em?: string | null;
   devolvido_em?: string | null;
+  summary?: string | null;
+  lead_facts?: Record<string, unknown> | null;
 }
 
 // Labels para exibição na UI

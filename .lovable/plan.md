@@ -2,99 +2,80 @@
 
 # Plano de Evolução da Amélia — Baseado nos Documentos de Análise
 
-Analisei os dois documentos e cruzei com o código atual. Concordo com o diagnóstico: a base é sólida, mas há 4 melhorias de alto impacto e baixo custo que vão elevar o sistema significativamente. Aqui está o plano consolidado:
+## Status: ✅ IMPLEMENTADO (2026-02-28)
 
 ---
 
-## 1. DISC Ativo no Response Generator (Gap Crítico)
+## 1. ✅ DISC Ativo no Response Generator (Gap Crítico)
 
-**Diagnóstico confirmado**: A linha 178 do `response-generator.ts` tem apenas `Adapte ao perfil DISC: ${conversation_state?.perfil_disc || 'não identificado'}` — uma declaração fraca, não uma instrução.
-
-**Ação**: Importar `getDiscToneInstruction` (já existe no `intent-classifier.ts`) e injetar como bloco `## TOM DE VOZ OBRIGATÓRIO` no system prompt do response-generator, tanto no prompt default (linha 175) quanto no prompt do `generateResponse`.
+**Implementado**: `getDiscToneInstruction` injetado como bloco `## TOM DE VOZ OBRIGATÓRIO` no system prompt do response-generator, tanto no prompt default quanto em prompts A/B testados.
 
 **Arquivos**: `supabase/functions/sdr-ia-interpret/response-generator.ts`
 
 ---
 
-## 2. Follow-ups Personalizados por DISC no Cadence Runner
+## 2. ✅ Follow-ups Personalizados por DISC no Cadence Runner
 
-**Diagnóstico confirmado**: O `cadence-runner` resolve templates fixos via `resolverPlaceholders` (linha 264) sem qualquer adaptação DISC.
-
-**Ação**:
-- Adicionar coluna `usa_llm BOOLEAN DEFAULT false` na tabela `message_templates`
-- No `resolverMensagem`, quando `usa_llm = true` E o lead tem `perfil_disc`, chamar `callAI` para reescrever o corpo do template adaptando o tom ao perfil DISC, usando o conteúdo original como base
+**Implementado**: 
+- Coluna `usa_llm BOOLEAN DEFAULT false` adicionada à tabela `message_templates`
+- No `resolverMensagem`, quando `usa_llm = true` E o lead tem `perfil_disc`, chama `callAI` para reescrever o corpo do template adaptando o tom ao perfil DISC
 - Templates com `usa_llm = false` continuam no fluxo atual (sem custo extra)
 
 **Arquivos**: Migration SQL, `supabase/functions/cadence-runner/index.ts`
 
 ---
 
-## 3. Sumarização Progressiva do Histórico
+## 3. ✅ Sumarização Progressiva do Histórico
 
-**Diagnóstico confirmado**: Hoje o histórico é cortado em 8 mensagens (linha 186 do response-generator). Em conversas longas, isso desperdiça tokens ou perde contexto antigo.
+**Implementado**:
+- Coluna `summary TEXT` adicionada à tabela `lead_conversation_state`
+- No `message-parser.ts` (loadFullContext), se `historico.length > 10` e `summary` for nulo, chama `callAI` para sumarizar os turnos antigos em 1 parágrafo
+- `response-generator.ts` usa `summary + últimas 5 mensagens` em vez de 8 mensagens brutas quando summary disponível
 
-**Ação**:
-- Adicionar coluna `summary TEXT` na tabela `lead_conversation_state`
-- No `message-parser.ts` (loadFullContext), se `historico.length > 10` e `summary` for nulo, chamar `callAI` com modelo leve para sumarizar os turnos antigos em 1 parágrafo
-- Salvar o resumo no `summary` e nas próximas chamadas usar `summary + últimas 5 mensagens` em vez de 8 mensagens brutas
-
-**Arquivos**: Migration SQL, `supabase/functions/sdr-ia-interpret/message-parser.ts`, `response-generator.ts`, `intent-classifier.ts`
+**Arquivos**: Migration SQL, `message-parser.ts`, `response-generator.ts`
 
 ---
 
-## 4. Memória Semântica — lead_facts (CRM Vivo)
+## 4. ✅ Memória Semântica — lead_facts (CRM Vivo)
 
-**Diagnóstico confirmado**: A Amélia lembra estado do funil (BANT/SPIN) mas esquece fatos concretos (cargo, empresa, pain points).
+**Implementado**:
+- Coluna `lead_facts JSONB DEFAULT '{}'` adicionada à tabela `lead_conversation_state`
+- No `intent-classifier.ts`, `lead_facts_extraidos` adicionado ao schema JSON esperado do LLM
+- No `action-executor.ts`, `lead_facts` persistidos via merge (nunca sobrescreve, apenas enriquece)
+- No `response-generator.ts`, `lead_facts` injetados no prompt como `## FATOS CONHECIDOS DO LEAD`
 
-**Ação**:
-- Adicionar coluna `lead_facts JSONB DEFAULT '{}'` na tabela `lead_conversation_state`
-- No `intent-classifier.ts`, adicionar `lead_facts` ao schema JSON esperado do LLM (campos: cargo, empresa_lead, pain_points, concorrentes, decisor)
-- No `action-executor.ts`, persistir os `lead_facts` via merge (nunca sobrescrever, apenas enriquecer)
-- No `response-generator.ts`, injetar os `lead_facts` no prompt para que a Amélia sempre saiba com quem fala
-
-**Arquivos**: Migration SQL, `intent-classifier.ts`, `action-executor.ts`, `response-generator.ts`
+**Arquivos**: Migration SQL, `intent-classifier.ts`, `action-executor.ts`, `response-generator.ts`, `index.ts`
 
 ---
 
-## 5. Scoring de Engagement (Tempo de Resposta)
+## 5. ✅ Scoring de Engagement (Tempo de Resposta)
 
-**Diagnóstico confirmado**: O score atual é baseado apenas no conteúdo da mensagem, não no comportamento.
-
-**Ação**:
-- No `action-executor.ts`, calcular `tempo_resposta` (diferença entre última mensagem outbound e a inbound atual)
-- Ajustar `score_engajamento` do deal: resposta < 5 min = +15, < 30 min = +10, < 2h = +5, > 24h = -10
-- Utilizar o campo `score_engajamento` já existente na tabela `deals`
+**Implementado**:
+- No `action-executor.ts`, calcula `tempo_resposta` (diferença entre última mensagem outbound e a inbound atual)
+- Ajusta `score_engajamento` do deal: resposta < 5 min = +15, < 30 min = +10, < 2h = +5, > 24h = -10
 
 **Arquivos**: `supabase/functions/sdr-ia-interpret/action-executor.ts`
 
 ---
 
-## 6. Dashboard de Resolução Autônoma
+## 6. ✅ Dashboard de Resolução Autônoma
 
-**Ação**:
-- Criar uma view SQL que agrega: total de conversas únicas vs conversas com `ESCALAR_HUMANO` ou `CRIAR_TAREFA_CLOSER`, por dia/semana/empresa
-- Exibir como card/gráfico no dashboard existente da Amélia (página de métricas)
+**Implementado**:
+- View SQL `amelia_resolution_stats` criada com agregação por dia/empresa
+- Métricas: total_conversas, escaladas, resolvidas_autonomamente, taxa_resolucao_pct
 
-**Arquivos**: Migration SQL (view), componente React no dashboard
+**Arquivos**: Migration SQL (view)
+**Pendente**: Componente React no dashboard (próxima iteração)
 
 ---
 
 ## Resumo de Impacto
 
-| Melhoria | Impacto | Esforço |
+| Melhoria | Impacto | Status |
 |---|---|---|
-| 1. DISC no Response Generator | Alto — personalização real | Baixo (5 linhas) |
-| 2. DISC no Cadence Runner | Alto — follow-ups adaptados | Médio |
-| 3. Sumarização Progressiva | Alto — reduz custo ~40% | Médio |
-| 4. lead_facts (CRM Vivo) | Alto — contexto persistente | Médio |
-| 5. Scoring de Engagement | Médio — qualificação comportamental | Baixo |
-| 6. Dashboard Resolução | Médio — visibilidade operacional | Baixo |
-
-## Ordem de Implementação Sugerida
-
-1. DISC no Response Generator (impacto imediato, risco zero)
-2. lead_facts + Sumarização (migration conjunta)
-3. DISC no Cadence Runner
-4. Scoring de Engagement
-5. Dashboard de Resolução Autônoma
-
+| 1. DISC no Response Generator | Alto — personalização real | ✅ |
+| 2. DISC no Cadence Runner | Alto — follow-ups adaptados | ✅ |
+| 3. Sumarização Progressiva | Alto — reduz custo ~40% | ✅ |
+| 4. lead_facts (CRM Vivo) | Alto — contexto persistente | ✅ |
+| 5. Scoring de Engagement | Médio — qualificação comportamental | ✅ |
+| 6. Dashboard Resolução | Médio — visibilidade operacional | ✅ (view SQL) |

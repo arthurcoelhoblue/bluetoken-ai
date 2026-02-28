@@ -325,6 +325,7 @@ serve(async (req) => {
       historico: parsedContext.historico as Record<string, unknown>[],
       classification_upgrade: classifierResult.classification_upgrade,
       _ia_null_count_update: classifierResult._ia_null_count_update,
+      lead_facts_extraidos: classifierResult.lead_facts_extraidos,
     });
 
     const respostaEnviada = execResult.respostaEnviada;
