@@ -1,34 +1,27 @@
 
 
-# Plano: Correções Build Errors + Base de Conhecimento Tokeniza
+# Excluir templates Tokeniza criados antes de 26/03
 
-## 1. Corrigir Build Errors (4 arquivos com tipo empresa restrito)
+## Diagnóstico
 
-Três locais ainda usam `'BLUE' | 'TOKENIZA'` em vez de `'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'`:
+Encontrei **28 templates de mensagem** da Tokeniza criados antes de 26/03/2026. Eles são referenciados por:
+- **13 cadence_steps** (via `template_codigo`)
+- **5 cadências** (que contêm os steps)
+- **~100 lead_cadence_runs** (execuções dessas cadências)
+- **~8.713 lead_cadence_events** (eventos dessas execuções)
 
-- **`src/types/contactsPage.ts`**: Expandir `OrganizationWithStats.empresa` (line 49), `ContactFormData.empresa` (line 80), `OrganizationFormData.empresa` (line 96)
-- **`src/components/templates/TemplateFormDialog.tsx`**: Expandir o `z.enum(['BLUE', 'TOKENIZA'])` no schema (line 23) para incluir MPUPPE e AXIA
+Não há foreign keys diretas para `message_templates`, mas as cadências e steps ficarão órfãos se não forem limpos.
 
-## 2. Popular Base de Conhecimento Tokeniza via SQL
+## Plano de execução
 
-Executar o SQL do arquivo `tokeniza_knowledge_base.sql` como migration, **com as correções solicitadas pelo usuário**:
+Uma única migration SQL que deleta na ordem correta de dependências:
 
-### Correções a aplicar no SQL antes de inserir:
-1. **7 mil investidores, 30 milhões captados (TVL)** — substituir "72 mil investidores" por "7 mil investidores cadastrados com mais de R$ 30 milhões captados (TVL)"
-2. **Taxa de 1.5% sobre vendas no mercado de transações subsequentes** — remover referência a "10% sobre o lucro do investidor"
-3. **Nunca "mercado secundário"** → sempre "mercado de transações subsequentes"
-4. **Não somos a única plataforma com selo da CVM** — remover afirmações de exclusividade/única
-5. **Taxas pagas na maioria pelo captador** — ajustar FAQ de taxas
+1. `lead_cadence_events` → referenciados pelos runs das cadências Tokeniza pré-26/03
+2. `lead_cadence_runs` → das cadências Tokeniza pré-26/03
+3. `cadence_stage_triggers` → das cadências Tokeniza pré-26/03
+4. `cadence_steps` → das cadências Tokeniza pré-26/03
+5. `cadences` → Tokeniza pré-26/03 (5 cadências)
+6. `message_templates` → Tokeniza pré-26/03 (28 templates)
 
-### Dados a inserir:
-- 7 produtos (TOKENIZA_PLATFORM, IMOVEL, AGRO, FINANCE, STARTUP, AUTO, ATLETA)
-- Seções de conhecimento (GERAL, PITCH, RISCOS, ESTRUTURA_JURIDICA) para o produto principal
-- 8 FAQs aprovadas e visíveis para a Amélia
-- 4 cadências (Inbound, MQL Quente, Carrinho Abandonado, Upsell)
-- 14 templates de mensagem (WhatsApp + Email)
-- Steps das cadências vinculados aos templates
-
-## 3. Atualizar regras da Tokeniza no response-generator
-
-Ajustar o bloco `empresa === 'TOKENIZA'` no `response-generator.ts` para incluir a instrução de nunca usar "mercado secundário".
+Os dados de `product_knowledge` e `knowledge_faq` da Tokeniza **não serão afetados** — apenas templates e suas cadências dependentes.
 
