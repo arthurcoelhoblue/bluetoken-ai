@@ -15,8 +15,7 @@ export function useCSTokenizaMetrics(customerIds?: string[]) {
       let query = supabase
         .from('cs_contracts')
         .select('customer_id, valor, data_contratacao')
-        .eq('empresa', 'TOKENIZA')
-        .eq('tipo', 'crowdfunding');
+        .eq('empresa', 'TOKENIZA');
 
       if (customerIds && customerIds.length > 0) {
         query = query.in('customer_id', customerIds);
@@ -68,7 +67,6 @@ export function useCSTokenizaOfertas() {
         .from('cs_contracts')
         .select('oferta_nome')
         .eq('empresa', 'TOKENIZA')
-        .eq('tipo', 'crowdfunding')
         .not('oferta_nome', 'is', null);
 
       if (error) throw error;

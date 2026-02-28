@@ -132,15 +132,26 @@ Deno.serve(async (req) => {
         const isCliente = hasPositions && investor.is_active;
         const tags = buildContactTags(investor, isCliente);
 
-        // Check existing contact
-        const { data: existingContact } = await supabase
+        // Check existing contact by CPF first, then fallback to email
+        let existingContact: { id: string } | null = null;
+
+        const { data: cpfMatch } = await supabase
           .from("contacts").select("id").eq("cpf", cpfClean).eq("empresa", "TOKENIZA").maybeSingle();
+        existingContact = cpfMatch;
+
+        // Fallback: search by email if CPF didn't match and email is available
+        if (!existingContact && investor.email) {
+          const { data: emailMatch } = await supabase
+            .from("contacts").select("id").eq("email", investor.email).eq("empresa", "TOKENIZA").maybeSingle();
+          existingContact = emailMatch;
+        }
 
         let contactId: string;
 
         if (existingContact) {
           const { error: updateErr } = await supabase.from("contacts").update({
             nome: investor.full_name,
+            cpf: cpfClean, // Always update CPF so future syncs match by CPF
             email: investor.email || undefined,
             telefone: investor.phone || undefined,
             notas: `KYC: ${investor.kyc_status}`,
