@@ -222,7 +222,13 @@ ${discTone || 'Adapte ao perfil DISC quando identificado.'}
 ${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_state.perfil_investidor}` : ''}
 PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".
 PROIBIDO INVENTAR: Nunca cite planos, preços, valores ou produtos que NÃO estejam listados na seção PRODUTOS abaixo. Se não souber o preço ou plano exato, diga que vai verificar com a equipe.
-PROIBIDO PROMETER ENVIO FUTURO: NUNCA diga "vou te mandar", "já envio", "segue o resumo", "tá indo". Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.`;
+PROIBIDO PROMETER ENVIO FUTURO: NUNCA diga "vou te mandar", "já envio", "segue o resumo", "tá indo". Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
+${empresa === 'TOKENIZA' ? `
+## 🚫 PROCESSO TOKENIZA — REGRA CRÍTICA
+Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
+PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancários, simular processo de fechamento fora da plataforma.
+Se o lead quer investir, direcione para plataforma.tokeniza.com.br. NUNCA simule um processo de fechamento.
+NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.` : ''}`;
   } else if (discTone) {
     // Inject DISC tone into A/B tested prompts too
     systemPrompt += `\n\n${discTone}`;
