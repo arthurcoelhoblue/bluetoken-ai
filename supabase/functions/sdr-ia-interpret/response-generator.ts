@@ -222,11 +222,8 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
         const faqIds = ragChunks.filter((c: any) => c.source_type === 'faq').map((c: any) => c.source_id);
         for (const faqId of faqIds) {
           try {
-            await supabase.rpc('increment_faq_use_count', { faq_id: faqId }).catch(() => {
-              // Fallback: direct update if RPC doesn't exist
-              supabase.from('knowledge_faq').update({ use_count: supabase.sql`use_count + 1` }).eq('id', faqId);
-            });
-          } catch { /* ignore */ }
+            await supabase.rpc('increment_faq_use_count', { faq_id: faqId });
+          } catch { /* ignore - RPC may not exist yet */ }
         }
       }
     }

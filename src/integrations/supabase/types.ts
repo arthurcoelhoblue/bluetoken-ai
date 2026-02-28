@@ -7378,6 +7378,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      increment_faq_use_count: { Args: { faq_id: string }; Returns: undefined }
       provision_tenant_schema: {
         Args: { tenant_empresa: string }
         Returns: undefined
