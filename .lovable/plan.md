@@ -1,45 +1,35 @@
 
 
-# Plano: Esconder widget nativo + auto-atender via DOM click
+# Fix: Auto-answer e esconder widget Zadarma
 
-## Diagnóstico real (dos logs)
+## Problemas identificados
 
-Os logs do console mostram que os eventos `incoming`, `accepted`, `confirmed` são **console.logs internos do widget Zadarma** — NÃO são postMessages nem CustomEvents. O widget v9 cria elementos diretamente no DOM da página (não num iframe cross-origin), por isso:
+1. **Console.log interceptor nunca ativa** — O `useEffect` que faz monkey-patch no `console.log` verifica `!initializedRef.current`, mas como `initializedRef` é um ref (não state), o efeito roda antes da inicialização, retorna cedo, e nunca re-executa. O interceptor simplesmente nunca é instalado.
 
-1. **CSS não esconde** — os seletores `[id*="zadarma"]` não correspondem aos elementos reais do widget
-2. **postMessage não funciona** — o widget não usa iframe cross-origin para a UI, os botões estão no DOM principal
-3. **Auto-answer nunca executa** — nenhum dos listeners (postMessage/CustomEvent) detecta o `incoming`
+2. **Seletores CSS não correspondem ao widget real** — O session replay mostra que o widget usa classes `zdrm-*` (ex: `zdrm-webphone-call-btn-up`, `zdrm-ringing`). Os seletores CSS atuais só cobrem `zadarma`, `webphone`, `phone_widget` — não `zdrm`.
 
-## Solução: MutationObserver + auto-click no botão de atender
+3. **Seletores de auto-click não encontram o botão** — `clickAnswerButton()` procura `[class*="answer"]`, mas o botão real do Zadarma usa classes como `zdrm-webphone-call-btn-up`.
 
-Como o widget Zadarma injeta botões diretamente no DOM, podemos:
+## Correções em `src/hooks/useZadarmaWebRTC.ts`
 
-### 1. MutationObserver para detectar botão de atender (`useZadarmaWebRTC.ts`)
-- Observar o DOM com `MutationObserver` para detectar quando o botão de atender (answer/accept) aparece
-- Quando detectado, fazer `.click()` automaticamente nele
-- Procurar seletores como: `.answer-btn`, `[class*="answer"]`, `[class*="accept"]`, botões com ícone de telefone verde dentro do container do widget
+### 1. Ativar console.log interceptor ANTES da inicialização
+- Remover a guarda `!initializedRef.current` do useEffect do interceptor
+- Instalar o monkey-patch assim que `enabled` for `true`, independente do estado de init
+- Isso garante que quando o widget logar `incoming`, o interceptor já está ativo
 
-### 2. CSS agressivo para esconder o widget (`useZadarmaWebRTC.ts`)
-- Além dos seletores atuais, adicionar seletores mais genéricos que capturem o container real do widget:
-  - `#phone_widget`, `#webphone`, `.phone-widget`, `.webphone-container`
-  - Qualquer div com `position:fixed` que contenha elementos de telefone
-- Manter `visibility: hidden` + `opacity: 0` + `position: fixed; left: -9999px` mas **sem** `pointer-events: none` (para que o auto-click funcione)
-- Usar `overflow: hidden; width: 0; height: 0` como alternativa
+### 2. Adicionar seletores `zdrm-*` ao CSS de ocultação
+- Adicionar `[class*="zdrm"]` aos seletores do `injectHideCSS()`
+- Isso vai esconder todos os elementos do widget que usam o prefixo `zdrm`
 
-### 3. Interceptar console.log do widget (debug + detecção)
-- Monkey-patch `console.log` temporariamente para capturar as mensagens `incoming`, `registered`, etc. que o widget emite
-- Quando detectar `incoming`, disparar o auto-click no botão de atender
-- Isso é a forma mais confiável de detectar chamadas recebidas, já que os logs confirmam que o widget usa console.log
+### 3. Adicionar seletores `zdrm-*` ao `clickAnswerButton()`
+- Adicionar seletores: `[class*="zdrm-webphone-call-btn"]`, `[class*="zdrm-ringing"]`, `[class*="zdrm"][class*="call"]`
+- O botão de atender no Zadarma v9 é o elemento com classe `zdrm-webphone-call-btn-up` quando está em estado `zdrm-ringing`
 
-### 4. Manter widget `visible: true` (necessário para funcionar)
-- O widget precisa estar visible=true para processar chamadas
-- A ocultação é feita apenas via CSS
-
-### Arquivo alterado
-- `src/hooks/useZadarmaWebRTC.ts` — MutationObserver, console.log interceptor, CSS corrigido
+### 4. MutationObserver: detectar elementos `zdrm-*`
+- Adicionar verificação de `zdrm` no MutationObserver para detectar novos elementos do widget e aplicar CSS + tentar auto-click
 
 ## Resultado esperado
-- Widget Zadarma completamente invisível para o usuário
-- Chamadas auto-atendidas via click programático no botão do widget
-- Fluxo: Ligar → callback API → widget toca → auto-click answer → chamada conecta
+- Interceptor de console.log ativo desde o início → detecta `incoming` → dispara auto-click
+- Seletores corretos encontram o botão real do widget → `.click()` funciona
+- CSS esconde todos os elementos `zdrm-*` → widget invisível
 
