@@ -4,6 +4,10 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 
+const COST_TABLE: Record<string, { input: number; output: number }> = {
+  'claude-haiku-4-5': { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
+};
+
 const log = createLogger('copilot-chat');
 
 // ========================================
@@ -196,8 +200,121 @@ serve(async (req) => {
       ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
       : ACTIVE_SYSTEM_PROMPT;
 
-    log.info('Chamando IA', { contexto: contextType, msgs: messages.length });
+    log.info('Chamando IA (streaming)', { contexto: contextType, msgs: messages.length });
 
+    const allMessages = messages.map(m => ({
+      role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
+      content: m.content,
+    }));
+
+    // ========================================
+    // STREAMING — Claude Haiku via SSE
+    // ========================================
+    const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY');
+    if (ANTHROPIC_KEY) {
+      try {
+        const startTime = Date.now();
+        const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
+          method: 'POST',
+          headers: {
+            'x-api-key': ANTHROPIC_KEY,
+            'anthropic-version': '2023-06-01',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            model: 'claude-haiku-4-5',
+            max_tokens: 2048,
+            temperature: 0.4,
+            system: systemContent,
+            messages: allMessages,
+            stream: true,
+          }),
+        });
+
+        if (anthropicResp.ok && anthropicResp.body) {
+          // Transform Anthropic SSE → OpenAI-compatible SSE for the frontend
+          const reader = anthropicResp.body.getReader();
+          const encoder = new TextEncoder();
+          const decoder = new TextDecoder();
+          let tokensInput = 0;
+          let tokensOutput = 0;
+          let fullContent = '';
+
+          const stream = new ReadableStream({
+            async pull(controller) {
+              try {
+                const { done, value } = await reader.read();
+                if (done) {
+                  // Send final [DONE] event
+                  controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+                  controller.close();
+
+                  // Log telemetry asynchronously (don't block stream)
+                  const latencyMs = Date.now() - startTime;
+                  const costs = COST_TABLE['claude-haiku-4-5'] || { input: 0, output: 0 };
+                  const custoEstimado = (tokensInput * costs.input) + (tokensOutput * costs.output);
+                  supabase.from('ai_usage_log').insert({
+                    function_name: 'copilot-chat', provider: 'claude', model: 'claude-haiku-4-5',
+                    tokens_input: tokensInput, tokens_output: tokensOutput,
+                    custo_estimado: Math.round(custoEstimado * 1_000_000) / 1_000_000,
+                    latency_ms: latencyMs, success: true, empresa: empresa || null,
+                    prompt_version_id: selectedPromptVersionId || null,
+                  }).then(() => {}).catch(() => {});
+                  return;
+                }
+
+                const chunk = decoder.decode(value, { stream: true });
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                  if (!line.startsWith('data: ')) continue;
+                  const jsonStr = line.slice(6).trim();
+                  if (!jsonStr || jsonStr === '[DONE]') continue;
+
+                  try {
+                    const event = JSON.parse(jsonStr);
+
+                    // Extract text deltas from Anthropic format
+                    if (event.type === 'content_block_delta' && event.delta?.text) {
+                      fullContent += event.delta.text;
+                      // Re-emit as OpenAI-compatible SSE
+                      const openaiChunk = {
+                        choices: [{ delta: { content: event.delta.text } }],
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(openaiChunk)}\n\n`));
+                    }
+
+                    // Capture usage from message_delta
+                    if (event.type === 'message_delta' && event.usage) {
+                      tokensOutput = event.usage.output_tokens || tokensOutput;
+                    }
+                    if (event.type === 'message_start' && event.message?.usage) {
+                      tokensInput = event.message.usage.input_tokens || 0;
+                    }
+                  } catch {
+                    // Incomplete JSON, skip
+                  }
+                }
+              } catch (err) {
+                controller.error(err);
+              }
+            },
+          });
+
+          return new Response(stream, {
+            headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+          });
+        }
+        // If Anthropic returned non-OK, fall through to callAI fallback
+        log.warn('Claude streaming failed, falling back', { status: anthropicResp.status });
+      } catch (streamErr) {
+        log.warn('Claude streaming error, falling back', { error: String(streamErr) });
+      }
+    }
+
+    // ========================================
+    // FALLBACK — Non-streaming via callAI
+    // ========================================
     const aiResult = await callAI({
       system: systemContent,
       prompt: '',
@@ -216,10 +333,15 @@ serve(async (req) => {
       content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
     }
 
-    return new Response(
-      JSON.stringify({ content, model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs }),
-      { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-    );
+    // Return as SSE stream for consistency (single event + DONE)
+    const encoder = new TextEncoder();
+    const fallbackChunk = { choices: [{ delta: { content } }], model: aiResult.model };
+    const fallbackMeta = { model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs };
+    const body = `data: ${JSON.stringify(fallbackChunk)}\n\ndata: ${JSON.stringify({ meta: fallbackMeta })}\n\ndata: [DONE]\n\n`;
+
+    return new Response(body, {
+      headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },
+    });
 
   } catch (error) {
     log.error('Erro geral', { error: String(error) });
