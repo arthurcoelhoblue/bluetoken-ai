@@ -1,47 +1,58 @@
 
 
-# Fix: Auto-Answer e Teclado do Widget de Telefonia
+# Diagnóstico: Transcrição, Gravação e Coaching ao Vivo
 
-## Problema 1: Auto-answer falha após 10 tentativas
+## Problemas Encontrados
 
-O log do hangup mostra as classes reais do widget Zadarma v9:
+### 1. Estado `active` nunca é atingido — Coaching nunca dispara
+
+Os logs mostram claramente a sequência do Zadarma v9:
 ```
-zdrm-webphone-call-btn zdrm-webphone-decline-btn
+accepted    ← palavra solta
+confirmed   ← palavra solta
 ```
 
-Isso indica que o botão de aceitar usa o padrão: `zdrm-webphone-call-btn zdrm-webphone-accept-btn`. Os nossos seletores atuais (`[class*="zdrm-webphone-accept"]`) deveriam funcionar — **mas** o botão de aceitar só aparece quando o widget está em estado de ringing, e provavelmente tem a classe `zdrm-webphone-hide`. O código atual pula elementos com `zdrm-webphone-hide` (linha 78) e só tenta o fallback depois de testar todos os seletores.
+Mas o interceptor de console.log exige padrões compostos como `call confirmed` ou `call accepted`. A palavra solta `confirmed` e `accepted` NÃO matcham. Resultado: o status WebRTC fica em `ringing` para sempre, nunca vai para `active`, e `showCoaching` (que depende de `phoneState === 'active'`) nunca é true. O `call-coach` nunca é invocado (confirmado: zero logs na edge function).
 
-O problema real: o botão de aceitar pode ter `zdrm-webphone-hide` E estar movido para `-9999px` pelo nosso CSS injetado, tornando o clique ineficaz mesmo no fallback. Precisamos **remover temporariamente** o CSS de ocultação antes de tentar clicar e restaurá-lo depois.
+### 2. Webhook não recebeu NOTIFY_OUT_END — sem gravação nem transcrição
 
-Além disso, devemos adicionar seletores mais abrangentes baseados nas classes reais observadas.
+Os registros no banco mostram dois call records para o mesmo `pbx_call_id`:
+- Leg 1 (para ramal 108): status `ANSWERED`, `ended_at: null`, `duracao_segundos: 0`
+- Leg 2 (para destino): status `RINGING`, `ended_at: null`
 
-## Problema 2: Teclado não funciona no input
+Nenhum evento `NOTIFY_OUT_END` ou `NOTIFY_RECORD` foi recebido. Sem `NOTIFY_RECORD`, a transcrição automática nunca é disparada. Isso é um problema do lado Zadarma (webhook config ou a chamada foi curta demais para gerar gravação).
 
-O widget Zadarma oculto pode estar capturando eventos de teclado globalmente (keydown/keypress listeners). Mesmo movido para fora da tela, ele continua ativo no DOM e pode interceptar teclas. A solução é adicionar o atributo `inert` aos elementos do widget para desabilitá-los completamente de interação.
+## Correções
 
-## Alterações — `src/hooks/useZadarmaWebRTC.ts`
+### A. `src/hooks/useZadarmaWebRTC.ts` — Reconhecer palavras soltas do Zadarma v9
 
-### A. `clickAnswerButton()` — Reposicionar temporariamente antes de clicar
+Na seção de detecção de `ACTIVE` (linha 377-385), adicionar match para as palavras soltas `confirmed` e `accepted` quando o estado atual permite transição (state guard já existe):
 
-Antes de tentar clicar, temporariamente mover o widget de volta à tela, clicar, e esconder novamente. Adicionar seletores:
-- `[class*="zdrm-webphone-accept-btn"]`  
-- `[class*="zdrm-webphone-call-btn"]:not([class*="decline"])` (quando ringing está ativo)
+```typescript
+// Antes: só matchava "call confirmed", "call accepted"
+// Depois: também aceita "confirmed" e "accepted" soltos
+(combined === 'confirmed' || combined === 'accepted' || 
+ combined.includes('call confirmed') || combined.includes('call accepted') || 
+ combined.includes('in_call') || combined.includes('session confirmed'))
+```
 
-Remover a lógica de pular `zdrm-webphone-hide` — em vez disso, remover a classe `hide` temporariamente, clicar, e restaurar.
+Usar `combined === 'confirmed'` (igualdade exata no combined) para evitar falsos positivos. O `canTransitionToActive` já bloqueia transições de `ready`/`idle`.
 
-### B. `injectHideCSS()` — Adicionar `pointer-events: none`
+Aplicar a mesma lógica no handler de postMessage (linha 448-453).
 
-Adicionar `pointer-events: none !important;` ao CSS injetado para impedir que o widget oculto capture cliques.
+### B. Verificar configuração de webhook do Zadarma
 
-### C. MutationObserver — Adicionar atributo `inert` 
+Consultar a config atual para garantir que as notificações de fim de chamada (`NOTIFY_END`, `NOTIFY_OUT_END`, `NOTIFY_RECORD`) estão habilitadas. Verificar a URL do webhook registrada via `zadarma-proxy`.
 
-Quando o observer detecta novos elementos do widget, além de aplicar CSS, marcar com `inert` e `tabindex="-1"` para impedir captura de foco e teclado.
+### C. Fechar calls sem NOTIFY_END (resiliência)
 
-### D. `triggerAutoAnswer()` — Desabilitar `inert` temporariamente
+O call record `7192de6d` tem status `ANSWERED` mas nunca recebeu fim. Adicionar lógica no frontend para, ao detectar hangup via console.log (`terminated`), fazer um PATCH no call record via edge function para fechar a chamada com `ended_at` e `duracao_segundos` calculado localmente. Isso garante que mesmo sem webhook, o registro fica consistente.
 
-Antes da sequência de cliques, remover `inert` de todos os elementos do widget, executar os cliques, e restaurar `inert` após.
+## Resumo das Alterações
 
-### E. `clickHangupButton()` — Mesma lógica de reposicionamento temporário
-
-Aplicar a mesma técnica de remoção temporária de `inert` e CSS para garantir que o botão de hangup seja clicável.
+| Arquivo | Mudança |
+|---------|---------|
+| `src/hooks/useZadarmaWebRTC.ts` | Aceitar `confirmed`/`accepted` soltos como trigger de `active` (com state guard) |
+| `src/hooks/useZadarmaWebRTC.ts` | No handler de `terminated`, chamar endpoint para fechar call record |
+| Verificação manual | Checar config webhook Zadarma para NOTIFY_END/NOTIFY_RECORD |
 
