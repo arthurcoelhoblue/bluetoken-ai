@@ -81,38 +81,48 @@ export function ZadarmaPhoneWidget() {
   }, [phoneState]);
 
   const handleDial = useCallback(() => {
-    if (!number.trim() || !empresa || !myExtension) {
-      console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension, hasExtension });
-      if (!number.trim()) toast.error('Digite um número para ligar.');
-      else if (!empresa) toast.error('Nenhuma empresa ativa selecionada.');
-      else if (!myExtension) toast.error('Ramal não encontrado. Recarregue a página.');
-      return;
-    }
-    setCallTimer(0);
-    setOnHold(false);
+    console.log('[ZadarmaWidget] handleDial called', { number, empresa, myExtension, isWebRTCMode, webrtcReady: webrtc.isReady });
+    try {
+      if (!number.trim() || !empresa || !myExtension) {
+        console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension, hasExtension });
+        if (!number.trim()) toast.error('Digite um número para ligar.');
+        else if (!empresa) toast.error('Nenhuma empresa ativa selecionada.');
+        else if (!myExtension) toast.error('Ramal não encontrado. Recarregue a página.');
+        return;
+      }
+      setCallTimer(0);
+      setOnHold(false);
 
-    if (isWebRTCMode && webrtc.isReady) {
-      // WebRTC mode — direct browser call
-      setPhoneState('dialing');
-      webrtc.dial(number);
-      toast.info('Iniciando chamada via WebRTC...');
-    } else {
-      // Callback fallback mode
-      setPhoneState('dialing');
-      proxy.mutate({
-        action: 'click_to_call',
-        empresa,
-        payload: { from: myExtension.extension_number, to: number },
-      }, {
-        onSuccess: () => {
-          toast.info('Callback solicitado. Atenda seu ramal para conectar a chamada.');
-        },
-        onError: (error) => {
-          toast.error('Erro ao iniciar chamada.');
-          console.error('Dial error:', error);
-          setPhoneState('idle');
-        },
-      });
+      if (isWebRTCMode && webrtc.isReady) {
+        setPhoneState('dialing');
+        webrtc.dial(number);
+        toast.info('Iniciando chamada via WebRTC...');
+      } else {
+        setPhoneState('dialing');
+        toast.info('Iniciando chamada...');
+        proxy.mutate({
+          action: 'click_to_call',
+          empresa,
+          payload: { from: myExtension.extension_number, to: number },
+        }, {
+          onSuccess: (data) => {
+            console.log('[ZadarmaWidget] click_to_call success:', data);
+            toast.success('Callback solicitado. Atenda seu ramal para conectar a chamada.');
+          },
+          onError: (error) => {
+            console.error('[ZadarmaWidget] click_to_call error:', error);
+            toast.error('Erro ao iniciar chamada: ' + (error instanceof Error ? error.message : String(error)));
+            setPhoneState('idle');
+          },
+          onSettled: (data, error) => {
+            console.log('[ZadarmaWidget] click_to_call settled', { data, error });
+          },
+        });
+      }
+    } catch (err) {
+      console.error('[ZadarmaWidget] handleDial exception:', err);
+      toast.error('Erro inesperado ao iniciar chamada.');
+      setPhoneState('idle');
     }
   }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
 
