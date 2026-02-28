@@ -64,11 +64,16 @@ serve(async (req) => {
         }
       }
 
+      // Fetch pipelines for tenant filtering
+      const { data: execPipelines } = await supabase.from('pipelines').select('id').eq('empresa', jobEmpresa);
+      const execPipelineIds = new Set((execPipelines || []).map(p => p.id));
+
       for (const msg of approved) {
         try {
           // Filter deal by tenant via pipeline_empresa
-          const { data: deal } = await supabase.from('deals').select('id, titulo, contacts(id, nome, telefone, email)')
-            .eq('id', msg.deal_id).eq('pipeline_empresa', jobEmpresa).single();
+          const { data: deal } = await supabase.from('deals').select('id, titulo, pipeline_id, contacts(id, nome, telefone, email)')
+            .eq('id', msg.deal_id).single();
+          if (!deal || !execPipelineIds.has(deal.pipeline_id)) { errors++; continue; }
           if (!deal) { errors++; continue; }
           const contact = deal.contacts as { id?: string; nome?: string; telefone?: string; email?: string } | null;
 
@@ -109,8 +114,13 @@ serve(async (req) => {
     await supabase.from('mass_action_jobs').update({ status: 'GENERATING' }).eq('id', jobId);
     const dealIds: string[] = job.deal_ids || [];
     // Filter deals by tenant via pipeline_empresa
-    const { data: deals } = await supabase.from('deals').select('id, titulo, valor, temperatura, status, contacts(id, nome, telefone, email)')
-      .in('id', dealIds).eq('pipeline_empresa', jobEmpresa);
+    // Fetch pipelines for tenant filtering
+    const { data: tenantPipelines } = await supabase.from('pipelines').select('id').eq('empresa', jobEmpresa);
+    const genPipelineIds = new Set((tenantPipelines || []).map(p => p.id));
+
+    const { data: allDeals } = await supabase.from('deals').select('id, titulo, valor, temperatura, status, pipeline_id, contacts(id, nome, telefone, email)')
+      .in('id', dealIds);
+    const deals = (allDeals || []).filter(d => genPipelineIds.has(d.pipeline_id));
 
     if (!deals || deals.length === 0) {
       await supabase.from('mass_action_jobs').update({ status: 'FAILED' }).eq('id', jobId);
