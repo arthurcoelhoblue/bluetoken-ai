@@ -1,26 +1,25 @@
 
 
-# Reorganizar filtros: Pipeline + Novo Deal + IA centralizados na linha 1
+# Fix: usar `codigo` como nome do template na API Meta
 
-## Layout proposto
+## Problema
+Na `amelia-mass-action`, o campo `metaTemplateName` é preenchido com `tmpl.meta_template_id` (ID numérico `2027547028193546`), mas a API da Meta espera o **nome** do template (`tokeniza_reengajamento`).
 
-```text
-┌──────────────────────────────────────────────────────────┐
-│     [Pipeline ▾]     [+ Novo Deal]     [🤖 Atend. IA]   │
-│                                                          │
-│     [Temperatura ▾]   [Vendedor ▾]   [Tags ▾]           │
-└──────────────────────────────────────────────────────────┘
-```
+## Correção em `supabase/functions/amelia-mass-action/index.ts`
 
-## Alteração em `src/components/pipeline/PipelineFilters.tsx`
+Duas ocorrências precisam ser corrigidas:
 
-**Linha 1** (centralizada com `justify-center`): Pipeline selector, botão Novo Deal e botão Atendimento IA — os 3 elementos principais de ação.
+1. **Linha ~101** (template principal do job): trocar `metaTemplateName: tmpl.meta_template_id` por `metaTemplateName: tmpl.codigo`
+2. **Linha ~140** (template sugerido por mensagem): trocar `metaTemplateName: sugTmpl.meta_template_id` por `metaTemplateName: sugTmpl.meta_template_id` — este já busca apenas `meta_template_id` no select, precisa adicionar `codigo` ao select e usar `sugTmpl.codigo` (ou manter `meta_template_id` se for o nome correto para templates sugeridos criados automaticamente)
 
-**Linha 2** (centralizada, permanece como está): Temperatura, Vendedor, Tags — filtros secundários.
+### Mudanças concretas:
 
-### Mudança concreta:
-1. Mover o botão "Atendimento IA" (linhas 112-123) da linha 2 para a linha 1
-2. Trocar o layout da linha 1 de `flex items-center gap-3` (com `ml-auto`) para `flex items-center justify-center gap-3` — centralizando os 3 elementos
-3. Remover o `<div className="ml-auto">` wrapper do botão Novo Deal
-4. Linha 2 fica apenas com Temperatura, Vendedor e Tags (sem alteração de posicionamento)
+**Template principal (~linha 97-105):**
+- O select já busca `codigo` — basta mudar: `metaTemplateName: tmpl.meta_template_id` → `metaTemplateName: tmpl.codigo`
+
+**Template sugerido (~linha 133-143):**
+- Adicionar `codigo` ao select
+- Mudar: `metaTemplateName: sugTmpl.meta_template_id` → `metaTemplateName: sugTmpl.codigo || sugTmpl.meta_template_id` (templates auto-criados usam `codigo` como nome no Meta)
+
+Depois: redeploy da edge function.
 
