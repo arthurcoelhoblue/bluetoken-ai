@@ -1,23 +1,26 @@
 
 
-# Reorganizar filtros do Pipeline em duas linhas centralizadas
+# Reorganizar filtros: Pipeline + Novo Deal + IA centralizados na linha 1
+
+## Layout proposto
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│     [Pipeline ▾]     [+ Novo Deal]     [🤖 Atend. IA]   │
+│                                                          │
+│     [Temperatura ▾]   [Vendedor ▾]   [Tags ▾]           │
+└──────────────────────────────────────────────────────────┘
+```
 
 ## Alteração em `src/components/pipeline/PipelineFilters.tsx`
 
-**Linha 1**: Pipeline selector (esquerda) + botão "Novo Deal" (direita) — mantém como está, mas com items centralizados verticalmente.
+**Linha 1** (centralizada com `justify-center`): Pipeline selector, botão Novo Deal e botão Atendimento IA — os 3 elementos principais de ação.
 
-**Linha 2**: Todos os filtros (Temperatura, Vendedor, Tags, Atendimento IA) centralizados horizontalmente usando `justify-center`, com espaçamento uniforme e tamanhos consistentes.
+**Linha 2** (centralizada, permanece como está): Temperatura, Vendedor, Tags — filtros secundários.
 
-```
-┌──────────────────────────────────────────────────────┐
-│  [Pipeline ▾]                           [+ Novo Deal]│
-│                                                      │
-│    [Temperatura ▾] [Vendedor ▾] [Tags ▾] [🤖 IA]    │
-└──────────────────────────────────────────────────────┘
-```
-
-### Mudanças específicas:
-1. **Linha 2 (linha 73)**: Trocar `flex items-center gap-2 flex-wrap` por `flex items-center justify-center gap-3 flex-wrap` para centralizar os filtros
-2. **Uniformizar alturas**: Todos os selects e o botão IA com `h-9` consistente em vez de `h-8`
-3. **Adicionar borda/fundo sutil**: Envolver tudo em um container com `bg-muted/30 rounded-lg p-3` para dar destaque visual ao bloco de filtros
+### Mudança concreta:
+1. Mover o botão "Atendimento IA" (linhas 112-123) da linha 2 para a linha 1
+2. Trocar o layout da linha 1 de `flex items-center gap-3` (com `ml-auto`) para `flex items-center justify-center gap-3` — centralizando os 3 elementos
+3. Remover o `<div className="ml-auto">` wrapper do botão Novo Deal
+4. Linha 2 fica apenas com Temperatura, Vendedor e Tags (sem alteração de posicionamento)
 
