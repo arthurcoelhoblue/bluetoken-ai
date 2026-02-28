@@ -75,10 +75,13 @@ function clickAnswerButton(): boolean {
 
   for (const sel of selectors) {
     const els = document.querySelectorAll(sel);
+    if (els.length > 0) {
+      console.log(`[WebRTC] 🔍 Selector "${sel}" found ${els.length} element(s)`);
+    }
     for (const el of els) {
-      if (el instanceof HTMLElement && el.offsetParent !== null) {
+      if (el instanceof HTMLElement) {
         el.click();
-        console.log('[WebRTC] ✅ Auto-clicked answer button:', sel, el);
+        console.log('[WebRTC] ✅ Auto-clicked answer button:', sel, el.className);
         return true;
       }
     }
