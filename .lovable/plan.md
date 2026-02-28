@@ -1,40 +1,28 @@
 
 
-# Submeter 7 templates WhatsApp da Tokeniza à Meta
+# Diagnóstico dos 2 Erros
 
-## Situação atual
-7 templates WhatsApp da Tokeniza com `meta_status = LOCAL`, prontos para submissão. A edge function `whatsapp-template-manager` já suporta POST individual para criar templates na Meta.
+## Erro 1: Sincronização Meta (PATCH)
 
-## Plano
+**Causa**: Em `src/hooks/useTemplates.ts` linhas 133-154, o `useSyncMetaTemplates()` faz **duas requisições**:
+1. `supabase.functions.invoke('whatsapp-template-manager', { method: 'PATCH' })` — SEM o parâmetro `empresa` → retorna 400 ("empresa query param required")
+2. Uma segunda `fetch()` manual COM `empresa` — essa deveria funcionar, mas a primeira já dispara o erro
 
-Criar uma nova edge function `whatsapp-template-batch-submit` que:
+A primeira chamada na linha 134 é desnecessária e causa o erro. Basta remover essa chamada e manter apenas o `fetch` manual das linhas 146-154.
 
-1. Recebe `empresa` como parâmetro
-2. Busca todos os templates `LOCAL` + `WHATSAPP` dessa empresa
-3. Para cada template, extrai as variáveis `{{1}}`, `{{2}}` do conteúdo e monta os `components` no formato Meta (BODY com parâmetros exemplo)
-4. Submete cada um via API Meta (`POST /message_templates`)
-5. Atualiza o `meta_status` para `PENDING` no banco
-6. Retorna resumo (quantos submetidos, erros)
+## Erro 2: Indexação base de conhecimento (knowledge-embed)
 
-### Mapeamento dos templates → Meta components
+**Causa**: A function `knowledge-embed` não gera logs, o que indica que ela **não está deployada** ou está falhando no boot. O código existe em `supabase/functions/knowledge-embed/index.ts`, mas essa function não está registrada no `supabase/config.toml` com `verify_jwt = false`, o que pode estar bloqueando a chamada autenticada.
 
-Cada template será submetido como categoria `MARKETING` com componente BODY contendo as variáveis detectadas automaticamente. Exemplo para `tkn_saudacao_inbound` (1 variável):
+A secret `OPENAI_API_KEY` existe, então o problema não é de credenciais.
 
-```json
-{
-  "name": "tkn_saudacao_inbound",
-  "category": "MARKETING",
-  "language": "pt_BR",
-  "components": [
-    {
-      "type": "BODY",
-      "text": "Olá {{1}}! 👋 Sou da equipe Tokeniza...",
-      "example": { "body_text": [["João"]] }
-    }
-  ]
-}
-```
+## Plano de Correção
 
-### Após deploy
-Invocar a função para submeter todos os 7 templates de uma vez.
+### 1. Corrigir `useSyncMetaTemplates` em `src/hooks/useTemplates.ts`
+- Remover a chamada duplicada `supabase.functions.invoke(...)` na linha 134-138
+- Manter apenas o `fetch` manual que já inclui `empresa` como query param
+
+### 2. Registrar `knowledge-embed` no `supabase/config.toml`
+- Adicionar `[functions.knowledge-embed]` com `verify_jwt = false`
+- Isso garantirá o deploy e acesso correto da function
 
