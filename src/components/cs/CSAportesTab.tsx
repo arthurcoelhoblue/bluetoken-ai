@@ -35,7 +35,6 @@ export function CSAportesTab({ customerId, empresa }: CSAportesTabProps) {
         .from('cs_contracts')
         .select('*')
         .eq('customer_id', customerId)
-        .eq('tipo', 'crowdfunding')
         .order('data_contratacao', { ascending: false });
       return data ?? [];
     },
