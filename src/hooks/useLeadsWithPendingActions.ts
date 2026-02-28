@@ -5,7 +5,7 @@ import type { SdrAcaoTipo } from '@/types/intent';
 
 export interface LeadWithPendingAction {
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string | null;
   primeiro_nome: string | null;
   email: string | null;
@@ -63,7 +63,7 @@ export function useLeadsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
         const contact = contactMap.get(`${intent.lead_id}:${intent.empresa}`);
         return {
           lead_id: intent.lead_id || '',
-          empresa: intent.empresa as 'TOKENIZA' | 'BLUE',
+          empresa: intent.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
           nome: contact?.nome || null,
           primeiro_nome: contact?.primeiro_nome || null,
           email: contact?.email || null,

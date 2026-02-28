@@ -11,7 +11,7 @@ export interface SelectOption {
 
 export interface CustomFieldDefinition {
   id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   entity_type: CustomFieldEntityType;
   slug: string;
   label: string;

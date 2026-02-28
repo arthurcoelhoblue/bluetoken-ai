@@ -1,19 +1,28 @@
 import { describe, it, expect } from 'vitest';
 import {
   ICP_LABELS, PERSONA_LABELS, TEMPERATURA_LABELS, PRIORIDADE_LABELS, ORIGEM_LABELS,
-  TEMPERATURAS, PRIORIDADES, ORIGENS, ICPS_TOKENIZA, ICPS_BLUE,
+  TEMPERATURAS, PRIORIDADES, ORIGENS, ICPS_TOKENIZA, ICPS_BLUE, ICPS_MPUPPE, ICPS_AXIA,
+  PERSONAS_TOKENIZA, PERSONAS_BLUE, PERSONAS_MPUPPE, PERSONAS_AXIA,
   type ICP, type Temperatura, type Prioridade, type ClassificacaoOrigem,
   type LeadClassification, type LeadWithClassification,
 } from '@/types/classification';
 import type { LeadsClassificationFilters } from '../useLeadClassification';
 
 describe('Classification type mappings', () => {
-  it('all ICP_LABELS keys match ICP type constants', () => {
-    const allIcps = [...ICPS_TOKENIZA, ...ICPS_BLUE];
+  it('all ICP_LABELS keys match ICP type constants (4 empresas)', () => {
+    const allIcps = [...ICPS_TOKENIZA, ...ICPS_BLUE, ...ICPS_MPUPPE, ...ICPS_AXIA];
     for (const icp of allIcps) {
       expect(ICP_LABELS[icp]).toBeTruthy();
     }
     expect(Object.keys(ICP_LABELS)).toHaveLength(allIcps.length);
+  });
+
+  it('all PERSONA_LABELS keys match Persona type constants (4 empresas)', () => {
+    const allPersonas = [...PERSONAS_TOKENIZA, ...PERSONAS_BLUE, ...PERSONAS_MPUPPE, ...PERSONAS_AXIA];
+    for (const persona of allPersonas) {
+      expect(PERSONA_LABELS[persona]).toBeTruthy();
+    }
+    expect(Object.keys(PERSONA_LABELS)).toHaveLength(allPersonas.length);
   });
 
   it('TEMPERATURA_LABELS covers all temperatures', () => {
@@ -32,6 +41,18 @@ describe('Classification type mappings', () => {
     for (const o of ORIGENS) {
       expect(ORIGEM_LABELS[o]).toBeTruthy();
     }
+  });
+
+  it('ICPS_MPUPPE has correct length', () => {
+    expect(ICPS_MPUPPE).toHaveLength(5);
+    expect(ICPS_MPUPPE).toContain('MPUPPE_FINTECH_REG');
+    expect(ICPS_MPUPPE).toContain('MPUPPE_NAO_CLASSIFICADO');
+  });
+
+  it('ICPS_AXIA has correct length', () => {
+    expect(ICPS_AXIA).toHaveLength(5);
+    expect(ICPS_AXIA).toContain('AXIA_FINTECH_LAUNCH');
+    expect(ICPS_AXIA).toContain('AXIA_NAO_CLASSIFICADO');
   });
 });
 
@@ -53,6 +74,13 @@ describe('LeadsClassificationFilters interface', () => {
     expect(f.temperatura).toBe('QUENTE');
     expect(f.searchTerm).toBe('João');
   });
+
+  it('allows MPUPPE and AXIA ICP filters', () => {
+    const f1: LeadsClassificationFilters = { icp: 'MPUPPE_FINTECH_REG' };
+    expect(f1.icp).toBe('MPUPPE_FINTECH_REG');
+    const f2: LeadsClassificationFilters = { icp: 'AXIA_EXCHANGE_BUILDER' };
+    expect(f2.icp).toBe('AXIA_EXCHANGE_BUILDER');
+  });
 });
 
 describe('LeadWithClassification structure', () => {
@@ -62,5 +90,13 @@ describe('LeadWithClassification structure', () => {
       email: null, telefone: null, contact_updated_at: '', classification: null,
     };
     expect(lwc.classification).toBeNull();
+  });
+
+  it('supports MPUPPE and AXIA empresa types', () => {
+    const lwc: LeadWithClassification = {
+      lead_id: 'l2', empresa: 'MPUPPE', nome: 'Fintech Lead', primeiro_nome: 'F',
+      email: null, telefone: null, contact_updated_at: '', classification: null,
+    };
+    expect(lwc.empresa).toBe('MPUPPE');
   });
 });

@@ -40,7 +40,7 @@ export function ManualMessageInput({
         .from('contacts')
         .select('id, nome')
         .eq('legacy_lead_id', leadId)
-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
         .maybeSingle();
       return data;
     },

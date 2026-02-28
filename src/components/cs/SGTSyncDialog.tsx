@@ -7,7 +7,7 @@ import { RefreshCw, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
-type Empresa = 'BLUE' | 'TOKENIZA';
+type Empresa = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 
 interface BatchResult {
   processados: number;

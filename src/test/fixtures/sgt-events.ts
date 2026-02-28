@@ -5,7 +5,7 @@
 export interface SGTPayload {
   evento: string;
   timestamp: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   pessoa_id?: number;
   lead?: {
     nome: string;

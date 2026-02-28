@@ -33,7 +33,7 @@ export interface IntegrationConfig {
 
 export interface IntegrationCompanyConfig {
   id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   channel: 'mensageria' | 'meta_cloud';
   enabled: boolean;
   updated_at: string;

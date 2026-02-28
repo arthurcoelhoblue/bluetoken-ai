@@ -14,7 +14,7 @@ export async function checkContactDuplicates({
 }: {
   email?: string;
   telefone?: string;
-  empresa: 'BLUE' | 'TOKENIZA' | 'AXIA' | 'MPUPPE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 }): Promise<DuplicateMatch[]> {
   const trimmedEmail = email?.trim().toLowerCase();
   const trimmedPhone = telefone?.trim();

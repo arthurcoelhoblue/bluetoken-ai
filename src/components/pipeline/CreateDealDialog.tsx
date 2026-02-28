@@ -44,7 +44,7 @@ function useContactSearch(search: string, empresa: string) {
       let query = supabase
         .from('contacts')
         .select('id, nome, telefone, email')
-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
         .eq('is_active', true)
         .order('nome')
         .limit(50);
@@ -70,7 +70,7 @@ interface CreateDealDialogProps {
 export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: CreateDealDialogProps) {
   const { activeCompany } = useCompany();
   const { user } = useAuth();
-  const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
+  const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 
   const [contactSearch, setContactSearch] = useState('');
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false);

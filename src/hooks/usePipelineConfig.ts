@@ -90,7 +90,7 @@ export function useReorderStages() {
 export function useDuplicatePipeline() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async ({ sourceId, newName, newEmpresa }: { sourceId: string; newName: string; newEmpresa: 'BLUE' | 'TOKENIZA' }) => {
+    mutationFn: async ({ sourceId, newName, newEmpresa }: { sourceId: string; newName: string; newEmpresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' }) => {
       // Get source pipeline
       const { data: source, error: sourceErr } = await supabase
         .from('pipelines')

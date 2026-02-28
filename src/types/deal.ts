@@ -1,6 +1,6 @@
 export interface Pipeline {
   id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string;
   descricao: string | null;
   is_default: boolean;
@@ -31,7 +31,7 @@ export interface PipelineWithStages extends Pipeline {
 export interface Contact {
   id: string;
   pessoa_id: string | null;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string;
   email: string | null;
   telefone: string | null;

@@ -38,7 +38,7 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
         nome: nome.trim(),
         telefone: telefone.trim() || undefined,
         email: email.trim() || undefined,
-        empresa: activeCompany as 'BLUE' | 'TOKENIZA',
+        empresa: activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
       });
       toast.success('Contato criado!');
       onCreated({ id: contact.id, nome: contact.nome });
@@ -67,7 +67,7 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
       const matches = await checkContactDuplicates({
         email: email.trim() || undefined,
         telefone: telefone.trim() || undefined,
-        empresa: activeCompany as 'BLUE' | 'TOKENIZA',
+        empresa: activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
       });
       if (matches.length > 0) {
         setDuplicates(matches);

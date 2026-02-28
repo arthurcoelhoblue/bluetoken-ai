@@ -47,7 +47,7 @@ export function CSCustomerCreateDialog() {
     try {
       const result = await createMutation.mutateAsync({
         contact_id: contactId,
-        empresa: empresa as 'BLUE' | 'TOKENIZA',
+        empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
         valor_mrr: valorMrr ? Number(valorMrr) : 0,
         proxima_renovacao: proximaRenovacao || null,
         notas: notas || null,

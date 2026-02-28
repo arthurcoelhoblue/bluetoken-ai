@@ -5,7 +5,7 @@ import type { ActiveCompany } from '@/contexts/CompanyContext';
 
 export interface Atendimento {
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string | null;
   telefone: string | null;
   telefone_e164: string | null;
@@ -218,7 +218,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
 
         atendimentos.push({
           lead_id: c.lead_id,
-          empresa: c.empresa as 'TOKENIZA' | 'BLUE',
+          empresa: c.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
           nome: c.nome,
           telefone: c.telefone,
           telefone_e164: c.telefone_e164,

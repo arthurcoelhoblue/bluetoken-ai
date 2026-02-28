@@ -132,20 +132,20 @@ function LeadDetailContent() {
   // PATCH 5H-PLUS: Issues de contato
   const { data: contactIssues = [], isLoading: issuesLoading } = useLeadContactIssues({
     leadId: leadId || '',
-    empresa: empresa as 'TOKENIZA' | 'BLUE',
+    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
     enabled: !!leadId && !!empresa,
   });
 
   // PATCH 6: Pessoa Global e Estado de Conversa
   const { data: pessoaContext, isLoading: pessoaLoading } = usePessoaContext({
     leadId: leadId || '',
-    empresa: empresa as 'TOKENIZA' | 'BLUE',
+    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
     enabled: !!leadId && !!empresa,
   });
 
   const { data: conversationState, isLoading: conversationLoading, error: conversationError, refetch: refetchConversation } = useConversationState({
     leadId: leadId || '',
-    empresa: empresa as 'TOKENIZA' | 'BLUE',
+    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
     enabled: !!leadId && !!empresa,
   });
 

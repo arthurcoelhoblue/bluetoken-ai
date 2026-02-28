@@ -7576,7 +7576,15 @@ export type Database = {
         | "BLUE_RECURRENTE"
         | "BLUE_PERDIDO_RECUPERAVEL"
         | "BLUE_NAO_CLASSIFICADO"
+        | "MPUPPE_FINTECH_REG"
+        | "MPUPPE_DATA_HEAVY"
+        | "MPUPPE_AI_PIONEER"
+        | "MPUPPE_LEGAL_DEPT"
         | "MPUPPE_NAO_CLASSIFICADO"
+        | "AXIA_FINTECH_LAUNCH"
+        | "AXIA_EXCHANGE_BUILDER"
+        | "AXIA_ASSET_TOKENIZER"
+        | "AXIA_MARKETPLACE_PAY"
         | "AXIA_NAO_CLASSIFICADO"
       knowledge_section_tipo:
         | "FAQ"
@@ -7617,6 +7625,12 @@ export type Database = {
         | "CRIPTO_CONTRIBUINTE_URGENTE"
         | "CLIENTE_FIEL_RENOVADOR"
         | "LEAD_PERDIDO_RECUPERAVEL"
+        | "FUNDADOR_FINTECH"
+        | "CTO_REGULACAO"
+        | "JURIDICO_CORPORATIVO"
+        | "EMPREENDEDOR_FINTECH"
+        | "CTO_INFRAESTRUTURA"
+        | "PRODUCT_MANAGER_CRYPTO"
       pessoa_relacao_tipo:
         | "CLIENTE_IR"
         | "LEAD_IR"
@@ -7839,7 +7853,15 @@ export const Constants = {
         "BLUE_RECURRENTE",
         "BLUE_PERDIDO_RECUPERAVEL",
         "BLUE_NAO_CLASSIFICADO",
+        "MPUPPE_FINTECH_REG",
+        "MPUPPE_DATA_HEAVY",
+        "MPUPPE_AI_PIONEER",
+        "MPUPPE_LEGAL_DEPT",
         "MPUPPE_NAO_CLASSIFICADO",
+        "AXIA_FINTECH_LAUNCH",
+        "AXIA_EXCHANGE_BUILDER",
+        "AXIA_ASSET_TOKENIZER",
+        "AXIA_MARKETPLACE_PAY",
         "AXIA_NAO_CLASSIFICADO",
       ],
       knowledge_section_tipo: [
@@ -7884,6 +7906,12 @@ export const Constants = {
         "CRIPTO_CONTRIBUINTE_URGENTE",
         "CLIENTE_FIEL_RENOVADOR",
         "LEAD_PERDIDO_RECUPERAVEL",
+        "FUNDADOR_FINTECH",
+        "CTO_REGULACAO",
+        "JURIDICO_CORPORATIVO",
+        "EMPREENDEDOR_FINTECH",
+        "CTO_INFRAESTRUTURA",
+        "PRODUCT_MANAGER_CRYPTO",
       ],
       pessoa_relacao_tipo: [
         "CLIENTE_IR",

@@ -107,7 +107,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0, search
         .order('updated_at', { ascending: false });
 
       if (empresa) {
-        query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA');
+        query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
       } else {
         query = query.in('empresa', activeCompanies);
       }
@@ -153,7 +153,7 @@ export function useCSCustomerById(id: string | undefined) {
 
 interface CreateCSCustomerData {
   contact_id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   valor_mrr?: number;
   proxima_renovacao?: string | null;
   notas?: string | null;

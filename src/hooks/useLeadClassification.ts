@@ -71,7 +71,7 @@ export function useLeadClassification(
       return {
         id: data.id,
         lead_id: data.lead_id,
-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
+        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
         icp: data.icp as ICP,
         persona: data.persona as LeadClassification['persona'],
         temperatura: data.temperatura as Temperatura,
@@ -186,7 +186,7 @@ export function useLeadsWithClassification(
           classificationMap.set(key, {
             id: c.id,
             lead_id: c.lead_id,
-            empresa: c.empresa as 'TOKENIZA' | 'BLUE',
+            empresa: c.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
             icp: c.icp as ICP,
             persona: c.persona as LeadClassification['persona'],
             temperatura: c.temperatura as Temperatura,
@@ -275,7 +275,7 @@ export async function getLeadClassification(
   return {
     id: data.id,
     lead_id: data.lead_id,
-    empresa: data.empresa as 'TOKENIZA' | 'BLUE',
+    empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
     icp: data.icp as ICP,
     persona: data.persona as LeadClassification['persona'],
     temperatura: data.temperatura as Temperatura,

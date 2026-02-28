@@ -64,7 +64,7 @@ export function ConversationTakeoverBar({
         .from('lead_contacts')
         .select('owner_id')
         .eq('lead_id', leadId)
-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
         .maybeSingle();
 
       if (data?.owner_id) {
@@ -109,7 +109,7 @@ export function ConversationTakeoverBar({
         .from('lead_contacts')
         .update({ owner_id: userId })
         .eq('lead_id', leadId)
-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
 
       if (error) throw error;
 

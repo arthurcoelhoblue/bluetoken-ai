@@ -1,7 +1,7 @@
 export interface ContactWithStats {
   id: string;
   pessoa_id: string | null;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   owner_id: string | null;
   created_at: string;
   updated_at: string;

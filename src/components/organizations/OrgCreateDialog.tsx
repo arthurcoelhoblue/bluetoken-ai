@@ -38,7 +38,7 @@ export function OrgCreateDialog({ open, onOpenChange }: Props) {
   });
 
   const handleCreate = async (data: OrgCreateFormData) => {
-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
     try {
       await create.mutateAsync({
         nome: data.nome.trim(),

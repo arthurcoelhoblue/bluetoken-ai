@@ -43,7 +43,7 @@ export function useContactLeadBridge(contactId: string | null) {
       return {
         id: data.id,
         lead_id: data.lead_id,
-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
+        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
         icp: data.icp as ICP,
         persona: data.persona as LeadClassification['persona'],
         temperatura: data.temperatura as Temperatura,
