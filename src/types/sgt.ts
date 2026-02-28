@@ -14,7 +14,7 @@ export type SGTEventoTipo =
   | 'FUNIL_ATUALIZADO';
 
 // Empresas suportadas
-export type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+export type EmpresaTipo = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 
 // Status de processamento de eventos
 export type SGTEventStatus = 'RECEBIDO' | 'PROCESSADO' | 'ERRO';

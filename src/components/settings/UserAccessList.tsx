@@ -255,7 +255,7 @@ export function UserAccessList() {
           userId={assignTarget.id}
           userName={assignTarget.nome || assignTarget.email}
           currentProfileId={assignTarget.assignments[0]?.access_profile_id}
-          currentEmpresas={assignTarget.assignments.map(a => a.empresa).filter(Boolean) as ('BLUE' | 'TOKENIZA')[]}
+          currentEmpresas={assignTarget.assignments.map(a => a.empresa).filter(Boolean) as ('BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')[]}
         />
       )}
 

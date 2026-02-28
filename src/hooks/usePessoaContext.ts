@@ -4,7 +4,7 @@ import type { Pessoa, EmpresaRelacionamentoResumo, PessoaRelacaoTipo } from '@/t
 
 interface UsePessoaContextOptions {
   leadId: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   enabled?: boolean;
 }
 
@@ -75,7 +75,7 @@ export function usePessoaContext({ leadId, empresa, enabled = true }: UsePessoaC
         }
 
         relacionamentos.push({
-          empresa: emp as 'TOKENIZA' | 'BLUE',
+          empresa: emp as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
           tipo_relacao: tipoRelacao,
           ultima_interacao_em: ultimaInteracao,
           total_mensagens: undefined, // Poderia ser calculado se necessário

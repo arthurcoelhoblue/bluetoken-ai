@@ -10,7 +10,7 @@ export type SGTEventWithLogs = SGTEvent & {
 };
 
 export interface SGTEventsFilters {
-  empresa?: 'TOKENIZA' | 'BLUE' | null;
+  empresa?: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | null;
   evento?: Database['public']['Enums']['sgt_evento_tipo'] | null;
   status?: Database['public']['Enums']['sgt_event_status'] | null;
   dataInicial?: Date | null;

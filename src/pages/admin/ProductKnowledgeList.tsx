@@ -18,7 +18,7 @@ import { useCompany } from "@/contexts/CompanyContext";
 import { toast } from "sonner";
 
 export default function ProductKnowledgeList() {
-  const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | 'all'>('all');
+  const [empresaFilter, setEmpresaFilter] = useState<'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
   const { activeCompany } = useCompany();

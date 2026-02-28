@@ -11,7 +11,7 @@
 // ========================================
 // TYPES
 // ========================================
-export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+export type EmpresaTipo = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
 export type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
 export type LeadIntentTipo =
   | 'INTERESSE_COMPRA' | 'INTERESSE_IR' | 'DUVIDA_PRODUTO' | 'DUVIDA_PRECO'

@@ -60,7 +60,7 @@ export type PerfilDISC = 'D' | 'I' | 'S' | 'C';
 export interface ConversationState {
   id: string;
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   canal: CanalConversa;
   estado_funil: EstadoFunil;
   framework_ativo: FrameworkAtivo;
@@ -121,7 +121,7 @@ export const ESTADO_FUNIL_COLORS: Record<EstadoFunil, string> = {
 };
 
 // Função helper para obter framework padrão por empresa
-export function getDefaultFramework(empresa: 'TOKENIZA' | 'BLUE'): FrameworkAtivo {
+export function getDefaultFramework(empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'): FrameworkAtivo {
   return empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
 }
 

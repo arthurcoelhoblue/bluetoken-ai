@@ -38,7 +38,7 @@ export function useCreateCSContract() {
         .from('cs_contracts')
         .insert({
           customer_id: data.customer_id,
-          empresa: data.empresa as 'BLUE' | 'TOKENIZA',
+          empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
           ano_fiscal: data.ano_fiscal,
           plano: data.plano,
           valor: data.valor ?? 0,

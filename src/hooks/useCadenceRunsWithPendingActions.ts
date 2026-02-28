@@ -6,7 +6,7 @@ import type { SdrAcaoTipo } from '@/types/intent';
 export interface CadenceRunWithPendingAction {
   run_id: string;
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   cadence_nome: string;
   cadence_codigo: string;
   status: string;
@@ -93,7 +93,7 @@ export function useCadenceRunsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
           return {
             run_id: intent.run_id!,
             lead_id: intent.lead_id || '',
-            empresa: intent.empresa as 'TOKENIZA' | 'BLUE',
+            empresa: intent.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
             cadence_nome: cadence?.nome || 'Cadência desconhecida',
             cadence_codigo: cadence?.codigo || '-',
             status: run?.status || 'ATIVA',

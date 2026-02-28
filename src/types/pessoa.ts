@@ -30,7 +30,7 @@ export interface Pessoa {
 
 // Resumo de relacionamento por empresa
 export interface EmpresaRelacionamentoResumo {
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   tipo_relacao: PessoaRelacaoTipo;
   ultima_interacao_em?: string | null;
   total_mensagens?: number;
@@ -116,7 +116,7 @@ export function formatPhoneDisplay(telefone_e164: string | null | undefined): st
 
 // Função helper para determinar tipo de relação
 export function determineRelacaoTipo(
-  empresa: 'TOKENIZA' | 'BLUE',
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
   dados: {
     tokeniza_investor_id?: string | null;
     blue_client_id?: string | null;

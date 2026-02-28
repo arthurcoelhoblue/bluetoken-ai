@@ -139,7 +139,7 @@ export default function ProductKnowledgeEditor() {
               <Label htmlFor="empresa">Empresa</Label>
               <Select 
                 value={formData.empresa} 
-                onValueChange={(v) => setFormData(f => ({ ...f, empresa: v as 'TOKENIZA' | 'BLUE' }))}
+                onValueChange={(v) => setFormData(f => ({ ...f, empresa: v as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' }))}
                 disabled={!isNew}
               >
                 <SelectTrigger>

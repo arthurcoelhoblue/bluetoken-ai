@@ -8,7 +8,7 @@ import type {
 } from "@/types/knowledge";
 
 // Fetch all products
-export function useProductKnowledgeList(empresa?: 'TOKENIZA' | 'BLUE') {
+export function useProductKnowledgeList(empresa?: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA') {
   return useQuery({
     queryKey: ['product-knowledge', empresa],
     queryFn: async () => {

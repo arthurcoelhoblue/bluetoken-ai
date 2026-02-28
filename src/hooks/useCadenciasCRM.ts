@@ -49,7 +49,7 @@ export async function validateCadenceTemplatesApproved(cadenceId: string, empres
   const { data: templates } = await supabase
     .from('message_templates')
     .select('codigo, nome, meta_status')
-    .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+    .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
     .eq('ativo', true)
     .in('codigo', templateCodes);
 

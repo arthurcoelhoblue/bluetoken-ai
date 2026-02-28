@@ -61,7 +61,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const { data: chatMessages = [], isLoading: chatLoading, refetch: refetchChat, isFetching: chatFetching } = useConversationMessages({
     leadId: contactBridge?.legacy_lead_id ?? '',
     contactId: contactBridge?.id,
-    empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | undefined,
+    empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | undefined,
     telefone: contactBridge?.telefone,
     enabled: hasChat,
   });

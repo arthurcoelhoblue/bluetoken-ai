@@ -9,8 +9,12 @@ import {
   PRIORIDADES,
   ICPS_TOKENIZA,
   ICPS_BLUE,
+  ICPS_MPUPPE,
+  ICPS_AXIA,
   PERSONAS_TOKENIZA,
   PERSONAS_BLUE,
+  PERSONAS_MPUPPE,
+  PERSONAS_AXIA,
 } from '@/types/classification';
 import type {
   LeadClassification,
@@ -61,10 +65,20 @@ export function EditClassificationModal({
 
   const updateMutation = useUpdateClassification();
 
-  const icpOptions =
-    classification.empresa === 'TOKENIZA' ? ICPS_TOKENIZA : ICPS_BLUE;
-  const personaOptions =
-    classification.empresa === 'TOKENIZA' ? PERSONAS_TOKENIZA : PERSONAS_BLUE;
+  const icpOptionsMap: Record<string, readonly string[]> = {
+    'TOKENIZA': ICPS_TOKENIZA,
+    'BLUE': ICPS_BLUE,
+    'MPUPPE': ICPS_MPUPPE,
+    'AXIA': ICPS_AXIA,
+  };
+  const personaOptionsMap: Record<string, readonly string[]> = {
+    'TOKENIZA': PERSONAS_TOKENIZA,
+    'BLUE': PERSONAS_BLUE,
+    'MPUPPE': PERSONAS_MPUPPE,
+    'AXIA': PERSONAS_AXIA,
+  };
+  const icpOptions = icpOptionsMap[classification.empresa] || ICPS_BLUE;
+  const personaOptions = personaOptionsMap[classification.empresa] || PERSONAS_BLUE;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

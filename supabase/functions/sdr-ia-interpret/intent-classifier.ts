@@ -13,7 +13,7 @@ const log = createLogger('sdr-intent-classifier');
 // ========================================
 // TYPES
 // ========================================
-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
+type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
 type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
 type LeadIntentTipo = 'INTERESSE_COMPRA' | 'INTERESSE_IR' | 'DUVIDA_PRODUTO' | 'DUVIDA_PRECO' | 'DUVIDA_TECNICA' | 'SOLICITACAO_CONTATO' | 'AGENDAMENTO_REUNIAO' | 'RECLAMACAO' | 'OPT_OUT' | 'OBJECAO_PRECO' | 'OBJECAO_RISCO' | 'SEM_INTERESSE' | 'NAO_ENTENDI' | 'CUMPRIMENTO' | 'AGRADECIMENTO' | 'FORA_CONTEXTO' | 'MANUAL_MODE' | 'OUTRO';
 type SdrAcaoTipo = 'PAUSAR_CADENCIA' | 'CANCELAR_CADENCIA' | 'RETOMAR_CADENCIA' | 'AJUSTAR_TEMPERATURA' | 'CRIAR_TAREFA_CLOSER' | 'MARCAR_OPT_OUT' | 'NENHUMA' | 'ESCALAR_HUMANO' | 'ENVIAR_RESPOSTA_AUTOMATICA' | 'DESQUALIFICAR_LEAD';
@@ -201,7 +201,11 @@ function computeClassificationUpgrade(input: { novaTemperatura: TemperaturaTipo;
   if (novaTemperatura === 'QUENTE' && isHighIntent) result.prioridade = 1;
   else if (novaTemperatura === 'MORNO' && (isHighIntent || isMediumIntent) && prioridadeAtual > 2) result.prioridade = 2;
   if (icpAtual?.endsWith('_NAO_CLASSIFICADO') && isHighIntent && novaTemperatura !== 'FRIO') {
-    result.icp = empresa === 'BLUE' ? 'BLUE_ALTO_TICKET_IR' : 'TOKENIZA_EMERGENTE';
+    if (empresa === 'BLUE') result.icp = 'BLUE_ALTO_TICKET_IR';
+    else if (empresa === 'TOKENIZA') result.icp = 'TOKENIZA_EMERGENTE';
+    else if (empresa === 'MPUPPE') result.icp = 'MPUPPE_FINTECH_REG';
+    else if (empresa === 'AXIA') result.icp = 'AXIA_FINTECH_LAUNCH';
+  }
   }
   if (result.prioridade || result.icp) {
     const baseTemp = novaTemperatura === 'QUENTE' ? 30 : novaTemperatura === 'MORNO' ? 15 : 5;
@@ -272,13 +276,30 @@ function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil, 
 
   let tipo: ProximaPerguntaTipo = 'NENHUMA';
   if (empresa === 'BLUE') {
+    // Blue usa SPIN (dor fiscal → solução)
     if (!spin?.s) tipo = 'SPIN_S';
     else if (!spin?.p) tipo = 'SPIN_P';
     else if (spin?.s && spin?.p && temperatura !== 'FRIO' && ['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO', 'DUVIDA_PRECO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
     else if (!spin?.i) tipo = 'SPIN_I';
     else if (!spin?.n) tipo = 'SPIN_N';
     else if (['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO'].includes(intentAtual || '') && temperatura !== 'FRIO') tipo = 'CTA_REUNIAO';
+  } else if (empresa === 'MPUPPE') {
+    // MPuppe usa BANT (budget + authority + need + timing — venda consultiva jurídica)
+    if (!bant?.n) tipo = 'BANT_N';
+    else if (!bant?.a) tipo = 'BANT_A';
+    else if (!bant?.t) tipo = 'BANT_T';
+    else if (!bant?.b) tipo = 'BANT_B';
+    else if (temperatura !== 'FRIO' && ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
+  } else if (empresa === 'AXIA') {
+    // Axia usa GPCT + BANT (entender projeto → qualificar budget)
+    if (!gpct?.g) tipo = 'GPCT_G';
+    else if (!gpct?.c) tipo = 'GPCT_C';
+    else if (!gpct?.t) tipo = 'GPCT_T';
+    else if (!bant?.b) tipo = 'BANT_B';
+    else if (!bant?.a) tipo = 'BANT_A';
+    else if (temperatura !== 'FRIO' && ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
   } else {
+    // Tokeniza usa GPCT (objetivos de investimento → timeline)
     if (!gpct?.g) tipo = 'GPCT_G';
     else if (!gpct?.p) tipo = 'GPCT_P';
     else if (!gpct?.c) tipo = 'GPCT_C';
@@ -292,14 +313,34 @@ function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil, 
 
 function detectCrossCompanyInterest(mensagem: string, empresaAtual: EmpresaTipo): { detected: boolean; targetCompany: EmpresaTipo | null; reason: string } {
   const ml = mensagem.toLowerCase();
-  if (empresaAtual === 'BLUE') {
-    for (const kw of ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rendimento', 'aplicar dinheiro', 'renda passiva']) {
-      if (ml.includes(kw)) return { detected: true, targetCompany: 'TOKENIZA', reason: `Lead mencionou "${kw}"` };
-    }
-  }
-  if (empresaAtual === 'TOKENIZA') {
-    for (const kw of ['imposto de renda', 'declarar cripto', 'receita federal', 'exchange', 'bitcoin', 'declarar']) {
-      if (ml.includes(kw)) return { detected: true, targetCompany: 'BLUE', reason: `Lead mencionou "${kw}"` };
+
+  const crossMap: Record<EmpresaTipo, Array<{ keywords: string[]; target: EmpresaTipo; }>> = {
+    'BLUE': [
+      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rendimento', 'aplicar dinheiro', 'renda passiva'], target: 'TOKENIZA' },
+      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm', 'bacen', 'instituição de pagamento'], target: 'MPUPPE' },
+      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura', 'api banking'], target: 'AXIA' },
+    ],
+    'TOKENIZA': [
+      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'exchange', 'bitcoin', 'declarar'], target: 'BLUE' },
+      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm 88', 'licença'], target: 'MPUPPE' },
+      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura'], target: 'AXIA' },
+    ],
+    'MPUPPE': [
+      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'ir cripto'], target: 'BLUE' },
+      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rwa'], target: 'TOKENIZA' },
+      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura', 'api banking'], target: 'AXIA' },
+    ],
+    'AXIA': [
+      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'ir cripto'], target: 'BLUE' },
+      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rwa'], target: 'TOKENIZA' },
+      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm 88', 'instituição de pagamento', 'licença bacen'], target: 'MPUPPE' },
+    ],
+  };
+
+  const rules = crossMap[empresaAtual] || [];
+  for (const rule of rules) {
+    for (const kw of rule.keywords) {
+      if (ml.includes(kw)) return { detected: true, targetCompany: rule.target, reason: `Lead mencionou "${kw}"` };
     }
   }
   return { detected: false, targetCompany: null, reason: '' };
@@ -396,14 +437,31 @@ Amélia, 32 anos, economista, especialista em finanças digitais do Grupo Blue (
 
 ## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{}},"disc_estimado":null,"departamento_destino":null}`;
 
+// ========================================
+// IDENTIDADE POR EMPRESA (injetada no prompt)
+// ========================================
+const EMPRESA_IDENTIDADE: Record<EmpresaTipo, string> = {
+  'BLUE': 'Você atua pela Blue Cripto, especialista em declaração de IR para criptoativos. Conhece GCAP, IN 1888, exchanges, DeFi e otimização fiscal.',
+  'TOKENIZA': 'Você atua pela Tokeniza, plataforma de investimentos em ativos reais tokenizados (RWA) regulada pela CVM. Conhece CVM 88, mercado de transações subsequentes e diversificação de portfólio.',
+  'MPUPPE': 'Você atua pela MPuppe, boutique jurídica especializada em Direito Digital. Conhece regulação Bacen (IP), CVM 88, LGPD/GDPR, governança de IA (TAIO Officer) e operações de alta complexidade regulatória.',
+  'AXIA': 'Você atua pela Axia Digital Solutions, software house de infraestrutura fintech. Conhece plataformas whitelabel, digital banking, exchanges, wallets multichain, tokenização e payment gateways.',
+};
+
 const SYSTEM_PROMPT = `# AMÉLIA - SDR IA QUALIFICADORA CONSULTIVA
-Amélia, 32 anos, economista, Grupo Blue (3 anos). Conhece IR cripto e investimentos tokenizados.
+Amélia, 32 anos, economista, Grupo Blue Labs (3 anos). Atua em 4 verticais: Blue Cripto (IR), Tokeniza (RWA), MPuppe (Direito Digital) e Axia (Infraestrutura Fintech).
 
 ## ESCALAÇÃO RÁPIDA: Objetivo: entender contexto → identificar se lead pronto → ESCALAR. NÃO FAÇA OVERQUALIFICATION.
 ## COMUNICAÇÃO: Mensagens curtas/naturais. NUNCA "Perfeito!", "Entendi!". NUNCA nome no início. 0-2 emojis. NUNCA prometa enviar algo depois ("vou te mandar", "já envio", "segue o resumo"). Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
 ## COMPLIANCE: PROIBIDO prometer retorno, recomendar ativo, negociar preço, pressionar.
 
 ## FRAMEWORK: Extraia SPIN/GPCT/BANT de TODA mensagem. Quando S+P preenchidos, INFIRA I (riscos) e N (ação necessária) com prefixo "[Inferido]".
+
+## DETECÇÃO DISC (aplique a CADA mensagem do lead):
+- D (Dominante): Mensagens curtas, imperativas, foco em resultado, impaciente, "vai direto", "quanto custa", "resolve isso"
+- I (Influente): Emojis, perguntas pessoais, entusiasmo, "que legal!", "adorei!", histórias, tom amigável
+- S (Estável): Respostas longas e ponderadas, "preciso pensar", "minha equipe", busca segurança, evita conflito
+- C (Conforme): Perguntas técnicas, "me manda os dados", "qual a rentabilidade exata", comparações, ceticismo
+Retorne em disc_estimado: D, I, S ou C. Se não for possível determinar, retorne null.
 
 ## FORMATO JSON OBRIGATÓRIO:
 {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
@@ -619,6 +677,10 @@ REGRAS FORA DO HORÁRIO:
   const perfilInvestidor = (conversation_state?.perfil_investidor as PerfilInvestidor) || inferirPerfilInvestidor(conversation_state?.perfil_disc as PerfilDISC, mensagem_normalizada);
   const proximaPergunta = decidirProximaPergunta(empresa as EmpresaTipo, (conversation_state?.estado_funil as EstadoFunil) || 'SAUDACAO', fd.spin, fd.gpct, fd.bant, (classificacao?.temperatura as TemperaturaTipo) || 'FRIO', undefined, mensagem_normalizada);
 
+  // Injetar identidade específica da empresa no system prompt
+  const identidade = EMPRESA_IDENTIDADE[empresa as EmpresaTipo] || EMPRESA_IDENTIDADE['BLUE'];
+  activeSystemPrompt += `\n\n## IDENTIDADE ATIVA\n${identidade}`;
+
   let userPrompt = `EMPRESA_CONTEXTO: ${empresa}\nMODO: ${isPassiveChat ? 'ATENDENTE PASSIVA' : 'QUALIFICAÇÃO ATIVA'}\n`;
   if (reprocessContext) userPrompt += reprocessContext;
   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
@@ -696,10 +758,11 @@ REGRAS FORA DO HORÁRIO:
   if (cross.detected) userPrompt += `\n🔀 CROSS-SELL: ${cross.reason}\n`;
 
   if (empresa === 'BLUE') userPrompt += formatBluePricingForPrompt();
-  if (empresa === 'TOKENIZA') {
+  else if (empresa === 'TOKENIZA') {
     const offers = await fetchActiveTokenizaOffers();
     userPrompt += formatTokenizaOffersForPrompt(offers);
   }
+  // MPUPPE e AXIA: pricing dinâmico via product_knowledge (carregado pelo RAG/fallback abaixo)
 
   // Try RAG first, fallback to full knowledge fetch
   const ragKnowledge = await fetchRelevantKnowledgeRAG(mensagem_normalizada, empresa as EmpresaTipo);

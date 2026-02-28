@@ -36,7 +36,7 @@ export interface CreateContactData {
   sobrenome?: string;
   email?: string;
   telefone?: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   organization_id?: string;
   tipo?: string;
   cpf?: string;

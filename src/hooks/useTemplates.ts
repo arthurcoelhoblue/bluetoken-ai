@@ -7,7 +7,7 @@ export type MetaStatus = 'LOCAL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED
 
 export interface MessageTemplate {
   id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   canal: 'WHATSAPP' | 'EMAIL';
   codigo: string;
   nome: string;

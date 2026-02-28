@@ -20,7 +20,7 @@ export interface UserAccessAssignment {
   id: string;
   user_id: string;
   access_profile_id: string;
-  empresa: 'BLUE' | 'TOKENIZA' | null;
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | null;
   assigned_by: string | null;
   created_at: string;
   updated_at: string;

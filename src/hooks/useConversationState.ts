@@ -10,7 +10,7 @@ import type {
 
 interface UseConversationStateOptions {
   leadId: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   enabled?: boolean;
 }
 
@@ -32,7 +32,7 @@ export function useConversationState({ leadId, empresa, enabled = true }: UseCon
       return {
         id: data.id,
         lead_id: data.lead_id,
-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
+        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
         canal: data.canal as 'WHATSAPP' | 'EMAIL',
         estado_funil: data.estado_funil as EstadoFunil,
         framework_ativo: data.framework_ativo as FrameworkAtivo,

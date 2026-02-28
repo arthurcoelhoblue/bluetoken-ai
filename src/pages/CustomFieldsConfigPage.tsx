@@ -39,7 +39,7 @@ function CustomFieldsContent() {
   const [formSlug, setFormSlug] = useState('');
   const [formEntity, setFormEntity] = useState<CustomFieldEntityType>('CONTACT');
   const [formValueType, setFormValueType] = useState<CustomFieldValueType>('TEXT');
-  const [formEmpresa, setFormEmpresa] = useState<'BLUE' | 'TOKENIZA'>('BLUE');
+  const [formEmpresa, setFormEmpresa] = useState<'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'>('BLUE');
   const [formGrupo, setFormGrupo] = useState('Geral');
   const [formRequired, setFormRequired] = useState(false);
   const [formVisible, setFormVisible] = useState(true);
@@ -225,7 +225,7 @@ function CustomFieldsContent() {
                 </div>
                 <div>
                   <Label>Empresa</Label>
-                  <Select value={formEmpresa} onValueChange={v => setFormEmpresa(v as 'BLUE' | 'TOKENIZA')}>
+                  <Select value={formEmpresa} onValueChange={v => setFormEmpresa(v as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="BLUE">Blue</SelectItem>

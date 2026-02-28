@@ -39,7 +39,7 @@ export function useConversationTakeover() {
         .from('lead_conversation_state')
         .update(updateFields)
         .eq('lead_id', leadId)
-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
 
       if (stateError) throw stateError;
 
@@ -48,7 +48,7 @@ export function useConversationTakeover() {
           .from('lead_contacts')
           .select('id, owner_id')
           .eq('lead_id', leadId)
-          .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
           .maybeSingle();
         
         if (leadContact && !leadContact.owner_id) {
@@ -63,7 +63,7 @@ export function useConversationTakeover() {
         .from('conversation_takeover_log')
         .insert({
           lead_id: leadId,
-          empresa: empresa as 'TOKENIZA' | 'BLUE',
+          empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
           acao,
           user_id: user.id,
           motivo: motivo || null,
@@ -79,7 +79,7 @@ export function useConversationTakeover() {
             .from('lead_message_intents')
             .select('message_id')
             .eq('lead_id', leadId)
-            .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
+            .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
             .is('resposta_enviada_em', null)
             .order('created_at', { ascending: false })
             .limit(1)

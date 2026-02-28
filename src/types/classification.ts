@@ -1,5 +1,5 @@
 // ========================================
-// PATCH 3 - Tipos de Classificação Comercial
+// PATCH 4 - Tipos de Classificação Comercial (4 Empresas)
 // ========================================
 
 // Re-exportar tipos comuns do SGT
@@ -30,10 +30,20 @@ export type IcpBlue =
   | 'BLUE_NAO_CLASSIFICADO';
 
 // ICPs MPuppe
-export type IcpMpuppe = 'MPUPPE_NAO_CLASSIFICADO';
+export type IcpMpuppe =
+  | 'MPUPPE_FINTECH_REG'
+  | 'MPUPPE_DATA_HEAVY'
+  | 'MPUPPE_AI_PIONEER'
+  | 'MPUPPE_LEGAL_DEPT'
+  | 'MPUPPE_NAO_CLASSIFICADO';
 
 // ICPs Axia
-export type IcpAxia = 'AXIA_NAO_CLASSIFICADO';
+export type IcpAxia =
+  | 'AXIA_FINTECH_LAUNCH'
+  | 'AXIA_EXCHANGE_BUILDER'
+  | 'AXIA_ASSET_TOKENIZER'
+  | 'AXIA_MARKETPLACE_PAY'
+  | 'AXIA_NAO_CLASSIFICADO';
 
 // ICP unificado
 export type ICP = IcpTokeniza | IcpBlue | IcpMpuppe | IcpAxia;
@@ -50,13 +60,25 @@ export type PersonaBlue =
   | 'CLIENTE_FIEL_RENOVADOR'
   | 'LEAD_PERDIDO_RECUPERAVEL';
 
+// Personas MPuppe
+export type PersonaMpuppe =
+  | 'FUNDADOR_FINTECH'
+  | 'CTO_REGULACAO'
+  | 'JURIDICO_CORPORATIVO';
+
+// Personas Axia
+export type PersonaAxia =
+  | 'EMPREENDEDOR_FINTECH'
+  | 'CTO_INFRAESTRUTURA'
+  | 'PRODUCT_MANAGER_CRYPTO';
+
 // Persona unificada
-export type Persona = PersonaTokeniza | PersonaBlue;
+export type Persona = PersonaTokeniza | PersonaBlue | PersonaMpuppe | PersonaAxia;
 
 // Resultado da classificação
 export interface LeadClassificationResult {
   leadId: string;
-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   icp: ICP;
   persona: Persona | null;
   temperatura: Temperatura;
@@ -64,11 +86,11 @@ export interface LeadClassificationResult {
   scoreInterno: number; // 0-100
 }
 
-// Registro de classificação no banco (atualizado PATCH 3.0)
+// Registro de classificação no banco (atualizado PATCH 4.0)
 export interface LeadClassification {
   id: string;
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   icp: ICP;
   persona: Persona | null;
   temperatura: Temperatura;
@@ -129,7 +151,7 @@ export interface ClassificationJustificativa {
 export interface LeadWithClassification {
   // Dados de contato
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string | null;
   primeiro_nome: string | null;
   email: string | null;
@@ -141,24 +163,32 @@ export interface LeadWithClassification {
 }
 
 // ========================================
-// Labels amigáveis para UI (PATCH 3.0)
+// Labels amigáveis para UI (PATCH 4.0 — 4 Empresas)
 // ========================================
 
 export const ICP_LABELS: Record<ICP, string> = {
   // Tokeniza
-  TOKENIZA_SERIAL: 'Investidor Serial',
-  TOKENIZA_MEDIO_PRAZO: 'Investidor Médio Prazo',
-  TOKENIZA_EMERGENTE: 'Investidor Emergente',
-  TOKENIZA_ALTO_VOLUME_DIGITAL: 'Alto Volume Digital',
+  TOKENIZA_SERIAL: 'Investidor Recorrente',
+  TOKENIZA_MEDIO_PRAZO: 'Investidor Estratégico',
+  TOKENIZA_EMERGENTE: 'Novo Entusiasta RWA',
+  TOKENIZA_ALTO_VOLUME_DIGITAL: 'Investidor Grande Porte',
   TOKENIZA_NAO_CLASSIFICADO: 'Não Classificado',
   // Blue
-  BLUE_ALTO_TICKET_IR: 'Alto Ticket IR',
+  BLUE_ALTO_TICKET_IR: 'Investidor Sofisticado',
   BLUE_RECURRENTE: 'Cliente Recorrente',
-  BLUE_PERDIDO_RECUPERAVEL: 'Perdido Recuperável',
+  BLUE_PERDIDO_RECUPERAVEL: 'Ex-Cliente em Risco',
   BLUE_NAO_CLASSIFICADO: 'Não Classificado',
   // MPuppe
+  MPUPPE_FINTECH_REG: 'Fintech em Regulação',
+  MPUPPE_DATA_HEAVY: 'Empresa de Dados',
+  MPUPPE_AI_PIONEER: 'Pioneiro em IA',
+  MPUPPE_LEGAL_DEPT: 'Departamento Jurídico',
   MPUPPE_NAO_CLASSIFICADO: 'Não Classificado',
   // Axia
+  AXIA_FINTECH_LAUNCH: 'Fintech em Lançamento',
+  AXIA_EXCHANGE_BUILDER: 'Construtor de Exchange',
+  AXIA_ASSET_TOKENIZER: 'Tokenizador de Ativos',
+  AXIA_MARKETPLACE_PAY: 'Marketplace com Pagamentos',
   AXIA_NAO_CLASSIFICADO: 'Não Classificado',
 };
 
@@ -171,6 +201,14 @@ export const PERSONA_LABELS: Record<Persona, string> = {
   CRIPTO_CONTRIBUINTE_URGENTE: 'Cripto Contribuinte Urgente',
   CLIENTE_FIEL_RENOVADOR: 'Cliente Fiel Renovador',
   LEAD_PERDIDO_RECUPERAVEL: 'Lead Perdido Recuperável',
+  // MPuppe
+  FUNDADOR_FINTECH: 'Fundador de Fintech',
+  CTO_REGULACAO: 'CTO em Regulação',
+  JURIDICO_CORPORATIVO: 'Jurídico Corporativo',
+  // Axia
+  EMPREENDEDOR_FINTECH: 'Empreendedor Fintech',
+  CTO_INFRAESTRUTURA: 'CTO de Infraestrutura',
+  PRODUCT_MANAGER_CRYPTO: 'Product Manager Crypto',
 };
 
 export const TEMPERATURA_LABELS: Record<Temperatura, string> = {
@@ -215,6 +253,22 @@ export const ICPS_BLUE: IcpBlue[] = [
   'BLUE_NAO_CLASSIFICADO',
 ];
 
+export const ICPS_MPUPPE: IcpMpuppe[] = [
+  'MPUPPE_FINTECH_REG',
+  'MPUPPE_DATA_HEAVY',
+  'MPUPPE_AI_PIONEER',
+  'MPUPPE_LEGAL_DEPT',
+  'MPUPPE_NAO_CLASSIFICADO',
+];
+
+export const ICPS_AXIA: IcpAxia[] = [
+  'AXIA_FINTECH_LAUNCH',
+  'AXIA_EXCHANGE_BUILDER',
+  'AXIA_ASSET_TOKENIZER',
+  'AXIA_MARKETPLACE_PAY',
+  'AXIA_NAO_CLASSIFICADO',
+];
+
 export const PERSONAS_TOKENIZA: PersonaTokeniza[] = [
   'CONSTRUTOR_PATRIMONIO',
   'COLECIONADOR_DIGITAL',
@@ -225,6 +279,18 @@ export const PERSONAS_BLUE: PersonaBlue[] = [
   'CRIPTO_CONTRIBUINTE_URGENTE',
   'CLIENTE_FIEL_RENOVADOR',
   'LEAD_PERDIDO_RECUPERAVEL',
+];
+
+export const PERSONAS_MPUPPE: PersonaMpuppe[] = [
+  'FUNDADOR_FINTECH',
+  'CTO_REGULACAO',
+  'JURIDICO_CORPORATIVO',
+];
+
+export const PERSONAS_AXIA: PersonaAxia[] = [
+  'EMPREENDEDOR_FINTECH',
+  'CTO_INFRAESTRUTURA',
+  'PRODUCT_MANAGER_CRYPTO',
 ];
 
 // Eventos que indicam lead quente

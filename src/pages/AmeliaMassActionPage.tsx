@@ -111,7 +111,7 @@ function useAllOpenDeals(empresa: string | undefined) {
         const { data: pipIds } = await supabase
           .from('pipelines')
           .select('id')
-          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
           .eq('ativo', true);
         if (pipIds && pipIds.length > 0) {
           query = query.in('pipeline_id', pipIds.map(p => p.id));
@@ -137,7 +137,7 @@ function useTemplates(empresa: string | undefined, canal: string) {
       let q = supabase
         .from('message_templates')
         .select('id, nome, codigo, canal, conteudo')
-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
+        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
         .eq('ativo', true)
         .eq('canal', canal as 'WHATSAPP' | 'EMAIL' | 'SMS');
       if (canal === 'WHATSAPP') {
@@ -395,7 +395,7 @@ export default function AmeliaMassActionPage() {
         if (userProfile?.gestor_id) {
           await supabase.from('notifications').insert({
             user_id: userProfile.gestor_id,
-            empresa: empresa as 'BLUE' | 'TOKENIZA',
+            empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
             titulo: '⏳ Ação em Massa aguardando aprovação',
             mensagem: `${user.email} criou uma ação em massa com ${job.total} deals aguardando sua aprovação.`,
             tipo: 'APROVACAO',

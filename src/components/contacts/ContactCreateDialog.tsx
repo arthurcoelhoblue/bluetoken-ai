@@ -47,7 +47,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
   });
 
   const doCreate = async (data: ContactCreateFormData) => {
-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
     try {
       await create.mutateAsync({
         ...data,
@@ -75,7 +75,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
   };
 
   const handleCreate = async (data: ContactCreateFormData) => {
-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
+    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
     setChecking(true);
     try {
       const matches = await checkContactDuplicates({

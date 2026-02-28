@@ -14,7 +14,7 @@ export type SeveridadeTipo = 'ALTA' | 'MEDIA' | 'BAIXA';
 export interface LeadContactIssue {
   id: string;
   lead_id: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   issue_tipo: LeadContactIssueTipo;
   severidade: SeveridadeTipo;
   mensagem: string;
@@ -26,7 +26,7 @@ export interface LeadContactIssue {
 
 interface UseLeadContactIssuesOptions {
   leadId: string;
-  empresa: 'TOKENIZA' | 'BLUE';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   enabled?: boolean;
 }
 
