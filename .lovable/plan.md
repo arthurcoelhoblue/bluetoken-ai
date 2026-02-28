@@ -1,57 +1,33 @@
 
 
-# Implementação WebRTC Nativo via Widget Zadarma
+# Diagnóstico: Widget de telefonia "morto"
 
-## Contexto
-O Zadarma fornece um widget WebRTC oficial (scripts JS externos) que encapsula toda a complexidade SIP/WebRTC. A abordagem mais confiável é carregar esse widget e integrá-lo ao nosso phone widget, em vez de reimplementar SIP.js do zero.
+## Causa Raiz
+A política RLS de SELECT na tabela `zadarma_extensions` está configurada para o role `public` (anon), mas o usuário logado usa o role `authenticated`. Resultado: a query retorna vazio, `hasExtension = false`, e o widget mostra "Nenhum ramal configurado" mesmo com o ramal existindo no banco.
 
-## Pré-requisito
-O campo `sip_login` dos ramais precisa estar preenchido no banco. Sem ele, o widget WebRTC não consegue se registrar.
+**Todas as outras tabelas** (contacts, deals, pipelines) usam `roles: {authenticated}` — a `zadarma_extensions` é a exceção com bug.
 
-## Arquitetura
+## Correção
 
-```text
-ZadarmaPhoneWidget (nosso UI)
-  │
-  ├── useZadarmaWebRTC (novo hook)
-  │     ├── Busca WebRTC key via proxy (/v1/webrtc/get_key/)
-  │     ├── Carrega scripts Zadarma dinamicamente
-  │     └── Inicializa zadarmaWidgetFn(key, sipLogin, ...)
-  │
-  ├── Modo WebRTC (sip_login preenchido)
-  │     └── Usa widget Zadarma para chamadas diretas no browser
-  │
-  └── Modo Callback (fallback, sem sip_login)
-        └── Mantém fluxo atual via /v1/request/callback/
+### 1. Corrigir RLS policy da `zadarma_extensions`
+Migração SQL para dropar a policy atual de SELECT e recriá-la com `TO authenticated`:
+
+```sql
+DROP POLICY "Authenticated SELECT zadarma_extensions" ON zadarma_extensions;
+CREATE POLICY "Authenticated SELECT zadarma_extensions" 
+  ON zadarma_extensions FOR SELECT TO authenticated
+  USING (
+    has_role(auth.uid(), 'ADMIN'::user_role) 
+    OR (empresa::text = ANY(get_user_empresas(auth.uid())))
+  );
 ```
 
-## Implementação
+### 2. Adicionar loading state ao widget
+Enquanto a query de extension está carregando (`isLoading`), mostrar indicador de carregamento em vez de "Nenhum ramal configurado" — evita flash de erro durante o carregamento.
 
-### 1. Novo hook `src/hooks/useZadarmaWebRTC.ts`
-- Recebe `empresa`, `sipLogin` como parâmetros
-- Chama proxy com `action: 'get_webrtc_key'` + `sip_login` ao montar
-- Armazena key em state (renovação a cada 70h, key dura 72h)
-- Carrega scripts Zadarma via `document.createElement('script')`:
-  - `https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-lib.js`
-  - `https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-fn.js`
-- Inicializa `zadarmaWidgetFn(key, sipLogin, 'square', 'pt', false, ...)` com `false` para esconder a UI padrão do Zadarma (usamos a nossa)
-- Expõe funções: `dial(number)`, `hangup()`, `isReady`
+### 3. Verificar policy de `zadarma_config` também
+A policy de SELECT em `zadarma_config` pode ter o mesmo bug — verificar e corrigir se necessário.
 
-### 2. Atualizar `ZadarmaPhoneWidget.tsx`
-- Importar `useZadarmaWebRTC`
-- Se `myExtension.sip_login` existe: usar modo WebRTC (dial direto via widget Zadarma)
-- Se não tem `sip_login`: manter modo callback atual como fallback
-- No `handleDial`: se WebRTC pronto, chamar via widget Zadarma; senão, callback
-- Mostrar indicador visual "WebRTC" ou "Callback" no header
-
-### 3. Configuração no Zadarma
-O domínio do CRM precisa estar cadastrado em **Settings > Integrations and API > WebRTC widget integration** no painel Zadarma. Sem isso, o widget será bloqueado por CORS.
-
-## Detalhe Técnico
-O widget Zadarma expõe a função global `zadarmaWidgetFn()` que cria um iframe SIP no DOM. Passando o 5o parâmetro como `false`, o widget fica invisível (hidden mode). Chamadas são controladas programaticamente via eventos DOM customizados do widget (`zadarmaWidgetEvent`).
-
-## Limitações
-- O domínio precisa ser HTTPS e estar registrado no painel Zadarma
-- `sip_login` precisa ser preenchido manualmente (ex: `123456-108`)
-- A key WebRTC expira em 72h, o hook renova automaticamente
+## Resultado Esperado
+Após a correção, o widget detecta o ramal 108 do usuário, mostra o botão "Ligar" em modo Callback (já que `sip_login` está null), e as chamadas funcionam normalmente.
 
