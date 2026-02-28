@@ -62,7 +62,11 @@ export function ZadarmaPhoneWidget() {
       empresa,
       payload: { from: myExtension.extension_number, to: number },
     }, {
-      onSuccess: () => setPhoneState('active'),
+      onSuccess: () => {
+        // Callback was accepted — stay in 'dialing' state until webhook confirms.
+        // Don't auto-transition to 'active' since the call hasn't connected yet.
+        toast.info('Callback solicitado. Atenda seu ramal para conectar a chamada.');
+      },
       onError: (error) => {
         toast.error('Erro ao iniciar chamada. Verifique se a telefonia está ativa para esta empresa.');
         console.error('Dial error:', error);
@@ -157,8 +161,8 @@ export function ZadarmaPhoneWidget() {
               {onHold && (
                 <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
               )}
-              <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
-                {phoneState === 'dialing' ? 'Discando...' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
+          <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
+                {phoneState === 'dialing' ? 'Atenda seu ramal' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
               </p>
               <div className="flex items-center justify-center gap-3">
                 {phoneState === 'active' && (
@@ -224,7 +228,7 @@ export function ZadarmaPhoneWidget() {
             <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
           )}
           <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
-            {phoneState === 'dialing' ? 'Discando...' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
+            {phoneState === 'dialing' ? 'Atenda seu ramal' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
           </p>
           <div className="flex items-center justify-center gap-3">
             {phoneState === 'active' && (
