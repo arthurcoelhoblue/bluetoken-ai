@@ -48,10 +48,12 @@ export function UserAccessList() {
     if (ramalValue === current) return;
 
     if (ramalValue) {
-      const { error } = await supabase.from('zadarma_extensions').upsert(
-        { user_id: userId, extension_number: ramalValue, empresa: 'BLUE' },
-        { onConflict: 'user_id,empresa' }
-      );
+      await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+      const { error } = await supabase.from('zadarma_extensions').insert({
+        user_id: userId,
+        extension_number: ramalValue,
+        empresa: 'BLUE',
+      });
       if (error) { toast.error('Erro ao salvar ramal'); return; }
     } else if (current) {
       const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);

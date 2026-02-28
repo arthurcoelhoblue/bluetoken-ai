@@ -79,10 +79,12 @@ export function EditUserDialog({
 
       // Update ramal
       if (data.ramal) {
-        const { error } = await supabase.from('zadarma_extensions').upsert(
-          { user_id: userId, extension_number: data.ramal, empresa: 'BLUE' },
-          { onConflict: 'user_id,empresa' }
-        );
+        await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+        const { error } = await supabase.from('zadarma_extensions').insert({
+          user_id: userId,
+          extension_number: data.ramal,
+          empresa: 'BLUE',
+        });
         if (error) throw error;
       } else if (currentRamal) {
         const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
