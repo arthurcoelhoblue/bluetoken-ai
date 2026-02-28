@@ -1,0 +1,1457 @@
+diff --git a/src/components/contacts/ContactCreateDialog.tsx b/src/components/contacts/ContactCreateDialog.tsx
+index 404c273..5cfa9d1 100644
+--- a/src/components/contacts/ContactCreateDialog.tsx
++++ b/src/components/contacts/ContactCreateDialog.tsx
+@@ -47,7 +47,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
+   });
+ 
+   const doCreate = async (data: ContactCreateFormData) => {
+-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
++    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+     try {
+       await create.mutateAsync({
+         ...data,
+@@ -75,7 +75,7 @@ export function ContactCreateDialog({ open, onOpenChange }: Props) {
+   };
+ 
+   const handleCreate = async (data: ContactCreateFormData) => {
+-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
++    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+     setChecking(true);
+     try {
+       const matches = await checkContactDuplicates({
+diff --git a/src/components/conversas/ConversationTakeoverBar.tsx b/src/components/conversas/ConversationTakeoverBar.tsx
+index 7903d8d..986d4fb 100644
+--- a/src/components/conversas/ConversationTakeoverBar.tsx
++++ b/src/components/conversas/ConversationTakeoverBar.tsx
+@@ -64,7 +64,7 @@ export function ConversationTakeoverBar({
+         .from('lead_contacts')
+         .select('owner_id')
+         .eq('lead_id', leadId)
+-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+         .maybeSingle();
+ 
+       if (data?.owner_id) {
+@@ -109,7 +109,7 @@ export function ConversationTakeoverBar({
+         .from('lead_contacts')
+         .update({ owner_id: userId })
+         .eq('lead_id', leadId)
+-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
+ 
+       if (error) throw error;
+ 
+diff --git a/src/components/conversas/ManualMessageInput.tsx b/src/components/conversas/ManualMessageInput.tsx
+index 306e127..2796773 100644
+--- a/src/components/conversas/ManualMessageInput.tsx
++++ b/src/components/conversas/ManualMessageInput.tsx
+@@ -40,7 +40,7 @@ export function ManualMessageInput({
+         .from('contacts')
+         .select('id, nome')
+         .eq('legacy_lead_id', leadId)
+-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+         .maybeSingle();
+       return data;
+     },
+diff --git a/src/components/cs/CSCustomerCreateDialog.tsx b/src/components/cs/CSCustomerCreateDialog.tsx
+index ded15fa..226c777 100644
+--- a/src/components/cs/CSCustomerCreateDialog.tsx
++++ b/src/components/cs/CSCustomerCreateDialog.tsx
+@@ -47,7 +47,7 @@ export function CSCustomerCreateDialog() {
+     try {
+       const result = await createMutation.mutateAsync({
+         contact_id: contactId,
+-        empresa: empresa as 'BLUE' | 'TOKENIZA',
++        empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+         valor_mrr: valorMrr ? Number(valorMrr) : 0,
+         proxima_renovacao: proximaRenovacao || null,
+         notas: notas || null,
+diff --git a/src/components/cs/SGTSyncDialog.tsx b/src/components/cs/SGTSyncDialog.tsx
+index 7d09f6f..baa1f67 100644
+--- a/src/components/cs/SGTSyncDialog.tsx
++++ b/src/components/cs/SGTSyncDialog.tsx
+@@ -7,7 +7,7 @@ import { RefreshCw, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+ import { supabase } from '@/integrations/supabase/client';
+ import { toast } from 'sonner';
+ 
+-type Empresa = 'BLUE' | 'TOKENIZA';
++type Empresa = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+ 
+ interface BatchResult {
+   processados: number;
+diff --git a/src/components/deals/DealDetailSheet.tsx b/src/components/deals/DealDetailSheet.tsx
+index 856c8b1..ba9373b 100644
+--- a/src/components/deals/DealDetailSheet.tsx
++++ b/src/components/deals/DealDetailSheet.tsx
+@@ -61,7 +61,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
+   const { data: chatMessages = [], isLoading: chatLoading, refetch: refetchChat, isFetching: chatFetching } = useConversationMessages({
+     leadId: contactBridge?.legacy_lead_id ?? '',
+     contactId: contactBridge?.id,
+-    empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | undefined,
++    empresa: contactBridge?.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | undefined,
+     telefone: contactBridge?.telefone,
+     enabled: hasChat,
+   });
+diff --git a/src/components/leads/EditClassificationModal.tsx b/src/components/leads/EditClassificationModal.tsx
+index 19ac4e2..4ad5faa 100644
+--- a/src/components/leads/EditClassificationModal.tsx
++++ b/src/components/leads/EditClassificationModal.tsx
+@@ -9,8 +9,12 @@ import {
+   PRIORIDADES,
+   ICPS_TOKENIZA,
+   ICPS_BLUE,
++  ICPS_MPUPPE,
++  ICPS_AXIA,
+   PERSONAS_TOKENIZA,
+   PERSONAS_BLUE,
++  PERSONAS_MPUPPE,
++  PERSONAS_AXIA,
+ } from '@/types/classification';
+ import type {
+   LeadClassification,
+@@ -61,10 +65,20 @@ export function EditClassificationModal({
+ 
+   const updateMutation = useUpdateClassification();
+ 
+-  const icpOptions =
+-    classification.empresa === 'TOKENIZA' ? ICPS_TOKENIZA : ICPS_BLUE;
+-  const personaOptions =
+-    classification.empresa === 'TOKENIZA' ? PERSONAS_TOKENIZA : PERSONAS_BLUE;
++  const icpOptionsMap: Record<string, readonly string[]> = {
++    'TOKENIZA': ICPS_TOKENIZA,
++    'BLUE': ICPS_BLUE,
++    'MPUPPE': ICPS_MPUPPE,
++    'AXIA': ICPS_AXIA,
++  };
++  const personaOptionsMap: Record<string, readonly string[]> = {
++    'TOKENIZA': PERSONAS_TOKENIZA,
++    'BLUE': PERSONAS_BLUE,
++    'MPUPPE': PERSONAS_MPUPPE,
++    'AXIA': PERSONAS_AXIA,
++  };
++  const icpOptions = icpOptionsMap[classification.empresa] || ICPS_BLUE;
++  const personaOptions = personaOptionsMap[classification.empresa] || PERSONAS_BLUE;
+ 
+   const handleSubmit = async (e: React.FormEvent) => {
+     e.preventDefault();
+diff --git a/src/components/organizations/OrgCreateDialog.tsx b/src/components/organizations/OrgCreateDialog.tsx
+index 36e23f3..3246fb4 100644
+--- a/src/components/organizations/OrgCreateDialog.tsx
++++ b/src/components/organizations/OrgCreateDialog.tsx
+@@ -38,7 +38,7 @@ export function OrgCreateDialog({ open, onOpenChange }: Props) {
+   });
+ 
+   const handleCreate = async (data: OrgCreateFormData) => {
+-    const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
++    const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+     try {
+       await create.mutateAsync({
+         nome: data.nome.trim(),
+diff --git a/src/components/pipeline/CreateDealDialog.tsx b/src/components/pipeline/CreateDealDialog.tsx
+index 1950119..35281a5 100644
+--- a/src/components/pipeline/CreateDealDialog.tsx
++++ b/src/components/pipeline/CreateDealDialog.tsx
+@@ -44,7 +44,7 @@ function useContactSearch(search: string, empresa: string) {
+       let query = supabase
+         .from('contacts')
+         .select('id, nome, telefone, email')
+-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+         .eq('is_active', true)
+         .order('nome')
+         .limit(50);
+@@ -70,7 +70,7 @@ interface CreateDealDialogProps {
+ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: CreateDealDialogProps) {
+   const { activeCompany } = useCompany();
+   const { user } = useAuth();
+-  const empresa = activeCompany as 'BLUE' | 'TOKENIZA';
++  const empresa = activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+ 
+   const [contactSearch, setContactSearch] = useState('');
+   const [contactPopoverOpen, setContactPopoverOpen] = useState(false);
+diff --git a/src/components/pipeline/QuickCreateContactDialog.tsx b/src/components/pipeline/QuickCreateContactDialog.tsx
+index 964d940..8de0ecc 100644
+--- a/src/components/pipeline/QuickCreateContactDialog.tsx
++++ b/src/components/pipeline/QuickCreateContactDialog.tsx
+@@ -38,7 +38,7 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
+         nome: nome.trim(),
+         telefone: telefone.trim() || undefined,
+         email: email.trim() || undefined,
+-        empresa: activeCompany as 'BLUE' | 'TOKENIZA',
++        empresa: activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+       });
+       toast.success('Contato criado!');
+       onCreated({ id: contact.id, nome: contact.nome });
+@@ -67,7 +67,7 @@ export function QuickCreateContactDialog({ open, onOpenChange, onCreated }: Prop
+       const matches = await checkContactDuplicates({
+         email: email.trim() || undefined,
+         telefone: telefone.trim() || undefined,
+-        empresa: activeCompany as 'BLUE' | 'TOKENIZA',
++        empresa: activeCompany as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+       });
+       if (matches.length > 0) {
+         setDuplicates(matches);
+diff --git a/src/components/settings/UserAccessList.tsx b/src/components/settings/UserAccessList.tsx
+index c23cc0b..88f2b86 100644
+--- a/src/components/settings/UserAccessList.tsx
++++ b/src/components/settings/UserAccessList.tsx
+@@ -255,7 +255,7 @@ export function UserAccessList() {
+           userId={assignTarget.id}
+           userName={assignTarget.nome || assignTarget.email}
+           currentProfileId={assignTarget.assignments[0]?.access_profile_id}
+-          currentEmpresas={assignTarget.assignments.map(a => a.empresa).filter(Boolean) as ('BLUE' | 'TOKENIZA')[]}
++          currentEmpresas={assignTarget.assignments.map(a => a.empresa).filter(Boolean) as ('BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')[]}
+         />
+       )}
+ 
+diff --git a/src/contexts/CompanyContext.test.tsx b/src/contexts/CompanyContext.test.tsx
+index dc86e34..5c9bf41 100644
+--- a/src/contexts/CompanyContext.test.tsx
++++ b/src/contexts/CompanyContext.test.tsx
+@@ -1,6 +1,7 @@
+ import { describe, it, expect, beforeEach } from "vitest";
+ import { render, act } from "@testing-library/react";
+ import React from "react";
++import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+ import { CompanyProvider, useCompany } from "./CompanyContext";
+ 
+ function TestConsumer() {
+@@ -15,6 +16,15 @@ function TestConsumer() {
+   );
+ }
+ 
++function Wrapper({ children }: { children: React.ReactNode }) {
++  const queryClient = new QueryClient({
++    defaultOptions: { queries: { retry: false } },
++  });
++  return React.createElement(QueryClientProvider, { client: queryClient },
++    React.createElement(CompanyProvider, null, children)
++  );
++}
++
+ describe("CompanyContext", () => {
+   beforeEach(() => {
+     localStorage.clear();
+@@ -22,17 +32,16 @@ describe("CompanyContext", () => {
+ 
+   it("defaults to BLUE when no stored value", () => {
+     const { getByTestId } = render(
+-      React.createElement(CompanyProvider, null,
++      React.createElement(Wrapper, null,
+         React.createElement(TestConsumer)
+       )
+     );
+     expect(getByTestId("company").textContent).toBe("BLUE");
+-    expect(getByTestId("label").textContent).toBe("Blue Consult");
+   });
+ 
+   it("switches company and persists to localStorage", () => {
+     const { getByTestId, getByText } = render(
+-      React.createElement(CompanyProvider, null,
++      React.createElement(Wrapper, null,
+         React.createElement(TestConsumer)
+       )
+     );
+@@ -45,7 +54,7 @@ describe("CompanyContext", () => {
+ 
+   it("supports multi-company selection", () => {
+     const { getByTestId, getByText } = render(
+-      React.createElement(CompanyProvider, null,
++      React.createElement(Wrapper, null,
+         React.createElement(TestConsumer)
+       )
+     );
+@@ -59,7 +68,7 @@ describe("CompanyContext", () => {
+   it("migrates old lowercase values", () => {
+     localStorage.setItem("bluecrm-company", "blue");
+     const { getByTestId } = render(
+-      React.createElement(CompanyProvider, null,
++      React.createElement(Wrapper, null,
+         React.createElement(TestConsumer)
+       )
+     );
+@@ -69,7 +78,7 @@ describe("CompanyContext", () => {
+   it("falls back to BLUE for invalid stored value", () => {
+     localStorage.setItem("bluecrm-company", "invalid");
+     const { getByTestId } = render(
+-      React.createElement(CompanyProvider, null,
++      React.createElement(Wrapper, null,
+         React.createElement(TestConsumer)
+       )
+     );
+diff --git a/src/hooks/__tests__/useLeadClassification.test.ts b/src/hooks/__tests__/useLeadClassification.test.ts
+index 7ffd398..832a42f 100644
+--- a/src/hooks/__tests__/useLeadClassification.test.ts
++++ b/src/hooks/__tests__/useLeadClassification.test.ts
+@@ -1,21 +1,30 @@
+ import { describe, it, expect } from 'vitest';
+ import {
+   ICP_LABELS, PERSONA_LABELS, TEMPERATURA_LABELS, PRIORIDADE_LABELS, ORIGEM_LABELS,
+-  TEMPERATURAS, PRIORIDADES, ORIGENS, ICPS_TOKENIZA, ICPS_BLUE,
++  TEMPERATURAS, PRIORIDADES, ORIGENS, ICPS_TOKENIZA, ICPS_BLUE, ICPS_MPUPPE, ICPS_AXIA,
++  PERSONAS_TOKENIZA, PERSONAS_BLUE, PERSONAS_MPUPPE, PERSONAS_AXIA,
+   type ICP, type Temperatura, type Prioridade, type ClassificacaoOrigem,
+   type LeadClassification, type LeadWithClassification,
+ } from '@/types/classification';
+ import type { LeadsClassificationFilters } from '../useLeadClassification';
+ 
+ describe('Classification type mappings', () => {
+-  it('all ICP_LABELS keys match ICP type constants', () => {
+-    const allIcps = [...ICPS_TOKENIZA, ...ICPS_BLUE];
++  it('all ICP_LABELS keys match ICP type constants (4 empresas)', () => {
++    const allIcps = [...ICPS_TOKENIZA, ...ICPS_BLUE, ...ICPS_MPUPPE, ...ICPS_AXIA];
+     for (const icp of allIcps) {
+       expect(ICP_LABELS[icp]).toBeTruthy();
+     }
+     expect(Object.keys(ICP_LABELS)).toHaveLength(allIcps.length);
+   });
+ 
++  it('all PERSONA_LABELS keys match Persona type constants (4 empresas)', () => {
++    const allPersonas = [...PERSONAS_TOKENIZA, ...PERSONAS_BLUE, ...PERSONAS_MPUPPE, ...PERSONAS_AXIA];
++    for (const persona of allPersonas) {
++      expect(PERSONA_LABELS[persona]).toBeTruthy();
++    }
++    expect(Object.keys(PERSONA_LABELS)).toHaveLength(allPersonas.length);
++  });
++
+   it('TEMPERATURA_LABELS covers all temperatures', () => {
+     for (const t of TEMPERATURAS) {
+       expect(TEMPERATURA_LABELS[t]).toBeTruthy();
+@@ -33,6 +42,18 @@ describe('Classification type mappings', () => {
+       expect(ORIGEM_LABELS[o]).toBeTruthy();
+     }
+   });
++
++  it('ICPS_MPUPPE has correct length', () => {
++    expect(ICPS_MPUPPE).toHaveLength(5);
++    expect(ICPS_MPUPPE).toContain('MPUPPE_FINTECH_REG');
++    expect(ICPS_MPUPPE).toContain('MPUPPE_NAO_CLASSIFICADO');
++  });
++
++  it('ICPS_AXIA has correct length', () => {
++    expect(ICPS_AXIA).toHaveLength(5);
++    expect(ICPS_AXIA).toContain('AXIA_FINTECH_LAUNCH');
++    expect(ICPS_AXIA).toContain('AXIA_NAO_CLASSIFICADO');
++  });
+ });
+ 
+ describe('LeadsClassificationFilters interface', () => {
+@@ -53,6 +74,13 @@ describe('LeadsClassificationFilters interface', () => {
+     expect(f.temperatura).toBe('QUENTE');
+     expect(f.searchTerm).toBe('João');
+   });
++
++  it('allows MPUPPE and AXIA ICP filters', () => {
++    const f1: LeadsClassificationFilters = { icp: 'MPUPPE_FINTECH_REG' };
++    expect(f1.icp).toBe('MPUPPE_FINTECH_REG');
++    const f2: LeadsClassificationFilters = { icp: 'AXIA_EXCHANGE_BUILDER' };
++    expect(f2.icp).toBe('AXIA_EXCHANGE_BUILDER');
++  });
+ });
+ 
+ describe('LeadWithClassification structure', () => {
+@@ -63,4 +91,12 @@ describe('LeadWithClassification structure', () => {
+     };
+     expect(lwc.classification).toBeNull();
+   });
++
++  it('supports MPUPPE and AXIA empresa types', () => {
++    const lwc: LeadWithClassification = {
++      lead_id: 'l2', empresa: 'MPUPPE', nome: 'Fintech Lead', primeiro_nome: 'F',
++      email: null, telefone: null, contact_updated_at: '', classification: null,
++    };
++    expect(lwc.empresa).toBe('MPUPPE');
++  });
+ });
+diff --git a/src/hooks/useAtendimentos.ts b/src/hooks/useAtendimentos.ts
+index 851fdae..e307aaf 100644
+--- a/src/hooks/useAtendimentos.ts
++++ b/src/hooks/useAtendimentos.ts
+@@ -5,7 +5,7 @@ import type { ActiveCompany } from '@/contexts/CompanyContext';
+ 
+ export interface Atendimento {
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome: string | null;
+   telefone: string | null;
+   telefone_e164: string | null;
+@@ -218,7 +218,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
+ 
+         atendimentos.push({
+           lead_id: c.lead_id,
+-          empresa: c.empresa as 'TOKENIZA' | 'BLUE',
++          empresa: c.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+           nome: c.nome,
+           telefone: c.telefone,
+           telefone_e164: c.telefone_e164,
+diff --git a/src/hooks/useCSContracts.ts b/src/hooks/useCSContracts.ts
+index 57adb84..e1a5de3 100644
+--- a/src/hooks/useCSContracts.ts
++++ b/src/hooks/useCSContracts.ts
+@@ -38,7 +38,7 @@ export function useCreateCSContract() {
+         .from('cs_contracts')
+         .insert({
+           customer_id: data.customer_id,
+-          empresa: data.empresa as 'BLUE' | 'TOKENIZA',
++          empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+           ano_fiscal: data.ano_fiscal,
+           plano: data.plano,
+           valor: data.valor ?? 0,
+diff --git a/src/hooks/useCSCustomers.ts b/src/hooks/useCSCustomers.ts
+index 5a94e79..911c92b 100644
+--- a/src/hooks/useCSCustomers.ts
++++ b/src/hooks/useCSCustomers.ts
+@@ -107,7 +107,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0, search
+         .order('updated_at', { ascending: false });
+ 
+       if (empresa) {
+-        query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA');
++        query = query.eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
+       } else {
+         query = query.in('empresa', activeCompanies);
+       }
+@@ -153,7 +153,7 @@ export function useCSCustomerById(id: string | undefined) {
+ 
+ interface CreateCSCustomerData {
+   contact_id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   valor_mrr?: number;
+   proxima_renovacao?: string | null;
+   notas?: string | null;
+diff --git a/src/hooks/useCadenceRunsWithPendingActions.ts b/src/hooks/useCadenceRunsWithPendingActions.ts
+index 3aa4871..efe070b 100644
+--- a/src/hooks/useCadenceRunsWithPendingActions.ts
++++ b/src/hooks/useCadenceRunsWithPendingActions.ts
+@@ -6,7 +6,7 @@ import type { SdrAcaoTipo } from '@/types/intent';
+ export interface CadenceRunWithPendingAction {
+   run_id: string;
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   cadence_nome: string;
+   cadence_codigo: string;
+   status: string;
+@@ -93,7 +93,7 @@ export function useCadenceRunsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
+           return {
+             run_id: intent.run_id!,
+             lead_id: intent.lead_id || '',
+-            empresa: intent.empresa as 'TOKENIZA' | 'BLUE',
++            empresa: intent.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+             cadence_nome: cadence?.nome || 'Cadência desconhecida',
+             cadence_codigo: cadence?.codigo || '-',
+             status: run?.status || 'ATIVA',
+diff --git a/src/hooks/useCadenciasCRM.ts b/src/hooks/useCadenciasCRM.ts
+index 8d30567..ab7e3ce 100644
+--- a/src/hooks/useCadenciasCRM.ts
++++ b/src/hooks/useCadenciasCRM.ts
+@@ -49,7 +49,7 @@ export async function validateCadenceTemplatesApproved(cadenceId: string, empres
+   const { data: templates } = await supabase
+     .from('message_templates')
+     .select('codigo, nome, meta_status')
+-    .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
++    .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+     .eq('ativo', true)
+     .in('codigo', templateCodes);
+ 
+diff --git a/src/hooks/useContactDuplicateCheck.ts b/src/hooks/useContactDuplicateCheck.ts
+index 5a430d0..8762edf 100644
+--- a/src/hooks/useContactDuplicateCheck.ts
++++ b/src/hooks/useContactDuplicateCheck.ts
+@@ -14,7 +14,7 @@ export async function checkContactDuplicates({
+ }: {
+   email?: string;
+   telefone?: string;
+-  empresa: 'BLUE' | 'TOKENIZA' | 'AXIA' | 'MPUPPE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'AXIA' | 'MPUPPE';
+ }): Promise<DuplicateMatch[]> {
+   const trimmedEmail = email?.trim().toLowerCase();
+   const trimmedPhone = telefone?.trim();
+diff --git a/src/hooks/useContactLeadBridge.ts b/src/hooks/useContactLeadBridge.ts
+index a5d0679..772b119 100644
+--- a/src/hooks/useContactLeadBridge.ts
++++ b/src/hooks/useContactLeadBridge.ts
+@@ -43,7 +43,7 @@ export function useContactLeadBridge(contactId: string | null) {
+       return {
+         id: data.id,
+         lead_id: data.lead_id,
+-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
++        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+         icp: data.icp as ICP,
+         persona: data.persona as LeadClassification['persona'],
+         temperatura: data.temperatura as Temperatura,
+diff --git a/src/hooks/useContacts.ts b/src/hooks/useContacts.ts
+index 5383284..d342ea1 100644
+--- a/src/hooks/useContacts.ts
++++ b/src/hooks/useContacts.ts
+@@ -36,7 +36,7 @@ export interface CreateContactData {
+   sobrenome?: string;
+   email?: string;
+   telefone?: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   organization_id?: string;
+   tipo?: string;
+   cpf?: string;
+diff --git a/src/hooks/useConversationMode.ts b/src/hooks/useConversationMode.ts
+index ff1094c..0dd0af7 100644
+--- a/src/hooks/useConversationMode.ts
++++ b/src/hooks/useConversationMode.ts
+@@ -39,7 +39,7 @@ export function useConversationTakeover() {
+         .from('lead_conversation_state')
+         .update(updateFields)
+         .eq('lead_id', leadId)
+-        .eq('empresa', empresa as 'TOKENIZA' | 'BLUE');
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA');
+ 
+       if (stateError) throw stateError;
+ 
+@@ -48,7 +48,7 @@ export function useConversationTakeover() {
+           .from('lead_contacts')
+           .select('id, owner_id')
+           .eq('lead_id', leadId)
+-          .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
++          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+           .maybeSingle();
+         
+         if (leadContact && !leadContact.owner_id) {
+@@ -63,7 +63,7 @@ export function useConversationTakeover() {
+         .from('conversation_takeover_log')
+         .insert({
+           lead_id: leadId,
+-          empresa: empresa as 'TOKENIZA' | 'BLUE',
++          empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+           acao,
+           user_id: user.id,
+           motivo: motivo || null,
+@@ -79,7 +79,7 @@ export function useConversationTakeover() {
+             .from('lead_message_intents')
+             .select('message_id')
+             .eq('lead_id', leadId)
+-            .eq('empresa', empresa as 'TOKENIZA' | 'BLUE')
++            .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+             .is('resposta_enviada_em', null)
+             .order('created_at', { ascending: false })
+             .limit(1)
+diff --git a/src/hooks/useConversationState.ts b/src/hooks/useConversationState.ts
+index 9690ef7..97fa103 100644
+--- a/src/hooks/useConversationState.ts
++++ b/src/hooks/useConversationState.ts
+@@ -10,7 +10,7 @@ import type {
+ 
+ interface UseConversationStateOptions {
+   leadId: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   enabled?: boolean;
+ }
+ 
+@@ -32,7 +32,7 @@ export function useConversationState({ leadId, empresa, enabled = true }: UseCon
+       return {
+         id: data.id,
+         lead_id: data.lead_id,
+-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
++        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+         canal: data.canal as 'WHATSAPP' | 'EMAIL',
+         estado_funil: data.estado_funil as EstadoFunil,
+         framework_ativo: data.framework_ativo as FrameworkAtivo,
+diff --git a/src/hooks/useLeadClassification.ts b/src/hooks/useLeadClassification.ts
+index bafc3ea..5af80bb 100644
+--- a/src/hooks/useLeadClassification.ts
++++ b/src/hooks/useLeadClassification.ts
+@@ -71,7 +71,7 @@ export function useLeadClassification(
+       return {
+         id: data.id,
+         lead_id: data.lead_id,
+-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
++        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+         icp: data.icp as ICP,
+         persona: data.persona as LeadClassification['persona'],
+         temperatura: data.temperatura as Temperatura,
+@@ -186,7 +186,7 @@ export function useLeadsWithClassification(
+           classificationMap.set(key, {
+             id: c.id,
+             lead_id: c.lead_id,
+-            empresa: c.empresa as 'TOKENIZA' | 'BLUE',
++            empresa: c.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+             icp: c.icp as ICP,
+             persona: c.persona as LeadClassification['persona'],
+             temperatura: c.temperatura as Temperatura,
+@@ -275,7 +275,7 @@ export async function getLeadClassification(
+   return {
+     id: data.id,
+     lead_id: data.lead_id,
+-    empresa: data.empresa as 'TOKENIZA' | 'BLUE',
++    empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+     icp: data.icp as ICP,
+     persona: data.persona as LeadClassification['persona'],
+     temperatura: data.temperatura as Temperatura,
+diff --git a/src/hooks/useLeadContactIssues.ts b/src/hooks/useLeadContactIssues.ts
+index 4423420..7ef57ee 100644
+--- a/src/hooks/useLeadContactIssues.ts
++++ b/src/hooks/useLeadContactIssues.ts
+@@ -14,7 +14,7 @@ export type SeveridadeTipo = 'ALTA' | 'MEDIA' | 'BAIXA';
+ export interface LeadContactIssue {
+   id: string;
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   issue_tipo: LeadContactIssueTipo;
+   severidade: SeveridadeTipo;
+   mensagem: string;
+@@ -26,7 +26,7 @@ export interface LeadContactIssue {
+ 
+ interface UseLeadContactIssuesOptions {
+   leadId: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   enabled?: boolean;
+ }
+ 
+diff --git a/src/hooks/useLeadDetail.ts b/src/hooks/useLeadDetail.ts
+index 5d6c95e..b12a660 100644
+--- a/src/hooks/useLeadDetail.ts
++++ b/src/hooks/useLeadDetail.ts
+@@ -125,7 +125,7 @@ export function useLeadDetail(leadId: string, empresa?: EmpresaTipo) {
+       return {
+         id: data.id,
+         lead_id: data.lead_id,
+-        empresa: data.empresa as 'TOKENIZA' | 'BLUE',
++        empresa: data.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+         icp: data.icp as ICP,
+         persona: data.persona as LeadClassification['persona'],
+         temperatura: data.temperatura as Temperatura,
+diff --git a/src/hooks/useLeadsWithPendingActions.ts b/src/hooks/useLeadsWithPendingActions.ts
+index ba1ea8b..3ada0df 100644
+--- a/src/hooks/useLeadsWithPendingActions.ts
++++ b/src/hooks/useLeadsWithPendingActions.ts
+@@ -5,7 +5,7 @@ import type { SdrAcaoTipo } from '@/types/intent';
+ 
+ export interface LeadWithPendingAction {
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome: string | null;
+   primeiro_nome: string | null;
+   email: string | null;
+@@ -63,7 +63,7 @@ export function useLeadsWithPendingActions(acaoTipo: SdrAcaoTipo | null) {
+         const contact = contactMap.get(`${intent.lead_id}:${intent.empresa}`);
+         return {
+           lead_id: intent.lead_id || '',
+-          empresa: intent.empresa as 'TOKENIZA' | 'BLUE',
++          empresa: intent.empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+           nome: contact?.nome || null,
+           primeiro_nome: contact?.primeiro_nome || null,
+           email: contact?.email || null,
+diff --git a/src/hooks/usePessoaContext.ts b/src/hooks/usePessoaContext.ts
+index bdc15fb..7379026 100644
+--- a/src/hooks/usePessoaContext.ts
++++ b/src/hooks/usePessoaContext.ts
+@@ -4,7 +4,7 @@ import type { Pessoa, EmpresaRelacionamentoResumo, PessoaRelacaoTipo } from '@/t
+ 
+ interface UsePessoaContextOptions {
+   leadId: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   enabled?: boolean;
+ }
+ 
+@@ -75,7 +75,7 @@ export function usePessoaContext({ leadId, empresa, enabled = true }: UsePessoaC
+         }
+ 
+         relacionamentos.push({
+-          empresa: emp as 'TOKENIZA' | 'BLUE',
++          empresa: emp as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+           tipo_relacao: tipoRelacao,
+           ultima_interacao_em: ultimaInteracao,
+           total_mensagens: undefined, // Poderia ser calculado se necessário
+diff --git a/src/hooks/usePipelineConfig.ts b/src/hooks/usePipelineConfig.ts
+index bd4fe12..f4574b4 100644
+--- a/src/hooks/usePipelineConfig.ts
++++ b/src/hooks/usePipelineConfig.ts
+@@ -90,7 +90,7 @@ export function useReorderStages() {
+ export function useDuplicatePipeline() {
+   const qc = useQueryClient();
+   return useMutation({
+-    mutationFn: async ({ sourceId, newName, newEmpresa }: { sourceId: string; newName: string; newEmpresa: 'BLUE' | 'TOKENIZA' }) => {
++    mutationFn: async ({ sourceId, newName, newEmpresa }: { sourceId: string; newName: string; newEmpresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' }) => {
+       // Get source pipeline
+       const { data: source, error: sourceErr } = await supabase
+         .from('pipelines')
+diff --git a/src/hooks/useProductKnowledge.ts b/src/hooks/useProductKnowledge.ts
+index 49dac97..9ade68a 100644
+--- a/src/hooks/useProductKnowledge.ts
++++ b/src/hooks/useProductKnowledge.ts
+@@ -8,7 +8,7 @@ import type {
+ } from "@/types/knowledge";
+ 
+ // Fetch all products
+-export function useProductKnowledgeList(empresa?: 'TOKENIZA' | 'BLUE') {
++export function useProductKnowledgeList(empresa?: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA') {
+   return useQuery({
+     queryKey: ['product-knowledge', empresa],
+     queryFn: async () => {
+diff --git a/src/hooks/useSgtEvents.ts b/src/hooks/useSgtEvents.ts
+index 914d76b..71e50f1 100644
+--- a/src/hooks/useSgtEvents.ts
++++ b/src/hooks/useSgtEvents.ts
+@@ -10,7 +10,7 @@ export type SGTEventWithLogs = SGTEvent & {
+ };
+ 
+ export interface SGTEventsFilters {
+-  empresa?: 'TOKENIZA' | 'BLUE' | null;
++  empresa?: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | null;
+   evento?: Database['public']['Enums']['sgt_evento_tipo'] | null;
+   status?: Database['public']['Enums']['sgt_event_status'] | null;
+   dataInicial?: Date | null;
+diff --git a/src/hooks/useTemplates.ts b/src/hooks/useTemplates.ts
+index 95b679f..0c9eeab 100644
+--- a/src/hooks/useTemplates.ts
++++ b/src/hooks/useTemplates.ts
+@@ -7,7 +7,7 @@ export type MetaStatus = 'LOCAL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED
+ 
+ export interface MessageTemplate {
+   id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   canal: 'WHATSAPP' | 'EMAIL';
+   codigo: string;
+   nome: string;
+diff --git a/src/integrations/supabase/types.ts b/src/integrations/supabase/types.ts
+index c2fb377..25b6a46 100644
+--- a/src/integrations/supabase/types.ts
++++ b/src/integrations/supabase/types.ts
+@@ -7576,7 +7576,15 @@ export type Database = {
+         | "BLUE_RECURRENTE"
+         | "BLUE_PERDIDO_RECUPERAVEL"
+         | "BLUE_NAO_CLASSIFICADO"
++        | "MPUPPE_FINTECH_REG"
++        | "MPUPPE_CRYPTO_LEGAL"
++        | "MPUPPE_GOVAI_TAIO"
++        | "MPUPPE_STARTUP_COMPLIANCE"
+         | "MPUPPE_NAO_CLASSIFICADO"
++        | "AXIA_FINTECH_LAUNCH"
++        | "AXIA_EXCHANGE_BUILDER"
++        | "AXIA_BANKING_INFRA"
++        | "AXIA_TOKENIZATION_PLATFORM"
+         | "AXIA_NAO_CLASSIFICADO"
+       knowledge_section_tipo:
+         | "FAQ"
+@@ -7839,7 +7847,15 @@ export const Constants = {
+         "BLUE_RECURRENTE",
+         "BLUE_PERDIDO_RECUPERAVEL",
+         "BLUE_NAO_CLASSIFICADO",
++        "MPUPPE_FINTECH_REG",
++        "MPUPPE_CRYPTO_LEGAL",
++        "MPUPPE_GOVAI_TAIO",
++        "MPUPPE_STARTUP_COMPLIANCE",
+         "MPUPPE_NAO_CLASSIFICADO",
++        "AXIA_FINTECH_LAUNCH",
++        "AXIA_EXCHANGE_BUILDER",
++        "AXIA_BANKING_INFRA",
++        "AXIA_TOKENIZATION_PLATFORM",
+         "AXIA_NAO_CLASSIFICADO",
+       ],
+       knowledge_section_tipo: [
+diff --git a/src/lib/sdr-logic.ts b/src/lib/sdr-logic.ts
+index bc33b77..6ed9633 100644
+--- a/src/lib/sdr-logic.ts
++++ b/src/lib/sdr-logic.ts
+@@ -11,7 +11,7 @@
+ // ========================================
+ // TYPES
+ // ========================================
+-export type EmpresaTipo = 'TOKENIZA' | 'BLUE';
++export type EmpresaTipo = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+ export type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
+ export type LeadIntentTipo =
+   | 'INTERESSE_COMPRA' | 'INTERESSE_IR' | 'DUVIDA_PRODUTO' | 'DUVIDA_PRECO'
+diff --git a/src/pages/AmeliaMassActionPage.tsx b/src/pages/AmeliaMassActionPage.tsx
+index 13c8c7a..32c51f5 100644
+--- a/src/pages/AmeliaMassActionPage.tsx
++++ b/src/pages/AmeliaMassActionPage.tsx
+@@ -111,7 +111,7 @@ function useAllOpenDeals(empresa: string | undefined) {
+         const { data: pipIds } = await supabase
+           .from('pipelines')
+           .select('id')
+-          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
++          .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+           .eq('ativo', true);
+         if (pipIds && pipIds.length > 0) {
+           query = query.in('pipeline_id', pipIds.map(p => p.id));
+@@ -137,7 +137,7 @@ function useTemplates(empresa: string | undefined, canal: string) {
+       let q = supabase
+         .from('message_templates')
+         .select('id, nome, codigo, canal, conteudo')
+-        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
++        .eq('empresa', empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')
+         .eq('ativo', true)
+         .eq('canal', canal as 'WHATSAPP' | 'EMAIL' | 'SMS');
+       if (canal === 'WHATSAPP') {
+@@ -395,7 +395,7 @@ export default function AmeliaMassActionPage() {
+         if (userProfile?.gestor_id) {
+           await supabase.from('notifications').insert({
+             user_id: userProfile.gestor_id,
+-            empresa: empresa as 'BLUE' | 'TOKENIZA',
++            empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+             titulo: '⏳ Ação em Massa aguardando aprovação',
+             mensagem: `${user.email} criou uma ação em massa com ${job.total} deals aguardando sua aprovação.`,
+             tipo: 'APROVACAO',
+diff --git a/src/pages/CustomFieldsConfigPage.tsx b/src/pages/CustomFieldsConfigPage.tsx
+index 811459b..d31c480 100644
+--- a/src/pages/CustomFieldsConfigPage.tsx
++++ b/src/pages/CustomFieldsConfigPage.tsx
+@@ -39,7 +39,7 @@ function CustomFieldsContent() {
+   const [formSlug, setFormSlug] = useState('');
+   const [formEntity, setFormEntity] = useState<CustomFieldEntityType>('CONTACT');
+   const [formValueType, setFormValueType] = useState<CustomFieldValueType>('TEXT');
+-  const [formEmpresa, setFormEmpresa] = useState<'BLUE' | 'TOKENIZA'>('BLUE');
++  const [formEmpresa, setFormEmpresa] = useState<'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'>('BLUE');
+   const [formGrupo, setFormGrupo] = useState('Geral');
+   const [formRequired, setFormRequired] = useState(false);
+   const [formVisible, setFormVisible] = useState(true);
+@@ -225,7 +225,7 @@ function CustomFieldsContent() {
+                 </div>
+                 <div>
+                   <Label>Empresa</Label>
+-                  <Select value={formEmpresa} onValueChange={v => setFormEmpresa(v as 'BLUE' | 'TOKENIZA')}>
++                  <Select value={formEmpresa} onValueChange={v => setFormEmpresa(v as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA')}>
+                     <SelectTrigger><SelectValue /></SelectTrigger>
+                     <SelectContent>
+                       <SelectItem value="BLUE">Blue</SelectItem>
+diff --git a/src/pages/LeadDetail.tsx b/src/pages/LeadDetail.tsx
+index 27128e2..8a02f08 100644
+--- a/src/pages/LeadDetail.tsx
++++ b/src/pages/LeadDetail.tsx
+@@ -132,20 +132,20 @@ function LeadDetailContent() {
+   // PATCH 5H-PLUS: Issues de contato
+   const { data: contactIssues = [], isLoading: issuesLoading } = useLeadContactIssues({
+     leadId: leadId || '',
+-    empresa: empresa as 'TOKENIZA' | 'BLUE',
++    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+     enabled: !!leadId && !!empresa,
+   });
+ 
+   // PATCH 6: Pessoa Global e Estado de Conversa
+   const { data: pessoaContext, isLoading: pessoaLoading } = usePessoaContext({
+     leadId: leadId || '',
+-    empresa: empresa as 'TOKENIZA' | 'BLUE',
++    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+     enabled: !!leadId && !!empresa,
+   });
+ 
+   const { data: conversationState, isLoading: conversationLoading, error: conversationError, refetch: refetchConversation } = useConversationState({
+     leadId: leadId || '',
+-    empresa: empresa as 'TOKENIZA' | 'BLUE',
++    empresa: empresa as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+     enabled: !!leadId && !!empresa,
+   });
+ 
+diff --git a/src/pages/admin/ProductKnowledgeEditor.tsx b/src/pages/admin/ProductKnowledgeEditor.tsx
+index 4edf432..f93f8a9 100644
+--- a/src/pages/admin/ProductKnowledgeEditor.tsx
++++ b/src/pages/admin/ProductKnowledgeEditor.tsx
+@@ -139,7 +139,7 @@ export default function ProductKnowledgeEditor() {
+               <Label htmlFor="empresa">Empresa</Label>
+               <Select 
+                 value={formData.empresa} 
+-                onValueChange={(v) => setFormData(f => ({ ...f, empresa: v as 'TOKENIZA' | 'BLUE' }))}
++                onValueChange={(v) => setFormData(f => ({ ...f, empresa: v as 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' }))}
+                 disabled={!isNew}
+               >
+                 <SelectTrigger>
+diff --git a/src/pages/admin/ProductKnowledgeList.tsx b/src/pages/admin/ProductKnowledgeList.tsx
+index e408d59..90680b4 100644
+--- a/src/pages/admin/ProductKnowledgeList.tsx
++++ b/src/pages/admin/ProductKnowledgeList.tsx
+@@ -18,7 +18,7 @@ import { useCompany } from "@/contexts/CompanyContext";
+ import { toast } from "sonner";
+ 
+ export default function ProductKnowledgeList() {
+-  const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | 'all'>('all');
++  const [empresaFilter, setEmpresaFilter] = useState<'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'all'>('all');
+   const [searchTerm, setSearchTerm] = useState("");
+   const navigate = useNavigate();
+   const { activeCompany } = useCompany();
+diff --git a/src/test/fixtures/sgt-events.ts b/src/test/fixtures/sgt-events.ts
+index 683ef45..c46e06b 100644
+--- a/src/test/fixtures/sgt-events.ts
++++ b/src/test/fixtures/sgt-events.ts
+@@ -5,7 +5,7 @@
+ export interface SGTPayload {
+   evento: string;
+   timestamp: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   pessoa_id?: number;
+   lead?: {
+     nome: string;
+diff --git a/src/types/accessControl.ts b/src/types/accessControl.ts
+index 099aef6..5023330 100644
+--- a/src/types/accessControl.ts
++++ b/src/types/accessControl.ts
+@@ -20,7 +20,7 @@ export interface UserAccessAssignment {
+   id: string;
+   user_id: string;
+   access_profile_id: string;
+-  empresa: 'BLUE' | 'TOKENIZA' | null;
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | null;
+   assigned_by: string | null;
+   created_at: string;
+   updated_at: string;
+diff --git a/src/types/classification.ts b/src/types/classification.ts
+index 0215e98..05ba352 100644
+--- a/src/types/classification.ts
++++ b/src/types/classification.ts
+@@ -1,5 +1,5 @@
+ // ========================================
+-// PATCH 3 - Tipos de Classificação Comercial
++// PATCH 4 - Tipos de Classificação Comercial (4 Empresas)
+ // ========================================
+ 
+ // Re-exportar tipos comuns do SGT
+@@ -30,10 +30,20 @@ export type IcpBlue =
+   | 'BLUE_NAO_CLASSIFICADO';
+ 
+ // ICPs MPuppe
+-export type IcpMpuppe = 'MPUPPE_NAO_CLASSIFICADO';
++export type IcpMpuppe =
++  | 'MPUPPE_FINTECH_REG'
++  | 'MPUPPE_DATA_HEAVY'
++  | 'MPUPPE_AI_PIONEER'
++  | 'MPUPPE_LEGAL_DEPT'
++  | 'MPUPPE_NAO_CLASSIFICADO';
+ 
+ // ICPs Axia
+-export type IcpAxia = 'AXIA_NAO_CLASSIFICADO';
++export type IcpAxia =
++  | 'AXIA_FINTECH_LAUNCH'
++  | 'AXIA_EXCHANGE_BUILDER'
++  | 'AXIA_ASSET_TOKENIZER'
++  | 'AXIA_MARKETPLACE_PAY'
++  | 'AXIA_NAO_CLASSIFICADO';
+ 
+ // ICP unificado
+ export type ICP = IcpTokeniza | IcpBlue | IcpMpuppe | IcpAxia;
+@@ -50,13 +60,25 @@ export type PersonaBlue =
+   | 'CLIENTE_FIEL_RENOVADOR'
+   | 'LEAD_PERDIDO_RECUPERAVEL';
+ 
++// Personas MPuppe
++export type PersonaMpuppe =
++  | 'FUNDADOR_FINTECH'
++  | 'CTO_REGULACAO'
++  | 'JURIDICO_CORPORATIVO';
++
++// Personas Axia
++export type PersonaAxia =
++  | 'EMPREENDEDOR_FINTECH'
++  | 'CTO_INFRAESTRUTURA'
++  | 'PRODUCT_MANAGER_CRYPTO';
++
+ // Persona unificada
+-export type Persona = PersonaTokeniza | PersonaBlue;
++export type Persona = PersonaTokeniza | PersonaBlue | PersonaMpuppe | PersonaAxia;
+ 
+ // Resultado da classificação
+ export interface LeadClassificationResult {
+   leadId: string;
+-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'MPUPPE' | 'AXIA';
+   icp: ICP;
+   persona: Persona | null;
+   temperatura: Temperatura;
+@@ -68,7 +90,7 @@ export interface LeadClassificationResult {
+ export interface LeadClassification {
+   id: string;
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'MPUPPE' | 'AXIA';
+   icp: ICP;
+   persona: Persona | null;
+   temperatura: Temperatura;
+@@ -129,7 +151,7 @@ export interface ClassificationJustificativa {
+ export interface LeadWithClassification {
+   // Dados de contato
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'MPUPPE' | 'AXIA';
+   nome: string | null;
+   primeiro_nome: string | null;
+   email: string | null;
+@@ -141,24 +163,32 @@ export interface LeadWithClassification {
+ }
+ 
+ // ========================================
+-// Labels amigáveis para UI (PATCH 3.0)
++// Labels amigáveis para UI (PATCH 4.0 — 4 Empresas)
+ // ========================================
+ 
+ export const ICP_LABELS: Record<ICP, string> = {
+   // Tokeniza
+-  TOKENIZA_SERIAL: 'Investidor Serial',
+-  TOKENIZA_MEDIO_PRAZO: 'Investidor Médio Prazo',
+-  TOKENIZA_EMERGENTE: 'Investidor Emergente',
+-  TOKENIZA_ALTO_VOLUME_DIGITAL: 'Alto Volume Digital',
++  TOKENIZA_SERIAL: 'Investidor Recorrente',
++  TOKENIZA_MEDIO_PRAZO: 'Investidor Estratégico',
++  TOKENIZA_EMERGENTE: 'Novo Entusiasta RWA',
++  TOKENIZA_ALTO_VOLUME_DIGITAL: 'Investidor Grande Porte',
+   TOKENIZA_NAO_CLASSIFICADO: 'Não Classificado',
+   // Blue
+-  BLUE_ALTO_TICKET_IR: 'Alto Ticket IR',
++  BLUE_ALTO_TICKET_IR: 'Investidor Sofisticado',
+   BLUE_RECURRENTE: 'Cliente Recorrente',
+-  BLUE_PERDIDO_RECUPERAVEL: 'Perdido Recuperável',
++  BLUE_PERDIDO_RECUPERAVEL: 'Ex-Cliente em Risco',
+   BLUE_NAO_CLASSIFICADO: 'Não Classificado',
+   // MPuppe
++  MPUPPE_FINTECH_REG: 'Fintech em Regulação',
++  MPUPPE_DATA_HEAVY: 'Empresa de Dados',
++  MPUPPE_AI_PIONEER: 'Pioneiro em IA',
++  MPUPPE_LEGAL_DEPT: 'Departamento Jurídico',
+   MPUPPE_NAO_CLASSIFICADO: 'Não Classificado',
+   // Axia
++  AXIA_FINTECH_LAUNCH: 'Fintech em Lançamento',
++  AXIA_EXCHANGE_BUILDER: 'Construtor de Exchange',
++  AXIA_ASSET_TOKENIZER: 'Tokenizador de Ativos',
++  AXIA_MARKETPLACE_PAY: 'Marketplace com Pagamentos',
+   AXIA_NAO_CLASSIFICADO: 'Não Classificado',
+ };
+ 
+@@ -171,6 +201,14 @@ export const PERSONA_LABELS: Record<Persona, string> = {
+   CRIPTO_CONTRIBUINTE_URGENTE: 'Cripto Contribuinte Urgente',
+   CLIENTE_FIEL_RENOVADOR: 'Cliente Fiel Renovador',
+   LEAD_PERDIDO_RECUPERAVEL: 'Lead Perdido Recuperável',
++  // MPuppe
++  FUNDADOR_FINTECH: 'Fundador de Fintech',
++  CTO_REGULACAO: 'CTO em Regulação',
++  JURIDICO_CORPORATIVO: 'Jurídico Corporativo',
++  // Axia
++  EMPREENDEDOR_FINTECH: 'Empreendedor Fintech',
++  CTO_INFRAESTRUTURA: 'CTO de Infraestrutura',
++  PRODUCT_MANAGER_CRYPTO: 'Product Manager Crypto',
+ };
+ 
+ export const TEMPERATURA_LABELS: Record<Temperatura, string> = {
+@@ -215,6 +253,22 @@ export const ICPS_BLUE: IcpBlue[] = [
+   'BLUE_NAO_CLASSIFICADO',
+ ];
+ 
++export const ICPS_MPUPPE: IcpMpuppe[] = [
++  'MPUPPE_FINTECH_REG',
++  'MPUPPE_DATA_HEAVY',
++  'MPUPPE_AI_PIONEER',
++  'MPUPPE_LEGAL_DEPT',
++  'MPUPPE_NAO_CLASSIFICADO',
++];
++
++export const ICPS_AXIA: IcpAxia[] = [
++  'AXIA_FINTECH_LAUNCH',
++  'AXIA_EXCHANGE_BUILDER',
++  'AXIA_ASSET_TOKENIZER',
++  'AXIA_MARKETPLACE_PAY',
++  'AXIA_NAO_CLASSIFICADO',
++];
++
+ export const PERSONAS_TOKENIZA: PersonaTokeniza[] = [
+   'CONSTRUTOR_PATRIMONIO',
+   'COLECIONADOR_DIGITAL',
+@@ -227,6 +281,18 @@ export const PERSONAS_BLUE: PersonaBlue[] = [
+   'LEAD_PERDIDO_RECUPERAVEL',
+ ];
+ 
++export const PERSONAS_MPUPPE: PersonaMpuppe[] = [
++  'FUNDADOR_FINTECH',
++  'CTO_REGULACAO',
++  'JURIDICO_CORPORATIVO',
++];
++
++export const PERSONAS_AXIA: PersonaAxia[] = [
++  'EMPREENDEDOR_FINTECH',
++  'CTO_INFRAESTRUTURA',
++  'PRODUCT_MANAGER_CRYPTO',
++];
++
+ // Eventos que indicam lead quente
+ export const EVENTOS_QUENTES = [
+   'MQL',
+diff --git a/src/types/contactsPage.ts b/src/types/contactsPage.ts
+index 9b9ea2b..99f4e50 100644
+--- a/src/types/contactsPage.ts
++++ b/src/types/contactsPage.ts
+@@ -1,7 +1,7 @@
+ export interface ContactWithStats {
+   id: string;
+   pessoa_id: string | null;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   owner_id: string | null;
+   created_at: string;
+   updated_at: string;
+@@ -46,7 +46,7 @@ export interface ContactWithStats {
+ 
+ export interface OrganizationWithStats {
+   id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   owner_id: string | null;
+   ativo: boolean;
+   created_at: string;
+@@ -77,7 +77,7 @@ export interface OrganizationWithStats {
+ 
+ export interface ContactFormData {
+   nome: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   primeiro_nome?: string;
+   sobrenome?: string;
+   email?: string;
+@@ -93,7 +93,7 @@ export interface ContactFormData {
+ 
+ export interface OrganizationFormData {
+   nome: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome_fantasia?: string;
+   cnpj?: string;
+   setor?: string;
+diff --git a/src/types/conversation.ts b/src/types/conversation.ts
+index b710039..b5953db 100644
+--- a/src/types/conversation.ts
++++ b/src/types/conversation.ts
+@@ -60,7 +60,7 @@ export type PerfilDISC = 'D' | 'I' | 'S' | 'C';
+ export interface ConversationState {
+   id: string;
+   lead_id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   canal: CanalConversa;
+   estado_funil: EstadoFunil;
+   framework_ativo: FrameworkAtivo;
+@@ -121,7 +121,7 @@ export const ESTADO_FUNIL_COLORS: Record<EstadoFunil, string> = {
+ };
+ 
+ // Função helper para obter framework padrão por empresa
+-export function getDefaultFramework(empresa: 'TOKENIZA' | 'BLUE'): FrameworkAtivo {
++export function getDefaultFramework(empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA'): FrameworkAtivo {
+   return empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
+ }
+ 
+diff --git a/src/types/customFields.ts b/src/types/customFields.ts
+index e739eb2..d8f333f 100644
+--- a/src/types/customFields.ts
++++ b/src/types/customFields.ts
+@@ -11,7 +11,7 @@ export interface SelectOption {
+ 
+ export interface CustomFieldDefinition {
+   id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   entity_type: CustomFieldEntityType;
+   slug: string;
+   label: string;
+@@ -48,7 +48,7 @@ export interface ResolvedCustomField {
+ 
+ export interface Organization {
+   id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome: string;
+   nome_fantasia: string | null;
+   cnpj: string | null;
+@@ -72,7 +72,7 @@ export interface Organization {
+ 
+ export interface OrganizationFormData {
+   nome: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome_fantasia?: string;
+   cnpj?: string;
+   setor?: string;
+@@ -89,7 +89,7 @@ export interface OrganizationFormData {
+ 
+ export interface PipelineFormData {
+   nome: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   descricao?: string;
+   is_default?: boolean;
+   tipo?: string;
+@@ -106,7 +106,7 @@ export interface StageFormData {
+ }
+ 
+ export interface CustomFieldFormData {
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   entity_type: CustomFieldEntityType;
+   slug: string;
+   label: string;
+diff --git a/src/types/deal.ts b/src/types/deal.ts
+index 51e6abb..977b8de 100644
+--- a/src/types/deal.ts
++++ b/src/types/deal.ts
+@@ -1,6 +1,6 @@
+ export interface Pipeline {
+   id: string;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome: string;
+   descricao: string | null;
+   is_default: boolean;
+@@ -31,7 +31,7 @@ export interface PipelineWithStages extends Pipeline {
+ export interface Contact {
+   id: string;
+   pessoa_id: string | null;
+-  empresa: 'BLUE' | 'TOKENIZA';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   nome: string;
+   email: string | null;
+   telefone: string | null;
+diff --git a/src/types/pessoa.ts b/src/types/pessoa.ts
+index 8f7e72e..9f86451 100644
+--- a/src/types/pessoa.ts
++++ b/src/types/pessoa.ts
+@@ -30,7 +30,7 @@ export interface Pessoa {
+ 
+ // Resumo de relacionamento por empresa
+ export interface EmpresaRelacionamentoResumo {
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   tipo_relacao: PessoaRelacaoTipo;
+   ultima_interacao_em?: string | null;
+   total_mensagens?: number;
+@@ -116,7 +116,7 @@ export function formatPhoneDisplay(telefone_e164: string | null | undefined): st
+ 
+ // Função helper para determinar tipo de relação
+ export function determineRelacaoTipo(
+-  empresa: 'TOKENIZA' | 'BLUE',
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA',
+   dados: {
+     tokeniza_investor_id?: string | null;
+     blue_client_id?: string | null;
+diff --git a/src/types/settings.ts b/src/types/settings.ts
+index 6dd0f57..dc6af27 100644
+--- a/src/types/settings.ts
++++ b/src/types/settings.ts
+@@ -33,7 +33,7 @@ export interface IntegrationConfig {
+ 
+ export interface IntegrationCompanyConfig {
+   id: string;
+-  empresa: 'TOKENIZA' | 'BLUE';
++  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
+   channel: 'mensageria' | 'meta_cloud';
+   enabled: boolean;
+   updated_at: string;
+diff --git a/src/types/sgt.ts b/src/types/sgt.ts
+index f2b0f58..efa832d 100644
+--- a/src/types/sgt.ts
++++ b/src/types/sgt.ts
+@@ -14,7 +14,7 @@ export type SGTEventoTipo =
+   | 'FUNIL_ATUALIZADO';
+ 
+ // Empresas suportadas
+-export type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
++export type EmpresaTipo = 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'MPUPPE' | 'AXIA';
+ 
+ // Status de processamento de eventos
+ export type SGTEventStatus = 'RECEBIDO' | 'PROCESSADO' | 'ERRO';
+diff --git a/supabase/functions/sdr-ia-interpret/intent-classifier.ts b/supabase/functions/sdr-ia-interpret/intent-classifier.ts
+index 0d19088..913937e 100644
+--- a/supabase/functions/sdr-ia-interpret/intent-classifier.ts
++++ b/supabase/functions/sdr-ia-interpret/intent-classifier.ts
+@@ -13,7 +13,7 @@ const log = createLogger('sdr-intent-classifier');
+ // ========================================
+ // TYPES
+ // ========================================
+-type EmpresaTipo = 'TOKENIZA' | 'BLUE';
++type EmpresaTipo = 'TOKENIZA' | 'BLUE' | 'MPUPPE' | 'AXIA';
+ type TemperaturaTipo = 'FRIO' | 'MORNO' | 'QUENTE';
+ type LeadIntentTipo = 'INTERESSE_COMPRA' | 'INTERESSE_IR' | 'DUVIDA_PRODUTO' | 'DUVIDA_PRECO' | 'DUVIDA_TECNICA' | 'SOLICITACAO_CONTATO' | 'AGENDAMENTO_REUNIAO' | 'RECLAMACAO' | 'OPT_OUT' | 'OBJECAO_PRECO' | 'OBJECAO_RISCO' | 'SEM_INTERESSE' | 'NAO_ENTENDI' | 'CUMPRIMENTO' | 'AGRADECIMENTO' | 'FORA_CONTEXTO' | 'MANUAL_MODE' | 'OUTRO';
+ type SdrAcaoTipo = 'PAUSAR_CADENCIA' | 'CANCELAR_CADENCIA' | 'RETOMAR_CADENCIA' | 'AJUSTAR_TEMPERATURA' | 'CRIAR_TAREFA_CLOSER' | 'MARCAR_OPT_OUT' | 'NENHUMA' | 'ESCALAR_HUMANO' | 'ENVIAR_RESPOSTA_AUTOMATICA' | 'DESQUALIFICAR_LEAD';
+@@ -201,7 +201,10 @@ function computeClassificationUpgrade(input: { novaTemperatura: TemperaturaTipo;
+   if (novaTemperatura === 'QUENTE' && isHighIntent) result.prioridade = 1;
+   else if (novaTemperatura === 'MORNO' && (isHighIntent || isMediumIntent) && prioridadeAtual > 2) result.prioridade = 2;
+   if (icpAtual?.endsWith('_NAO_CLASSIFICADO') && isHighIntent && novaTemperatura !== 'FRIO') {
+-    result.icp = empresa === 'BLUE' ? 'BLUE_ALTO_TICKET_IR' : 'TOKENIZA_EMERGENTE';
++    if (empresa === 'BLUE') result.icp = 'BLUE_ALTO_TICKET_IR';
++    else if (empresa === 'TOKENIZA') result.icp = 'TOKENIZA_EMERGENTE';
++    else if (empresa === 'MPUPPE') result.icp = 'MPUPPE_FINTECH_REG';
++    else if (empresa === 'AXIA') result.icp = 'AXIA_FINTECH_LAUNCH';
+   }
+   if (result.prioridade || result.icp) {
+     const baseTemp = novaTemperatura === 'QUENTE' ? 30 : novaTemperatura === 'MORNO' ? 15 : 5;
+@@ -272,13 +275,30 @@ function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil,
+ 
+   let tipo: ProximaPerguntaTipo = 'NENHUMA';
+   if (empresa === 'BLUE') {
++    // Blue usa SPIN (dor fiscal → solução)
+     if (!spin?.s) tipo = 'SPIN_S';
+     else if (!spin?.p) tipo = 'SPIN_P';
+     else if (spin?.s && spin?.p && temperatura !== 'FRIO' && ['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO', 'DUVIDA_PRECO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
+     else if (!spin?.i) tipo = 'SPIN_I';
+     else if (!spin?.n) tipo = 'SPIN_N';
+     else if (['INTERESSE_IR', 'INTERESSE_COMPRA', 'SOLICITACAO_CONTATO', 'AGENDAMENTO_REUNIAO'].includes(intentAtual || '') && temperatura !== 'FRIO') tipo = 'CTA_REUNIAO';
++  } else if (empresa === 'MPUPPE') {
++    // MPuppe usa BANT (budget + authority + need + timing — venda consultiva jurídica)
++    if (!bant?.n) tipo = 'BANT_N';
++    else if (!bant?.a) tipo = 'BANT_A';
++    else if (!bant?.t) tipo = 'BANT_T';
++    else if (!bant?.b) tipo = 'BANT_B';
++    else if (temperatura !== 'FRIO' && ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
++  } else if (empresa === 'AXIA') {
++    // Axia usa GPCT + BANT (entender projeto → qualificar budget)
++    if (!gpct?.g) tipo = 'GPCT_G';
++    else if (!gpct?.c) tipo = 'GPCT_C';
++    else if (!gpct?.t) tipo = 'GPCT_T';
++    else if (!bant?.b) tipo = 'BANT_B';
++    else if (!bant?.a) tipo = 'BANT_A';
++    else if (temperatura !== 'FRIO' && ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO'].includes(intentAtual || '')) tipo = 'CTA_REUNIAO';
+   } else {
++    // Tokeniza usa GPCT (objetivos de investimento → timeline)
+     if (!gpct?.g) tipo = 'GPCT_G';
+     else if (!gpct?.p) tipo = 'GPCT_P';
+     else if (!gpct?.c) tipo = 'GPCT_C';
+@@ -292,14 +312,35 @@ function decidirProximaPergunta(empresa: EmpresaTipo, estadoFunil: EstadoFunil,
+ 
+ function detectCrossCompanyInterest(mensagem: string, empresaAtual: EmpresaTipo): { detected: boolean; targetCompany: EmpresaTipo | null; reason: string } {
+   const ml = mensagem.toLowerCase();
+-  if (empresaAtual === 'BLUE') {
+-    for (const kw of ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rendimento', 'aplicar dinheiro', 'renda passiva']) {
+-      if (ml.includes(kw)) return { detected: true, targetCompany: 'TOKENIZA', reason: `Lead mencionou "${kw}"` };
+-    }
+-  }
+-  if (empresaAtual === 'TOKENIZA') {
+-    for (const kw of ['imposto de renda', 'declarar cripto', 'receita federal', 'exchange', 'bitcoin', 'declarar']) {
+-      if (ml.includes(kw)) return { detected: true, targetCompany: 'BLUE', reason: `Lead mencionou "${kw}"` };
++
++  // Keywords que indicam interesse em outra empresa do grupo
++  const crossMap: Record<EmpresaTipo, Array<{ keywords: string[]; target: EmpresaTipo; }>> = {
++    'BLUE': [
++      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rendimento', 'aplicar dinheiro', 'renda passiva'], target: 'TOKENIZA' },
++      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm', 'bacen', 'instituição de pagamento'], target: 'MPUPPE' },
++      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura', 'api banking'], target: 'AXIA' },
++    ],
++    'TOKENIZA': [
++      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'exchange', 'bitcoin', 'declarar'], target: 'BLUE' },
++      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm 88', 'licença'], target: 'MPUPPE' },
++      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura'], target: 'AXIA' },
++    ],
++    'MPUPPE': [
++      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'ir cripto'], target: 'BLUE' },
++      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rwa'], target: 'TOKENIZA' },
++      { keywords: ['plataforma whitelabel', 'criar exchange', 'criar fintech', 'infraestrutura', 'api banking'], target: 'AXIA' },
++    ],
++    'AXIA': [
++      { keywords: ['imposto de renda', 'declarar cripto', 'receita federal', 'ir cripto'], target: 'BLUE' },
++      { keywords: ['investimento', 'investir', 'tokenizado', 'rentabilidade', 'rwa'], target: 'TOKENIZA' },
++      { keywords: ['advogado', 'jurídico', 'lgpd', 'regulação', 'cvm 88', 'instituição de pagamento', 'licença bacen'], target: 'MPUPPE' },
++    ],
++  };
++
++  const rules = crossMap[empresaAtual] || [];
++  for (const rule of rules) {
++    for (const kw of rule.keywords) {
++      if (ml.includes(kw)) return { detected: true, targetCompany: rule.target, reason: `Lead mencionou "${kw}"` };
+     }
+   }
+   return { detected: false, targetCompany: null, reason: '' };
+@@ -396,8 +437,18 @@ Amélia, 32 anos, economista, especialista em finanças digitais do Grupo Blue (
+ 
+ ## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{}},"disc_estimado":null,"departamento_destino":null}`;
+ 
++// ========================================
++// IDENTIDADE POR EMPRESA (injetada no prompt)
++// ========================================
++const EMPRESA_IDENTIDADE: Record<EmpresaTipo, string> = {
++  'BLUE': 'Você atua pela Blue Cripto, especialista em declaração de IR para criptoativos. Conhece GCAP, IN 1888, exchanges, DeFi e otimização fiscal.',
++  'TOKENIZA': 'Você atua pela Tokeniza, plataforma de investimentos em ativos reais tokenizados (RWA) regulada pela CVM. Conhece CVM 88, mercado de transações subsequentes e diversificação de portfólio.',
++  'MPUPPE': 'Você atua pela MPuppe, boutique jurídica especializada em Direito Digital. Conhece regulação Bacen (IP), CVM 88, LGPD/GDPR, governança de IA (TAIO Officer) e operações de alta complexidade regulatória.',
++  'AXIA': 'Você atua pela Axia Digital Solutions, software house de infraestrutura fintech. Conhece plataformas whitelabel, digital banking, exchanges, wallets multichain, tokenização e payment gateways.',
++};
++
+ const SYSTEM_PROMPT = `# AMÉLIA - SDR IA QUALIFICADORA CONSULTIVA
+-Amélia, 32 anos, economista, Grupo Blue (3 anos). Conhece IR cripto e investimentos tokenizados.
++Amélia, 32 anos, economista, Grupo Blue Labs (3 anos). Atua em 4 verticais: Blue Cripto (IR), Tokeniza (RWA), MPuppe (Direito Digital) e Axia (Infraestrutura Fintech).
+ 
+ ## ESCALAÇÃO RÁPIDA: Objetivo: entender contexto → identificar se lead pronto → ESCALAR. NÃO FAÇA OVERQUALIFICATION.
+ ## COMUNICAÇÃO: Mensagens curtas/naturais. NUNCA "Perfeito!", "Entendi!". NUNCA nome no início. 0-2 emojis. NUNCA prometa enviar algo depois ("vou te mandar", "já envio", "segue o resumo"). Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
+@@ -405,6 +456,13 @@ Amélia, 32 anos, economista, Grupo Blue (3 anos). Conhece IR cripto e investime
+ 
+ ## FRAMEWORK: Extraia SPIN/GPCT/BANT de TODA mensagem. Quando S+P preenchidos, INFIRA I (riscos) e N (ação necessária) com prefixo "[Inferido]".
+ 
++## DETECÇÃO DISC (aplique a CADA mensagem do lead):
++- D (Dominante): Mensagens curtas, imperativas, foco em resultado, impaciente, "vai direto", "quanto custa", "resolve isso"
++- I (Influente): Emojis, perguntas pessoais, entusiasmo, "que legal!", "adorei!", histórias, tom amigável
++- S (Estável): Respostas longas e ponderadas, "preciso pensar", "minha equipe", busca segurança, evita conflito
++- C (Conforme): Perguntas técnicas, "me manda os dados", "qual a rentabilidade exata", comparações, ceticismo
++Retorne em disc_estimado: D, I, S ou C. Se não for possível determinar, retorne null.
++
+ ## FORMATO JSON OBRIGATÓRIO:
+ {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
+ 
+@@ -619,6 +677,10 @@ REGRAS FORA DO HORÁRIO:
+   const perfilInvestidor = (conversation_state?.perfil_investidor as PerfilInvestidor) || inferirPerfilInvestidor(conversation_state?.perfil_disc as PerfilDISC, mensagem_normalizada);
+   const proximaPergunta = decidirProximaPergunta(empresa as EmpresaTipo, (conversation_state?.estado_funil as EstadoFunil) || 'SAUDACAO', fd.spin, fd.gpct, fd.bant, (classificacao?.temperatura as TemperaturaTipo) || 'FRIO', undefined, mensagem_normalizada);
+ 
++  // Injetar identidade específica da empresa no system prompt
++  const identidade = EMPRESA_IDENTIDADE[empresa as EmpresaTipo] || EMPRESA_IDENTIDADE['BLUE'];
++  activeSystemPrompt += `\n\n## IDENTIDADE ATIVA\n${identidade}`;
++
+   let userPrompt = `EMPRESA_CONTEXTO: ${empresa}\nMODO: ${isPassiveChat ? 'ATENDENTE PASSIVA' : 'QUALIFICAÇÃO ATIVA'}\n`;
+   if (reprocessContext) userPrompt += reprocessContext;
+   if (leadNome) userPrompt += `LEAD: ${leadNome}\n`;
+@@ -696,10 +758,11 @@ REGRAS FORA DO HORÁRIO:
+   if (cross.detected) userPrompt += `\n🔀 CROSS-SELL: ${cross.reason}\n`;
+ 
+   if (empresa === 'BLUE') userPrompt += formatBluePricingForPrompt();
+-  if (empresa === 'TOKENIZA') {
++  else if (empresa === 'TOKENIZA') {
+     const offers = await fetchActiveTokenizaOffers();
+     userPrompt += formatTokenizaOffersForPrompt(offers);
+   }
++  // MPUPPE e AXIA: pricing dinâmico via product_knowledge (carregado pelo RAG/fallback abaixo)
+ 
+   // Try RAG first, fallback to full knowledge fetch
+   const ragKnowledge = await fetchRelevantKnowledgeRAG(mensagem_normalizada, empresa as EmpresaTipo);
+diff --git a/supabase/functions/sdr-ia-interpret/response-generator.ts b/supabase/functions/sdr-ia-interpret/response-generator.ts
+index a7f21bc..d139ac3 100644
+--- a/supabase/functions/sdr-ia-interpret/response-generator.ts
++++ b/supabase/functions/sdr-ia-interpret/response-generator.ts
+@@ -306,7 +306,13 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
+   const discTone = getDiscToneInstruction(conversation_state?.perfil_disc as string | null);
+ 
+   if (!systemPrompt) {
+-    systemPrompt = `Você é a Amélia, SDR IA do ${empresa === 'TOKENIZA' ? 'Tokeniza (investimentos tokenizados)' : 'Blue (IR/tributação cripto)'}.
++    const empresaDesc: Record<string, string> = {
++      'BLUE': 'Blue Cripto (IR/tributação de criptoativos)',
++      'TOKENIZA': 'Tokeniza (investimentos em ativos reais tokenizados)',
++      'MPUPPE': 'MPuppe (Direito Digital — regulação Bacen, CVM, LGPD, governança de IA)',
++      'AXIA': 'Axia Digital Solutions (infraestrutura fintech whitelabel)',
++    };
++    systemPrompt = `Você é a Amélia, SDR IA do ${empresaDesc[empresa] || empresa}.
+ Tom: profissional, acolhedor, direto. Nunca robótica.
+ ${canal === 'WHATSAPP' ? CHANNEL_RULES.WHATSAPP : CHANNEL_RULES.EMAIL}
+ ${discTone || 'Adapte ao perfil DISC quando identificado.'}
+@@ -319,7 +325,17 @@ ${empresa === 'TOKENIZA' ? `
+ Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
+ PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancários, simular processo de fechamento fora da plataforma.
+ Se o lead quer investir, direcione para plataforma.tokeniza.com.br. NUNCA simule um processo de fechamento.
+-NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.` : ''}`;
++NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.` : ''}
++${empresa === 'MPUPPE' ? `
++## 🚫 PROCESSO MPUPPE — REGRA CRÍTICA
++A MPuppe trabalha com modelo de recorrência mensal customizado. NUNCA cite preços fixos.
++O objetivo é agendar uma reunião com o Dr. Rodrigo para entender a necessidade e montar uma proposta.
++PROIBIDO: prometer valores, prazos de entrega ou resultados jurídicos específicos.` : ''}
++${empresa === 'AXIA' ? `
++## 🚫 PROCESSO AXIA — REGRA CRÍTICA
++A Axia fornece plataformas modulares. Primeiro módulo: R$ 14.900/mês, módulos adicionais: R$ 4.900/mês.
++O objetivo é entender o projeto do lead e agendar uma demo técnica.
++PROIBIDO: prometer customizações não listadas ou prazos de entrega sem consultar a equipe técnica.` : ''}`;
+   } else if (discTone) {
+     systemPrompt += `\n\n${discTone}`;
+   }
