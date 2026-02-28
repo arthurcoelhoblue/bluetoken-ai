@@ -51,6 +51,13 @@ function loadScript(src: string): Promise<void> {
 // Click the answer/accept button inside the widget DOM
 function clickAnswerButton(): boolean {
   const selectors = [
+    // Zadarma v9 zdrm-* selectors (real widget classes)
+    '[class*="zdrm-webphone-call-btn"]',
+    '[class*="zdrm-ringing"]',
+    '[class*="zdrm"][class*="call-btn"]',
+    '[class*="zdrm"][class*="answer"]',
+    '[class*="zdrm"][class*="accept"]',
+    // Generic fallbacks
     '[class*="answer"]',
     '[class*="accept"]',
     '[class*="Answer"]',
@@ -62,7 +69,6 @@ function clickAnswerButton(): boolean {
     '[data-action="accept"]',
     'button[title*="answer" i]',
     'button[title*="accept" i]',
-    'button[title*="Answer" i]',
     'a[class*="answer"]',
     'div[class*="answer"]',
   ];
@@ -113,13 +119,14 @@ function injectHideCSS() {
   const style = document.createElement('style');
   style.id = 'zadarma-hide';
   style.textContent = `
-    /* Hide Zadarma widget - aggressive selectors */
+    /* Hide Zadarma widget - aggressive selectors including zdrm-* */
     [id*="zadarma"], [class*="zadarma"],
     [id*="webphone"], [class*="webphone"],
     [id*="phone_widget"], [class*="phone_widget"],
     [id*="phoneWidget"], [class*="phoneWidget"],
     [id*="webrtc_widget"], [class*="webrtc_widget"],
     [id*="sipPhone"], [class*="sipPhone"],
+    [class*="zdrm"], [id*="zdrm"],
     iframe[src*="zadarma"], iframe[src*="webphone"],
     iframe[src*="webrtc"] {
       position: fixed !important;
@@ -196,7 +203,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
   // console.log interceptor to detect widget events
   useEffect(() => {
-    if (!enabled || !initializedRef.current) return;
+    if (!enabled) return;
 
     const origLog = originalConsoleLog.current;
 
@@ -228,7 +235,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
   // MutationObserver to detect answer button appearing
   useEffect(() => {
-    if (!enabled || !initializedRef.current) return;
+    if (!enabled) return;
 
     const observer = new MutationObserver((mutations) => {
       for (const mutation of mutations) {
@@ -237,7 +244,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
           const html = node.outerHTML?.toLowerCase() || '';
           // Detect if the added element looks like an answer/incoming UI
-          if (html.includes('answer') || html.includes('accept') || html.includes('incoming')) {
+          if (html.includes('answer') || html.includes('accept') || html.includes('incoming') || html.includes('zdrm') || html.includes('ringing')) {
             console.log('[WebRTC] 🔍 MutationObserver: potential answer element detected', node.tagName, node.className);
             // Try clicking immediately
             setTimeout(() => clickAnswerButton(), 200);
@@ -246,8 +253,8 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           // Also re-apply CSS hiding for any new widget elements
           const id = node.id?.toLowerCase() || '';
           const cls = node.className?.toString?.()?.toLowerCase() || '';
-          if (id.includes('zadarma') || id.includes('webphone') || id.includes('phone_widget') ||
-              cls.includes('zadarma') || cls.includes('webphone') || cls.includes('phone_widget')) {
+          if (id.includes('zadarma') || id.includes('webphone') || id.includes('phone_widget') || id.includes('zdrm') ||
+              cls.includes('zadarma') || cls.includes('webphone') || cls.includes('phone_widget') || cls.includes('zdrm')) {
             node.style.cssText = 'position:fixed!important;left:-9999px!important;top:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:-1!important;';
           }
         }
