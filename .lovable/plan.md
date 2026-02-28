@@ -1,20 +1,18 @@
 
 
-# Diagnose: Botão "Ligar" sem efeito
+# Correção: Widget de telefonia "fantasma"
 
 ## Causa raiz
+O `CopilotFab` (linha 82-83 do CopilotFab.tsx) tem posição padrão `{ x: window.innerWidth - 48 - 24, y: window.innerHeight - 48 - 24 }` — exatamente o mesmo canto inferior direito onde o `ZadarmaPhoneWidget` renderiza com `bottom-6 right-6`. O CopilotFab captura pointer events para drag, interceptando todos os cliques destinados ao widget de telefonia.
 
-A tabela `zadarma_config` tem `empresas_ativas = ['BLUE_LABS']`. TOKENIZA **nao** esta na lista.
+## Correção
 
-Quando o usuario clica "Ligar", `handleDial` chama `proxy.mutate()` que invoca a edge function `zadarma-proxy`. A edge function verifica se a empresa esta em `empresas_ativas` e retorna **403** porque TOKENIZA nao esta la. O codigo trata esse erro com `onError: () => setPhoneState('idle')` — sem nenhum toast ou feedback visual, dando a impressao de que "nada acontece".
+### 1. `src/components/zadarma/ZadarmaPhoneWidget.tsx`
+Mover o FAB do telefone para `bottom-20` (80px do fundo) em vez de `bottom-6`, para ficar **acima** do CopilotFab. Aplicar em 3 posições:
+- Linha 108: FAB minimizado → `bottom-20 right-6`
+- Linha 120: FAB com dial pendente → `bottom-20 right-6`
+- Linha 194: Widget expandido → `bottom-20 right-6`
 
-## Correcoes
-
-### 1. Adicionar TOKENIZA e BLUE a `empresas_ativas`
-- SQL: `UPDATE zadarma_config SET empresas_ativas = ARRAY['BLUE_LABS','TOKENIZA','BLUE'] WHERE id = 'fb9fd840-18db-4517-bf3f-72932b24ba11';`
-
-### 2. Adicionar feedback de erro no `handleDial` (`ZadarmaPhoneWidget.tsx`)
-- Importar `toast` de sonner
-- No `onError` do `proxy.mutate`, exibir `toast.error('Erro ao iniciar chamada')` alem de resetar o estado
-- Isso garante que o usuario veja feedback caso algo falhe no futuro
+### 2. Garantir z-index consistente
+O CopilotFab usa `z-50` (linha 183). O phone widget já usa `z-[60]`. A separação vertical resolve a sobreposição sem conflito de z-index.
 
