@@ -52,6 +52,22 @@ export interface Call {
   transcription?: string | null;
   action_items?: string[] | null;
   sentiment?: string | null;
+  transcription_channels?: TranscriptionSegment[] | null;
+  talk_ratio?: TalkRatio | null;
+}
+
+export interface TranscriptionSegment {
+  speaker: 'VENDEDOR' | 'CLIENTE';
+  text: string;
+  start: number;
+  end: number;
+}
+
+export interface TalkRatio {
+  seller_pct: number;
+  client_pct: number;
+  seller_words: number;
+  client_words: number;
 }
 
 export interface CallEvent {

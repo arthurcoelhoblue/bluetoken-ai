@@ -120,9 +120,11 @@ Deno.serve(async (req) => {
         break;
       }
       case 'get_transcript': {
-        const { call_id } = payload;
+        const { call_id, return: returnType } = payload;
         if (!call_id) throw new Error('call_id required');
-        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/record/transcript/', { call_id: String(call_id) });
+        const transcriptParams: Record<string, string> = { call_id: String(call_id) };
+        if (returnType) transcriptParams['return'] = String(returnType);
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/record/transcript/', transcriptParams);
         break;
       }
       case 'test_connection':

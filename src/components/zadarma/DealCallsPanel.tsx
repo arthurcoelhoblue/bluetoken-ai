@@ -3,10 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Play, ChevronDown, ChevronUp, FileText, Brain, ListChecks } from 'lucide-react';
+import { Phone, PhoneIncoming, PhoneOutgoing, PhoneMissed, Play, ChevronDown, ChevronUp, FileText, Brain, ListChecks, Mic } from 'lucide-react';
 
 import { useDealCalls } from '@/hooks/useZadarma';
-import type { Call } from '@/types/telephony';
+import type { Call, TranscriptionSegment } from '@/types/telephony';
 
 function formatDuration(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -26,6 +26,27 @@ const statusConfig: Record<string, { label: string; variant: 'default' | 'second
   RINGING: { label: 'Tocando', variant: 'outline' },
 };
 
+function DialogueBubbles({ segments }: { segments: TranscriptionSegment[] }) {
+  return (
+    <div className="space-y-2">
+      {segments.map((seg, i) => (
+        <div key={i} className={`flex ${seg.speaker === 'VENDEDOR' ? 'justify-end' : 'justify-start'}`}>
+          <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
+            seg.speaker === 'VENDEDOR'
+              ? 'bg-primary/10 text-foreground border border-primary/20'
+              : 'bg-muted text-foreground border border-border/40'
+          }`}>
+            <span className="block text-[10px] font-medium text-muted-foreground mb-0.5">
+              {seg.speaker === 'VENDEDOR' ? '🧑‍💼 Vendedor' : '👤 Cliente'}
+            </span>
+            {seg.text}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function CallItem({ call }: { call: Call }) {
   const [expanded, setExpanded] = useState(false);
   const [transcriptOpen, setTranscriptOpen] = useState(false);
@@ -33,8 +54,10 @@ function CallItem({ call }: { call: Call }) {
   const cfg = statusConfig[call.status] || statusConfig.RINGING;
 
   const hasSummary = !!call.summary_ia;
-  const hasTranscription = !!call.transcription;
+  const hasTranscription = !!call.transcription || !!call.transcription_channels;
+  const hasDialogue = !!call.transcription_channels && call.transcription_channels.length > 0;
   const actionItems = call.action_items ?? null;
+  const talkRatio = call.talk_ratio;
 
   return (
     <>
@@ -42,7 +65,7 @@ function CallItem({ call }: { call: Call }) {
         <div className="flex items-center gap-3 cursor-pointer" onClick={() => setExpanded(!expanded)}>
           <Icon className={`h-4 w-4 shrink-0 ${call.status === 'MISSED' ? 'text-destructive' : call.direcao === 'OUTBOUND' ? 'text-primary' : 'text-success'}`} />
           <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <span className="text-sm font-medium truncate">
                 {call.contact_nome || (call.direcao === 'OUTBOUND' ? call.destination_number : call.caller_number) || 'Desconhecido'}
               </span>
@@ -50,6 +73,12 @@ function CallItem({ call }: { call: Call }) {
               {call.sentiment && (
                 <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${call.sentiment === 'POSITIVO' ? 'text-success border-success/30' : call.sentiment === 'NEGATIVO' ? 'text-destructive border-destructive/30' : 'text-muted-foreground'}`}>
                   {call.sentiment}
+                </Badge>
+              )}
+              {talkRatio && (
+                <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-1">
+                  <Mic className="h-2.5 w-2.5" />
+                  {talkRatio.seller_pct}/{talkRatio.client_pct}
                 </Badge>
               )}
             </div>
@@ -73,6 +102,31 @@ function CallItem({ call }: { call: Call }) {
               <audio controls className="w-full h-8" src={call.recording_url}>
                 Seu navegador não suporta o player de áudio.
               </audio>
+            )}
+
+            {/* Talk Ratio Bar */}
+            {talkRatio && (
+              <div className="p-2 bg-muted/50 rounded-md space-y-1">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                  <Mic className="h-3 w-3" /> Talk Ratio
+                </div>
+                <div className="flex h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-primary/70 transition-all"
+                    style={{ width: `${talkRatio.seller_pct}%` }}
+                    title={`Vendedor: ${talkRatio.seller_pct}% (${talkRatio.seller_words} palavras)`}
+                  />
+                  <div
+                    className="bg-muted-foreground/30 transition-all"
+                    style={{ width: `${talkRatio.client_pct}%` }}
+                    title={`Cliente: ${talkRatio.client_pct}% (${talkRatio.client_words} palavras)`}
+                  />
+                </div>
+                <div className="flex justify-between text-[10px] text-muted-foreground">
+                  <span>🧑‍💼 Vendedor {talkRatio.seller_pct}% ({talkRatio.seller_words}p)</span>
+                  <span>👤 Cliente {talkRatio.client_pct}% ({talkRatio.client_words}p)</span>
+                </div>
+              </div>
             )}
 
             {/* AI Summary */}
@@ -105,7 +159,7 @@ function CallItem({ call }: { call: Call }) {
             {/* Transcription button */}
             {hasTranscription && (
               <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTranscriptOpen(true)}>
-                <FileText className="h-3 w-3" /> Ver transcrição
+                <FileText className="h-3 w-3" /> {hasDialogue ? 'Ver diálogo' : 'Ver transcrição'}
               </Button>
             )}
           </div>
@@ -117,11 +171,17 @@ function CallItem({ call }: { call: Call }) {
         <Dialog open={transcriptOpen} onOpenChange={setTranscriptOpen}>
           <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
-              <DialogTitle>Transcrição da Chamada</DialogTitle>
+              <DialogTitle>
+                {hasDialogue ? 'Diálogo da Chamada' : 'Transcrição da Chamada'}
+              </DialogTitle>
             </DialogHeader>
-            <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
-              {call.transcription}
-            </div>
+            {hasDialogue ? (
+              <DialogueBubbles segments={call.transcription_channels!} />
+            ) : (
+              <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">
+                {call.transcription}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       )}
