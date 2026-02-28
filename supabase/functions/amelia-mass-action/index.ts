@@ -107,7 +107,7 @@ serve(async (req) => {
           .single();
         if (tmpl?.meta_template_id && tmpl?.meta_status === 'APPROVED') {
           metaTemplateInfo = {
-            metaTemplateName: tmpl.meta_template_id,
+            metaTemplateName: tmpl.codigo,
             metaLanguage: tmpl.meta_language || 'pt_BR',
             metaComponents: tmpl.meta_components,
           };
@@ -130,12 +130,12 @@ serve(async (req) => {
           let msgTemplateInfo = metaTemplateInfo;
           if (msg.suggested_template_id) {
             const { data: sugTmpl } = await supabase.from('message_templates')
-              .select('meta_template_id, meta_status, meta_language, meta_components')
+              .select('meta_template_id, meta_status, meta_language, meta_components, codigo')
               .eq('id', msg.suggested_template_id)
               .single();
             if (sugTmpl?.meta_template_id && sugTmpl?.meta_status === 'APPROVED') {
               msgTemplateInfo = {
-                metaTemplateName: sugTmpl.meta_template_id,
+                metaTemplateName: sugTmpl.codigo || sugTmpl.meta_template_id,
                 metaLanguage: sugTmpl.meta_language || 'pt_BR',
                 metaComponents: sugTmpl.meta_components,
               };
