@@ -1,18 +1,27 @@
 
 
-# Proteção de Ramais Externos (Pipedrive)
+# Fix: Proibir Amélia de prometer enviar conteúdo "depois"
 
 ## Problema
-A seção "Ramais no Zadarma (não mapeados)" mostra um botão "Remover do PBX" para ramais que podem estar em uso no Pipedrive ou outros sistemas. Excluir acidentalmente causaria problemas.
+A IA prometeu "Tá indo! Resumo saindo agora..." mas nunca enviou o resumo real, porque não há mecanismo de follow-up automático. O lead ficou sem resposta.
 
 ## Solução
-1. **Remover o botão "Remover do PBX"** da listagem de ramais não mapeados — ou movê-lo para trás de uma confirmação explícita com aviso de que o ramal pode estar em uso externamente
-2. **Adicionar badge "Externo"** — os ramais não mapeados terão um label neutro indicando que existem no PBX mas não estão vinculados ao CRM
-3. **Manter apenas o botão "Importar"** — para vincular ao CRM quando desejado, sem risco de exclusão
+Adicionar regra explícita nos 3 prompts da IA para NUNCA prometer envio futuro — todo conteúdo deve ser incluído na própria resposta.
 
-### Alteração em `ZadarmaConfigPage.tsx`
-- Na seção `unmappedExts`, substituir o botão destrutivo "Remover do PBX" por:
-  - Badge cinza "Usado externamente" 
-  - Botão "Vincular ao CRM" (importar para uso local)
-  - Opcionalmente, um botão "Excluir do PBX" escondido atrás de um AlertDialog com aviso: _"Este ramal pode estar em uso em outros sistemas (ex: Pipedrive). Tem certeza?"_
+### Alterações
+
+**1. `intent-classifier.ts` — `SYSTEM_PROMPT` (linha ~361)**
+Adicionar ao bloco de COMUNICAÇÃO:
+```
+NUNCA prometa enviar algo depois ("vou te mandar", "já envio", "segue o resumo"). 
+Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
+```
+
+**2. `intent-classifier.ts` — `PASSIVE_CHAT_PROMPT` (linha ~347)**
+Adicionar regra equivalente ao bloco de COMUNICAÇÃO.
+
+**3. `response-generator.ts` — prompt default (linha ~218)**
+Adicionar a mesma regra no `systemPrompt` padrão do gerador de respostas.
+
+Estas são alterações em 2 arquivos dentro de `supabase/functions/sdr-ia-interpret/`, com redeploy automático.
 
