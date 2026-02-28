@@ -1,38 +1,33 @@
 
 
-# Implementação do Dashboard de Resolução Autônoma (Item 6 — componente React pendente)
+# Correção do Erro ao Salvar Ramal
 
-A view SQL `amelia_resolution_stats` já está criada e populada com dados reais. Falta apenas o componente React e a integração na página da Amélia.
+## Problema
+O `AssignProfileDialog.tsx` faz upsert com `onConflict: 'user_id,empresa'`, mas a unique constraint real na tabela `zadarma_extensions` é `(empresa, extension_number)`. Não existe constraint unique em `(user_id, empresa)`, causando falha silenciosa no upsert.
 
----
+## Solução
 
-## Arquivos a criar
+### Modificar `src/components/settings/AssignProfileDialog.tsx`
+- Trocar a lógica de upsert por: primeiro deletar extensões existentes do usuário para as empresas selecionadas, depois inserir a nova extensão
+- Isso evita conflito com a constraint real e funciona para criar ou atualizar
 
-### 1. `src/hooks/useResolutionStats.ts`
-- Hook que consulta a view `amelia_resolution_stats` filtrando por `activeCompanies`
-- Agrega totais: conversas, resolvidas autonomamente, escaladas, taxa média de resolução (%)
-- Retorna `dailyStats` (últimos 30 dias) + resumo agregado
-- Refresh automático a cada 60s
+Lógica corrigida no `handleSave`:
+```typescript
+// Antes de inserir, remover extensões antigas do usuário nas empresas selecionadas
+await supabase.from('zadarma_extensions')
+  .delete()
+  .eq('user_id', userId)
+  .in('empresa', selectedEmpresas);
 
-### 2. `src/components/dashboard/ResolutionStatsCard.tsx`
-- Card com 3 KPIs no topo: total de conversas, resolvidas autônomas (verde), escaladas (âmbar)
-- Badge com a taxa de resolução percentual (ex: 87%)
-- Gráfico de barras empilhadas (Recharts `BarChart`) com os últimos 7 dias: barras verdes (autônomas) vs âmbar (escaladas)
-- Estados de loading (Skeleton) e vazio tratados
-
----
-
-## Arquivo a modificar
-
-### 3. `src/pages/AmeliaPage.tsx`
-- Importar `ResolutionStatsCard`
-- Adicionar dentro do grid de 2 colunas existente, como um novo card ao lado de um dos gráficos atuais
-
----
-
-## Detalhes técnicos
-
-- A view retorna dados por dia/empresa; o componente agrega as empresas ativas para o gráfico
-- Usa `parseISO` + `format` do date-fns para labels do eixo X
-- Nenhuma alteração de banco necessária — a view já existe e tem dados
+// Inserir nova extensão para cada empresa selecionada
+if (ramal) {
+  for (const emp of selectedEmpresas) {
+    await supabase.from('zadarma_extensions').insert({
+      user_id: userId,
+      extension_number: ramal,
+      empresa: emp as any,
+    });
+  }
+}
+```
 
