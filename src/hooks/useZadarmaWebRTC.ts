@@ -116,6 +116,57 @@ function clickAnswerButton(): boolean {
   return false;
 }
 
+// Click the hangup/end-call button inside the widget DOM
+function clickHangupButton(): boolean {
+  const selectors = [
+    '[class*="zdrm-webphone-hangup"]',
+    '[class*="zdrm-webphone-reject"]',
+    '[class*="zdrm"][class*="hangup"]',
+    '[class*="zdrm"][class*="end-call"]',
+    '[class*="zdrm"][class*="reject"]',
+    '[class*="zdrm"][class*="decline"]',
+    '[class*="hangup"]',
+    '[class*="end-call"]',
+    '[class*="reject-call"]',
+    '.hangup-btn',
+    '.btn-hangup',
+    '[data-action="hangup"]',
+    '[data-action="reject"]',
+    'button[title*="hangup" i]',
+    'button[title*="end" i]',
+    'button[title*="reject" i]',
+  ];
+
+  for (const sel of selectors) {
+    const els = document.querySelectorAll(sel);
+    for (const el of els) {
+      if (el instanceof HTMLElement) {
+        el.click();
+        console.log('[WebRTC] ✅ Clicked hangup button:', sel, el.className);
+        return true;
+      }
+    }
+  }
+
+  // Try inside iframes
+  document.querySelectorAll('iframe').forEach((iframe) => {
+    try {
+      const doc = iframe.contentDocument;
+      if (!doc) return;
+      for (const sel of selectors) {
+        const btn = doc.querySelector(sel);
+        if (btn instanceof HTMLElement) {
+          btn.click();
+          console.log('[WebRTC] ✅ Clicked hangup button inside iframe:', sel);
+          return;
+        }
+      }
+    } catch { /* cross-origin */ }
+  });
+
+  return false;
+}
+
 // Inject CSS to hide the native Zadarma widget UI
 function injectHideCSS() {
   if (document.getElementById('zadarma-hide')) return;
@@ -385,6 +436,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   }, [status]);
 
   const hangup = useCallback(() => {
+    console.log('[WebRTC] 🔴 hangup() called — clicking widget hangup button...');
+    clickHangupButton();
+
+    // Fallback: postMessage + CustomEvent
     window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'hangup' } }));
     document.querySelectorAll('iframe').forEach((iframe) => {
       try {
