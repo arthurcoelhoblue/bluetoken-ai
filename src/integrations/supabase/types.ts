@@ -639,7 +639,9 @@ export type Database = {
           started_at: string | null
           status: string
           summary_ia: string | null
+          talk_ratio: Json | null
           transcription: string | null
+          transcription_channels: Json | null
           user_id: string | null
         }
         Insert: {
@@ -662,7 +664,9 @@ export type Database = {
           started_at?: string | null
           status?: string
           summary_ia?: string | null
+          talk_ratio?: Json | null
           transcription?: string | null
+          transcription_channels?: Json | null
           user_id?: string | null
         }
         Update: {
@@ -685,7 +689,9 @@ export type Database = {
           started_at?: string | null
           status?: string
           summary_ia?: string | null
+          talk_ratio?: Json | null
           transcription?: string | null
+          transcription_channels?: Json | null
           user_id?: string | null
         }
         Relationships: [
