@@ -1,27 +1,24 @@
 
 
-# Auto-dial ao clicar em "Ligar" nos contatos, deals e leads
+# Bug: Botão de desligar não funciona — `hangup()` não clica no widget Zadarma
 
-## Problema atual
+## Causa raiz
 
-O `ClickToCallButton` (usado em deals, contatos, leads, CS) apenas abre o widget flutuante e preenche o número — o usuário ainda precisa clicar "Ligar" manualmente no widget. O comportamento esperado é que a ligação seja iniciada automaticamente.
+O `webrtc.hangup()` (linha 387-395 de `useZadarmaWebRTC.ts`) apenas envia `postMessage` e `CustomEvent` para o iframe do Zadarma. Porém, o widget Zadarma v9 **não responde** a esses eventos — ele só funciona via clique direto no DOM, exatamente como o botão de atender.
 
-## Correção em `src/components/zadarma/ZadarmaPhoneWidget.tsx`
+O fluxo de atender funciona porque usa `clickAnswerButton()` que faz `.click()` direto nos elementos `zdrm-*`. Mas o hangup não tem lógica equivalente.
 
-### 1. Adicionar flag para auto-dial após evento `bluecrm:dial`
-- Criar um ref `autoDialRef` que é setado como `true` quando o evento `bluecrm:dial` é recebido
-- Adicionar um `useEffect` que observa mudanças no `number` e, quando `autoDialRef.current === true`, chama `handleDial()` automaticamente
-- Resetar o flag após o dial ser disparado
+## Correção em `src/hooks/useZadarmaWebRTC.ts`
 
-### 2. Fluxo resultante
-- Usuário clica no ícone de telefone em qualquer lugar (deal, contato, lead, CS)
-- `ClickToCallButton` dispara evento `bluecrm:dial`
-- Widget recebe evento → seta número, nome, dealId → abre widget
-- `useEffect` detecta que `autoDialRef` está ativo + número preenchido → chama `handleDial()` automaticamente
-- Ligação inicia sem clique adicional
+### 1. Criar função `clickHangupButton()` similar a `clickAnswerButton()`
+- Seletores: `[class*="zdrm-webphone-hangup"]`, `[class*="zdrm"][class*="hangup"]`, `[class*="zdrm"][class*="end-call"]`, `[class*="zdrm-webphone-reject"]`
+- Clica no primeiro elemento encontrado no DOM
 
-### Detalhes técnicos
-- O `handleDial` depende do state `number` que é atualizado assincronamente via `setNumber`, por isso não pode ser chamado diretamente no handler do evento
-- Um `useEffect` com dependência em `number` + verificação do ref resolve o timing
-- O ref é necessário para distinguir entre digitação manual (não auto-dial) e clique no botão de contato (auto-dial)
+### 2. Atualizar `hangup()` para chamar `clickHangupButton()`
+- Chamar `clickHangupButton()` como ação principal
+- Manter os `postMessage` como fallback
+- Setar status para `'ready'`
+
+## Resultado esperado
+- Clicar no botão vermelho de desligar → clica no botão de hangup do widget Zadarma oculto → chamada encerrada
 
