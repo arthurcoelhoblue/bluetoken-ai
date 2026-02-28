@@ -73,6 +73,9 @@ function clickAnswerButton(): boolean {
     'div[class*="answer"]',
   ];
 
+  // First pass: only click visible (non-hidden) elements
+  let fallbackEl: HTMLElement | null = null;
+  let fallbackSel = '';
   for (const sel of selectors) {
     const els = document.querySelectorAll(sel);
     if (els.length > 0) {
@@ -80,6 +83,10 @@ function clickAnswerButton(): boolean {
     }
     for (const el of els) {
       if (el instanceof HTMLElement) {
+        if (el.classList.contains('zdrm-webphone-hide')) {
+          if (!fallbackEl) { fallbackEl = el; fallbackSel = sel; }
+          continue;
+        }
         el.click();
         console.log('[WebRTC] ✅ Auto-clicked answer button:', sel, el.className);
         return true;
@@ -95,6 +102,7 @@ function clickAnswerButton(): boolean {
       for (const sel of selectors) {
         const btn = doc.querySelector(sel);
         if (btn instanceof HTMLElement) {
+          if (btn.classList.contains('zdrm-webphone-hide')) continue;
           btn.click();
           console.log('[WebRTC] ✅ Auto-clicked answer button inside iframe:', sel);
           return;
@@ -102,6 +110,13 @@ function clickAnswerButton(): boolean {
       }
     } catch { /* cross-origin */ }
   });
+
+  // Fallback: click hidden element as last resort
+  if (fallbackEl) {
+    fallbackEl.click();
+    console.log('[WebRTC] ⚠️ Fallback: clicked hidden answer button:', fallbackSel, fallbackEl.className);
+    return true;
+  }
 
   // Strategy: also send postMessage to any Zadarma iframe
   document.querySelectorAll('iframe').forEach((iframe) => {
@@ -137,10 +152,17 @@ function clickHangupButton(): boolean {
     'button[title*="reject" i]',
   ];
 
+  // First pass: only click visible (non-hidden) elements
+  let fallbackEl: HTMLElement | null = null;
+  let fallbackSel = '';
   for (const sel of selectors) {
     const els = document.querySelectorAll(sel);
     for (const el of els) {
       if (el instanceof HTMLElement) {
+        if (el.classList.contains('zdrm-webphone-hide')) {
+          if (!fallbackEl) { fallbackEl = el; fallbackSel = sel; }
+          continue;
+        }
         el.click();
         console.log('[WebRTC] ✅ Clicked hangup button:', sel, el.className);
         return true;
@@ -156,6 +178,7 @@ function clickHangupButton(): boolean {
       for (const sel of selectors) {
         const btn = doc.querySelector(sel);
         if (btn instanceof HTMLElement) {
+          if (btn.classList.contains('zdrm-webphone-hide')) continue;
           btn.click();
           console.log('[WebRTC] ✅ Clicked hangup button inside iframe:', sel);
           return;
@@ -163,6 +186,13 @@ function clickHangupButton(): boolean {
       }
     } catch { /* cross-origin */ }
   });
+
+  // Fallback: click hidden element as last resort
+  if (fallbackEl) {
+    fallbackEl.click();
+    console.log('[WebRTC] ⚠️ Fallback: clicked hidden hangup button:', fallbackSel, fallbackEl.className);
+    return true;
+  }
 
   return false;
 }
