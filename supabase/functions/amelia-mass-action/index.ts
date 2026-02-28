@@ -151,7 +151,30 @@ serve(async (req) => {
             if (msgTemplateInfo) {
               payload.metaTemplateName = msgTemplateInfo.metaTemplateName;
               payload.metaLanguage = msgTemplateInfo.metaLanguage;
-              if (msgTemplateInfo.metaComponents) payload.metaComponents = msgTemplateInfo.metaComponents;
+              // Convert template definition components to send-format components
+              // Template definitions have {type, text, example} but Meta send API expects {type, parameters}
+              const rawComponents = msgTemplateInfo.metaComponents as Array<{ type: string; text?: string; example?: { body_text?: string[][] } }> | undefined;
+              if (rawComponents && Array.isArray(rawComponents)) {
+                const sendComponents: Array<{ type: string; parameters: Array<{ type: string; text: string }> }> = [];
+                for (const comp of rawComponents) {
+                  if (comp.type?.toUpperCase() === 'BODY' && comp.text) {
+                    // Count {{N}} placeholders in the template text
+                    const placeholderMatches = comp.text.match(/\{\{\d+\}\}/g);
+                    if (placeholderMatches && placeholderMatches.length > 0) {
+                      const parameters = placeholderMatches.map((_: string, idx: number) => {
+                        // Use contact name for first param, fallback to example values
+                        if (idx === 0) return { type: 'text' as const, text: contact?.nome || 'Cliente' };
+                        const exampleVals = comp.example?.body_text?.[0];
+                        return { type: 'text' as const, text: exampleVals?.[idx] || '' };
+                      });
+                      sendComponents.push({ type: 'body', parameters });
+                    }
+                  }
+                }
+                if (sendComponents.length > 0) {
+                  payload.metaComponents = sendComponents;
+                }
+              }
             }
             const resp = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, { method: 'POST', headers: { Authorization: `Bearer ${serviceKey}`, 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
             if (resp.ok) sent++; else { log.error('whatsapp-send error', { error: await resp.text() }); errors++; }
