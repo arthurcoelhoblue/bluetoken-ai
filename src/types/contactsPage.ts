@@ -46,7 +46,7 @@ export interface ContactWithStats {
 
 export interface OrganizationWithStats {
   id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   owner_id: string | null;
   ativo: boolean;
   created_at: string;
@@ -77,7 +77,7 @@ export interface OrganizationWithStats {
 
 export interface ContactFormData {
   nome: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   primeiro_nome?: string;
   sobrenome?: string;
   email?: string;
@@ -93,7 +93,7 @@ export interface ContactFormData {
 
 export interface OrganizationFormData {
   nome: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome_fantasia?: string;
   cnpj?: string;
   setor?: string;

@@ -325,7 +325,8 @@ ${empresa === 'TOKENIZA' ? `
 Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
 PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancários, simular processo de fechamento fora da plataforma.
 Se o lead quer investir, direcione para plataforma.tokeniza.com.br. NUNCA simule um processo de fechamento.
-NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.` : ''}
+NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.
+TERMINOLOGIA OBRIGATÓRIA: NUNCA use "mercado secundário". O termo correto é SEMPRE "mercado de transações subsequentes".` : ''}
 ${empresa === 'MPUPPE' ? `
 ## 🚫 PROCESSO MPUPPE — REGRA CRÍTICA
 A MPuppe trabalha com modelo de recorrência mensal customizado. NUNCA cite preços fixos.

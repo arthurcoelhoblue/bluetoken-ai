@@ -48,7 +48,7 @@ export interface ResolvedCustomField {
 
 export interface Organization {
   id: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome: string;
   nome_fantasia: string | null;
   cnpj: string | null;
@@ -72,7 +72,7 @@ export interface Organization {
 
 export interface OrganizationFormData {
   nome: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   nome_fantasia?: string;
   cnpj?: string;
   setor?: string;
@@ -89,7 +89,7 @@ export interface OrganizationFormData {
 
 export interface PipelineFormData {
   nome: string;
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   descricao?: string;
   is_default?: boolean;
   tipo?: string;
@@ -106,7 +106,7 @@ export interface StageFormData {
 }
 
 export interface CustomFieldFormData {
-  empresa: 'BLUE' | 'TOKENIZA';
+  empresa: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA';
   entity_type: CustomFieldEntityType;
   slug: string;
   label: string;
