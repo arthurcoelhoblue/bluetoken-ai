@@ -1,8 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
@@ -18,7 +19,7 @@ export function ZadarmaPhoneWidget() {
   const { profile } = useAuth();
   const { activeCompany } = useCompany();
   const empresa = activeCompany as EmpresaTipo;
-  const { data: myExtension } = useMyExtension(empresa, profile?.id ?? null);
+  const { data: myExtension, isLoading: isLoadingExtension } = useMyExtension(empresa, profile?.id ?? null);
 
   const sipLogin = myExtension?.sip_login ?? null;
   const isWebRTCMode = !!sipLogin;
@@ -163,6 +164,7 @@ export function ZadarmaPhoneWidget() {
 
   // Minimized FAB
   if (minimized && !number) {
+    if (isLoadingExtension) return null;
     if (!hasExtension) return null;
     return (
       <button
@@ -313,7 +315,12 @@ export function ZadarmaPhoneWidget() {
               </Button>
             ))}
           </div>
-          {!hasExtension ? (
+          {isLoadingExtension ? (
+            <div className="flex flex-col items-center gap-2 py-4">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Carregando ramal...</p>
+            </div>
+          ) : !hasExtension ? (
             <p className="text-sm text-destructive text-center py-2">
               Nenhum ramal configurado. Solicite ao administrador a configuração do seu ramal em <strong>Configurações &gt; Zadarma</strong>.
             </p>
