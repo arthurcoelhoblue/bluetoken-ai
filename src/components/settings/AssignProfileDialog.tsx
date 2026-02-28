@@ -59,14 +59,21 @@ export function AssignProfileDialog({ open, onOpenChange, userId, userName, curr
       { user_id: userId, access_profile_id: profileId, empresas: selectedEmpresas },
       {
         onSuccess: async () => {
-          // Save ramal
+          // Delete existing extensions for user in selected empresas
+          await supabase.from('zadarma_extensions')
+            .delete()
+            .eq('user_id', userId)
+            .in('empresa', selectedEmpresas as any);
+
+          // Insert new extension for each empresa
           if (ramal) {
-            await supabase.from('zadarma_extensions').upsert(
-              { user_id: userId, extension_number: ramal, empresa: selectedEmpresas[0] as any },
-              { onConflict: 'user_id,empresa' }
-            );
-          } else {
-            await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+            for (const emp of selectedEmpresas) {
+              await supabase.from('zadarma_extensions').insert({
+                user_id: userId,
+                extension_number: ramal,
+                empresa: emp as any,
+              });
+            }
           }
           queryClient.invalidateQueries({ queryKey: ['zadarma-extensions-all'] });
           queryClient.invalidateQueries({ queryKey: ['zadarma-my-extension'] });
