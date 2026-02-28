@@ -1,82 +1,95 @@
 
 
-# RAG para a Base de Conhecimento — Onde se aplica
+# O que o ChatBlue tem na Base de Conhecimento
 
-## Problema Atual
+## Estrutura de Dados (Prisma Schema)
 
-Hoje a Amelia carrega **TODO** o conhecimento no prompt a cada mensagem:
-- 31 seções (~22k caracteres) concatenadas em texto bruto
-- Sem relevância: se o lead pergunta sobre "rentabilidade do CRA", ela recebe também objeções de IR cripto, pitch de Blue, estrutura jurídica, etc.
-- Quanto mais conteúdo cadastrar, mais tokens gasta e mais lenta fica
-- Documentos uploaded (PDFs) não são usados — estão no storage mas nunca são lidos pela IA
+O ChatBlue tem **3 camadas** de conhecimento:
 
-## Onde RAG se aplica (3 pontos)
+### 1. Knowledge Base (simples) — `knowledge_base`
+- `title`, `content` (texto livre), `category`, `tags[]`, `order`
+- `isActive`, `departmentId` (filtro por departamento)
+- CRUD simples com busca por título/conteúdo/tags
 
-### 1. SDR IA — Busca semântica de conhecimento relevante
-**Maior impacto.** Em vez de injetar 22k chars no prompt, buscar apenas os 3-5 trechos mais relevantes para a pergunta do lead.
+### 2. FAQ — `faqs`
+- `question`, `answer`, `keywords[]`, `category`, `order`
+- `useCount` (contagem de uso — nós não temos isso)
+- `departmentId`, `isActive`
+- Sync automático com IA via `knowledge-sync.service`
 
-- Lead pergunta "qual a rentabilidade do CRA?" → busca retorna apenas seções sobre CRA, rentabilidade, riscos associados
-- Lead pergunta "quanto custa o IR cripto?" → retorna apenas pricing da Blue e FAQ de preços
-- Reduz tokens em ~70%, melhora precisão, elimina ruído
+### 3. Knowledge Contexts (RAG System) — 3 tabelas
+- **`knowledge_contexts`**: agrupador com `name`, `description`, `slug`, `systemPrompt`, `keywords[]`, `priority`
+- **`knowledge_sources`**: fontes dentro de um contexto — suporta 7 tipos: `TEXT`, `PDF`, `NOTION`, `URL`, `DOCX`, `CSV`, `JSON`
+- **`knowledge_chunks`**: pedaços indexados com `content`, `embedding` (JSON string de floats), `metadata`
 
-### 2. FAQ — Auto-resposta com busca semântica
-Em vez de match exato pergunta-pergunta, buscar a FAQ mais similar semanticamente.
-- "Quanto rende?" → match com "Qual a rentabilidade esperada dos investimentos?"
-- Permite resposta instantânea sem chamar IA quando confiança > 0.9
+## Serviços de IA (Backend)
 
-### 3. Documentos (PDFs) — Indexação e consulta
-Os PDFs uploaded hoje são decorativos. Com RAG:
-- Upload de PDF → extrai texto → chunka → gera embeddings → armazena
-- Amelia consulta documentos quando não encontra resposta nas seções manuais
+### Ingestion Service (`ingestion.service.ts`)
+Processa cada tipo de fonte:
+- TEXT: lê conteúdo direto ou de arquivo
+- PDF: usa `pdf-parse` para extrair texto
+- NOTION: usa API oficial para ler páginas
+- DOCX: usa `mammoth` para extrair texto
+- CSV: formata linhas com cabeçalho
+- JSON: stringify formatado
+- URL: não implementado (TODO)
+- **Chunking**: `chunkContent(content, chunkSize=1000, chunkOverlap=200)` — divide texto em pedaços
 
-## Alterações Técnicas
+### Embedding Service (`embedding.service.ts`)
+- Usa `text-embedding-3-small` da OpenAI (1536 dims)
+- Suporta batch de embeddings
+- Inclui `cosineSimilarity()` para busca
 
-### Banco de dados
-- Habilitar extensão `vector` (pgvector)
-- Nova tabela `knowledge_embeddings`:
-  - `id`, `source_type` (section/faq/document), `source_id`, `chunk_text`, `embedding vector(1536)`, `metadata jsonb`
-- Índice `ivfflat` ou `hnsw` para busca rápida
+### Context Retrieval (`context-retrieval.service.ts`)
+- **Detecção por keywords**: score baseado em palavras-chave do contexto
+- **Busca semântica**: gera embedding da query → calcula coseno vs chunks → retorna top N
+- **Fallback por keywords**: se não tem embeddings, busca por palavras-chave no texto dos chunks
+- **Fallback total**: se nada funciona, retorna todo o conteúdo das fontes
 
-### Edge Function: `knowledge-embed` (nova)
-- Trigger: quando seção/FAQ é criada/atualizada
-- Chunka o texto (500 tokens por chunk com overlap de 50)
-- Gera embedding via Lovable AI (modelo embedding)
-- Salva em `knowledge_embeddings`
+## O que nós já temos vs o que falta
 
-### Edge Function: `knowledge-search` (nova)
-- Input: query text + empresa + top_k
-- Gera embedding da query
-- Busca por similaridade coseno no pgvector
-- Retorna top_k chunks mais relevantes
+| Feature | ChatBlue | Amélia (nosso) |
+|---------|----------|----------------|
+| Knowledge Base simples | ✅ title/content/category | ✅ product_knowledge + knowledge_sections |
+| FAQ | ✅ com useCount | ✅ knowledge_faq (sem useCount) |
+| Contextos RAG | ✅ knowledge_contexts | ❌ Não temos agrupador de contextos |
+| Fontes múltiplas | ✅ TEXT/PDF/NOTION/URL/DOCX/CSV/JSON | ❌ Só texto manual + PDF decorativo |
+| Chunking | ✅ 1000 chars / 200 overlap | ✅ 500 tokens / 50 overlap |
+| Embeddings | ✅ text-embedding-3-small | ✅ text-embedding-3-small |
+| Busca semântica | ✅ coseno no app server | ✅ pgvector no banco |
+| Fallback keyword | ✅ | ❌ |
+| useCount no FAQ | ✅ | ❌ |
+| Sync Notion | ✅ | ❌ |
+| Processamento PDF | ✅ pdf-parse | ❌ PDFs no storage mas não indexados |
+| Knowledge Gaps | ✅ ai_knowledge_gaps | ❌ |
+| AI Agent Configs | ✅ múltiplos agentes com fontes diferentes | ❌ Amélia é agente único |
 
-### Modificar `sdr-ia-interpret`
-- `intent-classifier.ts`: substituir `fetchProductKnowledge()` (que carrega tudo) por chamada a `knowledge-search` com a mensagem do lead como query
-- `response-generator.ts`: injetar apenas os chunks relevantes no prompt em vez de todos os produtos
+## Plano: Trazer o que falta do ChatBlue para a Amélia
 
-### Modificar `copilot-chat`
-- Usar `knowledge-search` para enriquecer contexto do Copilot com conhecimento relevante
+### Fase 1 — Indexação de PDFs (maior gap)
+- Atualizar `knowledge-embed` para processar documentos da tabela `knowledge_documents`
+- Extrair texto dos PDFs do storage, chunkar e gerar embeddings
+- Os PDFs já estão uploadados, só faltam ser indexados
 
-### Frontend: indicador de indexação
-- Na página de Base de Conhecimento, mostrar status de indexação (embeddings gerados vs pendentes)
-- Botão "Reindexar" para forçar re-embedding
+### Fase 2 — useCount no FAQ
+- Adicionar coluna `use_count` na tabela `knowledge_faq`
+- Incrementar quando a Amélia usa uma FAQ para responder
+- Mostrar no admin quais FAQs são mais úteis
 
-## Fluxo Resultante
+### Fase 3 — Knowledge Gaps (detecção de lacunas)
+- Nova tabela `knowledge_gaps`: `topic`, `description`, `frequency`, `sample_queries[]`, `status`
+- Quando a Amélia não encontra chunks relevantes (similarity < threshold), registrar o gap
+- Dashboard no admin mostrando "O que a Amélia não sabe responder"
 
-```text
-Admin cadastra seção "Rentabilidade CRA Agro"
-    → knowledge-embed gera chunks + embeddings
-    → Salva em knowledge_embeddings
+### Fase 4 — Fallback por keywords
+- Se a busca semântica retorna 0 resultados, fazer busca por palavras-chave no texto das seções
+- Garante que sempre há algum contexto, mesmo sem embeddings
 
-Lead pergunta: "Quanto rende o CRA?"
-    → knowledge-search("Quanto rende o CRA?", empresa=TOKENIZA, top_k=5)
-    → Retorna: chunk sobre rentabilidade CRA, chunk sobre riscos CRA
-    → Prompt da Amelia recebe APENAS esses 2 chunks (~800 tokens vs 22k)
-    → Resposta precisa e rápida
-```
+### Alterações Técnicas
 
-## Impacto
-- **Tokens por mensagem**: ~22k → ~2-3k (economia de ~85%)
-- **Precisão**: respostas baseadas apenas em conteúdo relevante
-- **Escalabilidade**: pode cadastrar 100 produtos sem degradar performance
-- **Documentos**: PDFs passam a ser consultáveis pela IA
+1. **Migration SQL**: adicionar `use_count` em `knowledge_faq`, criar tabela `knowledge_gaps`
+2. **`knowledge-embed`**: adicionar action `embed_document` que baixa PDF do storage, extrai texto e gera embeddings
+3. **`knowledge-search`**: adicionar fallback por keywords quando similarity < threshold
+4. **`sdr-ia-interpret`**: registrar knowledge gaps quando não encontra contexto relevante, incrementar `use_count` nas FAQs usadas
+5. **Frontend**: componente `KnowledgeGaps` no dashboard admin, contador de uso nas FAQs
 
