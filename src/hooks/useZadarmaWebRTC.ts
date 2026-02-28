@@ -50,18 +50,17 @@ function loadScript(src: string): Promise<void> {
 
 // Click the answer/accept button inside the widget DOM
 function clickAnswerButton(): boolean {
+  // IMPORTANT: Only target ANSWER/ACCEPT buttons for incoming calls.
+  // Do NOT use [class*="zdrm-webphone-call-btn"] — that matches the DIAL button too!
   const selectors = [
-    // Zadarma v9 zdrm-* selectors (real widget classes)
-    '[class*="zdrm-webphone-call-btn"]',
-    '[class*="zdrm-ringing"]',
-    '[class*="zdrm"][class*="call-btn"]',
-    '[class*="zdrm"][class*="answer"]',
-    '[class*="zdrm"][class*="accept"]',
-    // Generic fallbacks
-    '[class*="answer"]',
-    '[class*="accept"]',
-    '[class*="Answer"]',
-    '[class*="Accept"]',
+    // Zadarma v9: incoming call accept button (green icon with specific accept class)
+    '[class*="zdrm-webphone-accept"]',
+    '[class*="zdrm-webphone-answer"]',
+    '[class*="zdrm"][class*="accept-ico"]',
+    '[class*="zdrm"][class*="answer-ico"]',
+    '[class*="zdrm-ringing"] [class*="accept"]',
+    '[class*="zdrm-ringing"] [class*="answer"]',
+    // Generic fallbacks — only use very specific selectors
     '.answer-btn',
     '.call-accept',
     '.btn-answer',
@@ -69,8 +68,6 @@ function clickAnswerButton(): boolean {
     '[data-action="accept"]',
     'button[title*="answer" i]',
     'button[title*="accept" i]',
-    'a[class*="answer"]',
-    'div[class*="answer"]',
   ];
 
   // First pass: only click visible (non-hidden) elements
@@ -346,8 +343,12 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
           const html = node.outerHTML?.toLowerCase() || '';
           // Detect if the added element looks like an answer/incoming UI
-          if (html.includes('answer') || html.includes('accept') || html.includes('incoming') || html.includes('zdrm') || html.includes('ringing')) {
-            console.log('[WebRTC] 🔍 MutationObserver: potential answer element detected', node.tagName, node.className);
+          // Only care about elements that could be answer UI (not SCRIPT, VIDEO, AUDIO tags)
+          const tag = node.tagName;
+          if (tag === 'SCRIPT' || tag === 'VIDEO' || tag === 'AUDIO' || tag === 'LINK' || tag === 'STYLE') {
+            // Skip non-interactive elements, just re-hide if needed
+          } else if (html.includes('accept') || html.includes('incoming') || html.includes('ringing')) {
+            console.log('[WebRTC] 🔍 MutationObserver: potential answer element detected', tag, node.className);
             // Only auto-click if an incoming call was actually detected
             if (incomingDetectedRef.current && !autoAnswerDoneRef.current) {
               setTimeout(() => {
