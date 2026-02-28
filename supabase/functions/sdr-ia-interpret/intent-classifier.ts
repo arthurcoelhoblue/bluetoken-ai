@@ -334,6 +334,35 @@ async function fetchProductKnowledge(supabase: SupabaseClient, empresa: EmpresaT
   } catch { return ''; }
 }
 
+async function fetchRelevantKnowledgeRAG(mensagem: string, empresa: EmpresaTipo): Promise<string | null> {
+  try {
+    const SUPABASE_URL = envConfig.SUPABASE_URL;
+    const SUPABASE_ANON_KEY = envConfig.SUPABASE_ANON_KEY;
+    
+    const resp = await fetch(`${SUPABASE_URL}/functions/v1/knowledge-search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: mensagem, empresa, top_k: 5, threshold: 0.3 }),
+    });
+
+    if (!resp.ok) {
+      log.warn('knowledge-search failed, falling back to full fetch', { status: resp.status });
+      return null;
+    }
+
+    const data = await resp.json();
+    if (!data.context || data.total === 0) return null;
+
+    return `\n## CONHECIMENTO RELEVANTE (RAG - ${data.total} trechos)\n${data.context}\n`;
+  } catch (e) {
+    log.warn('RAG search error, falling back to full fetch', { error: String(e) });
+    return null;
+  }
+}
+
 function formatBluePricingForPrompt(): string {
   let text = '\n## TABELA DE PREÇOS BLUE (IR CRIPTO)\n';
   for (const p of BLUE_PRICING.planos) {
@@ -672,8 +701,14 @@ REGRAS FORA DO HORÁRIO:
     userPrompt += formatTokenizaOffersForPrompt(offers);
   }
 
-  const productKnowledge = await fetchProductKnowledge(supabase, empresa as EmpresaTipo);
-  if (productKnowledge) userPrompt += productKnowledge;
+  // Try RAG first, fallback to full knowledge fetch
+  const ragKnowledge = await fetchRelevantKnowledgeRAG(mensagem_normalizada, empresa as EmpresaTipo);
+  if (ragKnowledge) {
+    userPrompt += ragKnowledge;
+  } else {
+    const productKnowledge = await fetchProductKnowledge(supabase, empresa as EmpresaTipo);
+    if (productKnowledge) userPrompt += productKnowledge;
+  }
 
   try {
     const { data: learnings } = await supabase.from('amelia_learnings').select('titulo, descricao, tipo').eq('empresa', empresa).eq('status', 'VALIDADO').eq('aplicado', true).limit(5);

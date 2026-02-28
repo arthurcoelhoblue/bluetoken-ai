@@ -194,7 +194,39 @@ export interface GenerateResponseParams {
 export async function generateResponse(supabase: SupabaseClient, params: GenerateResponseParams): Promise<{ resposta: string; model?: string; provider?: string; prompt_version_id?: string | null }> {
   const { intent, confidence, temperatura, sentimento, acao_recomendada, mensagem_normalizada, empresa, canal, contato, conversation_state, historico } = params;
 
-  const { data: products } = await supabase.from('product_knowledge').select('produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
+  // Try RAG-based knowledge first, fallback to full product list
+  let productsText = '';
+  try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || '';
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || '';
+    
+    const ragResp = await fetch(`${SUPABASE_URL}/functions/v1/knowledge-search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 5, threshold: 0.3 }),
+    });
+
+    if (ragResp.ok) {
+      const ragData = await ragResp.json();
+      if (ragData.context && ragData.total > 0) {
+        productsText = ragData.context;
+      }
+    }
+  } catch { /* fallback below */ }
+
+  if (!productsText) {
+    const { data: products } = await supabase.from('product_knowledge').select('produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
+    const typedProducts = (products || []) as ProductRow[];
+    productsText = typedProducts.map((p) => {
+      let line = `${p.produto_nome}: ${p.descricao_curta || ''}`;
+      if (p.preco_texto) line += ` | Preço: ${p.preco_texto}`;
+      if (p.diferenciais) line += ` | Diferenciais: ${p.diferenciais}`;
+      return line;
+    }).join('\n') || 'Nenhum produto cadastrado — NÃO invente informações.';
+  }
 
   let systemPrompt = '';
   let selectedPromptId: string | null = params.promptVersionId || null;
@@ -230,7 +262,6 @@ PROIBIDO: gerar contratos, pedir CPF/documentos, prometer envio de dados bancár
 Se o lead quer investir, direcione para plataforma.tokeniza.com.br. NUNCA simule um processo de fechamento.
 NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.` : ''}`;
   } else if (discTone) {
-    // Inject DISC tone into A/B tested prompts too
     systemPrompt += `\n\n${discTone}`;
   }
 
@@ -246,13 +277,6 @@ NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar pr
   // Format lead_facts for prompt injection
   const leadFacts = conversation_state?.lead_facts as Record<string, unknown> | undefined;
   const leadFactsText = formatLeadFacts(leadFacts);
-  const typedProducts = (products || []) as ProductRow[];
-  const productsText = typedProducts.map((p) => {
-    let line = `${p.produto_nome}: ${p.descricao_curta || ''}`;
-    if (p.preco_texto) line += ` | Preço: ${p.preco_texto}`;
-    if (p.diferenciais) line += ` | Diferenciais: ${p.diferenciais}`;
-    return line;
-  }).join('\n') || 'Nenhum produto cadastrado — NÃO invente informações.';
 
   const prompt = `CONTEXTO:
 Contato: ${contactName}
