@@ -212,7 +212,7 @@ Deno.serve(async (req) => {
         if (csErr || !csCustomer) { console.error(`[sync] cs_customer ${cpfClean}:`, csErr?.message); stats.errors++; continue; }
         if (existingCustomer) stats.cs_customers_updated++; else stats.cs_customers_created++;
 
-        // Upsert cs_contracts — ALL positions are valid investments
+        // Upsert cs_contracts — each position = one contract, identified by oferta_id
         for (const pos of positions) {
           const subscDate = new Date(pos.subscribed_at || "");
           const anoFiscal = isNaN(subscDate.getTime()) ? new Date().getFullYear() : subscDate.getFullYear();
@@ -220,8 +220,16 @@ Deno.serve(async (req) => {
 
           const contractStatus = pos.settled_at ? "ATIVO" : "PENDENTE";
 
-          const { error: contractErr } = await supabase.from("cs_contracts").upsert({
-            customer_id: csCustomer.id, empresa: "TOKENIZA",
+          // Check if contract already exists by oferta_id
+          const { data: existingContract } = await supabase
+            .from("cs_contracts")
+            .select("id")
+            .eq("customer_id", csCustomer.id)
+            .eq("oferta_id", ofertaId)
+            .maybeSingle();
+
+          const contractPayload = {
+            customer_id: csCustomer.id, empresa: "TOKENIZA" as const,
             ano_fiscal: anoFiscal, plano: pos.deal_name || "Investimento",
             oferta_id: ofertaId, oferta_nome: pos.deal_name || null,
             tipo: pos.deal_asset_type || "crowdfunding",
@@ -229,7 +237,18 @@ Deno.serve(async (req) => {
             data_contratacao: pos.subscribed_at || null,
             status: contractStatus,
             notas: "Importado via tokeniza-gov-sync",
-          }, { onConflict: "customer_id,ano_fiscal,oferta_id" });
+          };
+
+          let contractErr;
+          if (existingContract) {
+            const { error } = await supabase.from("cs_contracts")
+              .update(contractPayload).eq("id", existingContract.id);
+            contractErr = error;
+          } else {
+            const { error } = await supabase.from("cs_contracts")
+              .insert(contractPayload);
+            contractErr = error;
+          }
 
           if (contractErr) { console.error(`[sync] contract:`, contractErr.message); stats.errors++; }
           else stats.cs_contracts_created++;

@@ -11,7 +11,7 @@ export function useCSContracts(customerId: string | undefined) {
         .from('cs_contracts')
         .select('*')
         .eq('customer_id', customerId!)
-        .order('ano_fiscal', { ascending: false });
+        .order('data_contratacao', { ascending: false });
       if (error) throw error;
       return data as unknown as CSContract[];
     },
