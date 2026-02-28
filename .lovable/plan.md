@@ -1,33 +1,31 @@
 
 
-# Plano: Esconder widget nativo + auto-atender chamadas
+# Diagnóstico: Auto-answer não funciona
 
-## Análise dos logs
-Os logs mostram que o `click_to_call` retorna `success`, mas logo em seguida aparece `[WebRTC] Widget event: hangup`. Isso acontece porque:
+## Problema raiz
+Os logs mostram claramente a sequência:
+1. `click_to_call` → `success` 
+2. `incoming {caller: "351910506655"}` (widget recebe a chamada)
+3. 29 segundos depois → `canceled` (ninguém atendeu)
 
-1. O callback API (`/v1/request/callback/`) manda o Zadarma ligar para o ramal 108
-2. O widget WebRTC do Zadarma toca no navegador (incoming call)
-3. Ninguém atende manualmente no widget nativo → a chamada cai
+O `autoAnswer()` **nunca executou** porque nosso listener escuta `zadarmaWidgetEvent` (CustomEvent), mas o widget Zadarma **não dispara** CustomEvents. Os logs `incoming`, `registered`, `connected` são console.logs internos do widget, não eventos que chegam ao nosso listener.
 
-## Correções
+O widget Zadarma se comunica via `postMessage` do iframe, não via CustomEvent no window.
 
-### 1. Esconder o widget nativo do Zadarma com CSS
-Inicializar o widget com `visible: false` novamente (voltar ao modo invisível) e adicionar CSS para garantir que qualquer elemento do Zadarma fique escondido. O widget continua funcional para áudio, apenas invisível.
+## Solução em 2 partes
 
-**Arquivo:** `useZadarmaWebRTC.ts` — mudar `visible` de `true` para `false` + adicionar CSS override para esconder elementos do iframe.
+### 1. Interceptar eventos via `postMessage` (window 'message' listener)
+No `useZadarmaWebRTC.ts`, adicionar `window.addEventListener('message', ...)` para capturar mensagens do iframe Zadarma. Quando detectar um evento de chamada recebida, executar o auto-answer.
 
-### 2. Auto-atender chamadas recebidas (incoming)
-Quando o widget Zadarma detecta um evento `incoming` ou `ringing`, chamar automaticamente `answer()` para aceitar a chamada sem interação manual. Isso faz o fluxo ser: Ligar → callback → ramal toca → auto-atende → chamada conecta.
+### 2. Auto-answer robusto com múltiplas estratégias
+Quando detectar incoming call via postMessage:
+- Enviar `postMessage({ action: 'answer' })` de volta ao iframe
+- Tentar `postMessage({ command: 'accept' })` (formato alternativo)
+- Fazer o widget visível momentaneamente (`visible: true`) para que o auto-answer funcione, e esconder via CSS overlay (posicionar nosso botão flutuante por cima)
 
-**Arquivo:** `useZadarmaWebRTC.ts` — no listener de eventos, ao detectar `incoming`/`ringing`, disparar auto-answer via postMessage para o iframe.
+### 3. Adicionar logging de debug
+Logar TODOS os postMessages recebidos para entender o formato exato que o Zadarma usa. Isso vai nos permitir ajustar a detecção na próxima iteração.
 
-### 3. Adicionar CSS global para esconder o widget Zadarma
-Adicionar regra CSS no `index.css` para esconder qualquer iframe/div do Zadarma que apareça na tela.
-
-**Arquivo:** `src/index.css`
-
-## Resultado esperado
-- Widget nativo do Zadarma invisível (sem o botão verde no canto)
-- Fluxo automático: clica "Ligar" → callback → auto-atende → chamada conecta
-- Todo o controle visual fica no nosso widget customizado
+### Arquivos alterados
+- `src/hooks/useZadarmaWebRTC.ts` — adicionar message listener, melhorar auto-answer, widget visible=true com CSS overlay
 
