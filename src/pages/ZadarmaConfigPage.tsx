@@ -245,6 +245,199 @@ function RedirectionTab({ empresa, extensions, proxy }: { empresa: EmpresaTipo; 
   );
 }
 
+// ─── Ramais Tab (Sync + Create) ──────────────────────
+function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, deleteExtension }: {
+  empresa: EmpresaTipo;
+  extensions: Array<{ id: string; extension_number: string; user_id: string; user_nome?: string; sip_login?: string | null }>;
+  extLoading: boolean;
+  proxy: ReturnType<typeof useZadarmaProxy>;
+  saveExtension: ReturnType<typeof useSaveExtension>;
+  deleteExtension: ReturnType<typeof useDeleteExtension>;
+}) {
+  const [syncing, setSyncing] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [newExtNumber, setNewExtNumber] = useState('');
+  const [zadarmaExts, setZadarmaExts] = useState<Array<{ extension_number: string; sip_login: string }>>([]);
+  const [showSync, setShowSync] = useState(false);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const result = await proxy.mutateAsync({ action: 'sync_extensions', empresa });
+      const list = result?.extensions || [];
+      setZadarmaExts(Array.isArray(list) ? list : []);
+      setShowSync(true);
+
+      // Auto-fill sip_login for already mapped extensions
+      let updated = 0;
+      for (const ext of extensions) {
+        const match = list.find((z: { extension_number: string }) => z.extension_number === ext.extension_number);
+        if (match && match.sip_login && match.sip_login !== ext.sip_login) {
+          await saveExtension.mutateAsync({
+            id: ext.id,
+            empresa,
+            extension_number: ext.extension_number,
+            user_id: ext.user_id,
+            sip_login: match.sip_login,
+          });
+          updated++;
+        }
+      }
+      if (updated > 0) toast.success(`${updated} ramal(is) atualizado(s) com SIP Login`);
+      else toast.info(`${list.length} ramal(is) encontrado(s) no PBX`);
+    } catch (e: unknown) {
+      toast.error(`Erro ao sincronizar: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const handleCreate = async () => {
+    if (!newExtNumber.trim() || newExtNumber.length < 2) {
+      toast.error('Informe o número do ramal (ex: 108)');
+      return;
+    }
+    setCreating(true);
+    try {
+      await proxy.mutateAsync({
+        action: 'create_extension',
+        empresa,
+        payload: { extension: newExtNumber.trim() },
+      });
+      toast.success(`Ramal ${newExtNumber} criado no Zadarma!`);
+      setNewExtNumber('');
+      // Auto-sync to get the sip_login
+      await handleSync();
+    } catch (e: unknown) {
+      toast.error(`Erro ao criar ramal: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDeletePbx = async (extNumber: string) => {
+    try {
+      await proxy.mutateAsync({
+        action: 'delete_pbx_extension',
+        empresa,
+        payload: { extension: extNumber },
+      });
+      toast.success(`Ramal ${extNumber} removido do Zadarma`);
+      setZadarmaExts(prev => prev.filter(e => e.extension_number !== extNumber));
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  // Ramais no Zadarma que NÃO estão mapeados no CRM
+  const unmappedExts = zadarmaExts.filter(
+    z => !extensions.some(e => e.extension_number === z.extension_number)
+  );
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">Mapeamento de Ramais — {empresa}</CardTitle>
+        <CardDescription>Vincule ramais PBX a usuários do CRM. Crie novos ramais ou sincronize do Zadarma.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Actions bar */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+            <RefreshCw className={`h-4 w-4 mr-1 ${syncing ? 'animate-spin' : ''}`} />
+            Sincronizar do Zadarma
+          </Button>
+          <div className="flex items-center gap-1">
+            <Input
+              className="w-28 font-mono text-sm"
+              placeholder="Ex: 108"
+              value={newExtNumber}
+              onChange={e => setNewExtNumber(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            />
+            <Button size="sm" onClick={handleCreate} disabled={creating || !newExtNumber.trim()}>
+              {creating ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Plus className="h-4 w-4 mr-1" />}
+              Criar Ramal
+            </Button>
+          </div>
+        </div>
+
+        {/* Existing mapped extensions */}
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ramal</TableHead>
+              <TableHead>Usuário</TableHead>
+              <TableHead>SIP Login</TableHead>
+              <TableHead className="w-16">Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {extensions.map(ext => (
+              <TableRow key={ext.id}>
+                <TableCell className="font-mono">{ext.extension_number}</TableCell>
+                <TableCell>{ext.user_nome || ext.user_id}</TableCell>
+                <TableCell className="font-mono text-xs">
+                  {ext.sip_login ? (
+                    <Badge variant="secondary" className="font-mono">{ext.sip_login}</Badge>
+                  ) : (
+                    <span className="text-muted-foreground">— sincronize para preencher</span>
+                  )}
+                </TableCell>
+                <TableCell>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteExtension.mutate(ext.id)}>
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TableCell>
+              </TableRow>
+            ))}
+            {extensions.length === 0 && !extLoading && (
+              <TableRow>
+                <TableCell colSpan={4} className="text-center text-muted-foreground py-6">Nenhum ramal mapeado.</TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+
+        {/* Unmapped extensions from Zadarma */}
+        {showSync && unmappedExts.length > 0 && (
+          <Card className="border-dashed">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm">Ramais no Zadarma (não mapeados)</CardTitle>
+              <CardDescription className="text-xs">Estes ramais existem no PBX mas não estão vinculados a nenhum usuário CRM nesta empresa.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                {unmappedExts.map(z => (
+                  <div key={z.extension_number} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                    <div>
+                      <span className="font-mono text-sm font-medium">Ramal {z.extension_number}</span>
+                      <span className="text-xs text-muted-foreground ml-2">SIP: {z.sip_login}</span>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive text-xs"
+                        onClick={() => handleDeletePbx(z.extension_number)}
+                      >
+                        <Trash2 className="h-3 w-3 mr-1" /> Remover do PBX
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {showSync && zadarmaExts.length === 0 && (
+          <p className="text-sm text-muted-foreground text-center py-2">Nenhum ramal encontrado no PBX Zadarma.</p>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ZadarmaConfigContent() {
   const { activeCompany, empresaRecords } = useCompany();
   const activeEmpresa: EmpresaTipo = activeCompany as EmpresaTipo;
@@ -611,43 +804,7 @@ function ZadarmaConfigContent() {
 
         {/* ─── Extensions Tab ───────────────────────── */}
         <TabsContent value="ramais" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Mapeamento de Ramais — {activeEmpresa}</CardTitle>
-              <CardDescription>Vincule ramais PBX a usuários do CRM (filtrado pela empresa ativa)</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Ramal</TableHead>
-                    <TableHead>Usuário</TableHead>
-                    <TableHead>SIP Login</TableHead>
-                    <TableHead className="w-16">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {extensions.map(ext => (
-                    <TableRow key={ext.id}>
-                      <TableCell className="font-mono">{ext.extension_number}</TableCell>
-                      <TableCell>{ext.user_nome || ext.user_id}</TableCell>
-                      <TableCell className="font-mono text-xs">{ext.sip_login || '—'}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={() => deleteExtension.mutate(ext.id)}>
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {extensions.length === 0 && !extLoading && (
-                    <TableRow>
-                      <TableCell colSpan={4} className="text-center text-muted-foreground py-6">Nenhum ramal mapeado.</TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <RamaisTab empresa={activeEmpresa} extensions={extensions} extLoading={extLoading} proxy={proxy} saveExtension={saveExtension} deleteExtension={deleteExtension} />
         </TabsContent>
 
         {/* ─── CRM Stats Tab ────────────────────────── */}

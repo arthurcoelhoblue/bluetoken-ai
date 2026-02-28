@@ -27,17 +27,33 @@ async function signRequest(apiPath: string, params: Record<string, string>, secr
   return encodeBase64(new TextEncoder().encode(hexDigest));
 }
 
-async function zadarmaRequest(apiKey: string, apiSecret: string, apiPath: string, params: Record<string, string> = {}): Promise<Record<string, unknown>> {
+async function zadarmaRequest(apiKey: string, apiSecret: string, apiPath: string, params: Record<string, string> = {}, method: 'GET' | 'POST' | 'PUT' | 'DELETE' = 'GET'): Promise<Record<string, unknown>> {
   const allParams = { ...params, format: 'json' };
   const signature = await signRequest(apiPath, allParams, apiSecret);
-  const queryString = new URLSearchParams(
-    Object.keys(allParams).sort().reduce((acc, k) => { acc[k] = allParams[k]; return acc; }, {} as Record<string, string>)
-  ).toString();
-  
-  const response = await fetch(`${ZADARMA_API_URL}${apiPath}?${queryString}`, {
-    method: 'GET',
-    headers: { 'Authorization': `${apiKey}:${signature}` },
-  });
+
+  let response: Response;
+  if (method === 'GET') {
+    const queryString = new URLSearchParams(
+      Object.keys(allParams).sort().reduce((acc, k) => { acc[k] = allParams[k]; return acc; }, {} as Record<string, string>)
+    ).toString();
+    response = await fetch(`${ZADARMA_API_URL}${apiPath}?${queryString}`, {
+      method: 'GET',
+      headers: { 'Authorization': `${apiKey}:${signature}` },
+    });
+  } else {
+    // POST/PUT/DELETE: send params as form-encoded body
+    const bodyString = new URLSearchParams(
+      Object.keys(allParams).sort().reduce((acc, k) => { acc[k] = allParams[k]; return acc; }, {} as Record<string, string>)
+    ).toString();
+    response = await fetch(`${ZADARMA_API_URL}${apiPath}`, {
+      method,
+      headers: {
+        'Authorization': `${apiKey}:${signature}`,
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: bodyString,
+    });
+  }
 
   const text = await response.text();
   let parsed: Record<string, unknown>;
@@ -172,23 +188,12 @@ Deno.serve(async (req) => {
         const { webhook_url, ...notifyFlags } = payload;
         if (!webhook_url) throw new Error('webhook_url required');
         const whParams: Record<string, string> = { webhook_url: String(webhook_url) };
-        // Map notify flags (notify_start, notify_end, etc.)
         for (const [key, val] of Object.entries(notifyFlags)) {
           if (key.startsWith('notify_') || key === 'speech_recognition') {
             whParams[key] = val ? 'true' : 'false';
           }
         }
-        // Use PUT method for setting webhooks
-        const whSignature = await signRequest('/v1/pbx/callinfo/', whParams, config.api_secret);
-        const whQueryString = new URLSearchParams(
-          Object.keys({ ...whParams, format: 'json' }).sort().reduce((acc, k) => { acc[k] = ({ ...whParams, format: 'json' })[k]; return acc; }, {} as Record<string, string>)
-        ).toString();
-        const whResponse = await fetch(`${ZADARMA_API_URL}/v1/pbx/callinfo/?${whQueryString}`, {
-          method: 'PUT',
-          headers: { 'Authorization': `${config.api_key}:${whSignature}` },
-        });
-        const whText = await whResponse.text();
-        try { result = JSON.parse(whText); } catch { result = { raw: whText }; }
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/callinfo/', whParams, 'PUT');
         break;
       }
 
@@ -219,18 +224,8 @@ Deno.serve(async (req) => {
           id: String(sip_id),
           type: String(redirType),
           destination: String(destination),
-          format: 'json',
         };
-        const redirSignature = await signRequest('/v1/sip/redirection/', redirParams, config.api_secret);
-        const redirQS = new URLSearchParams(
-          Object.keys(redirParams).sort().reduce((acc, k) => { acc[k] = redirParams[k]; return acc; }, {} as Record<string, string>)
-        ).toString();
-        const redirResponse = await fetch(`${ZADARMA_API_URL}/v1/sip/redirection/?${redirQS}`, {
-          method: 'PUT',
-          headers: { 'Authorization': `${config.api_key}:${redirSignature}` },
-        });
-        const redirText = await redirResponse.text();
-        try { result = JSON.parse(redirText); } catch { result = { raw: redirText }; }
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', redirParams, 'PUT');
         break;
       }
 
@@ -239,6 +234,47 @@ Deno.serve(async (req) => {
         const { extension: extNum } = payload;
         if (!extNum) throw new Error('extension required');
         result = await zadarmaRequest(config.api_key, config.api_secret, `/v1/pbx/internal/${String(extNum)}/info`);
+        break;
+      }
+
+      // ─── CREATE EXTENSION ─────────────────────────────
+      case 'create_extension': {
+        const { extension: newExt } = payload;
+        if (!newExt) throw new Error('extension number required (3 digits)');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/create/', { extension: String(newExt) }, 'POST');
+        break;
+      }
+
+      // ─── DELETE PBX EXTENSION ─────────────────────────
+      case 'delete_pbx_extension': {
+        const { extension: delExt } = payload;
+        if (!delExt) throw new Error('extension number required');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/delete/', { extension: String(delExt) }, 'POST');
+        break;
+      }
+
+      // ─── SYNC EXTENSIONS (list all from PBX) ──────────
+      case 'sync_extensions': {
+        const pbxResult = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
+        // Parse response: extensions come as { extensions: [{extension, sip},...] } or similar
+        const rawExts = pbxResult?.extensions || pbxResult?.info?.extensions || pbxResult?.pbx_internals || [];
+        const sipId = pbxResult?.info?.sip_id || pbxResult?.sip_id || '';
+        
+        let extensionsList: Array<{ extension_number: string; sip_login: string }> = [];
+        if (Array.isArray(rawExts)) {
+          extensionsList = rawExts.map((e: Record<string, unknown>) => ({
+            extension_number: String(e.extension || e.number || e.id || ''),
+            sip_login: String(e.sip || e.sip_login || (sipId ? `${sipId}-${e.extension || e.number || e.id}` : '')),
+          }));
+        } else if (typeof rawExts === 'object') {
+          // Could be { "100": {...}, "101": {...} }
+          extensionsList = Object.entries(rawExts).map(([num, info]: [string, unknown]) => ({
+            extension_number: num,
+            sip_login: typeof info === 'object' && info !== null && 'sip' in info ? String((info as Record<string, unknown>).sip) : (sipId ? `${sipId}-${num}` : ''),
+          }));
+        }
+        
+        result = { status: 'success', extensions: extensionsList, raw: pbxResult };
         break;
       }
 
