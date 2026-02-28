@@ -155,6 +155,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   const observerRef = useRef<MutationObserver | null>(null);
   const originalConsoleLog = useRef<typeof console.log>(console.log);
   const autoAnswerAttemptsRef = useRef(0);
+  const autoAnswerDoneRef = useRef(false);
 
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -180,28 +181,33 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   // Auto-answer: staggered click attempts
   const triggerAutoAnswer = useCallback(() => {
     autoAnswerAttemptsRef.current = 0;
+    autoAnswerDoneRef.current = false;
     console.log('[WebRTC] 🟢 Triggering auto-answer sequence...');
     setStatus('ringing');
 
     const attempt = () => {
+      if (autoAnswerDoneRef.current) {
+        console.log('[WebRTC] ✅ Auto-answer already done, skipping further attempts');
+        return;
+      }
       if (autoAnswerAttemptsRef.current >= 10) {
         console.warn('[WebRTC] ⚠️ Auto-answer: gave up after 10 attempts');
         return;
       }
-      if (statusRef.current === 'active' || statusRef.current === 'ready') return; // already answered or ended
+      if (statusRef.current === 'active' || statusRef.current === 'ready') return;
 
       autoAnswerAttemptsRef.current++;
       const clicked = clickAnswerButton();
-      if (!clicked) {
+      if (clicked) {
+        autoAnswerDoneRef.current = true;
+        console.log('[WebRTC] 🔒 Auto-answer done flag set, no more clicks');
+      } else {
         setTimeout(attempt, 500);
       }
     };
 
-    // Start attempts with slight delay for DOM to render
-    setTimeout(attempt, 300);
-    setTimeout(attempt, 800);
-    setTimeout(attempt, 1500);
-    setTimeout(attempt, 3000);
+    // Single delayed attempt — no parallel scheduling
+    setTimeout(attempt, 500);
   }, []);
 
   // console.log interceptor to detect widget events
@@ -221,6 +227,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         triggerAutoAnswer();
       } else if (combined.includes('confirmed') || combined.includes('accepted') || combined.includes('in_call')) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
+        autoAnswerDoneRef.current = true;
         setStatus('active');
       } else if (combined.includes('terminated') || combined.includes('canceled') || combined.includes('bye') || combined.includes('call_end')) {
         origLog('[WebRTC] 📴 CALL ENDED detected via console.log');
@@ -249,8 +256,14 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           // Detect if the added element looks like an answer/incoming UI
           if (html.includes('answer') || html.includes('accept') || html.includes('incoming') || html.includes('zdrm') || html.includes('ringing')) {
             console.log('[WebRTC] 🔍 MutationObserver: potential answer element detected', node.tagName, node.className);
-            // Try clicking immediately
-            setTimeout(() => clickAnswerButton(), 200);
+            if (!autoAnswerDoneRef.current) {
+              setTimeout(() => {
+                if (!autoAnswerDoneRef.current) {
+                  const clicked = clickAnswerButton();
+                  if (clicked) autoAnswerDoneRef.current = true;
+                }
+              }, 200);
+            }
           }
 
           // Also re-apply CSS hiding for any new widget elements
