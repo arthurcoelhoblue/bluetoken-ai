@@ -29,11 +29,7 @@ export function ClickToCallButton({ phone, contactName, dealId, customerId, size
   const handleDial = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     setShowPrice(false);
-    // Unlock AudioContext within user gesture so WebRTC audio works
-    try {
-      const ctx = new AudioContext();
-      ctx.resume().then(() => ctx.close()).catch(() => {});
-    } catch { /* browser doesn't support AudioContext */ }
+    // AudioContext unlock moved to ZadarmaPhoneWidget.handleDial
     const detail: DialEvent = {
       number: phone,
       contactName,
