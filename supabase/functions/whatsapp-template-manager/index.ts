@@ -34,17 +34,26 @@ serve(async (req) => {
     // GET — List templates from Meta
     // ========================================
     if (method === 'GET') {
-      const res = await fetch(
-        `${META_BASE}/${config.metaBusinessAccountId}/message_templates?limit=100`,
-        { headers: { Authorization: `Bearer ${config.metaAccessToken}` } }
-      );
-      if (!res.ok) {
-        const err = await res.text();
-        log.error('Meta list error', { status: res.status, err });
-        return json({ error: `Meta API ${res.status}: ${err}` }, res.status);
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      try {
+        const res = await fetch(
+          `${META_BASE}/${config.metaBusinessAccountId}/message_templates?limit=100`,
+          { headers: { Authorization: `Bearer ${config.metaAccessToken}` }, signal: controller.signal }
+        );
+        clearTimeout(timeout);
+        if (!res.ok) {
+          const err = await res.text();
+          log.error('Meta list error', { status: res.status, err });
+          return json({ error: `Meta API ${res.status}: ${err}` }, res.status);
+        }
+        const data = await res.json();
+        return json({ templates: data.data || [], paging: data.paging });
+      } catch (e) {
+        clearTimeout(timeout);
+        log.error('Meta GET timeout/error', { error: e instanceof Error ? e.message : String(e) });
+        return json({ error: 'Meta API timeout or network error' }, 504);
       }
-      const data = await res.json();
-      return json({ templates: data.data || [], paging: data.paging });
     }
 
     // ========================================
@@ -143,19 +152,33 @@ serve(async (req) => {
     // PATCH — Sync statuses from Meta to local
     // ========================================
     if (method === 'PATCH') {
-      // Fetch all Meta templates
-      const res = await fetch(
-        `${META_BASE}/${config.metaBusinessAccountId}/message_templates?limit=250`,
-        { headers: { Authorization: `Bearer ${config.metaAccessToken}` } }
-      );
+      log.info('PATCH sync started', { empresa });
+      
+      // Fetch all Meta templates with timeout
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 25000);
+      let res: Response;
+      try {
+        res = await fetch(
+          `${META_BASE}/${config.metaBusinessAccountId}/message_templates?limit=250`,
+          { headers: { Authorization: `Bearer ${config.metaAccessToken}` }, signal: controller.signal }
+        );
+        clearTimeout(timeout);
+      } catch (e) {
+        clearTimeout(timeout);
+        log.error('Meta PATCH fetch timeout/error', { error: e instanceof Error ? e.message : String(e) });
+        return json({ error: 'Meta API timeout or network error' }, 504);
+      }
 
       if (!res.ok) {
         const err = await res.text();
+        log.error('Meta PATCH list error', { status: res.status, err });
         return json({ error: `Meta API ${res.status}: ${err}` }, res.status);
       }
 
       const metaData = await res.json();
       const metaTemplates = metaData.data || [];
+      log.info('Meta templates fetched', { count: metaTemplates.length });
 
       // Build map: name -> meta info
       const metaMap = new Map<string, { id: string; status: string; rejected_reason?: string; category?: string; components?: unknown[] }>();
