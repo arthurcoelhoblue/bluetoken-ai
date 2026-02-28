@@ -1,105 +1,76 @@
 
 
-# Melhoria Completa do RAG com Machine Learning
+# Bug Analysis: Phone Widget Auto-Activating
 
-## Estado Atual
-- **knowledge-embed**: Chunking fixo 500 tokens, embeddings via OpenAI `text-embedding-3-small`, armazenados em `knowledge_embeddings` (pgvector)
-- **knowledge-search**: Busca vetorial pura via `search_knowledge_embeddings` (cosine similarity) + fallback keyword rudimentar (substring match)
-- **amelia-learn**: Mineracao de padroes (takeovers, perdas, sequencias) — sem conexao com RAG
-- **knowledge_gaps**: Registra perguntas sem resposta mas sem auto-resolucao
-- **Dados**: 31 secoes, 0 FAQs, 0 embeddings gerados, 0 gaps registrados
-- **Secrets**: `OPENAI_API_KEY` e `LOVABLE_API_KEY` disponiveis
+## Root Cause
 
----
+The bug has **two interacting causes**:
 
-## Plano de Implementacao (6 etapas)
+### 1. Console.log interceptor catches SIP registration events as call events
 
-### 1. Migracao SQL — Hybrid Search + Feedback + Cache
-
-Adicionar ao banco:
-
-- Coluna `fts tsvector` em `knowledge_embeddings` com trigger auto-update (portugues)
-- Indice GIN na coluna `fts`
-- Tabela `knowledge_search_feedback` (query, chunks_returned, outcome, lead_id, empresa, created_at)
-- Tabela `knowledge_query_cache` (query_hash, expanded_query, embedding vector(1536), expires_at)
-- Funcao SQL `hybrid_search_knowledge` que combina cosine similarity + full-text search com Reciprocal Rank Fusion (RRF)
-
-### 2. knowledge-embed — Semantic Chunking
-
-Reescrever a logica de fragmentacao:
-
-- Dividir primeiro por paragrafos/secoes naturais (quebras `\n\n`, headings `##`)
-- Aplicar limite de tokens apenas se paragrafo exceder 500 tokens
-- Prefixar cada chunk com titulo da secao/produto para contexto
-- Overlap semantico: ultima frase do chunk anterior como inicio do proximo
-- Popular coluna `fts` ao inserir
-
-### 3. knowledge-search — Pipeline Completo
-
-Reescrever com pipeline de 4 etapas:
-
+The logs show this sequence after hangup:
 ```
-Query → [Expansion] → [Hybrid Search] → [Re-Ranking] → Resultado
+[WebRTC] 🔴 hangup() called
+[WebRTC] ✅ Clicked hangup button
+...
+BROWSER_SUPPORTED undefined
+registered undefined
+connected undefined
 ```
 
-**3a. Query Expansion**: Usar Lovable AI (`gemini-2.5-flash-lite`) para reescrever queries curtas/ambiguas em versoes mais ricas. Cache de expansoes por hash da query (tabela `knowledge_query_cache`).
+The words `registered` and `connected` are logged by the Zadarma widget during normal SIP registration (not a call). But:
 
-**3b. Hybrid Search (RRF)**: Chamar nova funcao SQL `hybrid_search_knowledge` que:
-- Executa busca vetorial (cosine similarity) — top 15
-- Executa full-text search (tsvector `@@` tsquery) — top 15
-- Combina com RRF: `score = sum(1 / (k + rank))` onde k=60
-- Retorna top 10 unificados
+- **Line 314**: The console.log interceptor matches `confirmed`/`accepted`/`in_call` and sets status to `active`
+- **Line 398**: The postMessage handler matches `confirmed`/`accepted`/`connected` and sets status to `active`
 
-**3c. Re-Ranking com IA**: Enviar top 10 para Lovable AI (`gemini-2.5-flash-lite`) com instrucao de ranquear por relevancia. Retornar top 5.
+When the widget logs `connected` during SIP re-registration after hangup, the postMessage or console interceptor catches it and sets the phone state to `active` — restarting the timer, speech recognition, and the entire call UI.
 
-**3d. Remover fallback de keywords** (substituido pelo hybrid search nativo).
+### 2. MutationObserver fires on static widget DOM
 
-### 4. Feedback Loop — Aprendizado Continuo
+The log `[WebRTC] 🔍 MutationObserver: potential answer element detected DIV` fires because the Zadarma widget's DOM contains elements with words like `accept`/`ringing` as part of its static structure. Even with the `incomingDetectedRef` guard, the observer keeps logging and checking.
 
-**4a. Registro automatico**: No `response-generator`, apos usar chunks RAG, registrar em `knowledge_search_feedback`:
-- query, chunks retornados, empresa, lead_id
-- outcome inferido: se proxima intent do lead for positiva (resposta, agradecimento) = `UTIL`, se escalar/repetir = `NAO_UTIL`
+## The Fix
 
-**4b. Nova edge function `knowledge-feedback-learner`** (CRON semanal):
-- Analisar feedback das ultimas 7 dias
-- Identificar queries com baixa eficacia (outcome `NAO_UTIL` >= 60%)
-- Ajustar `boost` em metadata de chunks consistentemente uteis
-- Gerar sugestoes de FAQ automaticamente para gaps com frequency >= 5 (inserir como `PENDENTE`)
+### A. Add state guards to prevent false `active` transitions
 
-### 5. Knowledge Gap Auto-Resolution
+Only transition to `active` from states that make sense (`calling`, `ringing`, `dialing`). Never from `ready` or `idle`.
 
-Expandir logica no `knowledge-feedback-learner`:
-- Buscar gaps com `frequency >= 5` e `status = 'ABERTO'`
-- Usar Lovable AI para gerar pergunta+resposta baseada no contexto existente
-- Inserir como FAQ com `status = 'PENDENTE'`, `fonte = 'CONVERSA'` para revisao humana
-- Marcar gap como `SUGERIDO`
+### B. Make keyword matching much stricter
 
-### 6. UI — Dashboard de Feedback e Gaps
+- `connected` alone should NOT match — it's a SIP registration event
+- Only match exact Zadarma call event strings like `CONFIRMED`, `incomingCall`, `TERMINATED`
+- The `registered` keyword should only set `ready`, never trigger call logic
 
-Atualizar `KnowledgeRAGStatus.tsx` e `KnowledgeGapsPanel.tsx`:
-- Mostrar metricas de eficacia do RAG (% queries com resultado util)
-- Mostrar FAQs auto-sugeridas pendentes de aprovacao
-- Mostrar metodo de busca usado (semantic vs hybrid vs fallback)
+### C. Disable MutationObserver answer-click logic entirely
 
----
+The auto-answer via MutationObserver is the most dangerous part. The `incomingDetectedRef` guard helps but the observer still reacts to widget DOM mutations during init/hangup. Replace it with a simpler approach: only use the console.log interceptor for incoming detection, and only attempt auto-answer from `triggerAutoAnswer`.
 
-## Arquivos a Criar/Editar
+### D. Reset state atomically on hangup
 
-| Arquivo | Acao |
-|---------|------|
-| Migracao SQL | Nova: fts, hybrid_search, feedback table, cache table |
-| `knowledge-embed/index.ts` | Editar: semantic chunking + popular fts |
-| `knowledge-search/index.ts` | Reescrever: expansion + hybrid + re-ranking |
-| `knowledge-feedback-learner/index.ts` | **Novo**: CRON semanal |
-| `sdr-ia-interpret/response-generator.ts` | Editar: registrar feedback |
-| `src/components/knowledge/KnowledgeRAGStatus.tsx` | Editar: metricas de feedback |
-| `src/hooks/useKnowledgeEmbeddings.ts` | Editar: stats de feedback |
+When `hangup()` is called, set a `hangupCooldownRef` that blocks any status transitions for 3 seconds, preventing the SIP re-registration events from re-activating the call UI.
 
-### Prioridade
-1. Migracao SQL (base para tudo)
-2. Semantic Chunking (melhora qualidade dos embeddings)
-3. Hybrid Search + Query Expansion (maior impacto imediato)
-4. Re-Ranking (refinamento)
-5. Feedback Loop + Auto-Resolution (aprendizado continuo)
-6. UI updates
+## Files to Edit
+
+| File | Change |
+|------|--------|
+| `src/hooks/useZadarmaWebRTC.ts` | Fix console.log interceptor keywords, add state guards, add hangup cooldown, simplify MutationObserver |
+
+## Implementation Details
+
+### Console.log interceptor (lines 305-327)
+- Change `confirmed`/`accepted`/`in_call` check to only match specific patterns like `call confirmed` or `call accepted`, NOT bare words
+- Add guard: only set `active` if current status is `calling` or `ringing`
+- Add hangup cooldown check
+
+### PostMessage handler (lines 384-407)
+- Remove `connected` from the active-state triggers
+- Add same state guards as console.log interceptor
+
+### MutationObserver (lines 336-381)
+- Remove the auto-click logic entirely from the observer — it should only handle CSS re-hiding
+- The `triggerAutoAnswer` function (called from console.log/postMessage interceptors) already handles click attempts
+
+### Hangup function (lines 484-496)
+- Set a `hangupCooldownRef = Date.now()` before clicking hangup
+- In all status transition points, check if `Date.now() - hangupCooldownRef < 3000` and skip if true
 
