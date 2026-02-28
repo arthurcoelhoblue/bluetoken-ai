@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
@@ -62,7 +63,11 @@ export function ZadarmaPhoneWidget() {
       payload: { from: myExtension.extension_number, to: number },
     }, {
       onSuccess: () => setPhoneState('active'),
-      onError: () => setPhoneState('idle'),
+      onError: (error) => {
+        toast.error('Erro ao iniciar chamada. Verifique se a telefonia está ativa para esta empresa.');
+        console.error('Dial error:', error);
+        setPhoneState('idle');
+      },
     });
   }, [number, empresa, myExtension, proxy]);
 
