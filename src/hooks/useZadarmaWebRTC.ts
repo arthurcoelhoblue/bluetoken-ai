@@ -238,6 +238,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   const autoAnswerAttemptsRef = useRef(0);
   const autoAnswerDoneRef = useRef(false);
   const lastAutoAnswerTriggerRef = useRef(0);
+  const incomingDetectedRef = useRef(false);
 
   const statusRef = useRef(status);
   statusRef.current = status;
@@ -270,6 +271,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     lastAutoAnswerTriggerRef.current = now;
     autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
+    incomingDetectedRef.current = true;
     console.log('[WebRTC] 🟢 Triggering auto-answer sequence...');
     setStatus('ringing');
 
@@ -315,9 +317,12 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } else if (combined.includes('confirmed') || combined.includes('accepted') || combined.includes('in_call')) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
         autoAnswerDoneRef.current = true;
+        incomingDetectedRef.current = false;
         setStatus('active');
       } else if (combined.includes('terminated') || combined.includes('canceled') || combined.includes('bye') || combined.includes('call_end')) {
         origLog('[WebRTC] 📴 CALL ENDED detected via console.log');
+        incomingDetectedRef.current = false;
+        autoAnswerDoneRef.current = false;
         setStatus('ready');
       } else if (combined.includes('registered') && (combined.includes('sip') || combined.includes('phone') || combined.includes('webrtc'))) {
         origLog('[WebRTC] ✅ SIP Registered detected via console.log');
@@ -343,11 +348,15 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           // Detect if the added element looks like an answer/incoming UI
           if (html.includes('answer') || html.includes('accept') || html.includes('incoming') || html.includes('zdrm') || html.includes('ringing')) {
             console.log('[WebRTC] 🔍 MutationObserver: potential answer element detected', node.tagName, node.className);
-            if (!autoAnswerDoneRef.current) {
+            // Only auto-click if an incoming call was actually detected
+            if (incomingDetectedRef.current && !autoAnswerDoneRef.current) {
               setTimeout(() => {
-                if (!autoAnswerDoneRef.current) {
+                if (incomingDetectedRef.current && !autoAnswerDoneRef.current) {
                   const clicked = clickAnswerButton();
-                  if (clicked) autoAnswerDoneRef.current = true;
+                  if (clicked) {
+                    autoAnswerDoneRef.current = true;
+                    incomingDetectedRef.current = false;
+                  }
                 }
               }, 200);
             }
