@@ -81,7 +81,13 @@ export function ZadarmaPhoneWidget() {
   }, [phoneState]);
 
   const handleDial = useCallback(() => {
-    if (!number.trim() || !empresa || !myExtension) return;
+    if (!number.trim() || !empresa || !myExtension) {
+      console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension, hasExtension });
+      if (!number.trim()) toast.error('Digite um número para ligar.');
+      else if (!empresa) toast.error('Nenhuma empresa ativa selecionada.');
+      else if (!myExtension) toast.error('Ramal não encontrado. Recarregue a página.');
+      return;
+    }
     setCallTimer(0);
     setOnHold(false);
 
