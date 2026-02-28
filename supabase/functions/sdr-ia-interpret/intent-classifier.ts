@@ -206,7 +206,6 @@ function computeClassificationUpgrade(input: { novaTemperatura: TemperaturaTipo;
     else if (empresa === 'MPUPPE') result.icp = 'MPUPPE_FINTECH_REG';
     else if (empresa === 'AXIA') result.icp = 'AXIA_FINTECH_LAUNCH';
   }
-  }
   if (result.prioridade || result.icp) {
     const baseTemp = novaTemperatura === 'QUENTE' ? 30 : novaTemperatura === 'MORNO' ? 15 : 5;
     result.score_interno = baseTemp + (isHighIntent ? 30 : isMediumIntent ? 15 : 0) + (result.icp ? 10 : 0);
