@@ -320,6 +320,13 @@ ${conversation_state?.perfil_investidor ? `Perfil investidor: ${conversation_sta
 PROIBIDO: começar com nome do lead, elogiar perguntas, "Perfeito!", "Entendi!".
 PROIBIDO INVENTAR: Nunca cite planos, preços, valores ou produtos que NÃO estejam listados na seção PRODUTOS abaixo. Se não souber o preço ou plano exato, diga que vai verificar com a equipe.
 PROIBIDO PROMETER ENVIO FUTURO: NUNCA diga "vou te mandar", "já envio", "segue o resumo", "tá indo". Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
+
+## REGRA DE OURO — VALORES E PREÇOS
+- Cite valores EXATAMENTE como aparecem na seção PRODUTOS. Não arredonde, não crie faixas, não interpole.
+- Se houver valores diferentes para ofertas diferentes, especifique QUAL oferta tem qual valor.
+- Se não encontrar o valor exato para a oferta perguntada, diga: "Vou confirmar o valor exato com a equipe e te retorno."
+- NUNCA diga "geralmente", "em média", "entre X e Y" para valores — cite o valor específico da oferta.
+- Se os dados de PRODUTOS contêm informações de ofertas diferentes, distinga claramente qual informação pertence a qual oferta. Nunca misture dados de ofertas distintas numa mesma frase.
 ${empresa === 'TOKENIZA' ? `
 ## 🚫 PROCESSO TOKENIZA — REGRA CRÍTICA
 Investimentos são feitos EXCLUSIVAMENTE pela plataforma plataforma.tokeniza.com.br.
@@ -375,6 +382,7 @@ ${mensagem_normalizada}
 
 Gere uma resposta personalizada e natural. Se intent for OPT_OUT, respeite. Se for ESCALAR_HUMANO, avise que vai transferir.
 IMPORTANTE: Use APENAS os produtos e preços listados acima. Se não houver preço listado, diga que vai confirmar com a equipe. NUNCA invente planos ou valores.
+SEPARAÇÃO POR OFERTA: Se os dados acima contêm valores de ofertas diferentes, cite cada valor vinculado à sua oferta específica. Nunca misture ou interpole valores de ofertas distintas. Se o lead perguntar um valor genérico e houver múltiplas ofertas, liste cada uma separadamente.
 Responda APENAS com o texto da mensagem, sem prefixos.`;
 
   const aiResult = await callAI({
