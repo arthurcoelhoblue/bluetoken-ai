@@ -13,12 +13,15 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { useProductKnowledgeList, useDeleteProductKnowledge } from "@/hooks/useProductKnowledge";
 import { FaqListTab } from "@/components/knowledge/FaqListTab";
 import { KnowledgeRAGStatus } from "@/components/knowledge/KnowledgeRAGStatus";
+import { KnowledgeGaps } from "@/components/knowledge/KnowledgeGaps";
+import { useCompany } from "@/contexts/CompanyContext";
 import { toast } from "sonner";
 
 export default function ProductKnowledgeList() {
   const [empresaFilter, setEmpresaFilter] = useState<'TOKENIZA' | 'BLUE' | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
+  const { activeCompany } = useCompany();
 
   const { data: products, isLoading } = useProductKnowledgeList(
     empresaFilter === 'all' ? undefined : empresaFilter
@@ -53,6 +56,7 @@ export default function ProductKnowledgeList() {
           <TabsList>
             <TabsTrigger value="produtos">Produtos</TabsTrigger>
             <TabsTrigger value="faq">FAQ</TabsTrigger>
+            <TabsTrigger value="gaps">Lacunas</TabsTrigger>
           </TabsList>
 
           <TabsContent value="produtos" className="space-y-4 mt-4">
@@ -144,6 +148,10 @@ export default function ProductKnowledgeList() {
 
           <TabsContent value="faq" className="mt-4">
             <FaqListTab />
+          </TabsContent>
+
+          <TabsContent value="gaps" className="mt-4">
+            <KnowledgeGaps empresa={activeCompany || 'BLUE'} />
           </TabsContent>
         </Tabs>
       </div>

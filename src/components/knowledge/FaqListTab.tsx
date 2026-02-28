@@ -87,6 +87,11 @@ export function FaqListTab() {
                     <div className="flex flex-wrap gap-1">
                       {faq.categoria && <Badge variant="secondary">{faq.categoria}</Badge>}
                       {faq.tags?.slice(0, 3).map(t => <Badge key={t} variant="outline" className="text-xs">{t}</Badge>)}
+                      {(faq as any).use_count > 0 && (
+                        <Badge variant="outline" className="text-xs text-primary border-primary/30">
+                          🎯 {(faq as any).use_count}x usada
+                        </Badge>
+                      )}
                     </div>
                     {faq.status === 'RASCUNHO' && (
                       <AlertDialog>
