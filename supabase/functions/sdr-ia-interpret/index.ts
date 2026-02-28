@@ -9,6 +9,7 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import { createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { isHorarioComercial } from "../_shared/business-hours.ts";
 
 // Local modules (previously separate Edge Functions)
 import { loadFullContext, type ParsedContext } from "./message-parser.ts";
@@ -147,6 +148,9 @@ serve(async (req) => {
       reprocessContext = `\n🔄 RETOMADA DE ATENDIMENTO: Este lead estava sendo atendido manualmente por um humano e AGORA FOI DEVOLVIDO PARA VOCÊ (Amélia). VOCÊ É A ATENDENTE AGORA. NÃO escale, NÃO transfira, NÃO diga que vai chamar alguém. Continue a conversa naturalmente a partir do contexto existente. Analise o histórico e dê continuidade ao atendimento.\n`;
     }
 
+    const foraDoHorario = !isHorarioComercial();
+    log.info('Horário comercial check', { foraDoHorario });
+
     const classifierResult = await classifyIntent(supabase, {
       mensagem_normalizada: msg.conteudo,
       empresa: msg.empresa,
@@ -160,6 +164,7 @@ serve(async (req) => {
       cadenciaNome: parsedContext.cadenciaNome,
       pessoaContext: parsedContext.pessoaContext,
       reprocessContext,
+      foraDoHorario,
     });
 
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
@@ -295,9 +300,22 @@ serve(async (req) => {
     }
 
     // ========================================
+    // 5b. GUARDRAIL: Fora do horário comercial → bloquear ESCALAR_HUMANO
+    // ========================================
+    let finalAcao = classifierResult.acao || acao;
+    if (foraDoHorario && (finalAcao === 'ESCALAR_HUMANO' || finalAcao === 'CRIAR_TAREFA_CLOSER')) {
+      log.info('Guardrail fora do horário: convertendo escalação para resposta automática', { acaoOriginal: finalAcao });
+      finalAcao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+      classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+      classifierResult.deve_responder = true;
+      if (!respostaTexto || respostaTexto.includes('conectar') || respostaTexto.includes('chamar') || respostaTexto.includes('momento')) {
+        respostaTexto = 'Nosso time não está disponível agora (atendemos de seg a sex, 8h às 18h), mas posso te ajudar com tudo! Como posso te ajudar? 😊';
+      }
+    }
+
+    // ========================================
     // 6. EXECUTE ACTIONS (direct call, no HTTP)
     // ========================================
-    const finalAcao = classifierResult.acao || acao;
     const telefone = parsedContext.telefone;
 
     const canRespond = classifierResult.deve_responder && respostaTexto && telefone && classifierResult.intent !== 'OPT_OUT';

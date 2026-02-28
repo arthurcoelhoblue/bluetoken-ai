@@ -19,7 +19,7 @@ export function isHorarioComercial(): boolean {
   const brasilia = getHorarioBrasilia();
   const dia = brasilia.getDay(); // 0=dom, 1=seg, ..., 5=sex, 6=sab
   const hora = brasilia.getHours();
-  return dia >= 1 && dia <= 5 && hora >= 9 && hora < 18;
+  return dia >= 1 && dia <= 5 && hora >= 8 && hora < 18;
 }
 
 /**
@@ -33,8 +33,8 @@ export function proximoHorarioComercial(): Date {
 
   let diasParaAdicionar = 0;
 
-  if (dia >= 1 && dia <= 5 && hora < 9) {
-    // Dia útil antes das 9h → hoje às 09:00
+  if (dia >= 1 && dia <= 5 && hora < 8) {
+    // Dia útil antes das 8h → hoje às 08:00
     diasParaAdicionar = 0;
   } else if (dia === 5 && hora >= 18) {
     // Sexta após 18h → segunda
@@ -50,12 +50,12 @@ export function proximoHorarioComercial(): Date {
     diasParaAdicionar = 1;
   }
 
-  // Construir data em BRT que corresponda a 09:00
+  // Construir data em BRT que corresponda a 08:00
   const resultado = new Date(brasilia);
   resultado.setDate(resultado.getDate() + diasParaAdicionar);
-  resultado.setHours(9, 0, 0, 0);
+  resultado.setHours(8, 0, 0, 0);
 
-  // Converter de volta para UTC: 09:00 BRT = 12:00 UTC
+  // Converter de volta para UTC: 08:00 BRT = 11:00 UTC
   const utcMs = resultado.getTime() - (-3 * 60) * 60 * 1000;
   return new Date(utcMs);
 }
