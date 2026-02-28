@@ -246,6 +246,7 @@ export interface ExecuteActionsParams {
   historico?: Record<string, unknown>[];
   classification_upgrade?: Record<string, unknown>;
   _ia_null_count_update?: number;
+  lead_facts_extraidos?: Record<string, unknown> | null;
 }
 
 export interface ExecuteActionsResult {
@@ -254,7 +255,7 @@ export interface ExecuteActionsResult {
 }
 
 export async function executeActions(supabase: SupabaseClient, params: ExecuteActionsParams): Promise<ExecuteActionsResult> {
-  const { lead_id, run_id, empresa, acao, acao_detalhes, telefone, resposta, source, intent, mensagem_original, novo_estado_funil, frameworks_atualizados, disc_estimado, ultima_pergunta_id, conversation_state, pessoaContext, classificacao, pipedriveDealeId, historico, classification_upgrade, _ia_null_count_update } = params;
+  const { lead_id, run_id, empresa, acao, acao_detalhes, telefone, resposta, source, intent, mensagem_original, novo_estado_funil, frameworks_atualizados, disc_estimado, ultima_pergunta_id, conversation_state, pessoaContext, classificacao, pipedriveDealeId, historico, classification_upgrade, _ia_null_count_update, lead_facts_extraidos } = params;
 
   // 1. Apply action
   const acaoAplicada = await applyAction(supabase, run_id, lead_id, empresa, acao, acao_detalhes, mensagem_original);
@@ -381,6 +382,83 @@ export async function executeActions(supabase: SupabaseClient, params: ExecuteAc
         .eq('lead_id', lead_id)
         .eq('empresa', empresa)
         .neq('origem', 'MANUAL');
+    }
+  }
+
+  // 3.5 Persist lead_facts (merge, never overwrite)
+  if (lead_facts_extraidos && lead_id) {
+    try {
+      // Filter out null/empty values
+      const newFacts: Record<string, unknown> = {};
+      for (const [k, v] of Object.entries(lead_facts_extraidos)) {
+        if (v === null || v === undefined) continue;
+        if (Array.isArray(v) && v.length === 0) continue;
+        if (typeof v === 'string' && v.trim() === '') continue;
+        newFacts[k] = v;
+      }
+      if (Object.keys(newFacts).length > 0) {
+        const { data: curState } = await supabase
+          .from('lead_conversation_state')
+          .select('lead_facts')
+          .eq('lead_id', lead_id)
+          .eq('empresa', empresa)
+          .maybeSingle();
+        const existingFacts = (curState?.lead_facts as Record<string, unknown>) || {};
+        // Merge: arrays are concatenated and deduplicated, strings are overwritten only if new
+        const merged: Record<string, unknown> = { ...existingFacts };
+        for (const [k, v] of Object.entries(newFacts)) {
+          if (Array.isArray(v) && Array.isArray(existingFacts[k])) {
+            merged[k] = [...new Set([...(existingFacts[k] as string[]), ...v])];
+          } else if (!existingFacts[k]) {
+            merged[k] = v;
+          } else {
+            merged[k] = v; // Update with newer info
+          }
+        }
+        await supabase
+          .from('lead_conversation_state')
+          .update({ lead_facts: merged, updated_at: new Date().toISOString() })
+          .eq('lead_id', lead_id)
+          .eq('empresa', empresa);
+        log.info('lead_facts merged', { lead_id, factsCount: Object.keys(newFacts).length });
+      }
+    } catch (e) {
+      log.error('Erro ao persistir lead_facts', { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
+
+  // 3.6 Engagement scoring by response time
+  if (lead_id && historico && historico.length > 0) {
+    try {
+      // Find last outbound message timestamp
+      const lastOutbound = (historico as Array<Record<string, unknown>>).find(h => h.direcao === 'OUTBOUND');
+      if (lastOutbound?.created_at) {
+        const outboundTime = new Date(lastOutbound.created_at as string).getTime();
+        const inboundTime = Date.now();
+        const diffMinutes = (inboundTime - outboundTime) / (1000 * 60);
+
+        let scoreAdjust = 0;
+        if (diffMinutes < 5) scoreAdjust = 15;
+        else if (diffMinutes < 30) scoreAdjust = 10;
+        else if (diffMinutes < 120) scoreAdjust = 5;
+        else if (diffMinutes > 1440) scoreAdjust = -10;
+
+        if (scoreAdjust !== 0) {
+          // Find deal for this lead
+          const { data: contact } = await supabase.from('contacts').select('id').eq('legacy_lead_id', lead_id).maybeSingle();
+          if (contact?.id) {
+            const { data: deal } = await supabase.from('deals').select('id, score_engajamento').eq('contact_id', contact.id).eq('status', 'ABERTO').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+            if (deal) {
+              const currentScore = (deal.score_engajamento as number) || 50;
+              const newScore = Math.max(0, Math.min(100, currentScore + scoreAdjust));
+              await supabase.from('deals').update({ score_engajamento: newScore, updated_at: new Date().toISOString() }).eq('id', deal.id);
+              log.info('Engagement score updated', { deal_id: deal.id, adjust: scoreAdjust, from: currentScore, to: newScore, responseTimeMin: Math.round(diffMinutes) });
+            }
+          }
+        }
+      }
+    } catch (e) {
+      log.error('Erro ao calcular engagement score', { error: e instanceof Error ? e.message : String(e) });
     }
   }
 

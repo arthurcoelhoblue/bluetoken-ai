@@ -4,6 +4,7 @@ import { envConfig, createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import type { EmpresaTipo, CanalTipo, CadenceRunStatus, LeadCadenceRun } from "../_shared/types.ts";
+import { callAI } from "../_shared/ai-provider.ts";
 import { getHorarioBrasilia, isHorarioComercial, proximoHorarioComercial } from "../_shared/business-hours.ts";
 import { resolveChannelConfig } from "../_shared/channel-resolver.ts";
 import type { ChannelConfig } from "../_shared/channel-resolver.ts";
@@ -221,7 +222,7 @@ async function resolverMensagem(
 
   const { data: template, error: templateError } = await supabase
     .from('message_templates')
-    .select('*, meta_template_id, meta_status, meta_language, meta_components')
+    .select('*, meta_template_id, meta_status, meta_language, meta_components, usa_llm')
     .eq('empresa', empresa)
     .eq('codigo', templateCodigo)
     .eq('ativo', true)
@@ -261,13 +262,50 @@ async function resolverMensagem(
     oferta = await buscarOfertaAtiva();
   }
 
-  const body = resolverPlaceholders(template.conteudo, {
+  let body = resolverPlaceholders(template.conteudo, {
     nome: contact.nome || 'você',
     primeiro_nome: contact.primeiro_nome || contact.nome?.split(' ')[0] || 'você',
     email: contact.email || '',
     empresa: empresa,
     oferta: oferta,
   });
+
+  // DISC-adapted follow-ups: rewrite body using LLM when usa_llm=true and lead has DISC profile
+  if (template.usa_llm && contact.lead_id) {
+    try {
+      const { data: convState } = await supabase
+        .from('lead_conversation_state')
+        .select('perfil_disc')
+        .eq('lead_id', contact.lead_id)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      const disc = convState?.perfil_disc as string | null;
+      if (disc && ['D', 'I', 'S', 'C'].includes(disc)) {
+        const discInstructions: Record<string, string> = {
+          'D': 'DISC D: Reescreva de forma DIRETA e objetiva. Foque em RESULTADOS. Mensagem CURTA.',
+          'I': 'DISC I: Reescreva de forma AMIGÁVEL e entusiasmada. Use tom leve e emocional.',
+          'S': 'DISC S: Reescreva de forma CALMA e acolhedora. Enfatize SEGURANÇA e confiança.',
+          'C': 'DISC C: Reescreva de forma PRECISA e técnica. Inclua dados e lógica.',
+        };
+        const aiResult = await callAI({
+          system: `Você reescreve mensagens de follow-up comercial adaptando o tom ao perfil DISC do destinatário. Mantenha o conteúdo e a intenção, mas adapte o estilo. Responda APENAS com a mensagem reescrita, sem prefixos.`,
+          prompt: `${discInstructions[disc]}\n\nMENSAGEM ORIGINAL:\n${body}\n\nReescreva mantendo o mesmo conteúdo mas adaptando o tom:`,
+          functionName: 'cadence-runner-disc',
+          empresa,
+          temperature: 0.4,
+          maxTokens: 400,
+          supabase,
+        });
+        if (aiResult.content && aiResult.content.length > 10) {
+          body = aiResult.content;
+          log.info('Template reescrito com adaptação DISC', { disc, templateCodigo });
+        }
+      }
+    } catch (e) {
+      log.warn('DISC adaptation failed, using original template', { error: e instanceof Error ? e.message : String(e) });
+    }
+  }
 
   if (oferta) {
     log.info('Placeholders resolvidos com oferta', { oferta: oferta.nome });

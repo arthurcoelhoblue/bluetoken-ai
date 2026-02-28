@@ -47,6 +47,8 @@ export function useConversationState({ leadId, empresa, enabled = true }: UseCon
         assumido_por: data.assumido_por || null,
         assumido_em: data.assumido_em || null,
         devolvido_em: data.devolvido_em || null,
+        summary: (data as Record<string, unknown>).summary as string | null || null,
+        lead_facts: (data as Record<string, unknown>).lead_facts as Record<string, unknown> | null || null,
       };
     },
     enabled: enabled && !!leadId && !!empresa,

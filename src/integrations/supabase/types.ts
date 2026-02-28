@@ -3815,10 +3815,12 @@ export type Database = {
           id: string
           idioma_preferido: string
           last_inbound_at: string | null
+          lead_facts: Json | null
           lead_id: string
           modo: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc: string | null
           perfil_investidor: string | null
+          summary: string | null
           ultima_pergunta_id: string | null
           ultimo_contato_em: string
           updated_at: string
@@ -3839,10 +3841,12 @@ export type Database = {
           id?: string
           idioma_preferido?: string
           last_inbound_at?: string | null
+          lead_facts?: Json | null
           lead_id: string
           modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
           perfil_investidor?: string | null
+          summary?: string | null
           ultima_pergunta_id?: string | null
           ultimo_contato_em?: string
           updated_at?: string
@@ -3863,10 +3867,12 @@ export type Database = {
           id?: string
           idioma_preferido?: string
           last_inbound_at?: string | null
+          lead_facts?: Json | null
           lead_id?: string
           modo?: Database["public"]["Enums"]["atendimento_modo"]
           perfil_disc?: string | null
           perfil_investidor?: string | null
+          summary?: string | null
           ultima_pergunta_id?: string | null
           ultimo_contato_em?: string
           updated_at?: string
@@ -4349,6 +4355,7 @@ export type Database = {
           meta_template_id: string | null
           nome: string
           updated_at: string
+          usa_llm: boolean | null
         }
         Insert: {
           assunto_template?: string | null
@@ -4368,6 +4375,7 @@ export type Database = {
           meta_template_id?: string | null
           nome: string
           updated_at?: string
+          usa_llm?: boolean | null
         }
         Update: {
           assunto_template?: string | null
@@ -4387,6 +4395,7 @@ export type Database = {
           meta_template_id?: string | null
           nome?: string
           updated_at?: string
+          usa_llm?: boolean | null
         }
         Relationships: []
       }
@@ -5837,6 +5846,17 @@ export type Database = {
       }
     }
     Views: {
+      amelia_resolution_stats: {
+        Row: {
+          dia: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          escaladas: number | null
+          resolvidas_autonomamente: number | null
+          taxa_resolucao_pct: number | null
+          total_conversas: number | null
+        }
+        Relationships: []
+      }
       analytics_canal_esforco: {
         Row: {
           canal: string | null
