@@ -1,33 +1,61 @@
 
 
-# Diagnóstico: Mensagem inbound WhatsApp não chegou
+# Corrigir Amélia inventando informações de produto
 
-## O que investiguei
+## Diagnóstico
 
-1. **Edge function `meta-webhook`**: código OK, configurada com `verify_jwt = false`
-2. **Conexão WhatsApp**: ativa para TOKENIZA, `phone_number_id: 1009376255595711`
-3. **Secrets**: `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `META_ACCESS_TOKEN_TOKENIZA` — todos configurados
-4. **Logs**: **zero requisições** recebidas pelo `meta-webhook` — nem boot, nem requests
+### Problema encontrado
+A Amélia respondeu "geralmente entre R$ 5 e R$ 10 mil" — informação inventada. A causa raiz é dupla:
 
-## Causa raiz
+1. **Conflito na base de conhecimento**: As FAQs dizem "a partir de R$ 100" (tokens genéricos), enquanto o PITCH Tokeniza Portugal diz "a partir de R$ 5.000" (SAFE). A IA recebe ambos e interpola um range que não existe.
 
-A Meta não está enviando eventos para a URL do webhook. Possíveis razões:
+2. **Prompt insuficiente para forçar citação literal**: Apesar de ter "PROIBIDO INVENTAR", o prompt não instrui a Amélia a citar valores exatamente como estão na base — ela parafraseia e arredonda.
 
-1. **Webhook não configurado no Facebook Developer Console** — a URL de callback precisa ser `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook` com o verify token correspondente ao secret `META_WEBHOOK_VERIFY_TOKEN`
-2. **Webhook não verificado** — a Meta faz um GET de verificação antes de começar a enviar POSTs. Se o verify token não bater, a verificação falha
-3. **Assinatura do campo `messages` não subscrita** — no console da Meta, além de configurar a URL, é preciso assinar o campo "messages" do WhatsApp Business Account
+3. **Fallback do `product_knowledge` não tem `preco_texto`**: Para Tokeniza, `preco_texto` é NULL. Então quando o RAG falha ou retorna chunks ambíguos, não há preço canônico.
 
-## Ações necessárias (manual, no Facebook Developer Console)
+### Mensagens problemáticas do Arthur Coelho
+- "geralmente entre R$ 5 e R$ 10 mil" — valor inventado
+- "a partir de R$ 5 mil em ativos reais com rentabilidade acima da renda fixa" — generalizou o mínimo do Portugal para toda a Tokeniza
 
-1. Acessar **Meta for Developers → App → WhatsApp → Configuração**
-2. Em **Webhook**, configurar:
-   - **Callback URL**: `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook`
-   - **Verify token**: o valor do secret `META_WEBHOOK_VERIFY_TOKEN`
-3. Clicar **Verificar e salvar**
-4. Assinar o campo **`messages`** (checkbox)
-5. Enviar nova mensagem de teste
+## Plano de correção
 
-## Nenhuma alteração de código necessária
+### 1. Reforçar prompt anti-alucinação no response-generator
+No `systemPrompt` default (linha 315-339), adicionar regra mais dura:
 
-O `meta-webhook` está completo e funcional. O problema é exclusivamente de configuração na plataforma Meta.
+```
+REGRA DE OURO — VALORES E PREÇOS:
+- Cite valores EXATAMENTE como aparecem na seção PRODUTOS. Não arredonde, não crie faixas, não interpole.
+- Se houver valores diferentes para ofertas diferentes, especifique QUAL oferta tem qual valor.
+- Se não encontrar o valor exato para a oferta perguntada, diga: "Vou confirmar o valor exato com a equipe e te retorno."
+- NUNCA diga "geralmente", "em média", "entre X e Y" para valores — cite o valor específico da oferta.
+```
+
+### 2. Melhorar injeção de contexto RAG com separação por oferta
+No `prompt` final (linha 357-378), após a seção PRODUTOS, adicionar instrução:
+
+```
+Se os dados de PRODUTOS contêm informações de ofertas diferentes, distinga claramente qual informação pertence a qual oferta. Nunca misture dados de ofertas distintas numa mesma frase.
+```
+
+### 3. Corrigir dados conflitantes na base de conhecimento
+Os FAQs duplicados sobre "valor mínimo" precisam ser harmonizados:
+- FAQ 1: "a partir de R$ 100" — refere-se a tokens de ofertas genéricas
+- FAQ 2: "a partir de R$100" — duplicado
+- PITCH Portugal: "a partir de R$ 5.000" — específico do SAFE
+
+Recomendação: atualizar os FAQs para especificar que o mínimo varia por oferta e listar os exemplos corretos.
+
+### 4. Preencher `preco_texto` no product_knowledge da Tokeniza
+Atualmente é NULL. Preencher com texto canônico tipo "Varia por oferta. Tokens: a partir de R$ 100. SAFE Portugal: a partir de R$ 5.000."
+
+## Arquivos a modificar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Reforçar regras de citação literal de valores no systemPrompt e no prompt final |
+
+## Ação manual necessária (base de conhecimento)
+- Revisar FAQs duplicados sobre valor mínimo
+- Preencher `preco_texto` no `product_knowledge` da Tokeniza
+- Considerar adicionar FAQ específico: "Qual o mínimo para Tokeniza Portugal?" com resposta "R$ 5.000 via SAFE tokenizado"
 
