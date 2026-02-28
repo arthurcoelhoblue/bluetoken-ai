@@ -1,27 +1,21 @@
 
 
-# Excluir templates Tokeniza criados antes de 26/03
+# Diagnóstico: Templates Tokeniza não foram inseridos
 
-## Diagnóstico
+A migration anterior que deveria popular os templates, cadências, FAQs e produtos da Tokeniza **não foi efetivamente criada no banco**. Atualmente existem apenas 17 templates, todos da empresa BLUE.
 
-Encontrei **28 templates de mensagem** da Tokeniza criados antes de 26/03/2026. Eles são referenciados por:
-- **13 cadence_steps** (via `template_codigo`)
-- **5 cadências** (que contêm os steps)
-- **~100 lead_cadence_runs** (execuções dessas cadências)
-- **~8.713 lead_cadence_events** (eventos dessas execuções)
+Como o hook `useTemplates` filtra por `activeCompanies`, se você está com TOKENIZA selecionada, a lista aparece vazia.
 
-Não há foreign keys diretas para `message_templates`, mas as cadências e steps ficarão órfãos se não forem limpos.
+## Plano
 
-## Plano de execução
+Recriar a migration SQL para inserir todos os dados da Tokeniza com as correções já discutidas:
 
-Uma única migration SQL que deleta na ordem correta de dependências:
+1. **7 produtos** (TOKENIZA_PLATFORM, IMOVEL, AGRO, FINANCE, STARTUP, AUTO, ATLETA)
+2. **Seções de conhecimento** (GERAL, PITCH, RISCOS, ESTRUTURA_JURIDICA)
+3. **8 FAQs** com terminologia corrigida
+4. **14 templates de mensagem** (WhatsApp + Email) com dados atualizados (7 mil investidores, 30M TVL, taxa 1.5%, "mercado de transações subsequentes")
+5. **4 cadências** (Inbound, MQL Quente, Carrinho Abandonado, Upsell)
+6. **Steps das cadências** vinculados aos templates
 
-1. `lead_cadence_events` → referenciados pelos runs das cadências Tokeniza pré-26/03
-2. `lead_cadence_runs` → das cadências Tokeniza pré-26/03
-3. `cadence_stage_triggers` → das cadências Tokeniza pré-26/03
-4. `cadence_steps` → das cadências Tokeniza pré-26/03
-5. `cadences` → Tokeniza pré-26/03 (5 cadências)
-6. `message_templates` → Tokeniza pré-26/03 (28 templates)
-
-Os dados de `product_knowledge` e `knowledge_faq` da Tokeniza **não serão afetados** — apenas templates e suas cadências dependentes.
+Todos os dados serão inseridos com `ON CONFLICT DO NOTHING` para segurança.
 
