@@ -1,46 +1,42 @@
 
 
-# Simplificar: Usar transcrição nativa do Zadarma
+# Web Speech API para Coaching em Tempo Real
 
-## Situação atual (ineficiente)
-1. `NOTIFY_RECORD` chega com `call_id_with_rec`
-2. `call-transcribe` baixa o áudio inteiro via URL
-3. Envia para Whisper (OpenAI) → transcrição
-4. Envia para Claude Haiku → análise
+## Visão geral
+Capturar a fala do vendedor via `webkitSpeechRecognition` (browser, custo zero) e enviar os chunks de texto ao `call-coach` a cada 15s, substituindo o `transcription_chunk: null` atual.
 
-**Problema**: Download de áudio + Whisper é lento, caro, e redundante se o Zadarma já transcreveu.
+## Arquivos
 
-## Proposta: Buscar transcrição direto da API Zadarma
+### 1. Novo: `src/hooks/useSpeechRecognition.ts`
+- Hook que encapsula `webkitSpeechRecognition`
+- Configuração: `lang: 'pt-BR'`, `continuous: true`, `interimResults: false`
+- Acumula `finalTranscript` (texto completo) e expõe `getAndResetChunk()` para consumo periódico
+- Reinicia automaticamente em caso de erro/stop inesperado (browsers encerram sessões longas)
+- Expõe: `start()`, `stop()`, `getAndResetChunk()`, `isListening`, `isSupported`
 
-O Zadarma expõe o endpoint `GET /v1/pbx/record/transcript/` que retorna o texto já transcrito por eles. O proxy já tem toda a infraestrutura de autenticação HMAC pronta.
+### 2. Alterar: `src/components/zadarma/CoachingSidebar.tsx`
+- Receber nova prop `transcriptionChunk?: string`
+- No `fetchCoaching`, enviar `transcription_chunk: transcriptionChunk` ao invés de `null`
+- Incluir no array de dependências do `useCallback`
 
-### Alterações
+### 3. Alterar: `src/components/zadarma/ZadarmaPhoneWidget.tsx`
+- Importar e usar `useSpeechRecognition`
+- Iniciar captura quando `phoneState === 'active'`, parar quando encerrar
+- A cada 15s (sincronizado com o polling do coaching), chamar `getAndResetChunk()` e passar o texto como prop `transcriptionChunk` ao `CoachingSidebar`
+- Indicador visual discreto (ícone de mic pulsando) quando speech recognition está ativo
+- Mostrar mensagem de fallback se browser não suporta (`isSupported === false`)
 
-**1. `supabase/functions/zadarma-proxy/index.ts`**
-- Adicionar action `get_transcript` que chama `/v1/pbx/record/transcript/` com o `call_id`
-
-**2. `supabase/functions/call-transcribe/index.ts`**
-- **Passo 1**: Tentar buscar transcrição do Zadarma via proxy interno (custo zero, já pago no plano)
-- **Passo 2**: Se não houver transcrição disponível (serviço não habilitado no ramal), fallback para Gemini Flash multimodal via Lovable AI Gateway (sem precisar de OPENAI_API_KEY)
-- Manter a análise de sentimento/action_items via `callAI()` usando a transcrição obtida (de qualquer fonte)
-- Remover dependência obrigatória de `OPENAI_API_KEY`
-
-**3. `supabase/functions/zadarma-webhook/index.ts`**
-- Sem alteração — já dispara `call-transcribe` no `NOTIFY_RECORD`
-
-### Fluxo resultante
+## Fluxo resultante
 ```text
-NOTIFY_RECORD → call-transcribe
-  ├─ Tenta: GET /v1/pbx/record/transcript/ (grátis, rápido)
-  │   └─ Se tem texto → usa direto
-  ├─ Fallback: Gemini Flash multimodal (áudio base64, sem Whisper)
-  │   └─ Se GOOGLE_API_KEY → transcreve + analisa em 1 chamada
-  └─ Análise: callAI() com texto → summary, sentiment, action_items
+Chamada ativa → mic browser captura fala do vendedor
+  → acumula texto (interimResults off, só final)
+  → a cada 15s, CoachingSidebar consome o chunk
+  → envia ao call-coach com transcription_chunk preenchido
+  → coach retorna insights contextualizados
 ```
 
-### Resultado
-- Zero custo de transcrição quando Zadarma Speech Recognition está habilitado
-- Fallback inteligente para Gemini quando não está
-- Remove dependência de OPENAI_API_KEY
-- Mesmo pipeline posterior (deal_activity, CS notifications, incidents)
+## Limitações conhecidas
+- Só captura o lado do vendedor (microfone do browser), não o cliente
+- Chrome/Edge suportam bem; Firefox/Safari têm suporte limitado
+- Browser pode encerrar sessões longas (~60s); hook reinicia automaticamente
 
