@@ -3194,6 +3194,7 @@ export type Database = {
           created_at: string
           embedding: string | null
           empresa: string
+          fts: unknown
           id: string
           metadata: Json | null
           source_id: string
@@ -3206,6 +3207,7 @@ export type Database = {
           created_at?: string
           embedding?: string | null
           empresa: string
+          fts?: unknown
           id?: string
           metadata?: Json | null
           source_id: string
@@ -3218,6 +3220,7 @@ export type Database = {
           created_at?: string
           embedding?: string | null
           empresa?: string
+          fts?: unknown
           id?: string
           metadata?: Json | null
           source_id?: string
@@ -3352,6 +3355,7 @@ export type Database = {
       }
       knowledge_gaps: {
         Row: {
+          auto_suggested_at: string | null
           created_at: string
           description: string | null
           empresa: string
@@ -3361,10 +3365,12 @@ export type Database = {
           resolved_by: string | null
           sample_queries: string[]
           status: string
+          suggested_faq_id: string | null
           topic: string
           updated_at: string
         }
         Insert: {
+          auto_suggested_at?: string | null
           created_at?: string
           description?: string | null
           empresa: string
@@ -3374,10 +3380,12 @@ export type Database = {
           resolved_by?: string | null
           sample_queries?: string[]
           status?: string
+          suggested_faq_id?: string | null
           topic: string
           updated_at?: string
         }
         Update: {
+          auto_suggested_at?: string | null
           created_at?: string
           description?: string | null
           empresa?: string
@@ -3387,6 +3395,7 @@ export type Database = {
           resolved_by?: string | null
           sample_queries?: string[]
           status?: string
+          suggested_faq_id?: string | null
           topic?: string
           updated_at?: string
         }
@@ -3420,6 +3429,81 @@ export type Database = {
             referencedColumns: ["user_id"]
           },
         ]
+      }
+      knowledge_query_cache: {
+        Row: {
+          created_at: string
+          embedding: string | null
+          empresa: string
+          expanded_query: string
+          expires_at: string
+          hit_count: number | null
+          id: string
+          original_query: string
+          query_hash: string
+        }
+        Insert: {
+          created_at?: string
+          embedding?: string | null
+          empresa: string
+          expanded_query: string
+          expires_at?: string
+          hit_count?: number | null
+          id?: string
+          original_query: string
+          query_hash: string
+        }
+        Update: {
+          created_at?: string
+          embedding?: string | null
+          empresa?: string
+          expanded_query?: string
+          expires_at?: string
+          hit_count?: number | null
+          id?: string
+          original_query?: string
+          query_hash?: string
+        }
+        Relationships: []
+      }
+      knowledge_search_feedback: {
+        Row: {
+          chunks_returned: Json | null
+          created_at: string
+          empresa: string
+          expanded_query: string | null
+          id: string
+          lead_id: string | null
+          outcome: string | null
+          outcome_reason: string | null
+          query: string
+          search_method: string | null
+        }
+        Insert: {
+          chunks_returned?: Json | null
+          created_at?: string
+          empresa: string
+          expanded_query?: string | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          outcome_reason?: string | null
+          query: string
+          search_method?: string | null
+        }
+        Update: {
+          chunks_returned?: Json | null
+          created_at?: string
+          empresa?: string
+          expanded_query?: string | null
+          id?: string
+          lead_id?: string | null
+          outcome?: string | null
+          outcome_reason?: string | null
+          query?: string
+          search_method?: string | null
+        }
+        Relationships: []
       }
       knowledge_sections: {
         Row: {
@@ -7377,6 +7461,26 @@ export type Database = {
           _user_id: string
         }
         Returns: boolean
+      }
+      hybrid_search_knowledge: {
+        Args: {
+          p_empresa: string
+          p_rrf_k?: number
+          p_threshold?: number
+          p_top_k?: number
+          query_embedding: string
+          query_text: string
+        }
+        Returns: {
+          chunk_text: string
+          id: string
+          metadata: Json
+          rrf_score: number
+          search_source: string
+          similarity: number
+          source_id: string
+          source_type: string
+        }[]
       }
       increment_faq_use_count: { Args: { faq_id: string }; Returns: undefined }
       provision_tenant_schema: {

@@ -226,6 +226,19 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
           } catch { /* ignore - RPC may not exist yet */ }
         }
       }
+
+      // === ML: Register search feedback for learning loop ===
+      try {
+        await supabase.from('knowledge_search_feedback').insert({
+          query: mensagem_normalizada,
+          expanded_query: ragData.expanded_query || null,
+          chunks_returned: ragChunks.map((c: any) => ({ source_id: c.source_id, source_type: c.source_type, similarity: c.similarity })),
+          search_method: ragSearchMethod,
+          lead_id: contato?.legacy_lead_id || contato?.id || null,
+          empresa,
+          outcome: 'PENDENTE',
+        });
+      } catch (e) { console.error('Feedback registration failed:', e); }
     }
   } catch { /* fallback below */ }
 

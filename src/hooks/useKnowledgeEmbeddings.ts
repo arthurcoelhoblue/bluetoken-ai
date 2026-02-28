@@ -7,16 +7,22 @@ interface EmbeddingStats {
   byEmpresa: Record<string, number>;
 }
 
+interface FeedbackStats {
+  total: number;
+  util: number;
+  naoUtil: number;
+  pendente: number;
+  efficacyRate: number;
+}
+
 export function useKnowledgeEmbeddingStats() {
   return useQuery({
     queryKey: ['knowledge-embedding-stats'],
     queryFn: async (): Promise<EmbeddingStats> => {
-      // Count total embeddings
       const { count: total } = await supabase
         .from('knowledge_embeddings' as any)
         .select('*', { count: 'exact', head: true });
 
-      // Count by source_type
       const { data: byTypeData } = await supabase
         .from('knowledge_embeddings' as any)
         .select('source_type');
@@ -26,7 +32,6 @@ export function useKnowledgeEmbeddingStats() {
         byType[row.source_type] = (byType[row.source_type] || 0) + 1;
       });
 
-      // Count by empresa
       const { data: byEmpresaData } = await supabase
         .from('knowledge_embeddings' as any)
         .select('empresa');
@@ -38,7 +43,7 @@ export function useKnowledgeEmbeddingStats() {
 
       return { total: total || 0, byType, byEmpresa };
     },
-    refetchInterval: 10000, // Poll every 10s during reindexing
+    refetchInterval: 10000,
   });
 }
 
@@ -61,13 +66,36 @@ export function useKnowledgeSectionCount() {
   });
 }
 
+export function useKnowledgeFeedbackStats() {
+  return useQuery({
+    queryKey: ['knowledge-feedback-stats'],
+    queryFn: async (): Promise<FeedbackStats> => {
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const { data } = await supabase
+        .from('knowledge_search_feedback' as any)
+        .select('outcome')
+        .gte('created_at', sevenDaysAgo);
+
+      const rows = data || [];
+      const total = rows.length;
+      const util = rows.filter((r: any) => r.outcome === 'UTIL').length;
+      const naoUtil = rows.filter((r: any) => r.outcome === 'NAO_UTIL').length;
+      const pendente = total - util - naoUtil;
+      const efficacyRate = total > 0 ? Math.round((util / total) * 100) : 0;
+
+      return { total, util, naoUtil, pendente, efficacyRate };
+    },
+    refetchInterval: 30000,
+  });
+}
+
 export function useReindexKnowledge() {
   return useMutation({
     mutationFn: async (empresa?: string) => {
       const { data, error } = await supabase.functions.invoke('knowledge-embed', {
         body: { action: 'reindex', empresa },
       });
-
       if (error) throw error;
       return data;
     },
@@ -80,7 +108,6 @@ export function useEmbedSection() {
       const { data, error } = await supabase.functions.invoke('knowledge-embed', {
         body: { action: 'embed_section', source_id: sectionId },
       });
-
       if (error) throw error;
       return data;
     },
@@ -93,7 +120,18 @@ export function useEmbedFaq() {
       const { data, error } = await supabase.functions.invoke('knowledge-embed', {
         body: { action: 'embed_faq', source_id: faqId },
       });
+      if (error) throw error;
+      return data;
+    },
+  });
+}
 
+export function useRunFeedbackLearner() {
+  return useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.functions.invoke('knowledge-feedback-learner', {
+        body: {},
+      });
       if (error) throw error;
       return data;
     },
