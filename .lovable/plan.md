@@ -1,62 +1,33 @@
 
 
-# Corrigir datas de investimento usando `deals.start_date`
+# Diagnóstico: Mensagem inbound WhatsApp não chegou
 
-## Diagnóstico final
+## O que investiguei
 
-A cadeia de datas está assim:
+1. **Edge function `meta-webhook`**: código OK, configurada com `verify_jwt = false`
+2. **Conexão WhatsApp**: ativa para TOKENIZA, `phone_number_id: 1009376255595711`
+3. **Secrets**: `META_WEBHOOK_VERIFY_TOKEN`, `META_APP_SECRET`, `META_ACCESS_TOKEN_TOKENIZA` — todos configurados
+4. **Logs**: **zero requisições** recebidas pelo `meta-webhook` — nem boot, nem requests
 
-```text
-API Tokeniza → pos.createdAt (2026-02-24, data do batch)
-            → sync-tokeniza → positions.invested_at = createdAt do batch
-            → investor-export → subscribed_at = invested_at || created_at
-            → tokeniza-gov-sync → cs_contracts.data_contratacao = subscribed_at
-```
+## Causa raiz
 
-As datas de 2024/2025 que existem no banco do Gov estão na tabela **deals**, no campo `start_date`, que vem de `proj.startDate` da API Tokeniza. São as datas de início de cada projeto/oferta de investimento.
+A Meta não está enviando eventos para a URL do webhook. Possíveis razões:
 
-O `investor-export` busca `deals ( name, asset_type, status )` mas **não inclui `start_date`**. Esse campo é o melhor proxy disponível para a data real do investimento.
+1. **Webhook não configurado no Facebook Developer Console** — a URL de callback precisa ser `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook` com o verify token correspondente ao secret `META_WEBHOOK_VERIFY_TOKEN`
+2. **Webhook não verificado** — a Meta faz um GET de verificação antes de começar a enviar POSTs. Se o verify token não bater, a verificação falha
+3. **Assinatura do campo `messages` não subscrita** — no console da Meta, além de configurar a URL, é preciso assinar o campo "messages" do WhatsApp Business Account
 
-## Alterações necessárias
+## Ações necessárias (manual, no Facebook Developer Console)
 
-### 1. No projeto Tokeniza Gov — `investor-export/index.ts`
+1. Acessar **Meta for Developers → App → WhatsApp → Configuração**
+2. Em **Webhook**, configurar:
+   - **Callback URL**: `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook`
+   - **Verify token**: o valor do secret `META_WEBHOOK_VERIFY_TOKEN`
+3. Clicar **Verificar e salvar**
+4. Assinar o campo **`messages`** (checkbox)
+5. Enviar nova mensagem de teste
 
-Duas mudanças:
+## Nenhuma alteração de código necessária
 
-**a)** Adicionar `start_date` ao select de deals (linha 59):
-```typescript
-deals ( name, asset_type, status, start_date )
-```
-
-**b)** Usar `start_date` do deal como fallback na construção do `subscribed_at` (linha 126):
-```typescript
-subscribed_at: pos.invested_at || subscriptionData?.subscribed_at || pos.deals?.start_date || pos.created_at,
-```
-
-Prioridade de fallback:
-1. `invested_at` — data específica da posição (quando preenchida corretamente)
-2. `subscriptions.subscribed_at` — data de subscrição (tabela vazia hoje)
-3. `deals.start_date` — **data de início do projeto** (datas reais de 2024/2025)
-4. `created_at` — último recurso
-
-### 2. Neste projeto (Amélia) — nenhuma mudança de código
-
-O `tokeniza-gov-sync` já mapeia `pos.subscribed_at` para `cs_contracts.data_contratacao`. Basta re-rodar o orchestrator após o deploy no Gov.
-
-### 3. Passos de execução
-
-1. Aplicar a alteração no `investor-export` do Tokeniza Gov (2 linhas)
-2. Deploy da function no Gov
-3. Rodar `tokeniza-gov-sync-orchestrator` aqui na Amélia
-4. Verificar que as datas dos contratos agora refletem 2024/2025
-
-## Código para aplicar no Tokeniza Gov
-
-```typescript
-// investor-export/index.ts — linha 59: adicionar start_date
-deals ( name, asset_type, status, start_date )
-
-// investor-export/index.ts — linha 126: adicionar fallback
-subscribed_at: pos.invested_at || subscriptionData?.subscribed_at || pos.deals?.start_date || pos.created_at,
-```
+O `meta-webhook` está completo e funcional. O problema é exclusivamente de configuração na plataforma Meta.
 
