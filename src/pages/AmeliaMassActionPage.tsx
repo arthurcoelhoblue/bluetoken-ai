@@ -131,13 +131,16 @@ function useTemplates(empresa: string | undefined, canal: string) {
     queryKey: ['templates-mass-action', empresa, canal],
     enabled: !!empresa,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('message_templates')
         .select('id, nome, codigo, canal, conteudo')
         .eq('empresa', empresa as 'BLUE' | 'TOKENIZA')
         .eq('ativo', true)
-        .eq('canal', canal as 'WHATSAPP' | 'EMAIL' | 'SMS')
-        .order('nome');
+        .eq('canal', canal as 'WHATSAPP' | 'EMAIL' | 'SMS');
+      if (canal === 'WHATSAPP') {
+        q = q.eq('meta_status', 'APPROVED');
+      }
+      const { data, error } = await q.order('nome');
       if (error) throw error;
       return (data ?? []) as TemplateItem[];
     },
