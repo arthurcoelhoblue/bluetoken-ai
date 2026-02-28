@@ -1,33 +1,43 @@
 
 
-# Correção do Erro ao Salvar Ramal
+# Correção do upsert de ramais em 2 arquivos restantes
 
 ## Problema
-O `AssignProfileDialog.tsx` faz upsert com `onConflict: 'user_id,empresa'`, mas a unique constraint real na tabela `zadarma_extensions` é `(empresa, extension_number)`. Não existe constraint unique em `(user_id, empresa)`, causando falha silenciosa no upsert.
+A correção anterior só foi aplicada em `AssignProfileDialog.tsx`. Os arquivos `EditUserDialog.tsx` e `UserAccessList.tsx` ainda usam `upsert` com `onConflict: 'user_id,empresa'`, que não corresponde a nenhuma constraint real.
 
-## Solução
+## Correções
 
-### Modificar `src/components/settings/AssignProfileDialog.tsx`
-- Trocar a lógica de upsert por: primeiro deletar extensões existentes do usuário para as empresas selecionadas, depois inserir a nova extensão
-- Isso evita conflito com a constraint real e funciona para criar ou atualizar
-
-Lógica corrigida no `handleSave`:
+### 1. `src/components/settings/EditUserDialog.tsx` (linhas 80-90)
+Substituir o bloco de upsert por delete+insert:
 ```typescript
-// Antes de inserir, remover extensões antigas do usuário nas empresas selecionadas
-await supabase.from('zadarma_extensions')
-  .delete()
-  .eq('user_id', userId)
-  .in('empresa', selectedEmpresas);
-
-// Inserir nova extensão para cada empresa selecionada
-if (ramal) {
-  for (const emp of selectedEmpresas) {
-    await supabase.from('zadarma_extensions').insert({
-      user_id: userId,
-      extension_number: ramal,
-      empresa: emp as any,
-    });
-  }
+// Update ramal
+if (data.ramal) {
+  await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+  const { error } = await supabase.from('zadarma_extensions').insert({
+    user_id: userId,
+    extension_number: data.ramal,
+    empresa: 'BLUE',
+  });
+  if (error) throw error;
+} else if (currentRamal) {
+  const { error } = await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+  if (error) throw error;
 }
 ```
+
+### 2. `src/components/settings/UserAccessList.tsx` (linhas 50-55)
+Mesma abordagem de delete+insert:
+```typescript
+if (ramalValue) {
+  await supabase.from('zadarma_extensions').delete().eq('user_id', userId);
+  const { error } = await supabase.from('zadarma_extensions').insert({
+    user_id: userId,
+    extension_number: ramalValue,
+    empresa: 'BLUE',
+  });
+  if (error) { toast.error('Erro ao salvar ramal'); return; }
+}
+```
+
+Ambos seguem o mesmo padrão já aplicado no `AssignProfileDialog`.
 
