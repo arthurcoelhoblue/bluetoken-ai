@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -10,7 +10,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Phone, Plus, Trash2, RefreshCw, Check, Copy, TestTube2, BarChart3, Wifi, WifiOff, Settings2, Loader2, DollarSign, Clock, PhoneIncoming, PhoneOutgoing, PhoneMissed } from 'lucide-react';
+import { Phone, Plus, Trash2, RefreshCw, Check, Copy, TestTube2, BarChart3, Wifi, WifiOff, Settings2, Loader2, DollarSign, Clock, PhoneIncoming, PhoneOutgoing, PhoneMissed, AlertTriangle, ExternalLink } from 'lucide-react';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from '@/components/ui/alert-dialog';
 import { toast } from 'sonner';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useCompany } from '@/contexts/CompanyContext';
@@ -398,30 +399,55 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
           </TableBody>
         </Table>
 
-        {/* Unmapped extensions from Zadarma */}
+        {/* Unmapped extensions from Zadarma — protected against accidental deletion */}
         {showSync && unmappedExts.length > 0 && (
           <Card className="border-dashed">
             <CardHeader className="pb-2">
-              <CardTitle className="text-sm">Ramais no Zadarma (não mapeados)</CardTitle>
-              <CardDescription className="text-xs">Estes ramais existem no PBX mas não estão vinculados a nenhum usuário CRM nesta empresa.</CardDescription>
+              <CardTitle className="text-sm flex items-center gap-2">
+                <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                Ramais externos (não vinculados ao CRM)
+              </CardTitle>
+              <CardDescription className="text-xs">
+                Estes ramais existem no PBX Zadarma mas não estão vinculados a nenhum usuário neste CRM. Podem estar em uso em outros sistemas (ex: Pipedrive).
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
                 {unmappedExts.map(z => (
                   <div key={z.extension_number} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
-                    <div>
+                    <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-medium">Ramal {z.extension_number}</span>
-                      <span className="text-xs text-muted-foreground ml-2">SIP: {z.sip_login}</span>
+                      <span className="text-xs text-muted-foreground">SIP: {z.sip_login}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Externo</Badge>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-destructive text-xs"
-                        onClick={() => handleDeletePbx(z.extension_number)}
-                      >
-                        <Trash2 className="h-3 w-3 mr-1" /> Remover do PBX
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button variant="ghost" size="sm" className="text-destructive/60 hover:text-destructive text-xs">
+                            <Trash2 className="h-3 w-3 mr-1" /> Excluir do PBX
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle className="flex items-center gap-2">
+                              <AlertTriangle className="h-5 w-5 text-destructive" />
+                              Excluir ramal {z.extension_number} do PBX?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Este ramal pode estar em uso em outros sistemas (ex: Pipedrive, integrações externas). Excluí-lo do PBX Zadarma afetará <strong>todos</strong> os sistemas que o utilizam. Esta ação não pode ser desfeita.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction
+                              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              onClick={() => handleDeletePbx(z.extension_number)}
+                            >
+                              Sim, excluir do PBX
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </div>
                   </div>
                 ))}
