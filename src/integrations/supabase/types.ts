@@ -3243,6 +3243,7 @@ export type Database = {
           status: string
           tags: string[] | null
           updated_at: string
+          use_count: number
           visivel_amelia: boolean
         }
         Insert: {
@@ -3261,6 +3262,7 @@ export type Database = {
           status?: string
           tags?: string[] | null
           updated_at?: string
+          use_count?: number
           visivel_amelia?: boolean
         }
         Update: {
@@ -3279,6 +3281,7 @@ export type Database = {
           status?: string
           tags?: string[] | null
           updated_at?: string
+          use_count?: number
           visivel_amelia?: boolean
         }
         Relationships: [
@@ -3344,6 +3347,77 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "product_knowledge"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      knowledge_gaps: {
+        Row: {
+          created_at: string
+          description: string | null
+          empresa: string
+          frequency: number
+          id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          sample_queries: string[]
+          status: string
+          topic: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          empresa: string
+          frequency?: number
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sample_queries?: string[]
+          status?: string
+          topic: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          empresa?: string
+          frequency?: number
+          id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          sample_queries?: string[]
+          status?: string
+          topic?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "knowledge_gaps_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_gaps_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "knowledge_gaps_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "knowledge_gaps_resolved_by_fkey"
+            columns: ["resolved_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
           },
         ]
       }

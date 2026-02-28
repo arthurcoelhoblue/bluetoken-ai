@@ -196,6 +196,8 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
 
   // Try RAG-based knowledge first, fallback to full product list
   let productsText = '';
+  let ragChunks: any[] = [];
+  let ragSearchMethod = '';
   try {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || '';
     const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || '';
@@ -211,11 +213,58 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
 
     if (ragResp.ok) {
       const ragData = await ragResp.json();
+      ragChunks = ragData.chunks || [];
+      ragSearchMethod = ragData.search_method || 'semantic';
       if (ragData.context && ragData.total > 0) {
         productsText = ragData.context;
+
+        // === FASE 2: Increment use_count for FAQs used ===
+        const faqIds = ragChunks.filter((c: any) => c.source_type === 'faq').map((c: any) => c.source_id);
+        for (const faqId of faqIds) {
+          try {
+            await supabase.rpc('increment_faq_use_count', { faq_id: faqId }).catch(() => {
+              // Fallback: direct update if RPC doesn't exist
+              supabase.from('knowledge_faq').update({ use_count: supabase.sql`use_count + 1` }).eq('id', faqId);
+            });
+          } catch { /* ignore */ }
+        }
       }
     }
   } catch { /* fallback below */ }
+
+  // === FASE 3: Register knowledge gap when no relevant context found ===
+  if (ragChunks.length === 0 && mensagem_normalizada.length > 10) {
+    try {
+      // Check if similar gap already exists
+      const { data: existingGaps } = await supabase
+        .from('knowledge_gaps')
+        .select('id, frequency, sample_queries')
+        .eq('empresa', empresa)
+        .eq('status', 'ABERTO')
+        .ilike('topic', `%${mensagem_normalizada.slice(0, 50)}%`)
+        .limit(1);
+
+      if (existingGaps && existingGaps.length > 0) {
+        const gap = existingGaps[0];
+        const samples = gap.sample_queries || [];
+        if (samples.length < 10) samples.push(mensagem_normalizada.slice(0, 200));
+        await supabase.from('knowledge_gaps').update({
+          frequency: gap.frequency + 1,
+          sample_queries: samples,
+          updated_at: new Date().toISOString(),
+        }).eq('id', gap.id);
+      } else {
+        await supabase.from('knowledge_gaps').insert({
+          empresa,
+          topic: mensagem_normalizada.slice(0, 100),
+          description: `Amélia não encontrou contexto relevante para esta pergunta (método: ${ragSearchMethod || 'none'})`,
+          frequency: 1,
+          sample_queries: [mensagem_normalizada.slice(0, 200)],
+          status: 'ABERTO',
+        });
+      }
+    } catch (e) { console.error('Knowledge gap registration failed:', e); }
+  }
 
   if (!productsText) {
     const { data: products } = await supabase.from('product_knowledge').select('produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
