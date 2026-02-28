@@ -46,8 +46,8 @@ export function PipelineFilters({
 }: PipelineFiltersProps) {
   return (
     <div className="flex flex-col gap-3 bg-muted/30 rounded-lg p-3">
-      {/* Linha 1: Pipeline selector + Novo Deal */}
-      <div className="flex items-center gap-3">
+      {/* Linha 1: Pipeline + Novo Deal + IA centralizados */}
+      <div className="flex items-center justify-center gap-3 flex-wrap">
         <Select value={selectedPipelineId ?? ''} onValueChange={onPipelineChange}>
           <SelectTrigger className="w-56 h-9">
             <SelectValue placeholder="Pipeline" />
@@ -61,12 +61,23 @@ export function PipelineFilters({
           </SelectContent>
         </Select>
 
-        <div className="ml-auto">
-          <Button onClick={onNewDeal} size="sm" className="h-9">
-            <Plus className="h-4 w-4 mr-1" />
-            Novo Deal
-          </Button>
-        </div>
+        <Button onClick={onNewDeal} size="sm" className="h-9">
+          <Plus className="h-4 w-4 mr-1" />
+          Novo Deal
+        </Button>
+
+        <Button
+          variant={etiquetaIA ? 'default' : 'outline'}
+          size="sm"
+          className="gap-1.5 h-9 text-xs"
+          onClick={() => onEtiquetaIAChange(!etiquetaIA)}
+        >
+          <Bot className="h-3.5 w-3.5" />
+          Atendimento IA
+          {etiquetaIA && (
+            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">on</Badge>
+          )}
+        </Button>
       </div>
 
       {/* Linha 2: Filtros centralizados */}
@@ -108,19 +119,6 @@ export function PipelineFilters({
             </SelectContent>
           </Select>
         )}
-
-        <Button
-          variant={etiquetaIA ? 'default' : 'outline'}
-          size="sm"
-          className="gap-1.5 h-9 text-xs"
-          onClick={() => onEtiquetaIAChange(!etiquetaIA)}
-        >
-          <Bot className="h-3.5 w-3.5" />
-          Atendimento IA
-          {etiquetaIA && (
-            <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">on</Badge>
-          )}
-        </Button>
       </div>
     </div>
   );
