@@ -1,24 +1,35 @@
 
 
-# Bug: Botão de desligar não funciona — `hangup()` não clica no widget Zadarma
+# Bug: Hangup não funciona ao ligar pelo deal
 
 ## Causa raiz
 
-O `webrtc.hangup()` (linha 387-395 de `useZadarmaWebRTC.ts`) apenas envia `postMessage` e `CustomEvent` para o iframe do Zadarma. Porém, o widget Zadarma v9 **não responde** a esses eventos — ele só funciona via clique direto no DOM, exatamente como o botão de atender.
+Os logs mostram:
+```
+[WebRTC] ✅ Clicked hangup button: [class*="zdrm"][class*="decline"] 
+  zdrm-webphone-call-btn zdrm-webphone-decline-btn zdrm-webphone-hide zdrm-webphone-hide zdrm-webphone-hide
+```
 
-O fluxo de atender funciona porque usa `clickAnswerButton()` que faz `.click()` direto nos elementos `zdrm-*`. Mas o hangup não tem lógica equivalente.
+O `clickHangupButton()` está clicando em um botão **oculto** (`zdrm-webphone-hide`). Este é o botão de "decline" para chamadas recebidas, não o botão de encerrar chamada ativa. O clique não faz nada — a chamada continua ativa no WebRTC.
+
+Quando liga pelo botão flutuante (digitando o número manualmente), o widget pode estar em estado diferente do DOM, com o botão correto visível. Quando liga via deal (auto-dial), o timing diferente faz o seletor encontrar o botão errado primeiro.
 
 ## Correção em `src/hooks/useZadarmaWebRTC.ts`
 
-### 1. Criar função `clickHangupButton()` similar a `clickAnswerButton()`
-- Seletores: `[class*="zdrm-webphone-hangup"]`, `[class*="zdrm"][class*="hangup"]`, `[class*="zdrm"][class*="end-call"]`, `[class*="zdrm-webphone-reject"]`
-- Clica no primeiro elemento encontrado no DOM
+### 1. Filtrar elementos com classe `zdrm-webphone-hide`
+Na função `clickHangupButton()`, antes de clicar, verificar se o elemento **não** possui a classe `zdrm-webphone-hide`. Elementos ocultos pelo widget devem ser ignorados.
 
-### 2. Atualizar `hangup()` para chamar `clickHangupButton()`
-- Chamar `clickHangupButton()` como ação principal
-- Manter os `postMessage` como fallback
-- Setar status para `'ready'`
+```typescript
+// Antes de el.click():
+if (el.classList.contains('zdrm-webphone-hide')) continue;
+```
+
+### 2. Aplicar o mesmo filtro em `clickAnswerButton()`
+Mesma lógica — não clicar em botões marcados como `hide` pelo widget Zadarma.
+
+### 3. Fallback: se nenhum botão visível for encontrado, tentar clicar sem filtro
+Se todos os botões encontrados tiverem `zdrm-webphone-hide`, fazer uma segunda passada sem o filtro como último recurso.
 
 ## Resultado esperado
-- Clicar no botão vermelho de desligar → clica no botão de hangup do widget Zadarma oculto → chamada encerrada
+- Hangup clica apenas no botão ativo/visível do widget → chamada encerra corretamente tanto pelo botão flutuante quanto pelo deal.
 
