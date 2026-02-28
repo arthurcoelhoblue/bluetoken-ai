@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -42,6 +42,7 @@ export function ZadarmaPhoneWidget() {
   const [callTimer, setCallTimer] = useState(0);
 
   const proxy = useZadarmaProxy();
+  const autoDialRef = useRef(false);
 
   // Sync WebRTC status to phone state
   useEffect(() => {
@@ -68,6 +69,7 @@ export function ZadarmaPhoneWidget() {
       setDealId(detail.dealId);
       setMinimized(false);
       setPhoneState('idle');
+      autoDialRef.current = true;
     };
     window.addEventListener('bluecrm:dial', handler);
     return () => window.removeEventListener('bluecrm:dial', handler);
@@ -121,6 +123,14 @@ export function ZadarmaPhoneWidget() {
       setPhoneState('idle');
     }
   }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
+
+  // Auto-dial when triggered via ClickToCallButton
+  useEffect(() => {
+    if (autoDialRef.current && number.trim() && phoneState === 'idle' && empresa && myExtension) {
+      autoDialRef.current = false;
+      handleDial();
+    }
+  }, [number, phoneState, empresa, myExtension, handleDial]);
 
   const handleHangup = useCallback(() => {
     if (isWebRTCMode) {
