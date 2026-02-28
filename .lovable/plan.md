@@ -1,29 +1,27 @@
 
 
-# Fix: Multiple clicks hanging up the call
+# Auto-dial ao clicar em "Ligar" nos contatos, deals e leads
 
-## Root cause
+## Problema atual
 
-The logs show the sequence:
-1. `incoming` → auto-click → `accepted` → `connected` (call connects successfully)
-2. But then MutationObserver and staggered timeouts keep clicking the same button 3-4 more times
-3. Clicking `zdrm-webphone-call-btn` after the call is connected **toggles/hangs up** the call
+O `ClickToCallButton` (usado em deals, contatos, leads, CS) apenas abre o widget flutuante e preenche o número — o usuário ainda precisa clicar "Ligar" manualmente no widget. O comportamento esperado é que a ligação seja iniciada automaticamente.
 
-The staggered attempts (`setTimeout(attempt, 300)`, `setTimeout(attempt, 800)`, etc.) are all scheduled simultaneously and cannot be cancelled. The MutationObserver also fires independently, adding more clicks.
+## Correção em `src/components/zadarma/ZadarmaPhoneWidget.tsx`
 
-## Fix in `src/hooks/useZadarmaWebRTC.ts`
+### 1. Adicionar flag para auto-dial após evento `bluecrm:dial`
+- Criar um ref `autoDialRef` que é setado como `true` quando o evento `bluecrm:dial` é recebido
+- Adicionar um `useEffect` que observa mudanças no `number` e, quando `autoDialRef.current === true`, chama `handleDial()` automaticamente
+- Resetar o flag após o dial ser disparado
 
-### 1. Add a ref to track if auto-answer succeeded
-- `autoAnswerDoneRef = useRef(false)` — set to `true` on first successful click
-- Check this ref in `clickAnswerButton()`, all `setTimeout` callbacks, and the MutationObserver before clicking
+### 2. Fluxo resultante
+- Usuário clica no ícone de telefone em qualquer lugar (deal, contato, lead, CS)
+- `ClickToCallButton` dispara evento `bluecrm:dial`
+- Widget recebe evento → seta número, nome, dealId → abre widget
+- `useEffect` detecta que `autoDialRef` está ativo + número preenchido → chama `handleDial()` automaticamente
+- Ligação inicia sem clique adicional
 
-### 2. Stop all click attempts once `accepted`/`connected` is detected
-- When console interceptor detects `accepted`/`confirmed`/`connected`, set `autoAnswerDoneRef.current = true`
-- This prevents any queued timeouts or MutationObserver from clicking again
-
-### 3. Reset the flag when a new call starts
-- Reset `autoAnswerDoneRef.current = false` only in `triggerAutoAnswer()` at the start of a new incoming call
-
-## Result
-- First click answers the call → `accepted` → flag set → no more clicks → call stays connected
+### Detalhes técnicos
+- O `handleDial` depende do state `number` que é atualizado assincronamente via `setNumber`, por isso não pode ser chamado diretamente no handler do evento
+- Um `useEffect` com dependência em `number` + verificação do ref resolve o timing
+- O ref é necessário para distinguir entre digitação manual (não auto-dial) e clique no botão de contato (auto-dial)
 
