@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2 } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -95,7 +95,7 @@ export function ZadarmaPhoneWidget() {
     });
   }, [empresa, myExtension, proxy, isWebRTCMode]);
 
-  // Listen for dial events — call handleDialDirect synchronously to preserve user gesture
+  // Listen for dial events — only populate number and open widget, user confirms manually
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<DialEvent>).detail;
@@ -103,12 +103,11 @@ export function ZadarmaPhoneWidget() {
       setContactName(detail.contactName || '');
       setDealId(detail.dealId);
       setMinimized(false);
-      // Call dial directly in the event handler (preserves user gesture chain)
-      handleDialDirect(detail.number, detail.dealId);
+      // Do NOT auto-dial — let user review and click "Ligar"
     };
     window.addEventListener('bluecrm:dial', handler);
     return () => window.removeEventListener('bluecrm:dial', handler);
-  }, [handleDialDirect]);
+  }, []);
 
   // Call timer + speech recognition lifecycle
   useEffect(() => {
@@ -137,6 +136,11 @@ export function ZadarmaPhoneWidget() {
 
   const handleDial = useCallback(() => {
     console.log('[ZadarmaWidget] handleDial called', { number, empresa, myExtension, isWebRTCMode, webrtcReady: webrtc.isReady });
+    // Unlock AudioContext within user gesture so WebRTC audio works
+    try {
+      const ctx = new AudioContext();
+      ctx.resume().then(() => ctx.close()).catch(() => {});
+    } catch { /* browser doesn't support AudioContext */ }
     try {
       if (!number.trim() || !empresa || !myExtension) {
         console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension });
@@ -189,6 +193,9 @@ export function ZadarmaPhoneWidget() {
     setTimeout(() => {
       setPhoneState('idle');
       setCallTimer(0);
+      setNumber('');
+      setContactName('');
+      setDealId(undefined);
     }, 2000);
   }, [isWebRTCMode, webrtc]);
 
@@ -392,6 +399,23 @@ export function ZadarmaPhoneWidget() {
                 {key}
               </Button>
             ))}
+            {/* Extra row: +, backspace */}
+            <Button
+              variant="outline"
+              className="h-10 text-lg font-medium"
+              onClick={() => setNumber(n => n + '+')}
+            >
+              +
+            </Button>
+            <Button
+              variant="outline"
+              className="h-10 text-lg font-medium"
+              onClick={() => setNumber(n => n.slice(0, -1))}
+              disabled={!number}
+            >
+              <Delete className="h-4 w-4" />
+            </Button>
+            <div /> {/* empty cell to maintain grid */}
           </div>
           {isLoadingExtension ? (
             <div className="flex flex-col items-center gap-2 py-4">
