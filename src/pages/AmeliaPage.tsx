@@ -11,6 +11,7 @@ import { MessagesChartCard } from '@/components/dashboard/MessagesChartCard';
 import { CadenceStatusCard } from '@/components/dashboard/CadenceStatusCard';
 import { ActionsBreakdownCard } from '@/components/dashboard/ActionsBreakdownCard';
 import { LeadsQuentesCard } from '@/components/dashboard/LeadsQuentesCard';
+import { ResolutionStatsCard } from '@/components/dashboard/ResolutionStatsCard';
 
 export default function AmeliaPage() {
   const navigate = useNavigate();
@@ -55,6 +56,9 @@ export default function AmeliaPage() {
           <MessagesChartCard data={sdrStats?.mensagensPorDia} isLoading={sdrStatsLoading} />
           <ActionsBreakdownCard data={sdrStats?.acaoBreakdown} isLoading={sdrStatsLoading} />
         </div>
+
+        {/* Resolution Stats */}
+        <ResolutionStatsCard />
       </div>
     </AppLayout>
   );
