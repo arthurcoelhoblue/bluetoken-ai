@@ -9,13 +9,14 @@ import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors
 const corsHeaders = getWebhookCorsHeaders();
 
 interface Position {
+  position_id: string;
+  deal_id: string;
   deal_name: string;
   deal_asset_type: string;
   invested_amount: number;
   current_value: number;
   subscribed_at: string;
-  status: string;
-  is_active: boolean;
+  settled_at: string | null;
 }
 
 interface Investor {
@@ -36,13 +37,6 @@ interface ExportResponse {
   total: number;
   exported_at: string;
 }
-
-const STATUS_MAP: Record<string, string> = {
-  confirmed: "ATIVO",
-  settled: "ATIVO",
-  pending: "PENDENTE",
-  cancelled: "CANCELADO",
-};
 
 function buildContactTags(investor: Investor, isCliente: boolean): string[] {
   const tags: string[] = ["tokeniza-gov-sync"];
@@ -133,8 +127,9 @@ Deno.serve(async (req) => {
         if (!investor.document) { stats.skipped++; continue; }
 
         const cpfClean = investor.document.replace(/\D/g, "");
-        const hasActivePositions = investor.positions?.some((p) => p.is_active) ?? false;
-        const isCliente = hasActivePositions && investor.is_active;
+        // All positions returned by the API are valid investments (invested_amount > 0)
+        const hasPositions = (investor.positions?.length ?? 0) > 0;
+        const isCliente = hasPositions && investor.is_active;
         const tags = buildContactTags(investor, isCliente);
 
         // Check existing contact
@@ -170,21 +165,21 @@ Deno.serve(async (req) => {
         }
 
         // Upsert cs_customer
-        const activePositions = investor.positions?.filter((p) => p.is_active) ?? [];
-        const totalInvested = activePositions.reduce((sum, p) => sum + (p.invested_amount || 0), 0);
-        const firstInvestmentDate = investor.positions
-          ?.filter((p) => p.subscribed_at)
+        const positions = investor.positions ?? [];
+        const totalInvested = positions.reduce((sum, p) => sum + (p.invested_amount || 0), 0);
+        const firstInvestmentDate = positions
+          .filter((p) => p.subscribed_at)
           .sort((a, b) => new Date(a.subscribed_at).getTime() - new Date(b.subscribed_at).getTime())
           [0]?.subscribed_at;
 
         const customerTags: string[] = ["tokeniza-gov-sync", "tokeniza-investidor"];
-        const dealNames = [...new Set(activePositions.map((p) => p.deal_name))];
+        const dealNames = [...new Set(positions.map((p) => p.deal_name))];
         dealNames.forEach((name) => customerTags.push(`projeto:${name}`));
-        if (activePositions.length > 0) customerTags.push(`investimentos:${activePositions.length}`);
+        if (positions.length > 0) customerTags.push(`investimentos:${positions.length}`);
 
         const sgtExtras: Record<string, unknown> = {
           tokeniza_valor_investido: totalInvested,
-          tokeniza_qtd_investimentos: activePositions.length,
+          tokeniza_qtd_investimentos: positions.length,
           tokeniza_projetos: dealNames,
           kyc_status: investor.kyc_status,
           suitability: investor.suitability,
@@ -206,41 +201,27 @@ Deno.serve(async (req) => {
         if (csErr || !csCustomer) { console.error(`[sync] cs_customer ${cpfClean}:`, csErr?.message); stats.errors++; continue; }
         if (existingCustomer) stats.cs_customers_updated++; else stats.cs_customers_created++;
 
-        // Upsert cs_contracts for active positions
-        if (investor.positions?.length) {
-          // DEBUG: Log ALL position statuses before filtering
-          const allStatuses = [...new Set(investor.positions.map(p => p.status))];
-          console.log(`[sync] ${cpfClean} has ${investor.positions.length} positions, statuses: [${allStatuses.join(',')}], is_active: [${investor.positions.map(p => p.is_active).join(',')}]`);
+        // Upsert cs_contracts — ALL positions are valid investments
+        for (const pos of positions) {
+          const subscDate = new Date(pos.subscribed_at || "");
+          const anoFiscal = isNaN(subscDate.getTime()) ? new Date().getFullYear() : subscDate.getFullYear();
+          const ofertaId = `${investor.external_id}-${pos.deal_id}-${pos.position_id}`;
 
-          const confirmedPositions = investor.positions.filter(p => {
-            const s = (p.status || "").toLowerCase();
-            return s === "confirmed" || s === "settled" || p.is_active === true;
-          });
+          const contractStatus = pos.settled_at ? "ATIVO" : "PENDENTE";
 
-          if (confirmedPositions.length > 0) {
-            console.log(`[sync] ${cpfClean}: ${confirmedPositions.length} confirmed out of ${investor.positions.length}`);
-          }
+          const { error: contractErr } = await supabase.from("cs_contracts").upsert({
+            customer_id: csCustomer.id, empresa: "TOKENIZA",
+            ano_fiscal: anoFiscal, plano: pos.deal_name || "Investimento",
+            oferta_id: ofertaId, oferta_nome: pos.deal_name || null,
+            tipo: pos.deal_asset_type || "crowdfunding",
+            valor: pos.invested_amount || 0,
+            data_contratacao: pos.subscribed_at || null,
+            status: contractStatus,
+            notas: "Importado via tokeniza-gov-sync",
+          }, { onConflict: "customer_id,ano_fiscal,oferta_id" });
 
-          for (const pos of confirmedPositions) {
-            const posStatus = (pos.status || "").toLowerCase();
-            const subscDate = new Date(pos.subscribed_at || "");
-            const anoFiscal = isNaN(subscDate.getTime()) ? new Date().getFullYear() : subscDate.getFullYear();
-            const ofertaId = `${investor.external_id}-${pos.deal_name}-${pos.subscribed_at || "unknown"}`;
-
-            const { error: contractErr } = await supabase.from("cs_contracts").upsert({
-              customer_id: csCustomer.id, empresa: "TOKENIZA",
-              ano_fiscal: anoFiscal, plano: pos.deal_name || "Investimento",
-              oferta_id: ofertaId, oferta_nome: pos.deal_name || null,
-              tipo: pos.deal_asset_type || "crowdfunding",
-              valor: pos.invested_amount || 0,
-              data_contratacao: pos.subscribed_at || null,
-              status: STATUS_MAP[posStatus] || "ATIVO",
-              notas: "Importado via tokeniza-gov-sync",
-            }, { onConflict: "customer_id,ano_fiscal,oferta_id" });
-
-            if (contractErr) { console.error(`[sync] contract:`, contractErr.message); stats.errors++; }
-            else stats.cs_contracts_created++;
-          }
+          if (contractErr) { console.error(`[sync] contract:`, contractErr.message); stats.errors++; }
+          else stats.cs_contracts_created++;
         }
       } catch (investorErr) {
         console.error(`[sync] investor ${investor.document}:`, investorErr);
