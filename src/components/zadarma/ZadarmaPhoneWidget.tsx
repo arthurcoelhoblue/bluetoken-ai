@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play } from 'lucide-react';
+import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
+import { useZadarmaWebRTC } from '@/hooks/useZadarmaWebRTC';
 import { CoachingSidebar } from './CoachingSidebar';
 import type { EmpresaTipo } from '@/types/telephony';
 import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
@@ -17,6 +19,16 @@ export function ZadarmaPhoneWidget() {
   const { activeCompany } = useCompany();
   const empresa = activeCompany as EmpresaTipo;
   const { data: myExtension } = useMyExtension(empresa, profile?.id ?? null);
+
+  const sipLogin = myExtension?.sip_login ?? null;
+  const isWebRTCMode = !!sipLogin;
+
+  // WebRTC hook — only active when sip_login is configured
+  const webrtc = useZadarmaWebRTC({
+    empresa,
+    sipLogin,
+    enabled: isWebRTCMode,
+  });
 
   const [minimized, setMinimized] = useState(true);
   const [maximized, setMaximized] = useState(false);
@@ -30,7 +42,23 @@ export function ZadarmaPhoneWidget() {
 
   const proxy = useZadarmaProxy();
 
-  // Listen for dial events — must be before any early return
+  // Sync WebRTC status to phone state
+  useEffect(() => {
+    if (!isWebRTCMode) return;
+    switch (webrtc.status) {
+      case 'calling':
+        setPhoneState('dialing');
+        break;
+      case 'ringing':
+        setPhoneState('ringing');
+        break;
+      case 'active':
+        setPhoneState('active');
+        break;
+    }
+  }, [webrtc.status, isWebRTCMode]);
+
+  // Listen for dial events
   useEffect(() => {
     const handler = (e: Event) => {
       const detail = (e as CustomEvent<DialEvent>).detail;
@@ -53,29 +81,38 @@ export function ZadarmaPhoneWidget() {
 
   const handleDial = useCallback(() => {
     if (!number.trim() || !empresa || !myExtension) return;
-    setPhoneState('dialing');
     setCallTimer(0);
     setOnHold(false);
 
-    proxy.mutate({
-      action: 'click_to_call',
-      empresa,
-      payload: { from: myExtension.extension_number, to: number },
-    }, {
-      onSuccess: () => {
-        // Callback was accepted — stay in 'dialing' state until webhook confirms.
-        // Don't auto-transition to 'active' since the call hasn't connected yet.
-        toast.info('Callback solicitado. Atenda seu ramal para conectar a chamada.');
-      },
-      onError: (error) => {
-        toast.error('Erro ao iniciar chamada. Verifique se a telefonia está ativa para esta empresa.');
-        console.error('Dial error:', error);
-        setPhoneState('idle');
-      },
-    });
-  }, [number, empresa, myExtension, proxy]);
+    if (isWebRTCMode && webrtc.isReady) {
+      // WebRTC mode — direct browser call
+      setPhoneState('dialing');
+      webrtc.dial(number);
+      toast.info('Iniciando chamada via WebRTC...');
+    } else {
+      // Callback fallback mode
+      setPhoneState('dialing');
+      proxy.mutate({
+        action: 'click_to_call',
+        empresa,
+        payload: { from: myExtension.extension_number, to: number },
+      }, {
+        onSuccess: () => {
+          toast.info('Callback solicitado. Atenda seu ramal para conectar a chamada.');
+        },
+        onError: (error) => {
+          toast.error('Erro ao iniciar chamada.');
+          console.error('Dial error:', error);
+          setPhoneState('idle');
+        },
+      });
+    }
+  }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
 
-  const handleHangup = () => {
+  const handleHangup = useCallback(() => {
+    if (isWebRTCMode) {
+      webrtc.hangup();
+    }
     setPhoneState('ended');
     setOnHold(false);
     setMaximized(false);
@@ -83,7 +120,7 @@ export function ZadarmaPhoneWidget() {
       setPhoneState('idle');
       setCallTimer(0);
     }, 2000);
-  };
+  }, [isWebRTCMode, webrtc]);
 
   const handleHold = () => {
     if (!empresa || !myExtension) return;
@@ -103,7 +140,28 @@ export function ZadarmaPhoneWidget() {
 
   const hasExtension = !!myExtension;
 
-  // Minimized FAB — only show if has extension and no pending dial
+  // Mode badge component
+  const ModeBadge = () => {
+    if (!hasExtension) return null;
+    if (isWebRTCMode) {
+      return (
+        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-success/50 text-success gap-1">
+          <Wifi className="h-2.5 w-2.5" />
+          WebRTC
+        </Badge>
+      );
+    }
+    return (
+      <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 border-warning/50 text-warning gap-1">
+        <WifiOff className="h-2.5 w-2.5" />
+        Callback
+      </Badge>
+    );
+  };
+
+  const dialingLabel = isWebRTCMode ? 'Chamando...' : 'Atenda seu ramal';
+
+  // Minimized FAB
   if (minimized && !number) {
     if (!hasExtension) return null;
     return (
@@ -116,7 +174,6 @@ export function ZadarmaPhoneWidget() {
     );
   }
 
-  // If dial was triggered but minimized, expand
   if (minimized) {
     return (
       <button
@@ -131,60 +188,64 @@ export function ZadarmaPhoneWidget() {
   const isInCall = phoneState === 'dialing' || phoneState === 'active' || phoneState === 'ended';
   const showCoaching = maximized && phoneState === 'active';
 
+  // Call info shared between compact and maximized
+  const CallInfo = () => (
+    <>
+      <div className="text-center">
+        <p className="text-lg font-semibold">{contactName || number}</p>
+        {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
+        {dealId && <p className="text-xs text-muted-foreground mt-1">Deal vinculado</p>}
+      </div>
+      {onHold && (
+        <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
+      )}
+      <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
+        {phoneState === 'dialing' ? dialingLabel : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
+      </p>
+    </>
+  );
+
+  const CallControls = () => (
+    <div className="flex items-center justify-center gap-3">
+      {phoneState === 'active' && (
+        <>
+          <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
+            {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
+          </Button>
+          <Button variant="outline" size="icon" className={`h-10 w-10 rounded-full ${onHold ? 'bg-warning/20 border-warning' : ''}`} onClick={handleHold}>
+            {onHold ? <Play className="h-4 w-4 text-warning" /> : <Pause className="h-4 w-4" />}
+          </Button>
+        </>
+      )}
+      {phoneState !== 'ended' && (
+        <Button variant="destructive" size="icon" className="h-12 w-12 rounded-full" onClick={handleHangup}>
+          <PhoneOff className="h-5 w-5" />
+        </Button>
+      )}
+    </div>
+  );
+
   // Maximized with coaching sidebar
   if (maximized && isInCall) {
     return (
       <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
-          {/* Phone panel */}
           <div className="w-72 shrink-0 border-r border-border flex flex-col">
-            {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
               <div className="flex items-center gap-2">
                 <Phone className="h-4 w-4" />
                 <span className="text-sm font-medium">Telefonia</span>
+                <ModeBadge />
               </div>
-              <div className="flex items-center gap-1">
-                <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setMaximized(false)}>
-                  <Minimize2 className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              <Button variant="ghost" size="icon" className="h-6 w-6 text-primary-foreground/80 hover:text-primary-foreground hover:bg-primary-foreground/10" onClick={() => setMaximized(false)}>
+                <Minimize2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
-
-            {/* Call info */}
             <div className="flex-1 flex flex-col items-center justify-center p-6 space-y-4">
-              <div className="text-center">
-                <p className="text-lg font-semibold">{contactName || number}</p>
-                {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
-                {dealId && <p className="text-xs text-muted-foreground mt-1">Deal vinculado</p>}
-              </div>
-              {onHold && (
-                <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
-              )}
-          <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
-                {phoneState === 'dialing' ? 'Atenda seu ramal' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
-              </p>
-              <div className="flex items-center justify-center gap-3">
-                {phoneState === 'active' && (
-                  <>
-                    <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
-                      {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
-                    </Button>
-                    <Button variant="outline" size="icon" className={`h-10 w-10 rounded-full ${onHold ? 'bg-warning/20 border-warning' : ''}`} onClick={handleHold}>
-                      {onHold ? <Play className="h-4 w-4 text-warning" /> : <Pause className="h-4 w-4" />}
-                    </Button>
-                  </>
-                )}
-                {phoneState !== 'ended' && (
-                  <Button variant="destructive" size="icon" className="h-12 w-12 rounded-full" onClick={handleHangup}>
-                    <PhoneOff className="h-5 w-5" />
-                  </Button>
-                )}
-              </div>
+              <CallInfo />
+              <CallControls />
             </div>
           </div>
-
-          {/* Coaching sidebar */}
           <div className="flex-1 min-w-0">
             <CoachingSidebar dealId={dealId} isActive={showCoaching} />
           </div>
@@ -196,11 +257,11 @@ export function ZadarmaPhoneWidget() {
   // Normal compact widget
   return (
     <div className="fixed bottom-20 right-6 z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
-      {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
         <div className="flex items-center gap-2">
           <Phone className="h-4 w-4" />
           <span className="text-sm font-medium">Telefonia</span>
+          <ModeBadge />
         </div>
         <div className="flex items-center gap-1">
           {isInCall && phoneState === 'active' && (
@@ -217,40 +278,23 @@ export function ZadarmaPhoneWidget() {
         </div>
       </div>
 
-      {/* Active call state */}
       {isInCall ? (
         <div className="p-6 text-center space-y-4">
-          <div>
-            <p className="text-lg font-semibold">{contactName || number}</p>
-            {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
-          </div>
-          {onHold && (
-            <p className="text-xs text-warning font-medium animate-pulse">Em espera</p>
-          )}
-          <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
-            {phoneState === 'dialing' ? 'Atenda seu ramal' : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
-          </p>
-          <div className="flex items-center justify-center gap-3">
-            {phoneState === 'active' && (
-              <>
-                <Button variant="outline" size="icon" className="h-10 w-10 rounded-full" onClick={() => setMuted(!muted)}>
-                  {muted ? <MicOff className="h-4 w-4 text-destructive" /> : <Mic className="h-4 w-4" />}
-                </Button>
-                <Button variant="outline" size="icon" className={`h-10 w-10 rounded-full ${onHold ? 'bg-warning/20 border-warning' : ''}`} onClick={handleHold}>
-                  {onHold ? <Play className="h-4 w-4 text-warning" /> : <Pause className="h-4 w-4" />}
-                </Button>
-              </>
-            )}
-            {phoneState !== 'ended' && (
-              <Button variant="destructive" size="icon" className="h-12 w-12 rounded-full" onClick={handleHangup}>
-                <PhoneOff className="h-5 w-5" />
-              </Button>
-            )}
-          </div>
+          <CallInfo />
+          <CallControls />
         </div>
       ) : (
-        /* Idle — Dialpad */
         <div className="p-4 space-y-3">
+          {/* WebRTC status indicator */}
+          {isWebRTCMode && webrtc.status === 'loading' && (
+            <p className="text-xs text-muted-foreground text-center animate-pulse">Conectando WebRTC...</p>
+          )}
+          {isWebRTCMode && webrtc.status === 'error' && (
+            <p className="text-xs text-destructive text-center">
+              WebRTC indisponível. Usando callback.
+              {webrtc.error && <span className="block text-[10px]">{webrtc.error}</span>}
+            </p>
+          )}
           <Input
             value={number}
             onChange={e => setNumber(e.target.value)}
@@ -276,11 +320,11 @@ export function ZadarmaPhoneWidget() {
           ) : (
             <Button
               className="w-full gap-2"
-              disabled={!number.trim() || proxy.isPending}
+              disabled={!number.trim() || proxy.isPending || (isWebRTCMode && webrtc.status === 'loading')}
               onClick={handleDial}
             >
               <Phone className="h-4 w-4" />
-              Ligar
+              {isWebRTCMode && webrtc.isReady ? 'Ligar (WebRTC)' : 'Ligar'}
             </Button>
           )}
         </div>
