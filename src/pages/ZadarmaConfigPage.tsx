@@ -271,6 +271,7 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
 
       // Auto-fill sip_login for already mapped extensions
       let updated = 0;
+      const noRecording: string[] = [];
       for (const ext of extensions) {
         const match = list.find((z: { extension_number: string }) => z.extension_number === ext.extension_number);
         if (match && match.sip_login && match.sip_login !== ext.sip_login) {
@@ -283,6 +284,13 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
           });
           updated++;
         }
+        // Check if recording is disabled for this extension
+        if (match && match.is_recorded === false) {
+          noRecording.push(ext.extension_number);
+        }
+      }
+      if (noRecording.length > 0) {
+        toast.warning(`⚠️ Gravação desabilitada nos ramais: ${noRecording.join(', ')}. Habilite no painel Zadarma (PBX → Extensões) para transcrição funcionar.`, { duration: 10000 });
       }
       if (updated > 0) toast.success(`${updated} ramal(is) atualizado(s) com SIP Login`);
       else toast.info(`${list.length} ramal(is) encontrado(s) no PBX`);
