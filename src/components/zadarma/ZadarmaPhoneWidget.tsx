@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
+import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useZadarmaWebRTC } from '@/hooks/useZadarmaWebRTC';
 import { CoachingSidebar } from './CoachingSidebar';
 import type { EmpresaTipo } from '@/types/telephony';
@@ -40,9 +41,11 @@ export function ZadarmaPhoneWidget() {
   const [muted, setMuted] = useState(false);
   const [onHold, setOnHold] = useState(false);
   const [callTimer, setCallTimer] = useState(0);
+  const [transcriptionChunk, setTranscriptionChunk] = useState('');
 
   const proxy = useZadarmaProxy();
   const autoDialRef = useRef(false);
+  const speech = useSpeechRecognition();
 
   // Sync WebRTC status to phone state
   useEffect(() => {
@@ -75,12 +78,30 @@ export function ZadarmaPhoneWidget() {
     return () => window.removeEventListener('bluecrm:dial', handler);
   }, []);
 
-  // Call timer
+  // Call timer + speech recognition lifecycle
+  useEffect(() => {
+    if (phoneState === 'active') {
+      speech.start();
+    } else {
+      speech.stop();
+    }
+  }, [phoneState]);
+
   useEffect(() => {
     if (phoneState !== 'active') return;
     const interval = setInterval(() => setCallTimer(t => t + 1), 1000);
     return () => clearInterval(interval);
   }, [phoneState]);
+
+  // Consume speech chunks every 15s for coaching
+  useEffect(() => {
+    if (phoneState !== 'active') return;
+    const interval = setInterval(() => {
+      const chunk = speech.getAndResetChunk();
+      if (chunk) setTranscriptionChunk(chunk);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [phoneState, speech]);
 
   const handleDial = useCallback(() => {
     console.log('[ZadarmaWidget] handleDial called', { number, empresa, myExtension, isWebRTCMode, webrtcReady: webrtc.isReady });
@@ -226,6 +247,15 @@ export function ZadarmaPhoneWidget() {
       <p className={`text-2xl font-mono ${phoneState === 'dialing' ? 'animate-pulse text-warning' : phoneState === 'ended' ? 'text-destructive' : 'text-success'}`}>
         {phoneState === 'dialing' ? dialingLabel : phoneState === 'ended' ? 'Encerrada' : formatTimer(callTimer)}
       </p>
+      {phoneState === 'active' && speech.isSupported && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+          <Mic className={`h-3 w-3 ${speech.isListening ? 'text-success animate-pulse' : 'text-muted-foreground'}`} />
+          <span>{speech.isListening ? 'Capturando fala...' : 'Mic inativo'}</span>
+        </div>
+      )}
+      {phoneState === 'active' && !speech.isSupported && (
+        <p className="text-[10px] text-muted-foreground">Navegador não suporta captura de voz</p>
+      )}
     </>
   );
 
@@ -271,7 +301,7 @@ export function ZadarmaPhoneWidget() {
             </div>
           </div>
           <div className="flex-1 min-w-0">
-            <CoachingSidebar dealId={dealId} isActive={showCoaching} />
+            <CoachingSidebar dealId={dealId} isActive={showCoaching} transcriptionChunk={transcriptionChunk} />
           </div>
         </div>
       </div>

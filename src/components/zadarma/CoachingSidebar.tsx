@@ -18,6 +18,7 @@ interface CoachingData {
 interface Props {
   dealId?: string;
   isActive: boolean;
+  transcriptionChunk?: string;
 }
 
 const sentimentConfig: Record<string, { emoji: string; color: string }> = {
@@ -26,7 +27,7 @@ const sentimentConfig: Record<string, { emoji: string; color: string }> = {
   NEUTRO: { emoji: '😐', color: 'text-muted-foreground' },
 };
 
-export function CoachingSidebar({ dealId, isActive }: Props) {
+export function CoachingSidebar({ dealId, isActive, transcriptionChunk }: Props) {
   const [coaching, setCoaching] = useState<CoachingData | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +39,7 @@ export function CoachingSidebar({ dealId, isActive }: Props) {
 
     try {
       const { data, error: fnErr } = await supabase.functions.invoke('call-coach', {
-        body: { deal_id: dealId || null, transcription_chunk: null },
+        body: { deal_id: dealId || null, transcription_chunk: transcriptionChunk || null },
       });
 
       if (fnErr) throw fnErr;
@@ -48,7 +49,7 @@ export function CoachingSidebar({ dealId, isActive }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [dealId, isActive]);
+  }, [dealId, isActive, transcriptionChunk]);
 
   // Initial fetch + polling every 15s
   useEffect(() => {
