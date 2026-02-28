@@ -152,3 +152,4 @@ verify_jwt = false
 
 [functions.knowledge-feedback-learner]
 verify_jwt = false
+
