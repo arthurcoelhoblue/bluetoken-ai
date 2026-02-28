@@ -388,10 +388,11 @@ export interface ClassifyParams {
   cadenciaNome?: string | null;
   pessoaContext?: Record<string, unknown> | null;
   reprocessContext?: string;
+  foraDoHorario?: boolean;
 }
 
 export async function classifyIntent(supabase: SupabaseClient, params: ClassifyParams): Promise<ClassifierResult> {
-  const { mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato, mode, triageSummary, leadNome, cadenciaNome, pessoaContext, reprocessContext } = params;
+  const { mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato, mode, triageSummary, leadNome, cadenciaNome, pessoaContext, reprocessContext, foraDoHorario } = params;
   const isPassiveChat = mode === 'PASSIVE_CHAT';
 
   // A/B testing prompt
@@ -409,7 +410,19 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
     }
   } catch { /* ignore */ }
 
-  const activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
+  let activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
+
+  // Inject off-hours instruction into system prompt
+  if (foraDoHorario) {
+    activeSystemPrompt += `\n\n## ⏰ FORA DO HORÁRIO COMERCIAL
+Nosso time humano NÃO está disponível agora (horário de atendimento: segunda a sexta, 8h às 18h).
+REGRAS FORA DO HORÁRIO:
+- NUNCA use a ação ESCALAR_HUMANO. Você é a única atendente disponível.
+- Se o lead pedir para falar com humano, informe que o time está disponível de seg a sex, 8h-18h, mas que VOCÊ pode resolver tudo agora.
+- Conduza a venda DO INÍCIO AO FIM sozinha: tire dúvidas, apresente produtos, negocie, e feche a venda.
+- Seja proativa e resolutiva. O lead não deve esperar até o próximo dia útil.
+- Use ação ENVIAR_RESPOSTA_AUTOMATICA em vez de ESCALAR_HUMANO.`;
+  }
 
   // Rule-based shortcuts
 
@@ -428,7 +441,20 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
         /contrato\s+(?:modelo|padr[aã]o)/, /cota[çc][aã]o\s+personalizada/,
       ];
       if (technicalPatterns.some(p => p.test(msgLower))) {
-        log.info('Regra rule-based: pedido técnico avançado detectado', { estado: estadoAtual, mensagem: mensagem_normalizada.substring(0, 80) });
+        log.info('Regra rule-based: pedido técnico avançado detectado', { estado: estadoAtual, mensagem: mensagem_normalizada.substring(0, 80), foraDoHorario });
+        if (foraDoHorario) {
+          return {
+            intent: 'DUVIDA_TECNICA',
+            confidence: 0.95,
+            summary: 'Lead pediu profundidade técnica avançada (fora do horário)',
+            acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+            deve_responder: true,
+            resposta_sugerida: 'Essa é uma dúvida mais técnica e nosso time especializado não está disponível agora (nosso horário é de seg a sex, das 8h às 18h). Mas posso te ajudar com o que souber! O que exatamente gostaria de saber? 🙂',
+            novo_estado_funil: estadoAtual as string,
+            model: 'rule-based-technical-depth-offhours',
+            provider: 'rules',
+          };
+        }
         return {
           intent: 'DUVIDA_TECNICA',
           confidence: 0.95,
@@ -461,10 +487,23 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
       // Extrair nome mencionado (se houver)
       const nameMatch = msgLower.match(/(?:falar com|passa pro|chama o|transfere pro)\s+(?:o\s+|a\s+)?(\w+)/);
       const mentionedName = nameMatch ? nameMatch[1] : null;
+      log.info('Regra rule-based: pedido explícito de falar com humano', { mentionedName, mensagem: mensagem_normalizada.substring(0, 80), foraDoHorario });
+      if (foraDoHorario) {
+        return {
+          intent: 'SOLICITACAO_CONTATO',
+          confidence: 0.98,
+          summary: `Lead pediu para falar com ${mentionedName || 'humano'} (fora do horário)`,
+          acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+          deve_responder: true,
+          resposta_sugerida: 'Entendo que prefere falar com alguém da equipe! Nosso time está disponível de segunda a sexta, das 8h às 18h. Enquanto isso, posso te ajudar com praticamente tudo — desde tirar dúvidas até fechar a contratação. Como posso te ajudar? 😊',
+          novo_estado_funil: (conversation_state?.estado_funil as string) || 'SAUDACAO',
+          model: 'rule-based-human-request-offhours',
+          provider: 'rules',
+        };
+      }
       const responseMsg = mentionedName
         ? `Vou chamar ${mentionedName.charAt(0).toUpperCase() + mentionedName.slice(1)} pra você agora. Um momento! 🙂`
         : 'Vou te conectar com alguém da equipe agora. Um momento! 🙂';
-      log.info('Regra rule-based: pedido explícito de falar com humano', { mentionedName, mensagem: mensagem_normalizada.substring(0, 80) });
       return {
         intent: 'SOLICITACAO_CONTATO',
         confidence: 0.98,
@@ -483,6 +522,9 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   if (leadNome) {
     const nl = (leadNome as string).toLowerCase();
     if (nl.includes('renovação') || nl.includes('renovacao') || nl.includes('renov')) {
+      if (foraDoHorario) {
+        return { intent: 'SOLICITACAO_CONTATO', confidence: 0.95, summary: 'Cliente de renovação (fora do horário)', acao: 'ENVIAR_RESPOSTA_AUTOMATICA', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! A equipe que cuida da sua conta está disponível de segunda a sexta, das 8h às 18h. Enquanto isso, posso te ajudar com informações sobre renovação. O que precisa? 😊', novo_estado_funil: (conversation_state?.estado_funil as string) || 'SAUDACAO', model: 'rule-based-renovation-offhours', provider: 'rules' };
+      }
       return { intent: 'SOLICITACAO_CONTATO', confidence: 0.95, summary: 'Cliente de renovação', acao: 'ESCALAR_HUMANO', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe que cuida da sua conta. Já já alguém te chama! 👍', novo_estado_funil: 'FECHAMENTO', model: 'rule-based-renovation', provider: 'rules' };
     }
   }
@@ -490,6 +532,9 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   if (pessoaContext?.relacionamentos) {
     const isClienteIR = (pessoaContext.relacionamentos as Array<{ tipo_relacao: string; empresa: string }>).some((r) => r.tipo_relacao === 'CLIENTE_IR' && r.empresa === empresa);
     if (isClienteIR && (conversation_state?.estado_funil === 'SAUDACAO' || !conversation_state)) {
+      if (foraDoHorario) {
+        return { intent: 'SOLICITACAO_CONTATO', confidence: 0.90, summary: 'Cliente existente (fora do horário)', acao: 'ENVIAR_RESPOSTA_AUTOMATICA', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! A equipe está disponível de segunda a sexta, das 8h às 18h, mas enquanto isso posso te ajudar no que precisar. Como posso ajudar? 😊', novo_estado_funil: (conversation_state?.estado_funil as string) || 'SAUDACAO', model: 'rule-based-existing-client-offhours', provider: 'rules' };
+      }
       return { intent: 'SOLICITACAO_CONTATO', confidence: 0.90, summary: 'Cliente existente', acao: 'ESCALAR_HUMANO', deve_responder: true, resposta_sugerida: 'Vi que você já é nosso cliente! Vou te conectar com a equipe. 👍', novo_estado_funil: 'FECHAMENTO', model: 'rule-based-existing-client', provider: 'rules' };
     }
   }
