@@ -61,6 +61,7 @@ PRIORIZE:
 4. Riscos de meta (projeção vs meta)
 5. Inclua SEMPRE um feedback positivo quando houver melhoria
 6. Observe o que o usuário tem feito nos últimos minutos (navegação e ações) e adapte seus insights ao contexto de uso atual
+7. Se houver chamadas transcritas com sentimento NEGATIVO ou action_items pendentes, priorize follow-ups sobre elas
 
 REGRAS IMPORTANTES:
 - SEMPRE use o NOME do lead/contato nos textos, NUNCA o ID/UUID.
@@ -138,7 +139,7 @@ serve(async (req) => {
       dealsQuery = dealsQuery.in('pipeline_id', pipelineIds);
     }
 
-    const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes, activityLogRes] = await Promise.all([
+    const [dealsRes, activitiesRes, slaRes, tarefasRes, metasRes, msgsRes, cadencesRes, activityLogRes, callsRes] = await Promise.all([
       dealsQuery,
       supabase.from('deal_activities')
         .select('tipo, descricao, created_at, deal_id')
@@ -165,6 +166,11 @@ serve(async (req) => {
         .select('action_type, action_detail, created_at')
         .eq('user_id', userId).eq('empresa', empresa)
         .order('created_at', { ascending: false }).limit(20),
+      supabase.from('calls')
+        .select('direcao, duracao_segundos, summary_ia, sentiment, action_items, created_at, deal_id, contacts:contact_id(nome)')
+        .eq('user_id', userId).eq('empresa', empresa)
+        .not('transcription', 'is', null)
+        .order('created_at', { ascending: false }).limit(10),
     ]);
 
     // Build a contact name map from deals for enriching other sections
@@ -246,6 +252,18 @@ serve(async (req) => {
         return `- [${a.action_type}] ${detail} (${new Date(a.created_at).toLocaleString('pt-BR')})`;
       }).join('\n');
       contextParts.push(`**Navegação/Ações Recentes do Usuário**:\n${activities}`);
+    }
+
+    if (callsRes.data && callsRes.data.length > 0) {
+      const callsList = callsRes.data.map((c: { direcao: string; duracao_segundos: number; summary_ia: string | null; sentiment: string | null; action_items: unknown; created_at: string; contacts?: { nome: string } | null }) => {
+        const contactName = c.contacts?.nome || 'contato';
+        const mins = Math.round((c.duracao_segundos || 0) / 60);
+        const sentiment = c.sentiment ? ` [${c.sentiment}]` : '';
+        const summary = c.summary_ia ? `: ${c.summary_ia}` : '';
+        const actions = Array.isArray(c.action_items) && c.action_items.length > 0 ? ` | Ações: ${c.action_items.join(', ')}` : '';
+        return `- ${contactName} - ${c.direcao} (${mins}min)${sentiment}${summary}${actions}`;
+      }).join('\n');
+      contextParts.push(`**Chamadas Transcritas Recentes (${callsRes.data.length})**:\n${callsList}`);
     }
 
     const fullContext = contextParts.join('\n\n');

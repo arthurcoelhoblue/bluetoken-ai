@@ -496,6 +496,27 @@ async function enrichDealContext(supabase: SupabaseClient, dealId: string | unde
     parts.push(`**Últimas atividades**:\n${acts}`);
   }
 
+  // Enrich with call transcriptions
+  const callsResult = await supabase
+    .from('calls')
+    .select('direcao, duracao_segundos, transcription, summary_ia, sentiment, action_items, created_at')
+    .eq('deal_id', dealId)
+    .not('transcription', 'is', null)
+    .order('created_at', { ascending: false })
+    .limit(5);
+
+  if (callsResult.data && callsResult.data.length > 0) {
+    const callsSummary = callsResult.data.map((c: { direcao: string; duracao_segundos: number; sentiment: string | null; summary_ia: string | null; transcription: string | null; action_items: string[] | null; created_at: string }) => {
+      const mins = Math.round((c.duracao_segundos || 0) / 60);
+      const sentiment = c.sentiment ? ` [${c.sentiment}]` : '';
+      const summary = c.summary_ia ? `: ${c.summary_ia}` : '';
+      const transcription = c.transcription ? `\n  Transcrição: ${c.transcription.substring(0, 500)}` : '';
+      const actions = c.action_items && c.action_items.length > 0 ? `\n  Ações pendentes: ${c.action_items.join(', ')}` : '';
+      return `- ${c.direcao} (${mins}min)${sentiment}${summary}${transcription}${actions} (${new Date(c.created_at).toLocaleDateString('pt-BR')})`;
+    }).join('\n');
+    parts.push(`**Chamadas Transcritas**:\n${callsSummary}`);
+  }
+
   return parts.length > 0 ? parts.join('\n\n') : 'Sem dados disponíveis para este deal.';
 }
 
