@@ -1,24 +1,47 @@
 
 
-# Atualizar datas reais dos investimentos
+# Diagnóstico completo: Por que as datas ainda são `2026-02-24`
 
-## Situação atual
-- Todos os 7.775 contratos têm `data_contratacao = 2026-02-24` (data do sync, não do investimento)
-- O código do `tokeniza-gov-sync` (este projeto) **já está correto**: mapeia `subscribed_at` → `data_contratacao` e calcula `data_primeiro_ganho` a partir do investimento mais antigo
-- O código do `investor-export` (gov-key-keeper) **já está correto**: usa `pos.invested_at` como prioridade para `subscribed_at`
-- O código do `sync-tokeniza` (gov-key-keeper) **já está correto**: captura `createdAt` da API e salva em `invested_at`
+## O que encontrei cruzando os dois projetos
 
-## O que falta (sequência)
+Consultei o projeto [Tokeniza Gov](/projects/f8d2848a-cdde-44c2-8a72-46b4113f9a87) e confirmei o fluxo completo:
 
-### Passo 1 — Rodar `sync-tokeniza` no projeto [Tokeniza Gov](/projects/f8d2848a-cdde-44c2-8a72-46b4113f9a87)
-Isso vai buscar as positions na API da Tokeniza e popular a coluna `invested_at` com o `createdAt` real de cada investimento. **Isso precisa ser feito pelo usuário no outro projeto.**
+### Cadeia de dados
+```text
+API Tokeniza → sync-tokeniza → positions.invested_at → investor-export → tokeniza-gov-sync → cs_contracts.data_contratacao
+```
 
-### Passo 2 — Rodar `tokeniza-gov-sync-orchestrator` neste projeto
-Após o Passo 1, o `investor-export` vai retornar `subscribed_at` com as datas reais. O orchestrator vai atualizar:
-- `cs_contracts.data_contratacao` → data real de cada investimento
-- `cs_customers.data_primeiro_ganho` → data do investimento mais antigo do investidor
-- A aba "Investimentos" vai mostrar as datas corretas automaticamente
+### Onde o problema está
 
-## Nenhuma alteração de código necessária
-Todo o código já está preparado. O bloqueio é operacional: o `sync-tokeniza` precisa ser executado no projeto gov-key-keeper para popular `invested_at` nas positions.
+O `sync-tokeniza` (linha 491) captura `pos.createdAt` da API Tokeniza e salva em `invested_at`. Porém, o campo `createdAt` da API **não é a data do investimento** — é o timestamp de criação do registro na plataforma Tokeniza. Todas as posições foram criadas em lote no dia `2026-02-24T20:31:20`, e é exatamente esse valor que aparece em todos os 7.836 contratos.
+
+**Evidência nos logs diagnósticos deste projeto:** Cada `subscribed_at` retornado pelo `investor-export` é `2026-02-24T20:31:20.966145+00:00` (ou variantes de poucos segundos), confirmando que são timestamps de criação em batch, não datas históricas de investimento.
+
+### O que precisa mudar
+
+A API da Tokeniza precisa ter um campo com a data real do investimento (algo como `investedAt`, `paidAt`, `confirmedAt`, ou similar). O `createdAt` que está sendo usado é apenas a data em que a posição foi registrada no sistema.
+
+## Ações necessárias
+
+### 1. Investigar a API da Tokeniza (manual)
+Verificar na documentação ou com o time da Tokeniza qual campo retorna a data real do aporte. Possíveis candidatos:
+- `paidAt` / `paid_at`
+- `confirmedAt` / `confirmed_at`  
+- `investedAt` / `invested_at`
+- Algum campo dentro de `subscriptions` que tenha a data real
+
+### 2. Atualizar `sync-tokeniza` no projeto Tokeniza Gov
+Depois de identificar o campo correto, alterar a linha 491:
+```typescript
+// De:
+const posDate = pos.createdAt || (posAny.created_at as string) || null;
+// Para (exemplo se o campo for paidAt):
+const posDate = posAny.paidAt || posAny.paid_at || pos.createdAt || null;
+```
+
+### 3. Re-rodar sync + orchestrator
+Após o ajuste, rodar `sync-tokeniza` no Tokeniza Gov e depois `tokeniza-gov-sync-orchestrator` aqui.
+
+## Resumo
+O código dos dois projetos está correto em termos de lógica de mapeamento. O problema é que a **fonte de dados** (`createdAt` da API Tokeniza) não contém a data real do investimento — contém a data de criação do registro no batch de `2026-02-24`.
 
