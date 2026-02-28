@@ -1,61 +1,55 @@
 
 
-# Corrigir Amélia inventando informações de produto
+# Diagnóstico: GPCT, DISC e Base de Conhecimento no Arthur Coelho
 
-## Diagnóstico
+## O que JÁ está funcionando (dados reais do banco)
 
-### Problema encontrado
-A Amélia respondeu "geralmente entre R$ 5 e R$ 10 mil" — informação inventada. A causa raiz é dupla:
+O backend está fazendo o trabalho. Os dados do Arthur Coelho mostram:
 
-1. **Conflito na base de conhecimento**: As FAQs dizem "a partir de R$ 100" (tokens genéricos), enquanto o PITCH Tokeniza Portugal diz "a partir de R$ 5.000" (SAFE). A IA recebe ambos e interpola um range que não existe.
+- **GPCT preenchido**: G=Expandir portfólio, P=R$ 100k, C=Indefinição venture vs ativos reais, T=Não explicitado
+- **BANT preenchido**: B=R$ 100k, A=Arthur (decisor), N=Clareza regulatória, T=Não explicitado
+- **SPIN preenchido**: S=Busca tokenização, P=R$ 100k em equity, I=Risco regulatório Portugal, N=Entender modelo
+- **DISC detectado**: C (Conforme) — correto, o Arthur faz perguntas técnicas analíticas
+- **lead_facts**: patrimônio R$ 100k, experiência venture, interesse em Portugal e ativos tangíveis
+- **RAG chamado**: knowledge-search é invocado a cada mensagem
 
-2. **Prompt insuficiente para forçar citação literal**: Apesar de ter "PROIBIDO INVENTAR", o prompt não instrui a Amélia a citar valores exatamente como estão na base — ela parafraseia e arredonda.
+## Problemas reais encontrados
 
-3. **Fallback do `product_knowledge` não tem `preco_texto`**: Para Tokeniza, `preco_texto` é NULL. Então quando o RAG falha ou retorna chunks ambíguos, não há preço canônico.
+### 1. Estado do funil travou em SAUDACAO
+O `estado_funil` ficou em SAUDACAO durante quase toda a conversa (7+ mensagens), pulando direto para FECHAMENTO via rule-based. Deveria ter progredido: SAUDACAO → DIAGNOSTICO → QUALIFICACAO → FECHAMENTO.
 
-### Mensagens problemáticas do Arthur Coelho
-- "geralmente entre R$ 5 e R$ 10 mil" — valor inventado
-- "a partir de R$ 5 mil em ativos reais com rentabilidade acima da renda fixa" — generalizou o mínimo do Portugal para toda a Tokeniza
+**Causa**: O `novo_estado_funil` retornado pelo classifier nem sempre é gravado. Quando a IA retorna um estado, o action-executor deve atualizar, mas em vários turnos o estado não avançou.
 
-## Plano de correção
+### 2. Resposta "geralmente entre R$ 5 e R$ 10 mil" — já corrigida
+Essa resposta foi gerada às 23:40 ANTES do deploy da regra de ouro. O fix já está ativo e futuras respostas não devem repetir esse padrão.
 
-### 1. Reforçar prompt anti-alucinação no response-generator
-No `systemPrompt` default (linha 315-339), adicionar regra mais dura:
+### 3. Respostas começando com nome do lead
+"Arthur." e "Arthur!" aparecem no início de respostas, violando a regra "PROIBIDO: começar com nome do lead". O sanitizer deveria capturar isso mas o padrão "Arthur." (ponto final) não está coberto.
 
-```
-REGRA DE OURO — VALORES E PREÇOS:
-- Cite valores EXATAMENTE como aparecem na seção PRODUTOS. Não arredonde, não crie faixas, não interpole.
-- Se houver valores diferentes para ofertas diferentes, especifique QUAL oferta tem qual valor.
-- Se não encontrar o valor exato para a oferta perguntada, diga: "Vou confirmar o valor exato com a equipe e te retorno."
-- NUNCA diga "geralmente", "em média", "entre X e Y" para valores — cite o valor específico da oferta.
-```
+### 4. Tom DISC C poderia ser mais forte
+O DISC C está detectado e injetado no prompt, mas as respostas ainda soam genéricas em alguns turnos. O tom deveria ser mais técnico e direto, com dados concretos — especialmente para o perfil C.
 
-### 2. Melhorar injeção de contexto RAG com separação por oferta
-No `prompt` final (linha 357-378), após a seção PRODUTOS, adicionar instrução:
+## Correções propostas
 
-```
-Se os dados de PRODUTOS contêm informações de ofertas diferentes, distinga claramente qual informação pertence a qual oferta. Nunca misture dados de ofertas distintas numa mesma frase.
-```
+### A. Corrigir progressão do estado do funil no intent-classifier
+Garantir que o classifier retorne `novo_estado_funil` consistentemente baseado no contexto:
+- Se está em SAUDACAO e lead demonstrou interesse → DIAGNOSTICO
+- Se GPCT tem ≥2 campos → QUALIFICACAO  
+- Se lead faz objeção → OBJECOES
+- Se lead quer investir → FECHAMENTO
 
-### 3. Corrigir dados conflitantes na base de conhecimento
-Os FAQs duplicados sobre "valor mínimo" precisam ser harmonizados:
-- FAQ 1: "a partir de R$ 100" — refere-se a tokens de ofertas genéricas
-- FAQ 2: "a partir de R$100" — duplicado
-- PITCH Portugal: "a partir de R$ 5.000" — específico do SAFE
+Adicionar lógica pós-classificação no `intent-classifier.ts` que calcula o estado correto baseado nos frameworks preenchidos, em vez de depender exclusivamente da IA retornar o campo.
 
-Recomendação: atualizar os FAQs para especificar que o mínimo varia por oferta e listar os exemplos corretos.
+### B. Reforçar sanitização do nome do lead
+No `response-generator.ts`, o regex de sanitização precisa cobrir "Nome." (com ponto) além de "Nome," e "Nome!".
 
-### 4. Preencher `preco_texto` no product_knowledge da Tokeniza
-Atualmente é NULL. Preencher com texto canônico tipo "Varia por oferta. Tokens: a partir de R$ 100. SAFE Portugal: a partir de R$ 5.000."
+### C. Reforçar instrução DISC no prompt do classifier
+Adicionar ao `SYSTEM_PROMPT` uma instrução mais forte: quando DISC é C, a `resposta_sugerida` DEVE conter dados numéricos, prazos concretos e referências regulatórias. Sem frases vagas.
 
 ## Arquivos a modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Reforçar regras de citação literal de valores no systemPrompt e no prompt final |
-
-## Ação manual necessária (base de conhecimento)
-- Revisar FAQs duplicados sobre valor mínimo
-- Preencher `preco_texto` no `product_knowledge` da Tokeniza
-- Considerar adicionar FAQ específico: "Qual o mínimo para Tokeniza Portugal?" com resposta "R$ 5.000 via SAFE tokenizado"
+| `supabase/functions/sdr-ia-interpret/intent-classifier.ts` | Adicionar cálculo automático de `novo_estado_funil` pós-classificação + reforçar instrução DISC na resposta |
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Corrigir sanitização de nome com ponto |
 
