@@ -41,18 +41,21 @@ const statusLabel: Record<MassActionJobStatus, string> = {
   GENERATING: 'Gerando...',
   PREVIEW: 'Preview',
   RUNNING: 'Executando...',
+  SENDING: 'Enviando...',
   COMPLETED: 'Concluído',
+  DONE: 'Concluído',
   FAILED: 'Falhou',
   PARTIAL: 'Parcial',
   AGUARDANDO_APROVACAO: 'Aguardando Aprovação',
+  AGUARDANDO_TEMPLATE: '⏳ Aguardando Template',
   REJECTED: 'Rejeitado',
 };
 
 const statusVariant = (s: MassActionJobStatus) => {
-  if (s === 'COMPLETED') return 'default' as const;
+  if (s === 'COMPLETED' || s === 'DONE') return 'default' as const;
   if (s === 'FAILED' || s === 'REJECTED') return 'destructive' as const;
-  if (s === 'RUNNING' || s === 'GENERATING') return 'secondary' as const;
-  if (s === 'AGUARDANDO_APROVACAO') return 'outline' as const;
+  if (s === 'RUNNING' || s === 'GENERATING' || s === 'SENDING') return 'secondary' as const;
+  if (s === 'AGUARDANDO_APROVACAO' || s === 'AGUARDANDO_TEMPLATE') return 'outline' as const;
   return 'outline' as const;
 };
 
@@ -446,11 +449,12 @@ export default function AmeliaMassActionPage() {
   // ─── Active job view ───
   if (activeJob) {
     const isGenerating = activeJob.status === 'GENERATING';
-    const isPreview = activeJob.status === 'PREVIEW';
-    const isRunning = activeJob.status === 'RUNNING';
-    const isDone = ['COMPLETED', 'FAILED', 'PARTIAL'].includes(activeJob.status);
+    const isPreview = activeJob.status === 'PREVIEW' || activeJob.status === 'AGUARDANDO_TEMPLATE';
+    const isRunning = activeJob.status === 'RUNNING' || activeJob.status === 'SENDING';
+    const isDone = ['COMPLETED', 'FAILED', 'PARTIAL', 'DONE'].includes(activeJob.status);
     const previews = activeJob.messages_preview || [];
-    const approvedCount = previews.filter(m => m.approved).length;
+    const approvedCount = previews.filter(m => m.approved && m.template_status !== 'PENDING_META').length;
+    const pendingMetaCount = previews.filter(m => m.template_status === 'PENDING_META').length;
 
     return (
       <AppLayout>
@@ -482,19 +486,56 @@ export default function AmeliaMassActionPage() {
 
           {isPreview && (
             <>
-              <div className="flex items-center justify-between">
-                <p className="text-sm text-muted-foreground">{approvedCount}/{previews.length} mensagens aprovadas</p>
-                <Button onClick={handleExecute} disabled={approvedCount === 0}>
-                  <Send className="h-4 w-4 mr-2" />
-                  Enviar {approvedCount} mensagens
-                </Button>
+              <div className="flex items-center justify-between flex-wrap gap-3">
+                <div className="space-y-1">
+                  <p className="text-sm text-muted-foreground">{approvedCount}/{previews.length} mensagens prontas para envio</p>
+                  {pendingMetaCount > 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      ⏳ {pendingMetaCount} mensagem(ns) aguardando aprovação de template na Meta
+                    </p>
+                  )}
+                </div>
+                <div className="flex gap-2">
+                  {pendingMetaCount > 0 && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        supabase.functions.invoke('amelia-mass-action', {
+                          body: { jobId: activeJob.id, action: 'retry_pending' },
+                        }).then(() => {
+                          toast({ title: 'Verificando templates pendentes...' });
+                        });
+                      }}
+                    >
+                      <Clock className="h-4 w-4 mr-2" />
+                      Verificar Templates
+                    </Button>
+                  )}
+                  <Button onClick={handleExecute} disabled={approvedCount === 0}>
+                    <Send className="h-4 w-4 mr-2" />
+                    Enviar {approvedCount} mensagens
+                  </Button>
+                </div>
               </div>
               <div className="space-y-3">
                 {previews.map(m => (
-                  <Card key={m.deal_id} className={!m.approved ? 'opacity-50' : ''}>
+                  <Card key={m.deal_id} className={!m.approved || m.template_status === 'PENDING_META' ? 'opacity-50' : ''}>
                     <CardContent className="p-4 flex items-start gap-3">
                       <div className="flex-1 min-w-0">
-                        <p className="font-medium text-sm">{m.contact_name}</p>
+                        <div className="flex items-center gap-2 mb-1">
+                          <p className="font-medium text-sm">{m.contact_name}</p>
+                          {m.template_status === 'PENDING_META' && (
+                            <Badge variant="outline" className="text-[10px] text-amber-600 border-amber-300">
+                              ⏳ Aguardando Meta
+                            </Badge>
+                          )}
+                          {m.template_status === 'APPROVED' && (
+                            <Badge variant="outline" className="text-[10px] text-green-600 border-green-300">
+                              ✅ Template OK
+                            </Badge>
+                          )}
+                        </div>
                         <p className="text-sm text-muted-foreground mt-1 whitespace-pre-wrap">{m.message}</p>
                       </div>
                       <div className="flex gap-1 shrink-0">
@@ -503,6 +544,7 @@ export default function AmeliaMassActionPage() {
                           size="icon"
                           className="h-8 w-8"
                           onClick={() => updateApproval.mutate({ jobId: activeJob.id, dealId: m.deal_id, approved: true })}
+                          disabled={m.template_status === 'PENDING_META'}
                         >
                           <ThumbsUp className="h-4 w-4" />
                         </Button>
