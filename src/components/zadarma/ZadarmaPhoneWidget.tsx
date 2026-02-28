@@ -84,7 +84,7 @@ export function ZadarmaPhoneWidget() {
     console.log('[ZadarmaWidget] handleDial called', { number, empresa, myExtension, isWebRTCMode, webrtcReady: webrtc.isReady });
     try {
       if (!number.trim() || !empresa || !myExtension) {
-        console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension, hasExtension });
+        console.warn('[ZadarmaWidget] handleDial guard failed:', { number: number.trim(), empresa, myExtension });
         if (!number.trim()) toast.error('Digite um número para ligar.');
         else if (!empresa) toast.error('Nenhuma empresa ativa selecionada.');
         else if (!myExtension) toast.error('Ramal não encontrado. Recarregue a página.');
