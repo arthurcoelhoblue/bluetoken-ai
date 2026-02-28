@@ -26,6 +26,14 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
   try {
+    // Handle GET verification (Zadarma sends zd_echo as GET query param)
+    const url = new URL(req.url);
+    if (url.searchParams.has('zd_echo')) {
+      return new Response(url.searchParams.get('zd_echo')!, {
+        headers: { ...corsHeaders, 'Content-Type': 'text/plain' },
+      });
+    }
+
     const rawBody = await req.text();
     const params = new URLSearchParams(rawBody);
     const eventType = params.get('event') || params.get('zd_echo') || '';
