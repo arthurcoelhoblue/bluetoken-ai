@@ -11,7 +11,7 @@ declare global {
       style: string,
       lang: string,
       visible: boolean,
-      position: string
+      position: Record<string, string>
     ) => void;
   }
 }
@@ -33,8 +33,8 @@ interface UseZadarmaWebRTCReturn {
   answer: () => void;
 }
 
-const SCRIPT_LIB = 'https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-lib.js?v=17';
-const SCRIPT_FN = 'https://my.zadarma.com/webphoneWebRTCWidget/v8/js/loader-phone-fn.js?v=17';
+const SCRIPT_LIB = 'https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-lib.js?sub_v=1';
+const SCRIPT_FN = 'https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-fn.js?sub_v=1';
 const KEY_REFRESH_MS = 70 * 60 * 60 * 1000; // 70 hours (key lasts 72h)
 
 function loadScript(src: string): Promise<void> {
@@ -115,7 +115,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }
 
       // 4. Initialize widget in hidden mode (false = invisible)
-      window.zadarmaWidgetFn(key, sipLogin, 'square', 'pt', false, "{right:'10px',bottom:'5px'}");
+      window.zadarmaWidgetFn(key, sipLogin, 'rounded', 'pt', false, {right:'10px',bottom:'5px'});
 
       initializedRef.current = true;
       setStatus('ready');
@@ -127,7 +127,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           keyRef.current = newKey;
           // Re-initialize with new key
           if (window.zadarmaWidgetFn) {
-            window.zadarmaWidgetFn(newKey, sipLogin, 'square', 'pt', false, "{right:'10px',bottom:'5px'}");
+            window.zadarmaWidgetFn(newKey, sipLogin, 'rounded', 'pt', false, {right:'10px',bottom:'5px'});
           }
         }
       }, KEY_REFRESH_MS);
