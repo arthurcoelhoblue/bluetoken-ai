@@ -345,7 +345,6 @@ export function ZadarmaPhoneWidget() {
               <Phone className="h-4 w-4" />
               Ligar
             </Button>
-            </Button>
           )}
         </div>
       )}
