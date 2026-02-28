@@ -20,7 +20,7 @@ import { useState } from 'react';
 const schema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
   codigo: z.string().min(2, 'Código obrigatório').regex(/^[a-z0-9_]+$/, 'Apenas letras minúsculas, números e _'),
-  empresa: z.enum(['BLUE', 'TOKENIZA']),
+  empresa: z.enum(['BLUE', 'TOKENIZA', 'MPUPPE', 'AXIA']),
   canal: z.enum(['WHATSAPP', 'EMAIL']),
   conteudo: z.string().min(5, 'Conteúdo obrigatório'),
   descricao: z.string().optional(),
@@ -149,6 +149,8 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
                     <SelectContent>
                       <SelectItem value="BLUE">Blue</SelectItem>
                       <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                      <SelectItem value="MPUPPE">MPuppe</SelectItem>
+                      <SelectItem value="AXIA">Axia</SelectItem>
                     </SelectContent>
                   </Select>
                   <FormMessage />
