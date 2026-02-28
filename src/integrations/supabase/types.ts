@@ -3187,6 +3187,45 @@ export type Database = {
           },
         ]
       }
+      knowledge_embeddings: {
+        Row: {
+          chunk_index: number
+          chunk_text: string
+          created_at: string
+          embedding: string | null
+          empresa: string
+          id: string
+          metadata: Json | null
+          source_id: string
+          source_type: string
+          updated_at: string
+        }
+        Insert: {
+          chunk_index?: number
+          chunk_text: string
+          created_at?: string
+          embedding?: string | null
+          empresa: string
+          id?: string
+          metadata?: Json | null
+          source_id: string
+          source_type: string
+          updated_at?: string
+        }
+        Update: {
+          chunk_index?: number
+          chunk_text?: string
+          created_at?: string
+          embedding?: string | null
+          empresa?: string
+          id?: string
+          metadata?: Json | null
+          source_id?: string
+          source_type?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       knowledge_faq: {
         Row: {
           aprovado_em: string | null
@@ -7268,6 +7307,22 @@ export type Database = {
       provision_tenant_schema: {
         Args: { tenant_empresa: string }
         Returns: undefined
+      }
+      search_knowledge_embeddings: {
+        Args: {
+          p_empresa: string
+          p_threshold?: number
+          p_top_k?: number
+          query_embedding: string
+        }
+        Returns: {
+          chunk_text: string
+          id: string
+          metadata: Json
+          similarity: number
+          source_id: string
+          source_type: string
+        }[]
       }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
