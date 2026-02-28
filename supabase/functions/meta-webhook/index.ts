@@ -279,7 +279,6 @@ async function autoCreateLead(
       nome,
       telefone: phoneNormalized,
       telefone_e164: e164,
-      origem: "WHATSAPP_INBOUND",
     })
     .select("*")
     .single();
