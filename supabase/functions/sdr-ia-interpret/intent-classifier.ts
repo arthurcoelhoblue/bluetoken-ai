@@ -488,6 +488,10 @@ export interface ClassifyParams {
   pessoaContext?: Record<string, unknown> | null;
   reprocessContext?: string;
   foraDoHorario?: boolean;
+  // Pre-fetched context (avoids duplicate fetches)
+  preloadedRagContext?: string | null;
+  preloadedTokenizaOffers?: TokenizaOffer[] | null;
+  preloadedLearnings?: Array<{ tipo: string; titulo: string; descricao: string }> | null;
 }
 
 export async function classifyIntent(supabase: SupabaseClient, params: ClassifyParams): Promise<ClassifierResult> {
@@ -759,30 +763,50 @@ REGRAS FORA DO HORÁRIO:
 
   if (empresa === 'BLUE') userPrompt += formatBluePricingForPrompt();
   else if (empresa === 'TOKENIZA') {
-    const offers = await fetchActiveTokenizaOffers();
+    // Use preloaded offers if available, otherwise fetch
+    const offers = params.preloadedTokenizaOffers ?? await fetchActiveTokenizaOffers();
     userPrompt += formatTokenizaOffersForPrompt(offers);
   }
   // MPUPPE e AXIA: pricing dinâmico via product_knowledge (carregado pelo RAG/fallback abaixo)
 
-  // Try RAG first, fallback to full knowledge fetch
-  const ragKnowledge = await fetchRelevantKnowledgeRAG(mensagem_normalizada, empresa as EmpresaTipo);
-  if (ragKnowledge) {
-    userPrompt += ragKnowledge;
+  // Use preloaded RAG context if available, otherwise fetch
+  if (params.preloadedRagContext !== undefined) {
+    if (params.preloadedRagContext) {
+      userPrompt += params.preloadedRagContext;
+    } else {
+      const productKnowledge = await fetchProductKnowledge(supabase, empresa as EmpresaTipo);
+      if (productKnowledge) userPrompt += productKnowledge;
+    }
   } else {
-    const productKnowledge = await fetchProductKnowledge(supabase, empresa as EmpresaTipo);
-    if (productKnowledge) userPrompt += productKnowledge;
+    const ragKnowledge = await fetchRelevantKnowledgeRAG(mensagem_normalizada, empresa as EmpresaTipo);
+    if (ragKnowledge) {
+      userPrompt += ragKnowledge;
+    } else {
+      const productKnowledge = await fetchProductKnowledge(supabase, empresa as EmpresaTipo);
+      if (productKnowledge) userPrompt += productKnowledge;
+    }
   }
 
-  try {
-    const { data: learnings } = await supabase.from('amelia_learnings').select('titulo, descricao, tipo').eq('empresa', empresa).eq('status', 'VALIDADO').eq('aplicado', true).limit(5);
-    if (learnings && learnings.length > 0) {
+  // Use preloaded learnings if available, otherwise fetch
+  if (params.preloadedLearnings !== undefined) {
+    if (params.preloadedLearnings && params.preloadedLearnings.length > 0) {
       userPrompt += `\n## APRENDIZADOS VALIDADOS\n`;
-      for (const l of learnings) {
-        const learning = l as { tipo: string; titulo: string; descricao: string };
+      for (const learning of params.preloadedLearnings) {
         userPrompt += `- [${learning.tipo}] ${learning.titulo}: ${learning.descricao}\n`;
       }
     }
-  } catch { /* ignore */ }
+  } else {
+    try {
+      const { data: learnings } = await supabase.from('amelia_learnings').select('titulo, descricao, tipo').eq('empresa', empresa).eq('status', 'VALIDADO').eq('aplicado', true).limit(5);
+      if (learnings && learnings.length > 0) {
+        userPrompt += `\n## APRENDIZADOS VALIDADOS\n`;
+        for (const l of learnings) {
+          const learning = l as { tipo: string; titulo: string; descricao: string };
+          userPrompt += `- [${learning.tipo}] ${learning.titulo}: ${learning.descricao}\n`;
+        }
+      }
+    } catch { /* ignore */ }
+  }
 
   const contactInfo = contato ? `Nome: ${contato.nome || contato.primeiro_nome || 'Desconhecido'}` : '';
   const classInfo = classificacao ? `ICP: ${classificacao.icp}, Temp: ${classificacao.temperatura}, Score: ${classificacao.score_interno || 'N/A'}` : '';

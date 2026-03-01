@@ -186,6 +186,10 @@ export interface GenerateResponseParams {
   conversation_state?: Record<string, unknown>;
   historico?: HistoricoMsg[];
   promptVersionId?: string;
+  // Pre-fetched context (avoids duplicate RAG fetch)
+  preloadedRagContext?: string | null;
+  preloadedRagChunks?: any[] | null;
+  preloadedRagSearchMethod?: string | null;
 }
 
 /**
@@ -198,60 +202,74 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
   let productsText = '';
   let ragChunks: any[] = [];
   let ragSearchMethod = '';
-  try {
-    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || '';
-    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || '';
-    
-    const ragResp = await fetch(`${SUPABASE_URL}/functions/v1/knowledge-search`, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 5, threshold: 0.70 }),
-    });
 
-    if (ragResp.ok) {
-      const ragData = await ragResp.json();
-      ragChunks = ragData.chunks || [];
-      ragSearchMethod = ragData.search_method || 'semantic';
-      if (ragData.context && ragData.total > 0) {
-        productsText = ragData.context;
+  // Use preloaded RAG context if available
+  if (params.preloadedRagContext !== undefined) {
+    if (params.preloadedRagContext) {
+      productsText = params.preloadedRagContext;
+      ragChunks = params.preloadedRagChunks || [];
+      ragSearchMethod = params.preloadedRagSearchMethod || 'semantic';
+    }
+    // If preloadedRagContext is null, skip RAG and fall through to product fallback below
+  } else {
+    // Original RAG fetch (fallback when not preloaded)
+    try {
+      const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || '';
+      const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || '';
+      
+      const ragResp = await fetch(`${SUPABASE_URL}/functions/v1/knowledge-search`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 5, threshold: 0.70 }),
+      });
 
-        // === FASE 2: Increment use_count for FAQs used ===
-        const faqIds = ragChunks.filter((c: any) => c.source_type === 'faq').map((c: any) => c.source_id);
-        for (const faqId of faqIds) {
-          try {
-            await supabase.rpc('increment_faq_use_count', { faq_id: faqId });
-          } catch { /* ignore - RPC may not exist yet */ }
+      if (ragResp.ok) {
+        const ragData = await ragResp.json();
+        ragChunks = ragData.chunks || [];
+        ragSearchMethod = ragData.search_method || 'semantic';
+        if (ragData.context && ragData.total > 0) {
+          productsText = ragData.context;
         }
       }
+    } catch { /* fallback below */ }
+  }
 
-      // === ML: Register search feedback for learning loop ===
-      // Check if best chunk has low similarity (< 0.70) → low confidence
-      const bestSimilarity = ragChunks.length > 0 ? Math.max(...ragChunks.map((c: any) => c.similarity || 0)) : 0;
-      const isLowConfidence = ragChunks.length === 0 || bestSimilarity < 0.70;
+  // === FASE 2: Increment use_count for FAQs used ===
+  if (ragChunks.length > 0) {
+    const faqIds = ragChunks.filter((c: any) => c.source_type === 'faq').map((c: any) => c.source_id);
+    for (const faqId of faqIds) {
       try {
-        await supabase.from('knowledge_search_feedback').insert({
-          query: mensagem_normalizada,
-          expanded_query: ragData.expanded_query || null,
-          chunks_returned: ragChunks.map((c: any) => ({ source_id: c.source_id, source_type: c.source_type, similarity: c.similarity })),
-          search_method: ragSearchMethod,
-          lead_id: contato?.legacy_lead_id || contato?.id || null,
-          empresa,
-          outcome: 'PENDENTE',
-          escalou_por_baixa_confianca: isLowConfidence,
-        });
-      } catch (e) { console.error('Feedback registration failed:', e); }
-
-      // === FASE 2: Low confidence → clear productsText to trigger "não sei" behavior ===
-      if (isLowConfidence && productsText) {
-        console.log(`[response-generator] Low confidence RAG (best similarity: ${bestSimilarity.toFixed(3)}). Will use fallback.`);
-        // Keep productsText but add warning to prompt
-        productsText += '\n\n⚠️ AVISO SISTEMA: Os trechos acima têm BAIXA relevância para a pergunta do lead. Se não tiver certeza da resposta, diga: "Preciso confirmar com a equipe para te dar a informação exata. Já retorno!"';
-      }
+        await supabase.rpc('increment_faq_use_count', { faq_id: faqId });
+      } catch { /* ignore - RPC may not exist yet */ }
     }
-  } catch { /* fallback below */ }
+  }
+
+  // === ML: Register search feedback for learning loop ===
+  if (ragChunks.length > 0 || productsText) {
+    const bestSimilarity = ragChunks.length > 0 ? Math.max(...ragChunks.map((c: any) => c.similarity || 0)) : 0;
+    const isLowConfidence = ragChunks.length === 0 || bestSimilarity < 0.70;
+    try {
+      await supabase.from('knowledge_search_feedback').insert({
+        query: mensagem_normalizada,
+        expanded_query: null,
+        chunks_returned: ragChunks.map((c: any) => ({ source_id: c.source_id, source_type: c.source_type, similarity: c.similarity })),
+        search_method: ragSearchMethod,
+        lead_id: contato?.legacy_lead_id || contato?.id || null,
+        empresa,
+        outcome: 'PENDENTE',
+        escalou_por_baixa_confianca: isLowConfidence,
+      });
+    } catch (e) { console.error('Feedback registration failed:', e); }
+
+    // === FASE 2: Low confidence → add warning
+    if (isLowConfidence && productsText) {
+      console.log(`[response-generator] Low confidence RAG (best similarity: ${bestSimilarity.toFixed(3)}). Will use fallback.`);
+      productsText += '\n\n⚠️ AVISO SISTEMA: Os trechos acima têm BAIXA relevância para a pergunta do lead. Se não tiver certeza da resposta, diga: "Preciso confirmar com a equipe para te dar a informação exata. Já retorno!"';
+    }
+  }
 
   // === FASE 3: Register knowledge gap when no relevant context found ===
   if (ragChunks.length === 0 && mensagem_normalizada.length > 10) {

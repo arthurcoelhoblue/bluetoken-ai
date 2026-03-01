@@ -7,8 +7,9 @@ import { SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 // ========================================
 
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
-import { createServiceClient } from "../_shared/config.ts";
+import { createServiceClient, envConfig } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
+import { isHorarioComercial } from "../_shared/business-hours.ts";
 import { isHorarioComercial } from "../_shared/business-hours.ts";
 
 // Local modules (previously separate Edge Functions)
@@ -139,10 +140,8 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 4. CLASSIFY INTENT (direct call, no HTTP)
+    // 4. PRE-FETCH CONTEXT IN PARALLEL (RAG, offers, learnings)
     // ========================================
-
-    // When reprocessing after DEVOLVER, build resumption context
     let reprocessContext: string | undefined;
     if (isReprocess) {
       reprocessContext = `\n🔄 RETOMADA DE ATENDIMENTO: Este lead estava sendo atendido manualmente por um humano e AGORA FOI DEVOLVIDO PARA VOCÊ (Amélia). VOCÊ É A ATENDENTE AGORA. NÃO escale, NÃO transfira, NÃO diga que vai chamar alguém. Continue a conversa naturalmente a partir do contexto existente. Analise o histórico e dê continuidade ao atendimento.\n`;
@@ -151,6 +150,54 @@ serve(async (req) => {
     const foraDoHorario = !isHorarioComercial();
     log.info('Horário comercial check', { foraDoHorario });
 
+    // Centralized parallel pre-fetch: RAG + Tokeniza offers + learnings
+    const ragFetchPromise = (async (): Promise<{ context: string | null; chunks: any[]; searchMethod: string }> => {
+      try {
+        const resp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/knowledge-search`, {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: msg.conteudo, empresa: msg.empresa, top_k: 5, threshold: 0.70 }),
+        });
+        if (!resp.ok) return { context: null, chunks: [], searchMethod: '' };
+        const data = await resp.json();
+        const context = (data.context && data.total > 0)
+          ? `\n## CONHECIMENTO RELEVANTE (RAG - ${data.total} trechos)\n${data.context}\n`
+          : null;
+        return { context, chunks: data.chunks || [], searchMethod: data.search_method || 'semantic' };
+      } catch { return { context: null, chunks: [], searchMethod: '' }; }
+    })();
+
+    const offersFetchPromise = msg.empresa === 'TOKENIZA'
+      ? (async () => {
+          try {
+            const resp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/tokeniza-offers`, {
+              headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_ANON_KEY}`, 'Content-Type': 'application/json' },
+            });
+            if (!resp.ok) return [];
+            const data = await resp.json();
+            return (data.ofertas || []).filter((o: any) => o.status?.toLowerCase() === 'active' || o.status?.toLowerCase() === 'open');
+          } catch { return []; }
+        })()
+      : Promise.resolve(null);
+
+    const learningsFetchPromise = (async () => {
+      try {
+        const { data } = await supabase.from('amelia_learnings').select('titulo, descricao, tipo').eq('empresa', msg.empresa).eq('status', 'VALIDADO').eq('aplicado', true).limit(5);
+        return (data || []) as Array<{ tipo: string; titulo: string; descricao: string }>;
+      } catch { return []; }
+    })();
+
+    const [ragResult, tokenizaOffers, learnings] = await Promise.all([
+      ragFetchPromise,
+      offersFetchPromise,
+      learningsFetchPromise,
+    ]);
+
+    log.info('Pre-fetch complete', { ragFound: !!ragResult.context, ragChunks: ragResult.chunks.length, offersCount: tokenizaOffers?.length ?? 0, learningsCount: learnings.length });
+
+    // ========================================
+    // 4b. CLASSIFY INTENT (with pre-fetched context)
+    // ========================================
     const classifierResult = await classifyIntent(supabase, {
       mensagem_normalizada: msg.conteudo,
       empresa: msg.empresa,
@@ -165,6 +212,10 @@ serve(async (req) => {
       pessoaContext: parsedContext.pessoaContext,
       reprocessContext,
       foraDoHorario,
+      // Pass pre-fetched context to avoid duplicate fetches
+      preloadedRagContext: ragResult.context,
+      preloadedTokenizaOffers: tokenizaOffers,
+      preloadedLearnings: learnings,
     });
 
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
@@ -317,6 +368,10 @@ serve(async (req) => {
             perfil_disc: classifierResult.disc_estimado || (parsedContext.conversationState as Record<string, unknown>)?.perfil_disc,
           },
           historico: parsedContext.historico as { direcao: string; conteudo: string }[],
+          // Pass pre-fetched RAG context to avoid duplicate fetch
+          preloadedRagContext: ragResult.context ? ragResult.context.replace(/\n## CONHECIMENTO RELEVANTE \(RAG - \d+ trechos\)\n/, '') : null,
+          preloadedRagChunks: ragResult.chunks,
+          preloadedRagSearchMethod: ragResult.searchMethod,
         });
         respostaTexto = genResult.resposta;
         log.info('Sonnet response generated', { length: respostaTexto?.length, model: genResult.model });
@@ -380,13 +435,11 @@ serve(async (req) => {
     const respostaEnviada = execResult.respostaEnviada;
 
     // ========================================
-    // 7. SAVE INTERPRETATION
+    // 7. SAVE + LOG + FEEDBACK IN PARALLEL
     // ========================================
-    const intentId = await saveInterpretation(supabase, msg, classifierResult, execResult.acaoAplicada, respostaEnviada, respostaTexto);
-
-    // Log AI usage
-    try {
-      await supabase.from('ai_usage_log').insert({
+    const [saveResult] = await Promise.allSettled([
+      saveInterpretation(supabase, msg, classifierResult, execResult.acaoAplicada, respostaEnviada, respostaTexto),
+      supabase.from('ai_usage_log').insert({
         function_name: 'sdr-ia-interpret',
         provider: classifierResult.provider || 'unknown',
         model: classifierResult.model || 'unknown',
@@ -394,17 +447,12 @@ serve(async (req) => {
         latency_ms: 0,
         custo_estimado: 0,
         empresa: msg.empresa || null,
-      });
-    } catch { /* ignore */ }
+      }).then(() => {}),
+      autoClassifyPreviousFeedback(supabase, msg.lead_id, msg.empresa, classifierResult.intent, msg.conteudo)
+        .catch((e: unknown) => log.error('Auto-classify feedback failed', { error: e instanceof Error ? e.message : String(e) })),
+    ]);
 
-    // ========================================
-    // 7b. AUTO-CLASSIFY PREVIOUS FEEDBACK (PENDENTE → UTIL/NAO_UTIL)
-    // ========================================
-    try {
-      await autoClassifyPreviousFeedback(supabase, msg.lead_id, msg.empresa, classifierResult.intent, msg.conteudo);
-    } catch (e) {
-      log.error('Auto-classify feedback failed', { error: e instanceof Error ? e.message : String(e) });
-    }
+    const intentId = saveResult.status === 'fulfilled' ? saveResult.value : 'unknown';
 
     // ========================================
     // 8. RETURN RESULT
