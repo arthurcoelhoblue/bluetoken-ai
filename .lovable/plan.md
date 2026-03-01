@@ -1,21 +1,23 @@
 
 
-## Plano: Trocar Sonnet → Haiku 4.5 no refinamento de chunks
+## Plano: Multi-select de tipos de atividade no gatilho de regra automática
 
-### Mudança única
+### O que muda
 
-No arquivo `supabase/functions/knowledge-embed/index.ts`, na função `refineChunkWithSonnet` (linha 279):
+No `AutoRulesTab.tsx`:
 
-- Trocar o modelo de `claude-sonnet-4-20250514` para `claude-haiku-4-5-20241022`
-- Renomear a função para `refineChunkWithHaiku` (e as referências na linha 319)
-- Atualizar logs de `[Sonnet]` para `[Haiku]`
+1. **State**: trocar `triggerActivityType` (string) por `triggerActivityTypes` (string array)
+2. **Formulário de criação**: substituir o `Select` single por checkboxes (um por tipo de atividade: NOTA, LIGACAO, EMAIL, REUNIAO, TAREFA) para permitir seleção múltipla
+3. **Validação**: exigir pelo menos um tipo selecionado quando o gatilho é `ATIVIDADE_CRIADA`
+4. **trigger_config**: salvar como `{ tipos_atividade: ['NOTA', 'EMAIL'] }` (array) em vez de `{ tipo_atividade: 'NOTA' }` (string)
+5. **Exibição das regras existentes**: renderizar múltiplos badges quando `trigger_config` contém `tipos_atividade` (array), mantendo retrocompatibilidade com o campo antigo `tipo_atividade` (string)
+6. **Reset do form**: limpar o array ao fechar o dialog
 
-### Impacto
+### Retrocompatibilidade
 
-- **Custo por chunk**: ~$0.009 → ~$0.0024 (4x mais barato)
-- **Custo por livro (~100 chunks)**: ~$0.90 → ~$0.24
-- **Qualidade**: Haiku é perfeitamente capaz para classificação + extração estruturada (a tarefa aqui é decidir se o chunk é relevante e extrair pontos-chave, não gerar texto criativo)
-- **Latência**: Haiku é mais rápido que Sonnet, o pipeline inteiro roda mais rápido
+Regras antigas com `tipo_atividade` (string singular) continuam exibindo corretamente — a lógica de renderização checa ambos os campos.
 
-Todo o resto do pipeline (pdf-parse mecânico, auto-exclusão do PDF, arquivamento, UI) permanece idêntico.
+### Nenhuma mudança no backend
+
+O campo `trigger_config` já é JSONB, aceita qualquer estrutura. O backend que consome essas regras precisará ser ajustado separadamente para checar o array, mas a configuração em si é salva corretamente.
 
