@@ -1,42 +1,74 @@
-import { useState, useMemo, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent } from '@/components/ui/card';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   MessagesSquare,
   Search,
   Bot,
-  UserCheck,
-  ArrowDownLeft,
-  ArrowUpRight,
-  Clock,
   AlertCircle,
+  List,
+  Columns3,
 } from 'lucide-react';
-import { formatDistanceToNow } from 'date-fns';
-import { ptBR } from 'date-fns/locale';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
+import { ConversaCard } from '@/components/conversas/ConversaCard';
+import { ConversasFilters, type SmartFilter } from '@/components/conversas/ConversasFilters';
+import { ConversasKanban } from '@/components/conversas/ConversasKanban';
 
-type StatusFilter = 'TODOS' | 'AGUARDANDO' | 'RESPONDIDO' | 'VENDEDOR';
+type ViewMode = 'lista' | 'kanban';
+
+// --- AI Priority scoring ---
+function calcAiPriority(a: Atendimento): number {
+  // Temperature weight (40%)
+  const tempMap: Record<string, number> = { QUENTE: 1, MORNO: 0.5, FRIO: 0.1 };
+  const tempScore = tempMap[a.temperatura ?? ''] ?? 0.3;
+
+  // SLA weight (30%) — hours since last inbound without response
+  let slaScore = 0;
+  if (a.last_inbound_at && a.ultima_direcao === 'INBOUND') {
+    const hoursAgo = (Date.now() - new Date(a.last_inbound_at).getTime()) / 3600000;
+    slaScore = Math.min(1, hoursAgo / 8); // Normalized: 8h = max urgency
+  }
+
+  // Intent weight (20%)
+  const highIntents = ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO'];
+  const intentScore = highIntents.includes(a.ultimo_intent ?? '') ? 1 : 0.3;
+
+  // Engagement weight (10%)
+  const engScore = (a.score_engajamento ?? 0) / 100;
+
+  return tempScore * 40 + slaScore * 30 + intentScore * 20 + engScore * 10;
+}
+
+// --- Filter logic helpers ---
+function isSlaEstourado(a: Atendimento): boolean {
+  if (!a.last_inbound_at || a.ultima_direcao !== 'INBOUND') return false;
+  const hoursAgo = (Date.now() - new Date(a.last_inbound_at).getTime()) / 3600000;
+  return hoursAgo > 2;
+}
+
+function isEsfriando(a: Atendimento): boolean {
+  if (!a.temperatura || !['QUENTE', 'MORNO'].includes(a.temperatura)) return false;
+  if (!a.ultimo_contato) return false;
+  const hoursAgo = (Date.now() - new Date(a.ultimo_contato).getTime()) / 3600000;
+  return hoursAgo > 24;
+}
+
+function isIntencaoCompra(a: Atendimento): boolean {
+  return ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO'].includes(a.ultimo_intent ?? '');
+}
 
 function ConversasContent() {
-  const navigate = useNavigate();
   const { activeCompanies } = useCompany();
   const { user, hasRole } = useAuth();
   const isAdmin = hasRole('ADMIN');
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
+  const [viewMode, setViewMode] = useState<ViewMode>('lista');
+  const [smartFilter, setSmartFilter] = useState<SmartFilter>('TODOS');
+  const [aiSortActive, setAiSortActive] = useState(false);
   const [search, setSearch] = useState('');
   const { trackPageView } = useAnalyticsEvents();
 
@@ -49,6 +81,23 @@ function ConversasContent() {
     userId: user?.id,
     isAdmin,
   });
+
+  // Compute filter counts
+  const counts = useMemo(() => {
+    const aguardando = atendimentos.filter(a => a.modo === 'MANUAL' && a.ultima_direcao === 'INBOUND').length;
+    const slaEstourado = atendimentos.filter(isSlaEstourado).length;
+    const esfriando = atendimentos.filter(isEsfriando).length;
+    const intencaoCompra = atendimentos.filter(isIntencaoCompra).length;
+    const naoLidas = atendimentos.filter(a => a.ultima_direcao === 'INBOUND').length;
+    return {
+      total: atendimentos.length,
+      aguardando,
+      slaEstourado,
+      esfriando,
+      intencaoCompra,
+      naoLidas,
+    };
+  }, [atendimentos]);
 
   const filtered = useMemo(() => {
     let result = atendimentos;
@@ -63,55 +112,68 @@ function ConversasContent() {
       );
     }
 
-    // Status filter
-    if (statusFilter === 'AGUARDANDO') {
-      result = result.filter(a => a.ultima_direcao === 'INBOUND');
-    } else if (statusFilter === 'RESPONDIDO') {
-      result = result.filter(a => a.ultima_direcao === 'OUTBOUND');
-    } else if (statusFilter === 'VENDEDOR') {
-      result = result.filter(a => (a as Atendimento & { modo?: string }).modo === 'MANUAL');
+    // Smart filter
+    switch (smartFilter) {
+      case 'AGUARDANDO':
+        result = result.filter(a => a.modo === 'MANUAL' && a.ultima_direcao === 'INBOUND');
+        break;
+      case 'SLA_ESTOURADO':
+        result = result.filter(isSlaEstourado);
+        break;
+      case 'ESFRIANDO':
+        result = result.filter(isEsfriando);
+        break;
+      case 'INTENCAO_COMPRA':
+        result = result.filter(isIntencaoCompra);
+        break;
+      case 'NAO_LIDAS':
+        result = result.filter(a => a.ultima_direcao === 'INBOUND');
+        break;
+    }
+
+    // AI sort
+    if (aiSortActive) {
+      result = [...result].sort((a, b) => calcAiPriority(b) - calcAiPriority(a));
     }
 
     return result;
-  }, [atendimentos, search, statusFilter]);
+  }, [atendimentos, search, smartFilter, aiSortActive]);
 
-  // Stats
-  const totalCount = atendimentos.length;
-  const aguardandoCount = atendimentos.filter(a => a.ultima_direcao === 'INBOUND').length;
-  const manualCount = atendimentos.filter(a => (a as Atendimento & { modo?: string }).modo === 'MANUAL').length;
+  const handleToggleAiSort = useCallback(() => setAiSortActive(v => !v), []);
 
   return (
-    <div className="container mx-auto px-4 py-6 space-y-6">
+    <div className="container mx-auto px-4 py-6 space-y-5">
       {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold flex items-center gap-2">
-          <MessagesSquare className="h-6 w-6 text-primary" />
-          Conversas
-        </h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Atendimentos ativos — WhatsApp
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold flex items-center gap-2">
+            <MessagesSquare className="h-6 w-6 text-primary" />
+            Conversas
+          </h1>
+          <p className="text-sm text-muted-foreground mt-1">
+            Atendimentos ativos — WhatsApp
+          </p>
+        </div>
+        <ToggleGroup
+          type="single"
+          value={viewMode}
+          onValueChange={(v) => v && setViewMode(v as ViewMode)}
+          className="border rounded-lg"
+        >
+          <ToggleGroupItem value="lista" aria-label="Modo lista" className="gap-1.5 text-xs px-3">
+            <List className="h-4 w-4" />
+            Lista
+          </ToggleGroupItem>
+          <ToggleGroupItem value="kanban" aria-label="Modo kanban" className="gap-1.5 text-xs px-3">
+            <Columns3 className="h-4 w-4" />
+            Kanban
+          </ToggleGroupItem>
+        </ToggleGroup>
       </div>
 
-      {/* Stats */}
-      <div className="flex gap-4">
-        <div className="flex items-center gap-2 text-sm">
-          <Badge variant="outline">{totalCount}</Badge>
-          <span className="text-muted-foreground">Total</span>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Badge variant="destructive" className="bg-warning text-warning-foreground">{aguardandoCount}</Badge>
-          <span className="text-muted-foreground">Aguardando</span>
-        </div>
-        <div className="flex items-center gap-2 text-sm">
-          <Badge>{manualCount}</Badge>
-          <span className="text-muted-foreground">Manual</span>
-        </div>
-      </div>
-
-      {/* Filters */}
-      <div className="flex gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
+      {/* Search + Filters */}
+      <div className="space-y-3">
+        <div className="relative max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Buscar por nome, telefone ou ID..."
@@ -120,23 +182,16 @@ function ConversasContent() {
             className="pl-9"
           />
         </div>
-        <Select
-          value={statusFilter}
-          onValueChange={(v) => setStatusFilter(v as StatusFilter)}
-        >
-          <SelectTrigger className="w-[160px]">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="TODOS">Todos</SelectItem>
-            <SelectItem value="AGUARDANDO">Aguardando</SelectItem>
-            <SelectItem value="RESPONDIDO">Respondido</SelectItem>
-            <SelectItem value="VENDEDOR">Vendedor</SelectItem>
-          </SelectContent>
-        </Select>
+        <ConversasFilters
+          activeFilter={smartFilter}
+          onFilterChange={setSmartFilter}
+          aiSortActive={aiSortActive}
+          onToggleAiSort={handleToggleAiSort}
+          counts={counts}
+        />
       </div>
 
-      {/* List */}
+      {/* Content */}
       {isLoading ? (
         <div className="flex items-center justify-center py-12">
           <Bot className="h-6 w-6 animate-spin text-primary" />
@@ -151,78 +206,16 @@ function ConversasContent() {
           <MessagesSquare className="h-8 w-8 mx-auto mb-2 opacity-30" />
           Nenhuma conversa encontrada.
         </div>
+      ) : viewMode === 'kanban' ? (
+        <ConversasKanban atendimentos={filtered} />
       ) : (
         <div className="space-y-2">
-          {filtered.map((a) => {
-            const isModoManual = (a as Atendimento & { modo?: string }).modo === 'MANUAL';
-            const tempoSemResposta = a.ultimo_contato
-              ? formatDistanceToNow(new Date(a.ultimo_contato), { locale: ptBR, addSuffix: true })
-              : null;
-
-            return (
-              <Card
-                key={`${a.lead_id}_${a.empresa}`}
-                className="cursor-pointer hover:bg-accent/30 transition-colors"
-                onClick={() => navigate(`/leads/${a.lead_id}/${a.empresa}`)}
-              >
-                <CardContent className="flex items-center gap-4 py-3 px-4">
-                  {/* Avatar with mode indicator */}
-                  <div className="relative shrink-0">
-                    <div className={`h-10 w-10 rounded-full flex items-center justify-center ${
-                      isModoManual ? 'bg-primary/10' : 'bg-accent/50'
-                    }`}>
-                      {isModoManual ? (
-                        <UserCheck className="h-5 w-5 text-primary" />
-                      ) : (
-                        <Bot className="h-5 w-5 text-accent-foreground" />
-                      )}
-                    </div>
-                    {a.ultima_direcao === 'INBOUND' && (
-                      <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-warning border-2 border-background" />
-                    )}
-                  </div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm truncate">
-                        {a.nome || 'Lead sem nome'}
-                      </span>
-                      <Badge variant={a.empresa === 'TOKENIZA' ? 'default' : 'secondary'} className="text-[10px] py-0">
-                        {a.empresa}
-                      </Badge>
-                      {a.estado_funil && (
-                        <Badge variant="outline" className="text-[10px] py-0">
-                          {a.estado_funil}
-                        </Badge>
-                      )}
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate mt-0.5">
-                      {a.ultima_mensagem || 'Sem mensagens'}
-                    </p>
-                  </div>
-
-                  {/* Right side */}
-                  <div className="flex flex-col items-end gap-1 shrink-0">
-                    {tempoSemResposta && (
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {tempoSemResposta}
-                      </span>
-                    )}
-                    <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                        <ArrowDownLeft className="h-3 w-3" />{a.total_inbound}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground flex items-center gap-0.5">
-                        <ArrowUpRight className="h-3 w-3" />{a.total_outbound}
-                      </span>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+          {filtered.map((a) => (
+            <ConversaCard
+              key={`${a.lead_id}_${a.empresa}`}
+              atendimento={a}
+            />
+          ))}
         </div>
       )}
     </div>
