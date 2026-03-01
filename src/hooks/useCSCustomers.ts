@@ -101,7 +101,7 @@ export function useCSCustomers(filters: CSCustomerFilters = {}, page = 0, search
         .from('cs_customers')
         .select(`
           *,
-          contact:contacts!cs_customers_contact_id_fkey(id, nome, email, telefone, foto_url, organization_id),
+          contact:contacts!cs_customers_contact_id_fkey(id, nome, email, telefone, foto_url, organization_id, data_cadastro_plataforma),
           csm:profiles!cs_customers_csm_id_fkey(id, nome, avatar_url)
         `, { count: 'exact' })
         .order('updated_at', { ascending: false });
@@ -140,7 +140,7 @@ export function useCSCustomerById(id: string | undefined) {
         .from('cs_customers')
         .select(`
           *,
-          contact:contacts!cs_customers_contact_id_fkey(id, nome, email, telefone, foto_url, organization_id),
+          contact:contacts!cs_customers_contact_id_fkey(id, nome, email, telefone, foto_url, organization_id, data_cadastro_plataforma),
           csm:profiles!cs_customers_csm_id_fkey(id, nome, avatar_url)
         `)
         .eq('id', id!)

@@ -1,0 +1,1 @@
+ALTER TABLE public.contacts ADD COLUMN data_cadastro_plataforma timestamptz;

@@ -37,6 +37,7 @@ export interface CSCustomer {
     telefone: string | null;
     foto_url: string | null;
     organization_id: string | null;
+    data_cadastro_plataforma: string | null;
   };
   csm?: {
     id: string;
