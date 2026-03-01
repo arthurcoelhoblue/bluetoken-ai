@@ -34,6 +34,14 @@ Você é a mesma Amélia que atende leads no WhatsApp — sua voz, personalidade
 - Foque em ações práticas que o vendedor/CSM pode tomar AGORA.
 - Quando sugerir mensagens, adapte ao perfil DISC e estágio do funil se disponíveis.
 
+## Coaching Tático de Vendas
+- Quando receber a seção COACHING TÁTICO, aplique as técnicas de forma PRÁTICA e ESPECÍFICA ao contexto do lead/deal.
+- Dê dicas de abordagem, timing de ligação, perguntas estratégicas e técnicas de persuasão/negociação.
+- Sugira frases e scripts prontos que o vendedor pode usar AGORA, adaptados ao momento da negociação.
+- Identifique o estado emocional/decisório do lead (paralisia, objeção, interesse quente) e recomende a técnica mais adequada.
+- NUNCA cite nomes de livros, autores ou metodologias formais — aplique os princípios de forma natural.
+- Exemplos de coaching: reframing de objeções, perguntas de implicação, ancoragem de valor, senso de urgência, prova social.
+
 ## Contexto de Negócio
 - Para leads/deals Tokeniza: foque em investimentos tokenizados, rentabilidade e oportunidades de alocação.
 - Para leads/deals Blue: foque em IR/tributação cripto, compliance e planejamento tributário.
@@ -196,11 +204,38 @@ serve(async (req) => {
       contextBlock = '⚠️ Não foi possível carregar dados do CRM para este contexto.';
     }
 
-    const systemContent = contextBlock
-      ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}`
-      : ACTIVE_SYSTEM_PROMPT;
+    // ========================================
+    // COACHING TÁTICO — Busca RAG behavioral
+    // ========================================
+    let coachingBlock = '';
+    try {
+      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+      if (lastUserMsg) {
+        const { data: searchResult, error: searchError } = await supabase.functions.invoke('knowledge-search', {
+          body: {
+            query: lastUserMsg,
+            empresa,
+            source_type_filter: 'behavioral',
+            top_k: 5,
+          },
+        });
+        if (!searchError && searchResult?.results?.length > 0) {
+          const chunks = searchResult.results
+            .map((r: { content: string; similarity: number }) => r.content)
+            .join('\n---\n');
+          coachingBlock = `\n\n## COACHING TÁTICO — Metodologia de Vendas\nAplique as técnicas abaixo de forma prática nas suas recomendações ao vendedor. NÃO cite nomes de livros ou autores. Traduza os conceitos em dicas acionáveis de abordagem, timing, perguntas estratégicas e técnicas de negociação.\n\n${chunks}`;
+          log.info('Coaching behavioral injetado', { chunks: searchResult.results.length });
+        }
+      }
+    } catch (coachErr) {
+      log.warn('Erro ao buscar coaching behavioral', { error: String(coachErr) });
+    }
 
-    log.info('Chamando IA (streaming)', { contexto: contextType, msgs: messages.length });
+    const systemContent = contextBlock
+      ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}${coachingBlock}`
+      : `${ACTIVE_SYSTEM_PROMPT}${coachingBlock}`;
+
+    log.info('Chamando IA (streaming)', { contexto: contextType, msgs: messages.length, hasCoaching: !!coachingBlock });
 
     const allMessages = messages.map(m => ({
       role: m.role === 'assistant' ? 'assistant' as const : 'user' as const,
