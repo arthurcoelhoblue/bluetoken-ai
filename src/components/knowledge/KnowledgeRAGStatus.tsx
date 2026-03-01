@@ -37,7 +37,22 @@ export function KnowledgeRAGStatus() {
     setIsLearning(true);
     try {
       const result = await feedbackLearner.mutateAsync();
-      toast.success(`Aprendizado concluído: ${result?.boosted_chunks || 0} chunks otimizados, ${result?.suggested_faqs || 0} FAQs sugeridas`);
+      const boosted = result?.boosted_chunks || 0;
+      const suggested = result?.suggested_faqs || 0;
+      const analysis = result?.feedback_analysis;
+
+      if (boosted === 0 && suggested === 0 && analysis) {
+        const { total, util, nao_util, pendente } = analysis;
+        if (total === 0) {
+          toast.info("Sem feedbacks nos últimos 7 dias. O sistema aprende à medida que leads interagem com a Amélia.");
+        } else if (util === 0 && nao_util === 0) {
+          toast.info(`${pendente} feedbacks pendentes de classificação. A classificação acontece automaticamente quando leads respondem às mensagens da Amélia.`);
+        } else {
+          toast.info(`Análise concluída (${util} úteis, ${nao_util} não úteis, ${pendente} pendentes). Nenhuma otimização necessária no momento.`);
+        }
+      } else {
+        toast.success(`Aprendizado concluído: ${boosted} chunks otimizados, ${suggested} FAQs sugeridas`);
+      }
     } catch (error) {
       toast.error("Erro no aprendizado. Verifique os logs.");
     } finally {

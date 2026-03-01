@@ -398,6 +398,15 @@ serve(async (req) => {
     } catch { /* ignore */ }
 
     // ========================================
+    // 7b. AUTO-CLASSIFY PREVIOUS FEEDBACK (PENDENTE → UTIL/NAO_UTIL)
+    // ========================================
+    try {
+      await autoClassifyPreviousFeedback(supabase, msg.lead_id, msg.empresa, classifierResult.intent, msg.conteudo);
+    } catch (e) {
+      log.error('Auto-classify feedback failed', { error: e instanceof Error ? e.message : String(e) });
+    }
+
+    // ========================================
     // 8. RETURN RESULT
     // ========================================
     const needsEscalation = finalAcao === 'ESCALAR_HUMANO' || finalAcao === 'CRIAR_TAREFA_CLOSER';
@@ -426,6 +435,81 @@ serve(async (req) => {
     return new Response(JSON.stringify({ success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' }), { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
   }
 });
+
+// ========================================
+// AUTO-CLASSIFY PREVIOUS FEEDBACK
+// Infers UTIL/NAO_UTIL based on lead's follow-up behavior
+// ========================================
+async function autoClassifyPreviousFeedback(
+  supabase: SupabaseClient,
+  leadId: string,
+  empresa: string,
+  currentIntent: string,
+  currentMessage: string,
+): Promise<void> {
+  // Find the most recent PENDENTE feedback for this lead (last 24h)
+  const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const { data: pendingFeedback } = await supabase
+    .from('knowledge_search_feedback')
+    .select('id, query, chunks_returned')
+    .eq('lead_id', leadId)
+    .eq('empresa', empresa)
+    .eq('outcome', 'PENDENTE')
+    .gte('created_at', oneDayAgo)
+    .order('created_at', { ascending: false })
+    .limit(3);
+
+  if (!pendingFeedback || pendingFeedback.length === 0) return;
+
+  const msgLower = currentMessage.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // Signals that previous RAG response was NOT useful
+  const naoUtilSignals = [
+    'nao entendi', 'não entendi', 'como assim', 'pode explicar',
+    'nao foi isso', 'não foi isso', 'errado', 'incorreto',
+    'repete', 'repetir', 'de novo', 'novamente',
+    'não é isso', 'nao e isso', 'não era isso',
+  ];
+  const isNaoUtil = naoUtilSignals.some(s => msgLower.includes(s));
+
+  // Signals that previous RAG response WAS useful: lead progresses
+  const utilIntents = ['INTERESSE_COMPRA', 'INTERESSE_IR', 'AGENDAMENTO_REUNIAO', 'SOLICITACAO_CONTATO', 'DUVIDA_PRECO', 'DUVIDA_PRODUTO', 'DUVIDA_TECNICA', 'AGRADECIMENTO'];
+  const isUtil = utilIntents.includes(currentIntent) || currentIntent === 'CUMPRIMENTO';
+
+  // Lead repeating similar query = NAO_UTIL
+  let isRepeat = false;
+  for (const fb of pendingFeedback) {
+    const prevQuery = ((fb as any).query || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    if (prevQuery && msgLower.length > 5 && prevQuery.length > 5) {
+      // Simple overlap check: if >60% of words match
+      const prevWords = new Set(prevQuery.split(/\s+/).filter((w: string) => w.length > 3));
+      const curWords = msgLower.split(/\s+/).filter((w: string) => w.length > 3);
+      if (prevWords.size > 0 && curWords.length > 0) {
+        const overlap = curWords.filter((w: string) => prevWords.has(w)).length;
+        if (overlap / Math.max(prevWords.size, curWords.length) > 0.6) {
+          isRepeat = true;
+          break;
+        }
+      }
+    }
+  }
+
+  let outcome: string | null = null;
+  if (isNaoUtil || isRepeat) {
+    outcome = 'NAO_UTIL';
+  } else if (isUtil) {
+    outcome = 'UTIL';
+  }
+
+  if (outcome) {
+    const ids = pendingFeedback.map((fb: any) => fb.id);
+    await supabase
+      .from('knowledge_search_feedback')
+      .update({ outcome, classified_at: new Date().toISOString() })
+      .in('id', ids);
+    log.info('Auto-classified feedback', { count: ids.length, outcome, leadId });
+  }
+}
 
 // ========================================
 // SAVE INTERPRETATION
