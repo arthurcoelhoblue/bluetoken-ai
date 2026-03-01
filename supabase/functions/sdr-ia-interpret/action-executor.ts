@@ -63,6 +63,92 @@ async function applyAction(
     case 'ESCALAR_HUMANO':
       if (leadId) {
         await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
+
+        // --- Escalação inteligente: notificar + deal + atribuição ---
+        try {
+          // Buscar classificação e contato para calcular prioridade
+          const { data: escClassif } = await supabase.from('lead_classifications').select('temperatura').eq('lead_id', leadId).eq('empresa', empresa).maybeSingle();
+          const escTemperatura = (escClassif?.temperatura as string) || 'MORNO';
+          const escIntent = (detalhes?.intent as string) || '';
+
+          // Calcular prioridade
+          const isQuente = escTemperatura === 'QUENTE';
+          const isInteresseCompra = ['INTERESSE_COMPRA', 'AGENDAMENTO_REUNIAO'].includes(escIntent);
+          let prioridade: string;
+          if (isQuente && isInteresseCompra) prioridade = 'CRITICA';
+          else if (isQuente || isInteresseCompra) prioridade = 'ALTA';
+          else if (escTemperatura === 'MORNO') prioridade = 'MEDIA';
+          else prioridade = 'BAIXA';
+
+          // Buscar owner do contato
+          const { data: escContact } = await supabase.from('contacts').select('id, owner_id, nome').eq('legacy_lead_id', leadId).maybeSingle();
+          let notifyUserId = escContact?.owner_id as string | undefined;
+
+          // Round-robin se sem owner
+          if (!notifyUserId) {
+            const { data: sellers } = await supabase
+              .from('user_access_assignments')
+              .select('user_id')
+              .eq('empresa', empresa);
+            if (sellers?.length) {
+              // Pegar o vendedor com menos deals abertos
+              let minDeals = Infinity;
+              let bestSeller = sellers[0].user_id;
+              for (const s of sellers) {
+                const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', s.user_id).eq('status', 'ABERTO');
+                if ((count || 0) < minDeals) {
+                  minDeals = count || 0;
+                  bestSeller = s.user_id;
+                }
+              }
+              notifyUserId = bestSeller;
+            }
+          }
+
+          // Chamar notify-closer com prioridade
+          await fetch(`${envConfig.SUPABASE_URL}/functions/v1/notify-closer`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              lead_id: leadId, empresa,
+              motivo: (detalhes?.motivo as string) || 'Lead escalado para atendimento humano',
+              prioridade, intent: escIntent, temperatura: escTemperatura,
+              notify_user_id: notifyUserId,
+            }),
+          });
+
+          // Notificação in-app diferenciada
+          if (notifyUserId) {
+            const leadNome = escContact?.nome || 'Lead';
+            const prioridadeMap: Record<string, { titulo: string; tipo: string }> = {
+              CRITICA: { titulo: `🔴 Lead quente quer fechar: ${leadNome}`, tipo: 'ESCALA_URGENTE' },
+              ALTA: { titulo: `🟠 Lead qualificado pede atendimento: ${leadNome}`, tipo: 'ESCALA_ALTA' },
+              MEDIA: { titulo: `🟡 Lead pede contato humano: ${leadNome}`, tipo: 'ESCALA_MEDIA' },
+              BAIXA: { titulo: `⚪ Conversa escalada: ${leadNome}`, tipo: 'ESCALA_BAIXA' },
+            };
+            const notifData = prioridadeMap[prioridade] || prioridadeMap.MEDIA;
+            await supabase.from('notifications').insert({
+              user_id: notifyUserId, empresa,
+              tipo: notifData.tipo,
+              titulo: notifData.titulo,
+              mensagem: `Motivo: ${(detalhes?.motivo as string) || 'Escalação automática'}. Temperatura: ${escTemperatura}.`,
+              link: `/conversas`, entity_id: leadId, entity_type: 'lead',
+            });
+          }
+
+          // Progressão de deal: se QUENTE, criar/mover deal
+          if (isQuente && escContact?.id) {
+            const contactId = escContact.id as string;
+            const { data: existingDeal } = await supabase.from('deals').select('id, pipeline_id, stage_id').eq('contact_id', contactId).eq('status', 'ABERTO').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+            if (!existingDeal) {
+              // Criar deal automaticamente
+              await autoCreateDeal(supabase, leadId, empresa, detalhes);
+            }
+          }
+        } catch (escErr) {
+          log.error('Erro na escalação inteligente', { error: escErr instanceof Error ? escErr.message : String(escErr) });
+        }
+
         return true;
       }
       break;

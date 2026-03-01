@@ -1,0 +1,5 @@
+
+ALTER TABLE public.closer_notifications
+  ADD COLUMN IF NOT EXISTS prioridade TEXT DEFAULT 'MEDIA',
+  ADD COLUMN IF NOT EXISTS intent TEXT,
+  ADD COLUMN IF NOT EXISTS temperatura TEXT;

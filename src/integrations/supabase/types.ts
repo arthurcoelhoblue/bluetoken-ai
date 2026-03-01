@@ -1035,8 +1035,11 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           enviado_em: string | null
           id: string
+          intent: string | null
           lead_id: string
           motivo: string
+          prioridade: string | null
+          temperatura: string | null
           visualizado_em: string | null
         }
         Insert: {
@@ -1046,8 +1049,11 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           enviado_em?: string | null
           id?: string
+          intent?: string | null
           lead_id: string
           motivo: string
+          prioridade?: string | null
+          temperatura?: string | null
           visualizado_em?: string | null
         }
         Update: {
@@ -1057,8 +1063,11 @@ export type Database = {
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           enviado_em?: string | null
           id?: string
+          intent?: string | null
           lead_id?: string
           motivo?: string
+          prioridade?: string | null
+          temperatura?: string | null
           visualizado_em?: string | null
         }
         Relationships: []
