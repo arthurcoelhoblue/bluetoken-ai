@@ -1,49 +1,84 @@
 
 
-# Tornar Metodologias de Vendas Globais (Cross-Empresa)
+# Escalação Inteligente para Humano — Diagnóstico e Plano
 
-## Problema
-Atualmente, os livros de metodologia (`behavioral_knowledge`) são filtrados por `empresa` em todos os pontos: UI, indexação (embeddings), e busca RAG. Isso significa que um livro enviado pela BLUE não é visível nem utilizado pela Amélia quando opera pela TOKENIZA, MPUPPE ou AXIA.
+## Diagnóstico: O que acontece HOJE
 
-## Pontos de Alteração
+### `ESCALAR_HUMANO` (quando lead pede humano, dúvida técnica, anti-limbo)
+1. Amélia envia mensagem de despedida ("Vou te conectar com alguém da equipe...")
+2. Muda `modo` para `MANUAL` na `lead_conversation_state`
+3. **Fim. Ninguém é alertado.** O lead fica no limbo esperando um humano que não sabe que precisa atuar.
 
-### 1. UI — Listar todos os livros (sem filtro de empresa)
-**`src/hooks/useBehavioralKnowledge.ts`**: Remover o filtro `.eq('empresa', activeCompany)` na query de listagem. Manter `empresa` no upload apenas para rastreio de quem enviou.
+### `CRIAR_TAREFA_CLOSER` (lead qualificado como SQL)
+1. Chama `notify-closer` → cria registro em `closer_notifications` + envia email
+2. Cria deal automaticamente no pipeline
+3. Pausa cadência
+4. Muda modo para MANUAL
+5. **Funciona bem**, mas só dispara quando a IA classifica como lead qualificado
 
-### 2. Busca RAG — Ignorar filtro de empresa para behavioral
-**`supabase/functions/knowledge-search/index.ts`**: Quando `source_type_filter === 'behavioral'`, fazer uma busca separada sem o filtro `p_empresa`, ou modificar as RPCs para aceitar um parâmetro `p_ignore_empresa_for_types`.
+### Lacunas críticas
+- **ESCALAR_HUMANO não notifica ninguém** — é a falha mais grave
+- **Sem diferenciação de prioridade** — lead QUENTE com intenção de compra e lead FRIO pedindo humano recebem o mesmo tratamento (nenhum)
+- **Sem progressão de funil automática** — a escalação não move o deal de estágio
+- **Sem atribuição inteligente** — não direciona para o vendedor certo (owner do deal/contato)
 
-A abordagem mais simples: **duas buscas**. A busca principal (com empresa) já filtra corretamente para FAQs/documentos. Para behavioral, a chamada no `response-generator.ts` já passa `source_type_filter: 'behavioral'` — basta que o `knowledge-search` não aplique o filtro de empresa quando esse filtro de tipo está presente.
+---
 
-### 3. RPCs de busca — Permitir busca cross-empresa
-**Migration SQL**: Atualizar `hybrid_search_knowledge` e `search_knowledge_embeddings` para aceitar um parâmetro opcional `p_cross_empresa BOOLEAN DEFAULT false`. Quando `true`, remove o `WHERE ke.empresa = p_empresa` para tipo behavioral.
+## Plano de Implementação
 
-Alternativa mais limpa: adicionar `p_source_type_filter TEXT DEFAULT NULL` às RPCs e, quando `source_type = 'behavioral'`, ignorar o filtro de empresa.
+### 1. Unificar escalação no `action-executor.ts`
 
-### 4. Indexação — Sem mudança necessária
-O campo `empresa` na indexação serve apenas para rastreio. Não precisa mudar.
+Quando a ação for `ESCALAR_HUMANO`, aplicar a mesma lógica que `CRIAR_TAREFA_CLOSER` já tem, com adaptações:
 
-## Detalhes Técnicos
+- Chamar `notify-closer` passando contexto enriquecido (temperatura, intent, framework_data)
+- Notificar via tabela `notifications` o **owner do contato/deal** (notificação in-app, não apenas email)
+- Definir **prioridade** baseada em temperatura + intent:
+  - `CRITICA`: QUENTE + INTERESSE_COMPRA/AGENDAMENTO_REUNIAO
+  - `ALTA`: QUENTE ou INTERESSE_COMPRA isolado
+  - `MEDIA`: MORNO ou pedido explícito de humano
+  - `BAIXA`: FRIO ou anti-limbo
 
-### Migration (RPCs atualizadas)
+### 2. Notificação in-app diferenciada
+
+Inserir na tabela `notifications` com campos distintos por prioridade:
+
+| Prioridade | Título | Tipo |
+|---|---|---|
+| CRITICA | 🔴 Lead quente quer fechar: {nome} | ESCALA_URGENTE |
+| ALTA | 🟠 Lead qualificado pede atendimento: {nome} | ESCALA_ALTA |
+| MEDIA | 🟡 Lead pede contato humano: {nome} | ESCALA_MEDIA |
+| BAIXA | ⚪ Conversa escalada: {nome} | ESCALA_BAIXA |
+
+### 3. Progressão automática de estágio do deal
+
+Quando `ESCALAR_HUMANO` ou `CRIAR_TAREFA_CLOSER` disparar e existir deal aberto:
+- Se temperatura QUENTE + INTERESSE_COMPRA → mover deal para o estágio de negociação (configurável via `pipeline_auto_rules`)
+- Se lead sem deal e temperatura QUENTE → criar deal automaticamente (reaproveitando `autoCreateDeal`)
+
+### 4. Atribuição inteligente do destinatário
+
+Lógica de quem recebe a notificação:
+1. Se contato tem `owner_id` → notifica o owner
+2. Se não tem owner → round-robin entre vendedores ativos da empresa
+3. Se fora do horário comercial → agenda notificação para próximo horário comercial
+
+### 5. Migration: adicionar campo `prioridade` à `closer_notifications`
+
 ```sql
--- hybrid_search_knowledge: alterar WHERE para:
-WHERE (p_source_type_filter IS NULL OR ke.source_type = p_source_type_filter)
-  AND (ke.source_type = 'behavioral' OR ke.empresa = p_empresa)
-  AND ke.embedding IS NOT NULL
-  ...
-
--- search_knowledge_embeddings: mesma lógica
-WHERE (ke.source_type = 'behavioral' OR ke.empresa = p_empresa)
-  ...
+ALTER TABLE closer_notifications 
+  ADD COLUMN IF NOT EXISTS prioridade TEXT DEFAULT 'MEDIA',
+  ADD COLUMN IF NOT EXISTS intent TEXT,
+  ADD COLUMN IF NOT EXISTS temperatura TEXT;
 ```
 
-### knowledge-search/index.ts
-Passar `source_type_filter` para as RPCs como novo parâmetro, para que a filtragem cross-empresa aconteça no SQL.
+---
 
-### response-generator.ts
-Nenhuma mudança — já passa `source_type_filter: 'behavioral'`.
+## Arquivos a modificar
 
-### useBehavioralKnowledge.ts
-Remover filtro de empresa na listagem. No upload, continuar salvando a empresa do usuário logado (para auditoria).
+| Arquivo | Mudança |
+|---|---|
+| `supabase/functions/sdr-ia-interpret/action-executor.ts` | Enriquecer case `ESCALAR_HUMANO` com notificação + deal + atribuição |
+| `supabase/functions/notify-closer/index.ts` | Aceitar campo `prioridade`, `intent`, `temperatura`; diferenciar assunto do email |
+| `closer_notifications` (migration) | Adicionar colunas `prioridade`, `intent`, `temperatura` |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Passar temperatura e intent para `executeActions` no contexto de escalação |
 
