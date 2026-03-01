@@ -101,6 +101,34 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
     }
   }, [user?.id, contextType, contextId, empresa]);
 
+  /** Save to DB without adding to local state (used for assistant streaming where placeholder already exists) */
+  const saveMessageQuiet = useCallback(async (role: 'user' | 'assistant', content: string, meta?: { model_used?: string; tokens_input?: number; tokens_output?: number; latency_ms?: number }) => {
+    if (!user?.id) return null;
+    try {
+      const { data, error } = await supabase
+        .from('copilot_messages')
+        .insert({
+          user_id: user.id,
+          context_type: contextType,
+          context_id: contextId || null,
+          empresa: empresa as never,
+          role,
+          content,
+          model_used: meta?.model_used || null,
+          tokens_input: meta?.tokens_input || null,
+          tokens_output: meta?.tokens_output || null,
+          latency_ms: meta?.latency_ms || null,
+        })
+        .select('id')
+        .single();
+
+      if (error) throw error;
+      return data.id as string;
+    } catch (_err) {
+      return null;
+    }
+  }, [user?.id, contextType, contextId, empresa]);
+
   const clearHistory = useCallback(async () => {
     if (!user?.id) return;
     try {
@@ -156,6 +184,7 @@ export function useCopilotMessages({ contextType, contextId, empresa, enabled }:
     messages,
     isLoading,
     saveMessage,
+    saveMessageQuiet,
     clearHistory,
     addLocalMessage,
     updateLastMessage,
