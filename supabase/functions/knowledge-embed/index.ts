@@ -303,22 +303,44 @@ serve(async (req) => {
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_behavioral" && source_id) {
-      const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo").eq("id", source_id).single();
+      const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("id", source_id).single();
       if (!book) return new Response(JSON.stringify({ error: "Behavioral knowledge not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
-      const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
-      if (!extractedText) {
-        return new Response(JSON.stringify({ error: "Could not extract text from book", document: book.nome_arquivo }), {
-          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+      
+      // Concurrency lock: skip if already processing (started < 5 min ago)
+      if (book.embed_status === 'processing' && book.embed_started_at) {
+        const startedAt = new Date(book.embed_started_at).getTime();
+        const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+        if (startedAt > fiveMinAgo) {
+          console.log(`[Behavioral] SKIPPED "${book.titulo}" — already processing since ${book.embed_started_at}`);
+          return new Response(JSON.stringify({ success: true, skipped: true, reason: "already_processing", titulo: book.titulo }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
       }
-      console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
-      const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
-      const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
-      const chunks = semanticChunk(fullText, titlePrefix);
-      console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
-      const r = await embedChunks(supabase, chunks, "behavioral", source_id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
-      totalEmbedded = r.embedded; totalErrors = r.errors;
-      await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded }).eq("id", source_id);
+
+      // Set processing lock
+      await supabase.from("behavioral_knowledge").update({ embed_status: 'processing', embed_started_at: new Date().toISOString() }).eq("id", source_id);
+
+      try {
+        const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
+        if (!extractedText) {
+          await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
+          return new Response(JSON.stringify({ error: "Could not extract text from book", document: book.nome_arquivo }), {
+            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
+        const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
+        const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
+        const chunks = semanticChunk(fullText, titlePrefix);
+        console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
+        const r = await embedChunks(supabase, chunks, "behavioral", source_id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
+        totalEmbedded = r.embedded; totalErrors = r.errors;
+        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", source_id);
+      } catch (embedError) {
+        await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
+        throw embedError;
+      }
 
     } else if (action === "embed_all" || action === "reindex") {
       const targetEmpresa = empresa || null;
@@ -371,18 +393,30 @@ serve(async (req) => {
       }
 
       // Embed Behavioral Knowledge (books/methodologies)
-      let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo").eq("ativo", true);
+      let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("ativo", true);
       if (targetEmpresa) booksQuery = booksQuery.eq("empresa", targetEmpresa);
       const { data: allBooks } = await booksQuery;
       for (const book of (allBooks || [])) {
+        // Skip if already processing
+        if (book.embed_status === 'processing' && book.embed_started_at) {
+          const startedAt = new Date(book.embed_started_at).getTime();
+          if (startedAt > Date.now() - 5 * 60 * 1000) {
+            console.log(`[Behavioral] SKIPPED "${book.titulo}" in reindex — already processing`);
+            continue;
+          }
+        }
+        await supabase.from("behavioral_knowledge").update({ embed_status: 'processing', embed_started_at: new Date().toISOString() }).eq("id", book.id);
         const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
-        if (!extractedText) { totalErrors++; continue; }
+        if (!extractedText) { 
+          await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", book.id);
+          totalErrors++; continue; 
+        }
         const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
         const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
         const chunks = semanticChunk(fullText, titlePrefix);
         const r = await embedChunks(supabase, chunks, "behavioral", book.id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
         totalEmbedded += r.embedded; totalErrors += r.errors;
-        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded }).eq("id", book.id);
+        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", book.id);
       }
 
     } else {
