@@ -18,6 +18,18 @@ export interface Atendimento {
   framework_ativo: string | null;
   perfil_disc: string | null;
   ultimo_intent: string | null;
+  // New enriched fields
+  modo: string | null;
+  temperatura: string | null;
+  deal_stage_nome: string | null;
+  deal_stage_cor: string | null;
+  deal_stage_id: string | null;
+  deal_stage_posicao: number | null;
+  deal_id: string | null;
+  score_engajamento: number | null;
+  score_intencao: number | null;
+  score_urgencia: number | null;
+  last_inbound_at: string | null;
 }
 
 interface UseAtendimentosOptions {
@@ -28,9 +40,7 @@ interface UseAtendimentosOptions {
 
 /**
  * NOTA TÉCNICA: Paginação client-side é intencional aqui.
- * Este hook faz merge complexo de 4 tabelas (lead_messages, lead_contacts,
- * lead_conversation_state, lead_message_intents) no client, o que impede
- * o uso de .range() server-side. A alternativa seria criar uma view materializada.
+ * Este hook faz merge complexo de 4+ tabelas no client.
  */
 export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimentosOptions = {}) {
   return useQuery({
@@ -86,7 +96,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
           .order('created_at', { ascending: false }),
         supabase
           .from('lead_conversation_state')
-          .select('lead_id, empresa, estado_funil, framework_ativo, perfil_disc, assumido_por')
+          .select('lead_id, empresa, estado_funil, framework_ativo, perfil_disc, assumido_por, modo, last_inbound_at')
           .in('lead_id', leadIds),
         supabase
           .from('lead_message_intents')
@@ -104,7 +114,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
       if (intentsRes.error) throw intentsRes.error;
       if (crmContactsRes.error) throw crmContactsRes.error;
 
-      // 4. Fetch deals for ownership + open status filtering
+      // 4. Fetch deals for ownership + enriched data
       const crmContacts = crmContactsRes.data ?? [];
       const contactIdToLeadId = new Map<string, string>();
       const crmContactIds: string[] = [];
@@ -115,24 +125,71 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
         }
       }
 
-      // Map lead_id -> deal ownership info
-      const leadDealInfo = new Map<string, { hasOpenDeal: boolean; ownerIds: string[] }>();
+      // Map lead_id -> deal info (enriched)
+      const leadDealInfo = new Map<string, {
+        hasOpenDeal: boolean;
+        ownerIds: string[];
+        dealId: string | null;
+        stageId: string | null;
+        temperatura: string | null;
+        scoreEngajamento: number | null;
+        scoreIntencao: number | null;
+        scoreUrgencia: number | null;
+      }>();
+
+      // Map stage_id -> stage info
+      const stageInfoMap = new Map<string, { nome: string; cor: string; posicao: number }>();
 
       if (crmContactIds.length > 0) {
         const { data: deals, error: dealsErr } = await supabase
           .from('deals')
-          .select('id, contact_id, owner_id, status')
+          .select('id, contact_id, owner_id, status, stage_id, temperatura, score_engajamento, score_intencao, score_urgencia')
           .in('contact_id', crmContactIds);
 
         if (dealsErr) throw dealsErr;
 
+        // Collect stage IDs to fetch stage info
+        const stageIds = new Set<string>();
+        for (const deal of deals ?? []) {
+          if (deal.stage_id) stageIds.add(deal.stage_id);
+        }
+
+        // Fetch pipeline stages
+        if (stageIds.size > 0) {
+          const { data: stages } = await supabase
+            .from('pipeline_stages')
+            .select('id, nome, cor, posicao')
+            .in('id', Array.from(stageIds));
+          for (const s of stages ?? []) {
+            stageInfoMap.set(s.id, { nome: s.nome, cor: s.cor, posicao: s.posicao });
+          }
+        }
+
         for (const deal of deals ?? []) {
           const leadId = contactIdToLeadId.get(deal.contact_id);
           if (!leadId) continue;
-          const existing = leadDealInfo.get(leadId) ?? { hasOpenDeal: false, ownerIds: [] };
+          const existing = leadDealInfo.get(leadId) ?? {
+            hasOpenDeal: false,
+            ownerIds: [],
+            dealId: null,
+            stageId: null,
+            temperatura: null,
+            scoreEngajamento: null,
+            scoreIntencao: null,
+            scoreUrgencia: null,
+          };
           if (deal.status === 'ABERTO') {
             existing.hasOpenDeal = true;
             if (deal.owner_id) existing.ownerIds.push(deal.owner_id);
+            // Use first open deal's enriched data
+            if (!existing.dealId) {
+              existing.dealId = deal.id;
+              existing.stageId = deal.stage_id;
+              existing.temperatura = deal.temperatura;
+              existing.scoreEngajamento = deal.score_engajamento;
+              existing.scoreIntencao = deal.score_intencao;
+              existing.scoreUrgencia = deal.score_urgencia;
+            }
           }
           leadDealInfo.set(leadId, existing);
         }
@@ -157,11 +214,25 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
         }
       }
 
-      const statesByLead = new Map<string, { estado_funil: string; framework_ativo: string; perfil_disc: string | null; assumido_por: string | null }>();
+      const statesByLead = new Map<string, {
+        estado_funil: string;
+        framework_ativo: string;
+        perfil_disc: string | null;
+        assumido_por: string | null;
+        modo: string | null;
+        last_inbound_at: string | null;
+      }>();
       for (const s of statesRes.data || []) {
         const key = `${s.lead_id}_${s.empresa}`;
         if (!statesByLead.has(key)) {
-          statesByLead.set(key, { estado_funil: s.estado_funil, framework_ativo: s.framework_ativo, perfil_disc: s.perfil_disc, assumido_por: s.assumido_por });
+          statesByLead.set(key, {
+            estado_funil: s.estado_funil,
+            framework_ativo: s.framework_ativo,
+            perfil_disc: s.perfil_disc,
+            assumido_por: s.assumido_por,
+            modo: s.modo,
+            last_inbound_at: s.last_inbound_at,
+          });
         }
       }
 
@@ -199,22 +270,21 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
         const dealInfo = leadDealInfo.get(c.lead_id);
 
         // Filter: only show conversations with open deals OR no deal at all (new leads)
-        // For admins: show all (open deals + no deal)
-        // For non-admins: only show if they own the deal OR assumed the conversation
         if (dealInfo && !dealInfo.hasOpenDeal) {
-          // Has deals but none open → conversation is "closed"
           continue;
         }
 
         if (!isAdmin && userId) {
           const ownsOpenDeal = dealInfo?.ownerIds.includes(userId) ?? false;
           const assumedConversation = state?.assumido_por === userId;
-          const noDealYet = !dealInfo; // New lead without deal — show to all sellers
+          const noDealYet = !dealInfo;
 
           if (!ownsOpenDeal && !assumedConversation && !noDealYet) {
             continue;
           }
         }
+
+        const stageInfo = dealInfo?.stageId ? stageInfoMap.get(dealInfo.stageId) : null;
 
         atendimentos.push({
           lead_id: c.lead_id,
@@ -231,6 +301,18 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
           framework_ativo: state?.framework_ativo ?? null,
           perfil_disc: state?.perfil_disc ?? null,
           ultimo_intent: intent ?? null,
+          // Enriched fields
+          modo: state?.modo ?? null,
+          temperatura: dealInfo?.temperatura ?? null,
+          deal_stage_nome: stageInfo?.nome ?? null,
+          deal_stage_cor: stageInfo?.cor ?? null,
+          deal_stage_id: dealInfo?.stageId ?? null,
+          deal_stage_posicao: stageInfo?.posicao ?? null,
+          deal_id: dealInfo?.dealId ?? null,
+          score_engajamento: dealInfo?.scoreEngajamento ?? null,
+          score_intencao: dealInfo?.scoreIntencao ?? null,
+          score_urgencia: dealInfo?.scoreUrgencia ?? null,
+          last_inbound_at: state?.last_inbound_at ?? null,
         });
       }
 
