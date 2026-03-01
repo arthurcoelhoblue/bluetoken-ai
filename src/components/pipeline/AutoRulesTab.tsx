@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -33,7 +34,7 @@ export function AutoRulesTab() {
   const [selFrom, setSelFrom] = useState('');
   const [selTo, setSelTo] = useState('');
   const [selTrigger, setSelTrigger] = useState('');
-  const [triggerActivityType, setTriggerActivityType] = useState('');
+  const [triggerActivityTypes, setTriggerActivityTypes] = useState<string[]>([]);
   const [triggerScoreValue, setTriggerScoreValue] = useState('');
 
   const selectedPipelineObj = pipelines?.find(p => p.id === selPipeline);
@@ -44,7 +45,7 @@ export function AutoRulesTab() {
     setSelFrom('');
     setSelTo('');
     setSelTrigger('');
-    setTriggerActivityType('');
+    setTriggerActivityTypes([]);
     setTriggerScoreValue('');
   };
 
@@ -60,8 +61,8 @@ export function AutoRulesTab() {
 
     let trigger_config: Record<string, unknown> = {};
     if (selTrigger === 'ATIVIDADE_CRIADA') {
-      if (!triggerActivityType) { toast.error('Selecione o tipo de atividade'); return; }
-      trigger_config = { tipo_atividade: triggerActivityType };
+      if (triggerActivityTypes.length === 0) { toast.error('Selecione pelo menos um tipo de atividade'); return; }
+      trigger_config = { tipos_atividade: triggerActivityTypes };
     } else if (selTrigger === 'SCORE_THRESHOLD') {
       const v = parseInt(triggerScoreValue, 10);
       if (isNaN(v) || v < 0 || v > 100) { toast.error('Score deve ser entre 0 e 100'); return; }
@@ -178,16 +179,21 @@ export function AutoRulesTab() {
                 </div>
 
                 {selTrigger === 'ATIVIDADE_CRIADA' && (
-                  <div>
-                    <Label>Tipo de Atividade</Label>
-                    <Select value={triggerActivityType} onValueChange={setTriggerActivityType}>
-                      <SelectTrigger><SelectValue placeholder="Selecione..." /></SelectTrigger>
-                      <SelectContent>
-                        {ACTIVITY_TYPES.map(t => (
-                          <SelectItem key={t} value={t}>{t}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
+                  <div className="space-y-2">
+                    <Label>Tipos de Atividade</Label>
+                    {ACTIVITY_TYPES.map(t => (
+                      <label key={t} className="flex items-center gap-2 cursor-pointer">
+                        <Checkbox
+                          checked={triggerActivityTypes.includes(t)}
+                          onCheckedChange={(checked) => {
+                            setTriggerActivityTypes(prev =>
+                              checked ? [...prev, t] : prev.filter(x => x !== t)
+                            );
+                          }}
+                        />
+                        <span className="text-sm">{t}</span>
+                      </label>
+                    ))}
                   </div>
                 )}
 
@@ -239,7 +245,12 @@ export function AutoRulesTab() {
                       <Badge variant="outline" className="text-xs">
                         {TRIGGER_LABELS[rule.trigger_type] ?? rule.trigger_type}
                       </Badge>
-                      {rule.trigger_type === 'ATIVIDADE_CRIADA' && rule.trigger_config?.tipo_atividade && (
+                      {rule.trigger_type === 'ATIVIDADE_CRIADA' && Array.isArray(rule.trigger_config?.tipos_atividade) && (
+                        (rule.trigger_config.tipos_atividade as string[]).map(t => (
+                          <Badge key={t} variant="secondary" className="text-xs">{t}</Badge>
+                        ))
+                      )}
+                      {rule.trigger_type === 'ATIVIDADE_CRIADA' && !Array.isArray(rule.trigger_config?.tipos_atividade) && rule.trigger_config?.tipo_atividade && (
                         <Badge variant="secondary" className="text-xs">
                           {String(rule.trigger_config.tipo_atividade)}
                         </Badge>
