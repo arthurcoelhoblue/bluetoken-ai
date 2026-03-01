@@ -60,10 +60,21 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
   const [internalOpen, setInternalOpen] = useState(false);
   const isControlled = externalOpen !== undefined;
   const open = isControlled ? externalOpen : internalOpen;
-  const setOpen = isControlled ? (onOpenChange ?? setInternalOpen) : setInternalOpen;
+  const handleOpenChange = (value: boolean) => {
+    if (!value) {
+      abortRef.current?.abort();
+      setIsLoading(false);
+    }
+    if (isControlled) {
+      (onOpenChange ?? setInternalOpen)(value);
+    } else {
+      setInternalOpen(value);
+    }
+  };
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
   const {
     messages, isLoading: historyLoading, saveMessage, clearHistory,
@@ -125,7 +136,6 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
     setInput('');
     setIsLoading(true);
 
-    // Save user message to DB
     await saveMessage('user', trimmed);
 
     try {
@@ -133,6 +143,9 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+
+      const controller = new AbortController();
+      abortRef.current = controller;
 
       const resp = await fetch(`${supabaseUrl}/functions/v1/copilot-chat`, {
         method: 'POST',
@@ -146,6 +159,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
           contextId: context.id,
           empresa: context.empresa,
         }),
+        signal: controller.signal,
       });
 
       if (!resp.ok) {
@@ -247,7 +261,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
   );
 
   return (
-    <Sheet open={open} onOpenChange={setOpen}>
+    <Sheet open={open} onOpenChange={handleOpenChange}>
       {!isControlled && <SheetTrigger asChild>{trigger}</SheetTrigger>}
       <SheetContent className="w-[440px] sm:max-w-[440px] flex flex-col">
         <SheetHeader>
