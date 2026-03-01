@@ -362,6 +362,48 @@ export type Database = {
           },
         ]
       }
+      behavioral_knowledge: {
+        Row: {
+          ativo: boolean
+          autor: string | null
+          chunks_count: number
+          created_at: string
+          descricao: string | null
+          empresa: string
+          id: string
+          nome_arquivo: string
+          storage_path: string
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          autor?: string | null
+          chunks_count?: number
+          created_at?: string
+          descricao?: string | null
+          empresa: string
+          id?: string
+          nome_arquivo: string
+          storage_path: string
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          autor?: string | null
+          chunks_count?: number
+          created_at?: string
+          descricao?: string | null
+          empresa?: string
+          id?: string
+          nome_arquivo?: string
+          storage_path?: string
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cadence_runner_logs: {
         Row: {
           details: Json | null

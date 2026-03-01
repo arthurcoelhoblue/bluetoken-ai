@@ -406,6 +406,27 @@ Sua resposta DEVE ser baseada EXCLUSIVAMENTE nas informações da seção PRODUT
   const leadFacts = conversation_state?.lead_facts as Record<string, unknown> | undefined;
   const leadFactsText = formatLeadFacts(leadFacts);
 
+  // === BEHAVIORAL RAG: Fetch methodology chunks ===
+  let behavioralText = '';
+  try {
+    const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || '';
+    const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") || '';
+    const behResp = await fetch(`${SUPABASE_URL}/functions/v1/knowledge-search`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 3, threshold: 0.50, source_type_filter: 'behavioral' }),
+    });
+    if (behResp.ok) {
+      const behData = await behResp.json();
+      if (behData.context && behData.total > 0) {
+        behavioralText = behData.context;
+      }
+    }
+  } catch { /* behavioral search is optional */ }
+
   const prompt = `CONTEXTO:
 Contato: ${contactName}
 Intent: ${intent} (confiança: ${confidence})
@@ -418,6 +439,7 @@ ${leadFactsText}
 
 PRODUTOS:
 ${productsText}
+${behavioralText ? `\n## METODOLOGIA DE VENDAS\nAplique as seguintes técnicas na sua abordagem (NÃO cite o nome do livro/metodologia ao lead):\n${behavioralText}` : ''}
 
 HISTÓRICO RECENTE:
 ${historicoText}

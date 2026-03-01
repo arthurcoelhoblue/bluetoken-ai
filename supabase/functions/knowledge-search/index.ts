@@ -206,7 +206,7 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { query, empresa, top_k = 5, threshold = 0.55 } = await req.json();
+    const { query, empresa, top_k = 5, threshold = 0.55, source_type_filter } = await req.json();
 
     if (!query || !empresa) {
       return new Response(JSON.stringify({ error: "query and empresa are required" }), {
@@ -264,6 +264,10 @@ serve(async (req) => {
           search_source: r.search_source,
           metadata: r.metadata,
         }));
+        // Filter by source_type if requested
+        if (source_type_filter) {
+          chunks = chunks.filter((c: any) => c.source_type === source_type_filter);
+        }
       }
     }
 
@@ -281,6 +285,9 @@ serve(async (req) => {
           text: r.chunk_text, source_type: r.source_type, source_id: r.source_id,
           similarity: r.similarity, metadata: r.metadata,
         }));
+        if (source_type_filter) {
+          chunks = chunks.filter((c: any) => c.source_type === source_type_filter);
+        }
       }
     }
 

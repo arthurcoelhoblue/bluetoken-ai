@@ -14,6 +14,7 @@ import { useProductKnowledgeList, useDeleteProductKnowledge } from "@/hooks/useP
 import { FaqListTab } from "@/components/knowledge/FaqListTab";
 import { KnowledgeRAGStatus } from "@/components/knowledge/KnowledgeRAGStatus";
 import { KnowledgeGaps } from "@/components/knowledge/KnowledgeGaps";
+import { BehavioralKnowledgeTab } from "@/components/knowledge/BehavioralKnowledgeTab";
 import { useCompany } from "@/contexts/CompanyContext";
 import { toast } from "sonner";
 
@@ -56,6 +57,7 @@ export default function ProductKnowledgeList() {
           <TabsList>
             <TabsTrigger value="produtos">Produtos</TabsTrigger>
             <TabsTrigger value="faq">FAQ</TabsTrigger>
+            <TabsTrigger value="metodologia">Metodologia</TabsTrigger>
             <TabsTrigger value="gaps">Lacunas</TabsTrigger>
           </TabsList>
 
@@ -148,6 +150,10 @@ export default function ProductKnowledgeList() {
 
           <TabsContent value="faq" className="mt-4">
             <FaqListTab />
+          </TabsContent>
+
+          <TabsContent value="metodologia" className="mt-4">
+            <BehavioralKnowledgeTab />
           </TabsContent>
 
           <TabsContent value="gaps" className="mt-4">
