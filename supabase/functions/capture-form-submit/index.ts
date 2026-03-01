@@ -3,6 +3,28 @@ import { createServiceClient } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 
+/** Strip HTML tags from strings to prevent stored XSS */
+function sanitizeValue(val: unknown): unknown {
+  if (typeof val === 'string') {
+    return val.replace(/<[^>]*>/g, '').trim();
+  }
+  if (Array.isArray(val)) {
+    return val.map(sanitizeValue);
+  }
+  if (val !== null && typeof val === 'object') {
+    return sanitizeRecord(val as Record<string, unknown>);
+  }
+  return val;
+}
+
+function sanitizeRecord(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(obj)) {
+    result[key] = sanitizeValue(val);
+  }
+  return result;
+}
+
 const log = createLogger('capture-form-submit');
 
 const submitPayload = z.object({
@@ -28,7 +50,9 @@ Deno.serve(async (req) => {
       });
     }
 
-    const { slug, answers, metadata } = parsed.data;
+    const { slug, metadata: rawMetadata } = parsed.data;
+    const answers = sanitizeRecord(parsed.data.answers as Record<string, unknown>);
+    const metadata = sanitizeRecord(rawMetadata as Record<string, unknown>);
 
     const supabase = createServiceClient();
 
