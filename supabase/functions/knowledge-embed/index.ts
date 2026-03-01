@@ -266,7 +266,7 @@ Regras:
 - NÃO invente informações que não estejam no texto original
 - Mantenha o idioma original do texto`;
 
-async function refineChunkWithSonnet(chunk: string, bookTitle: string, anthropicKey: string): Promise<string | null> {
+async function refineChunkWithHaiku(chunk: string, bookTitle: string, anthropicKey: string): Promise<string | null> {
   try {
     const resp = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -276,7 +276,7 @@ async function refineChunkWithSonnet(chunk: string, bookTitle: string, anthropic
         "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-haiku-4-5-20241022",
         max_tokens: 1024,
         system: SONNET_REFINE_SYSTEM,
         messages: [
@@ -290,33 +290,32 @@ async function refineChunkWithSonnet(chunk: string, bookTitle: string, anthropic
 
     if (!resp.ok) {
       const errText = await resp.text();
-      console.error(`[Sonnet] API error ${resp.status}:`, errText);
-      // On API error, keep original chunk rather than losing data
+      console.error(`[Haiku] API error ${resp.status}:`, errText);
       return chunk;
     }
 
     const data = await resp.json();
     const content = data.content?.[0]?.text?.trim();
 
-    if (!content) return chunk; // fallback: keep original
+    if (!content) return chunk;
     if (content === "SKIP") {
-      console.log(`[Sonnet] Chunk skipped (no practical value)`);
+      console.log(`[Haiku] Chunk skipped (no practical value)`);
       return null;
     }
 
     return content;
   } catch (e) {
-    console.error("[Sonnet] Refinement error:", e);
-    return chunk; // fallback: keep original on error
+    console.error("[Haiku] Refinement error:", e);
+    return chunk;
   }
 }
 
-async function refineChunksWithSonnet(chunks: string[], bookTitle: string, anthropicKey: string): Promise<string[]> {
+async function refineChunksWithHaiku(chunks: string[], bookTitle: string, anthropicKey: string): Promise<string[]> {
   const refined: string[] = [];
   let skipped = 0;
 
   for (let i = 0; i < chunks.length; i++) {
-    const result = await refineChunkWithSonnet(chunks[i], bookTitle, anthropicKey);
+    const result = await refineChunkWithHaiku(chunks[i], bookTitle, anthropicKey);
     if (result === null) {
       skipped++;
     } else {
@@ -324,11 +323,11 @@ async function refineChunksWithSonnet(chunks: string[], bookTitle: string, anthr
     }
 
     if ((i + 1) % 10 === 0) {
-      console.log(`[Sonnet] Refinement progress: ${i + 1}/${chunks.length} (${skipped} skipped)`);
+      console.log(`[Haiku] Refinement progress: ${i + 1}/${chunks.length} (${skipped} skipped)`);
     }
   }
 
-  console.log(`[Sonnet] Refinement complete: ${chunks.length} input → ${refined.length} output (${skipped} skipped)`);
+  console.log(`[Haiku] Refinement complete: ${chunks.length} input → ${refined.length} output (${skipped} skipped)`);
   return refined;
 }
 
@@ -494,14 +493,14 @@ serve(async (req) => {
           const rawChunks = semanticChunk(fullText, titlePrefix);
           console.log(`[Behavioral] Generated ${rawChunks.length} raw chunks for "${book.titulo}"`);
           
-          // INTELLIGENCE LAYER: Refine chunks with Claude Sonnet
+          // INTELLIGENCE LAYER: Refine chunks with Claude Haiku
           let chunks: string[];
           if (ANTHROPIC_API_KEY) {
-            console.log(`[Behavioral] Starting Sonnet refinement for ${rawChunks.length} chunks...`);
-            chunks = await refineChunksWithSonnet(rawChunks, book.titulo, ANTHROPIC_API_KEY);
+            console.log(`[Behavioral] Starting Haiku refinement for ${rawChunks.length} chunks...`);
+            chunks = await refineChunksWithHaiku(rawChunks, book.titulo, ANTHROPIC_API_KEY);
             console.log(`[Behavioral] After refinement: ${chunks.length} chunks (${rawChunks.length - chunks.length} discarded)`);
           } else {
-            console.warn(`[Behavioral] ANTHROPIC_API_KEY not configured — skipping Sonnet refinement`);
+            console.warn(`[Behavioral] ANTHROPIC_API_KEY not configured — skipping Haiku refinement`);
             chunks = rawChunks;
           }
           
