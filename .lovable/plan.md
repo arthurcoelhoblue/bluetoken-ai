@@ -1,104 +1,63 @@
 
 
-# Plano de Evolução da Qualidade de Respostas da Amélia
+# Corrigir transcrição de áudio do WhatsApp
 
-## Diagnóstico Confirmado
+## Problema
+O áudio do WhatsApp chega em OGG/Opus. A API `input_audio` do GPT aceita apenas `wav` e `mp3`. O código envia `format: "ogg"` (linha 421), causando erro 400.
 
-A auditoria está 100% correta. Confirmei no código:
+## Solução
+Converter o áudio OGG para MP3 antes de enviar à API. Como não temos ffmpeg no edge runtime, a abordagem mais robusta é usar a **API de Speech-to-Text do OpenAI (Whisper)** que aceita OGG nativamente, em vez do endpoint multimodal `input_audio`.
 
-1. **Inversão de responsabilidade**: O `intent-classifier.ts` (Claude Haiku) gera a `resposta_sugerida` dentro do JSON de classificação (linha 472 do prompt: `"resposta_sugerida":"..."`). O `index.ts` usa essa resposta diretamente (linha 181: `let respostaTexto = classifierResult.resposta_sugerida`).
+Porém, o Lovable AI Gateway não expõe o endpoint Whisper (`/v1/audio/transcriptions`). Alternativas:
 
-2. **Response generator subutilizado**: O `index.ts` importa apenas `sanitizeResponse` (limpeza de padrões robóticos), nunca `generateResponse`. O Sonnet fica ocioso.
+1. **Usar Gemini Flash via Lovable AI Gateway** — Gemini aceita áudio inline em qualquer formato (OGG, MP3, WAV). Trocar o modelo para `google/gemini-2.5-flash` e usar o formato de conteúdo adequado para áudio.
 
-3. **Sobrecarga cognitiva do Haiku**: O prompt do classificador exige simultaneamente: classificar intent, estimar DISC, extrair frameworks SPIN/GPCT/BANT, extrair lead_facts, E gerar resposta conversacional — tudo num único JSON.
+2. **Usar OpenAI Whisper diretamente** — via `OPENAI_API_KEY` que já existe nos secrets, chamar `https://api.openai.com/v1/audio/transcriptions` com o arquivo OGG como form-data.
 
-4. **RAG com threshold baixo**: O `knowledge-search` usa `threshold = 0.2` (linha 209), permitindo chunks irrelevantes.
+### Recomendação: Opção 1 (Gemini Flash via Gateway)
+- Sem custo adicional de API key
+- Gemini aceita OGG nativamente via inline_data
+- Mais rápido e mais barato que GPT-5-mini
 
-5. **Sem instrução de grounding**: Nenhum dos prompts contém diretriz explícita de ancorar respostas exclusivamente no conhecimento recuperado.
+## Mudança
 
----
+**Arquivo**: `supabase/functions/meta-webhook/index.ts`, linhas 407-432
 
-## Plano de Implementação (6 passos, em ordem de prioridade)
+Trocar a chamada multimodal GPT por Gemini Flash:
 
-### Passo 1 — Fortalecer Grounding no Response Generator (Crítico)
-**Arquivo**: `supabase/functions/sdr-ia-interpret/response-generator.ts`
-
-Adicionar ao `systemPrompt` padrão (e ao fallback) uma seção de ancoragem obrigatória:
-
+```typescript
+const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-2.5-flash",
+    messages: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_audio",
+            input_audio: { data: base64Audio, format: "mp3" },
+          },
+          {
+            type: "text",
+            text: "Transcreva este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, sem aspas, sem prefixos.",
+          },
+        ],
+      },
+    ],
+    max_tokens: 2048,
+  }),
+});
 ```
-## 🎯 DIRETRIZ DE ANCORAGEM (GROUNDING) — OBRIGATÓRIA
-Sua resposta DEVE ser baseada EXCLUSIVAMENTE nas informações da seção PRODUTOS.
-- Se a informação estiver nos PRODUTOS, responda diretamente com dados concretos.
-- Se a informação NÃO estiver nos PRODUTOS, você está PROIBIDO de inventar. 
-  Responda: "Preciso confirmar com a equipe para te dar a informação exata." 
-  ou "Não tenho essa informação no momento, mas vou verificar para você."
-- NUNCA use seu conhecimento geral para complementar. Use APENAS o contexto fornecido.
-```
 
-### Passo 2 — Aumentar Threshold do RAG (Crítico)
-**Arquivo**: `supabase/functions/knowledge-search/index.ts`
+O Gemini via gateway aceita áudio em formato inline. Se `mp3` também falhar via gateway, usaremos o fallback direto com OpenAI Whisper API (`OPENAI_API_KEY`) que aceita OGG como multipart form-data.
 
-- Linha 209: mudar `threshold = 0.2` para `threshold = 0.55` (default do request body)
-- O `response-generator.ts` linha 211 envia `threshold: 0.3` — mudar para `0.55`
-- O `intent-classifier.ts` também chama RAG com threshold baixo — alinhar para `0.55`
+Também verificar e aplicar a mesma correção no `call-transcribe/index.ts` (linha 141) que usa `format: 'mp3'` — esse já está correto.
 
-Valor 0.55 em vez de 0.7 (recomendado pela auditoria) porque o threshold do RRF já combina FTS + vetor, um corte muito agressivo pode eliminar chunks relevantes. Podemos calibrar progressivamente.
-
-### Passo 3 — Separar Classificação da Geração (Alta prioridade)
-**Arquivos**: `intent-classifier.ts`, `response-generator.ts`, `index.ts`
-
-**intent-classifier.ts**:
-- Remover `resposta_sugerida` do JSON de saída do prompt
-- Remover instruções de DISC→RESPOSTA do system prompt (manter apenas DISC→detecção)
-- Simplificar o JSON esperado: `{"intent","confidence","summary","acao","sentimento","deve_responder","novo_estado_funil","frameworks_atualizados","disc_estimado","departamento_destino","lead_facts_extraidos"}`
-- Manter maxTokens mais baixo (800 em vez de 1500)
-
-**index.ts** (orquestrador):
-- Após classificação, SEMPRE chamar `generateResponse()` quando `deve_responder = true`
-- Remover a lógica de usar `classifierResult.resposta_sugerida` diretamente
-- Passar ao generator: intent, frameworks, DISC, lead_facts, histórico, conhecimento RAG
-
-**response-generator.ts**:
-- Já usa Sonnet — manter
-- Adicionar grounding (Passo 1)
-- Receber o `intent`, `disc_estimado`, `frameworks` do classificador para contextualizar a resposta
-- Aplicar instruções DISC→TOM diretamente no prompt do gerador
-
-### Passo 4 — Enriquecer Contexto do RAG com produto_nome (Média)
-**Arquivo**: Processo de embedding (não no search)
-
-Ao gerar embeddings de `knowledge_sections` e `knowledge_faq`, prefixar o texto com o `produto_nome` associado. Isso cria associação semântica explícita entre produto e conteúdo.
-
-Nota: isso requer re-embeddar o conteúdo existente. Implementar como migration + script.
-
-### Passo 5 — Melhorar Fallback do fetchProductKnowledge (Média)
-**Arquivo**: `supabase/functions/sdr-ia-interpret/response-generator.ts`
-
-Quando RAG não retorna chunks (linha 279), o fallback carrega apenas `produto_nome, descricao_curta, preco_texto, diferenciais`. Adicionar:
-- Carregar `knowledge_sections` associadas (top 3 por produto)
-- Carregar `knowledge_faq` associados (top 5 por produto)
-- Montar contexto mais rico como fallback
-
-### Passo 6 — Desativar A/B Testing durante reestruturação (Baixa)
-**Arquivos**: `intent-classifier.ts` (linha 507), `response-generator.ts` (linha 293)
-
-Desativar temporariamente o carregamento de `prompt_versions` para evitar que prompts A/B interfiram na nova arquitetura. Reativar após estabilização.
-
----
-
-## Resumo Técnico das Mudanças
-
-| Arquivo | Mudança |
-|---------|---------|
-| `response-generator.ts` | + Grounding obrigatório no prompt, + receber DISC/intent do classificador, + fallback enriquecido |
-| `knowledge-search/index.ts` | Threshold default 0.2 → 0.55 |
-| `intent-classifier.ts` | - Remover `resposta_sugerida` do prompt, - remover instruções DISC→resposta, simplificar output JSON |
-| `index.ts` | + Sempre chamar `generateResponse()` quando deve_responder=true, - remover uso direto de resposta_sugerida |
-
-## Impacto Esperado
-
-- Respostas geradas pelo Sonnet (modelo superior) em vez do Haiku
-- Haiku focado exclusivamente em classificação (tarefa para a qual foi dimensionado)
-- Menos alucinações: grounding explícito + RAG com menos ruído
-- Respostas mais precisas: contexto de produto melhor associado
+## Também corrigir
+O mesmo padrão existe em `call-transcribe/index.ts` mas já usa `format: 'mp3'` — sem mudança necessária lá.
 
