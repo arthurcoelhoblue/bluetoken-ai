@@ -14,15 +14,16 @@ export function useCSMetrics() {
       let query = supabase
         .from('cs_customers')
         .select('id, health_score, health_status, ultimo_nps, proxima_renovacao, is_active, empresa')
-        .eq('is_active', true);
-
-      query = query.in('empresa', activeCompanies);
+        .in('empresa', activeCompanies);
 
       const { data, error } = await query;
       if (error) throw error;
 
-      const customers = data ?? [];
+      const allCustomers = data ?? [];
+      const customers = allCustomers.filter(c => c.is_active);
       const total = customers.length;
+      const totalBase = allCustomers.length;
+      const cadastrados = allCustomers.filter(c => !c.is_active).length;
       const healthSum = customers.reduce((s, c) => s + (c.health_score ?? 0), 0);
       const npsValues = customers.filter(c => c.ultimo_nps != null).map(c => c.ultimo_nps!);
       const npsSum = npsValues.reduce((s, v) => s + v, 0);
@@ -33,6 +34,8 @@ export function useCSMetrics() {
 
       const metrics: CSMetrics = {
         total_clientes: total,
+        total_base: totalBase,
+        cadastrados: cadastrados,
         health_medio: total > 0 ? Math.round(healthSum / total) : 0,
         nps_medio: npsValues.length > 0 ? Math.round((npsSum / npsValues.length) * 10) / 10 : 0,
         clientes_em_risco: emRisco,

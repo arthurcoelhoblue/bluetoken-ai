@@ -30,7 +30,7 @@ export default function CSClientesPage() {
   const { activeCompanies } = useCompany();
   const isTokeniza = activeCompanies.length === 1 && activeCompanies[0] === 'TOKENIZA';
   const [page, setPage] = useState(0);
-  const [filters, setFilters] = useState<CSCustomerFilters>({ is_active: true });
+  const [filters, setFilters] = useState<CSCustomerFilters>({});
   const [search, setSearch] = useState('');
   const [dateDe, setDateDe] = useState<Date | undefined>();
   const [dateAte, setDateAte] = useState<Date | undefined>();
@@ -107,6 +107,19 @@ export default function CSClientesPage() {
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
             <Input placeholder="Buscar por nome ou email..." value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); }} className="pl-9" />
           </div>
+          {/* Status filter: Todos / Ativos / Inativos */}
+          <Select
+            value={filters.is_active === undefined ? 'ALL' : filters.is_active ? 'ACTIVE' : 'INACTIVE'}
+            onValueChange={(v) => { setFilters(f => ({ ...f, is_active: v === 'ALL' ? undefined : v === 'ACTIVE' })); setPage(0); }}
+          >
+            <SelectTrigger className="w-[150px]"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="ALL">Todos</SelectItem>
+              <SelectItem value="ACTIVE">Investidores Ativos</SelectItem>
+              <SelectItem value="INACTIVE">Cadastrados</SelectItem>
+            </SelectContent>
+          </Select>
+
           <Select value={filters.health_status || 'ALL'} onValueChange={(v) => { setFilters(f => ({ ...f, health_status: v === 'ALL' ? undefined : v as CSHealthStatus })); setPage(0); }}>
             <SelectTrigger className="w-[160px]"><SelectValue placeholder="Health Status" /></SelectTrigger>
             <SelectContent>
@@ -242,7 +255,14 @@ export default function CSClientesPage() {
                             <AvatarFallback className="text-xs">{c.contact?.nome?.charAt(0) || '?'}</AvatarFallback>
                           </Avatar>
                           <div>
-                            <p className="font-medium text-sm">{c.contact?.nome || 'Sem nome'}</p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-medium text-sm">{c.contact?.nome || 'Sem nome'}</p>
+                              {c.is_active ? (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-emerald-50 text-emerald-700 border-emerald-200">Investidor</Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-[10px] px-1.5 py-0 bg-muted text-muted-foreground">Cadastrado</Badge>
+                              )}
+                            </div>
                             <p className="text-xs text-muted-foreground">{c.contact?.email || ''}</p>
                           </div>
                         </div>

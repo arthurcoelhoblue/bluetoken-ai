@@ -7,7 +7,7 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { HeartPulse, Users, AlertCircle, CalendarClock, TrendingUp, ShieldAlert, AlertTriangle, Clock } from 'lucide-react';
+import { HeartPulse, Users, AlertCircle, CalendarClock, TrendingUp, ShieldAlert, AlertTriangle, Clock, UserCheck, UserX } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { healthStatusConfig } from '@/types/customerSuccess';
 import { CSRevenueCard } from '@/components/cs/CSRevenueCard';
@@ -31,9 +31,10 @@ export default function CSDashboardPage() {
     .slice(0, 5);
 
   const kpis = [
-    { label: 'Clientes Ativos', value: metrics?.total_clientes ?? 0, icon: Users, color: 'text-primary' },
+    { label: 'Total na Base', value: metrics?.total_base ?? 0, icon: Users, color: 'text-primary' },
+    { label: 'Investidores Ativos', value: metrics?.total_clientes ?? 0, icon: UserCheck, color: 'text-chart-2' },
+    { label: 'Cadastrados', value: metrics?.cadastrados ?? 0, icon: UserX, color: 'text-muted-foreground' },
     { label: 'Health Médio', value: metrics?.health_medio ?? 0, icon: HeartPulse, color: 'text-chart-2', suffix: '/100' },
-    { label: 'NPS Médio', value: metrics?.nps_medio ?? 0, icon: TrendingUp, color: 'text-chart-4' },
     { label: 'Em Risco', value: metrics?.clientes_em_risco ?? 0, icon: ShieldAlert, color: 'text-destructive' },
     { label: isTokenizaOnly ? 'Inativos >90d' : 'Renovações 30d', value: isTokenizaOnly ? (metrics?.inativos_90d ?? 0) : (metrics?.renovacoes_30_dias ?? 0), icon: isTokenizaOnly ? Clock : CalendarClock, color: 'text-chart-5' },
     { label: 'Incidências Abertas', value: incidents?.length ?? 0, icon: AlertCircle, color: 'text-orange-500' },
@@ -49,7 +50,7 @@ export default function CSDashboardPage() {
         <CSDailyBriefingCard />
 
         {/* KPIs */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
           {kpis.map((kpi) => (
             <Card key={kpi.label}>
               <CardContent className="pt-4 pb-4 px-4">

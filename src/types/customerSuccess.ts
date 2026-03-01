@@ -169,6 +169,8 @@ export interface CSCustomerFilters {
 // Metrics
 export interface CSMetrics {
   total_clientes: number;
+  total_base?: number;
+  cadastrados?: number;
   health_medio: number;
   nps_medio: number;
   clientes_em_risco: number;
