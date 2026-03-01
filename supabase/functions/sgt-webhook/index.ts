@@ -211,10 +211,9 @@ serve(async (req) => {
     await supabase.from('lead_contacts').update(updateData)
       .eq('lead_id', payload.lead_id).eq('empresa', payload.empresa);
 
-    // AUTO-CRIAÇÃO / MERGE DE CONTATO CRM (usa módulo compartilhado de dedup)
+    // ENRIQUECIMENTO DE CONTATO CRM EXISTENTE (sem auto-criação)
     if (pessoaId) {
       try {
-        // Primeiro tenta via pessoa_id (match exato global)
         const { data: existingContact } = await supabase
           .from('contacts')
           .select('id, nome, email, telefone')
@@ -222,30 +221,7 @@ serve(async (req) => {
           .eq('empresa', payload.empresa)
           .maybeSingle();
 
-        if (!existingContact) {
-          // Fallback: dedup por email+empresa / telefone+empresa antes de criar
-          const { findOrCreateContact } = await import('../_shared/contact-dedup.ts');
-          try {
-            const { contactId, isNew } = await findOrCreateContact(supabase, {
-              leadId: payload.lead_id,
-              empresa: payload.empresa,
-              nome: leadNormalizado.nome,
-              email: leadNormalizado.email || null,
-              telefone: sanitization.phoneInfo?.e164 || leadNormalizado.telefone || null,
-            });
-            // Vincular pessoa_id ao contact encontrado/criado
-            await supabase.from('contacts').update({
-              pessoa_id: pessoaId,
-              canal_origem: 'SGT',
-              tags: ['sgt-inbound'],
-              updated_at: new Date().toISOString(),
-            }).eq('id', contactId);
-            if (isNew) log.info('Contact CRM criado via dedup', { contactId });
-            else log.info('Contact CRM encontrado via dedup', { contactId });
-          } catch (dedupErr) {
-            log.error('Erro no dedup de contacts', { error: String(dedupErr) });
-          }
-        } else {
+        if (existingContact) {
           const mergeData: Record<string, unknown> = {};
           if (!existingContact.email && leadNormalizado.email) mergeData.email = leadNormalizado.email;
           if (!existingContact.telefone && (sanitization.phoneInfo?.e164 || leadNormalizado.telefone)) {
@@ -258,6 +234,8 @@ serve(async (req) => {
           } else {
             log.info('Contact CRM já existe, sem campos para merge', { contactId: existingContact.id });
           }
+        } else {
+          log.info('Nenhum contact CRM encontrado para pessoa, dados ficam em lead_contacts', { pessoaId });
         }
       } catch (contactErr) {
         log.error('Erro no fluxo de contacts', { error: contactErr instanceof Error ? contactErr.message : String(contactErr) });
