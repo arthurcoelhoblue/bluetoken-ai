@@ -5,8 +5,14 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { AlertTriangle, CheckCircle, Eye, TrendingUp, RefreshCw } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AlertTriangle, CheckCircle, Eye, TrendingUp, RefreshCw, MessageSquarePlus, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { useCreateFaq } from "@/hooks/useKnowledgeFaq";
+import { FAQ_CATEGORIAS } from "@/types/knowledge";
 
 interface KnowledgeGap {
   id: string;
@@ -23,6 +29,9 @@ interface KnowledgeGap {
 export function KnowledgeGaps({ empresa }: { empresa: string }) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [teachingGapId, setTeachingGapId] = useState<string | null>(null);
+  const [teachForm, setTeachForm] = useState({ pergunta: "", resposta: "", categoria: "Outros" });
+  const createFaq = useCreateFaq();
 
   const { data: gaps, isLoading, refetch } = useQuery({
     queryKey: ["knowledge-gaps", empresa],
@@ -51,6 +60,75 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
       toast.success("Lacuna marcada como resolvida");
     },
   });
+
+  const teachMutation = useMutation({
+    mutationFn: async ({ gap, pergunta, resposta, categoria }: {
+      gap: KnowledgeGap;
+      pergunta: string;
+      resposta: string;
+      categoria: string;
+    }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Não autenticado");
+
+      // Check if admin
+      const { data: roles } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", user.id);
+      const isAdmin = roles?.some(r => r.role === "ADMIN") ?? false;
+      const status = isAdmin ? "APROVADO" : "PENDENTE";
+
+      // Create FAQ
+      const faqResult = await createFaq.mutateAsync({
+        pergunta,
+        resposta,
+        categoria,
+        tags: [],
+        fonte: "MANUAL",
+        status,
+        empresa: gap.empresa,
+      });
+
+      // Mark gap as resolved with linked FAQ
+      const { error } = await supabase
+        .from("knowledge_gaps")
+        .update({
+          status: "RESOLVIDO",
+          resolved_at: new Date().toISOString(),
+          suggested_faq_id: faqResult.id,
+        })
+        .eq("id", gap.id);
+      if (error) throw error;
+
+      return { status };
+    },
+    onSuccess: ({ status }) => {
+      queryClient.invalidateQueries({ queryKey: ["knowledge-gaps"] });
+      queryClient.invalidateQueries({ queryKey: ["knowledge-faq"] });
+      setTeachingGapId(null);
+      setTeachForm({ pergunta: "", resposta: "", categoria: "Outros" });
+      toast.success(
+        status === "APROVADO"
+          ? "✅ Amélia aprendeu! FAQ aprovada automaticamente."
+          : "📝 Resposta enviada para aprovação do gestor."
+      );
+    },
+    onError: () => {
+      toast.error("Erro ao ensinar. Tente novamente.");
+    },
+  });
+
+  const startTeaching = (gap: KnowledgeGap) => {
+    setTeachingGapId(gap.id);
+    setExpandedId(null);
+    setTeachForm({ pergunta: gap.topic, resposta: "", categoria: "Outros" });
+  };
+
+  const cancelTeaching = () => {
+    setTeachingGapId(null);
+    setTeachForm({ pergunta: "", resposta: "", categoria: "Outros" });
+  };
 
   const openGaps = gaps?.filter(g => g.status === "ABERTO") || [];
   const resolvedGaps = gaps?.filter(g => g.status === "RESOLVIDO") || [];
@@ -88,7 +166,7 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
             🎉 Nenhuma lacuna detectada! A base de conhecimento está cobrindo todas as perguntas.
           </p>
         ) : (
-          <ScrollArea className="max-h-[400px]">
+          <ScrollArea className="max-h-[500px]">
             <div className="space-y-2">
               {openGaps.map(gap => (
                 <div
@@ -102,7 +180,7 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
                         <p className="text-xs text-muted-foreground mt-0.5">{gap.description}</p>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-1.5 flex-shrink-0">
                       <Badge variant="secondary" className="text-xs">
                         {gap.frequency}x
                       </Badge>
@@ -110,20 +188,36 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
                         variant="ghost"
                         size="sm"
                         className="h-6 w-6 p-0"
-                        onClick={() => setExpandedId(expandedId === gap.id ? null : gap.id)}
+                        title="Ver exemplos"
+                        onClick={() => {
+                          setExpandedId(expandedId === gap.id ? null : gap.id);
+                          if (teachingGapId === gap.id) cancelTeaching();
+                        }}
                       >
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                       <Button
                         variant="ghost"
                         size="sm"
+                        className="h-6 w-6 p-0 text-primary"
+                        title="Ensinar a Amélia"
+                        onClick={() => startTeaching(gap)}
+                      >
+                        <MessageSquarePlus className="h-3.5 w-3.5" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-6 w-6 p-0 text-green-600"
+                        title="Marcar como resolvida"
                         onClick={() => resolveMutation.mutate(gap.id)}
                       >
                         <CheckCircle className="h-3.5 w-3.5" />
                       </Button>
                     </div>
                   </div>
+
+                  {/* Sample queries */}
                   {expandedId === gap.id && gap.sample_queries.length > 0 && (
                     <div className="mt-2 pt-2 border-t">
                       <p className="text-xs font-medium text-muted-foreground mb-1">Exemplos de perguntas:</p>
@@ -134,6 +228,85 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
                           </li>
                         ))}
                       </ul>
+                    </div>
+                  )}
+
+                  {/* Teach form */}
+                  {teachingGapId === gap.id && (
+                    <div className="mt-3 pt-3 border-t space-y-3">
+                      <div className="flex items-center justify-between">
+                        <p className="text-xs font-semibold text-primary flex items-center gap-1">
+                          <MessageSquarePlus className="h-3.5 w-3.5" />
+                          Ensinar a Amélia
+                        </p>
+                        <Button variant="ghost" size="sm" className="h-5 w-5 p-0" onClick={cancelTeaching}>
+                          <X className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+
+                      {gap.sample_queries.length > 0 && (
+                        <div className="bg-muted/50 rounded p-2">
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Contexto — perguntas reais dos leads:</p>
+                          <ul className="space-y-0.5">
+                            {gap.sample_queries.slice(0, 3).map((q, i) => (
+                              <li key={i} className="text-xs text-muted-foreground italic">"{q}"</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Pergunta</Label>
+                        <Input
+                          value={teachForm.pergunta}
+                          onChange={e => setTeachForm(f => ({ ...f, pergunta: e.target.value }))}
+                          placeholder="Pergunta que o lead faz"
+                          className="h-8 text-sm"
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Resposta correta</Label>
+                        <Textarea
+                          value={teachForm.resposta}
+                          onChange={e => setTeachForm(f => ({ ...f, resposta: e.target.value }))}
+                          placeholder="Digite a resposta que a Amélia deve dar..."
+                          className="min-h-[80px] text-sm"
+                          autoFocus
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <Label className="text-xs">Categoria</Label>
+                        <Select value={teachForm.categoria} onValueChange={v => setTeachForm(f => ({ ...f, categoria: v }))}>
+                          <SelectTrigger className="h-8 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {FAQ_CATEGORIAS.map(cat => (
+                              <SelectItem key={cat} value={cat}>{cat}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      <Button
+                        size="sm"
+                        className="w-full"
+                        disabled={teachForm.pergunta.length < 5 || teachForm.resposta.length < 10 || teachMutation.isPending}
+                        onClick={() => teachMutation.mutate({
+                          gap,
+                          pergunta: teachForm.pergunta,
+                          resposta: teachForm.resposta,
+                          categoria: teachForm.categoria,
+                        })}
+                      >
+                        {teachMutation.isPending ? (
+                          <><Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> Salvando...</>
+                        ) : (
+                          <><MessageSquarePlus className="h-3.5 w-3.5 mr-1" /> Salvar e Ensinar</>
+                        )}
+                      </Button>
                     </div>
                   )}
                 </div>
