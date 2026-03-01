@@ -1,11 +1,18 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import type { 
+import type {
   ProductKnowledge, 
   KnowledgeSection, 
   KnowledgeDocument,
   KnowledgeSectionTipo 
 } from "@/types/knowledge";
+
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+}
 
 // Fetch all products
 export function useProductKnowledgeList(empresa?: 'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA') {
@@ -207,7 +214,7 @@ export function useUploadKnowledgeDocument() {
       tipoDocumento?: string; 
       descricao?: string;
     }) => {
-      const fileName = `${productId}/${Date.now()}-${file.name}`;
+      const fileName = `${productId}/${Date.now()}-${sanitizeFileName(file.name)}`;
 
       const { error: uploadError } = await supabase.storage
         .from('product-documents')

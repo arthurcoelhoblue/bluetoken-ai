@@ -1,6 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-zA-Z0-9._-]/g, '_');
+}
 
 export interface BehavioralKnowledge {
   id: string;
@@ -40,7 +46,7 @@ export function useUploadBehavioralBook() {
       descricao?: string;
       empresa: string;
     }) => {
-      const filePath = `${empresa}/${Date.now()}-${file.name}`;
+      const filePath = `${empresa}/${Date.now()}-${sanitizeFileName(file.name)}`;
       const { error: uploadError } = await supabase.storage
         .from('behavioral-books')
         .upload(filePath, file);
