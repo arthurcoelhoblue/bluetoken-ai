@@ -2429,6 +2429,42 @@ export type Database = {
           },
         ]
       }
+      deal_creation_failures: {
+        Row: {
+          created_at: string
+          empresa: string
+          id: string
+          lead_id: string
+          motivo: string
+          phone_e164: string | null
+          resolved_at: string | null
+          resolvido: boolean
+          tentativas: number
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          id?: string
+          lead_id: string
+          motivo: string
+          phone_e164?: string | null
+          resolved_at?: string | null
+          resolvido?: boolean
+          tentativas?: number
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          id?: string
+          lead_id?: string
+          motivo?: string
+          phone_e164?: string | null
+          resolved_at?: string | null
+          resolvido?: boolean
+          tentativas?: number
+        }
+        Relationships: []
+      }
       deal_loss_categories: {
         Row: {
           codigo: string
