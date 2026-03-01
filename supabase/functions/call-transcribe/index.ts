@@ -126,7 +126,7 @@ async function fetchZadarmaTranscript(supabase: ReturnType<typeof createServiceC
   }
 }
 
-async function transcribeWithGeminiMultimodal(recordingUrl: string, empresa: string | null): Promise<ZadarmaTranscriptResult | null> {
+async function transcribeWithGPTMultimodal(recordingUrl: string, empresa: string | null): Promise<ZadarmaTranscriptResult | null> {
   const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
   if (!LOVABLE_API_KEY) return null;
 
@@ -143,7 +143,7 @@ async function transcribeWithGeminiMultimodal(recordingUrl: string, empresa: str
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
+        model: 'openai/gpt-5-mini',
         messages: [
           {
             role: 'user',
@@ -164,7 +164,7 @@ async function transcribeWithGeminiMultimodal(recordingUrl: string, empresa: str
     });
 
     if (!resp.ok) {
-      log.error('Gemini multimodal failed', { status: resp.status, body: await resp.text() });
+      log.error('GPT multimodal failed', { status: resp.status, body: await resp.text() });
       return null;
     }
 
@@ -173,7 +173,7 @@ async function transcribeWithGeminiMultimodal(recordingUrl: string, empresa: str
     if (!text.trim()) return null;
     return { plainText: text.trim(), dialogue: null, talkRatio: null };
   } catch (e) {
-    log.error('Gemini multimodal error', { error: String(e) });
+    log.error('GPT multimodal error', { error: String(e) });
     return null;
   }
 }
@@ -208,12 +208,12 @@ Deno.serve(async (req) => {
       }
     }
 
-    // 2. Fallback: Gemini Flash multimodal
+    // 2. Fallback: GPT multimodal
     if (!transcriptResult && call.recording_url) {
-      transcriptResult = await transcribeWithGeminiMultimodal(call.recording_url, call.empresa);
+      transcriptResult = await transcribeWithGPTMultimodal(call.recording_url, call.empresa);
       if (transcriptResult) {
-        transcriptionSource = 'gemini';
-        log.info('Got Gemini transcript', { call_id, length: transcriptResult.plainText.length });
+        transcriptionSource = 'gpt';
+        log.info('Got GPT transcript', { call_id, length: transcriptResult.plainText.length });
       }
     }
 
