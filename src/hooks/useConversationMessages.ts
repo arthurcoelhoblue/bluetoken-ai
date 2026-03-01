@@ -82,6 +82,7 @@ export function useConversationMessages({
             media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
             media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
             media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
+            transcricao_audio: (msg as Record<string, unknown>).transcricao_audio as string | null || null,
             cadencia_nome: (msg.lead_cadence_runs as { cadences?: { nome?: string } } | null)?.cadences?.nome,
           });
         }
@@ -124,6 +125,7 @@ export function useConversationMessages({
                 media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
                 media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
                 media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
+                transcricao_audio: (msg as Record<string, unknown>).transcricao_audio as string | null || null,
               });
             }
           }
@@ -179,6 +181,7 @@ export function useConversationMessages({
                 media_filename: (msg as Record<string, unknown>).media_filename as string | null || null,
                 media_caption: (msg as Record<string, unknown>).media_caption as string | null || null,
                 media_meta_id: (msg as Record<string, unknown>).media_meta_id as string | null || null,
+                transcricao_audio: (msg as Record<string, unknown>).transcricao_audio as string | null || null,
                 unmatched: true,
               });
             }

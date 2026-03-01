@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { FileText, Download, MapPin, Users, Image as ImageIcon } from 'lucide-react';
+import { FileText, Download, MapPin, Users, Image as ImageIcon, Type } from 'lucide-react';
 import { Dialog, DialogContent, DialogTrigger } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import type { TipoMidia } from '@/types/messaging';
@@ -12,6 +12,7 @@ interface MediaContentProps {
   mediaCaption: string | null;
   conteudo: string;
   isOutbound: boolean;
+  transcricaoAudio?: string | null;
 }
 
 export function MediaContent({
@@ -21,6 +22,7 @@ export function MediaContent({
   mediaFilename,
   conteudo,
   isOutbound,
+  transcricaoAudio,
 }: MediaContentProps) {
   if (tipoMidia === 'text' || !tipoMidia) {
     return (
@@ -90,6 +92,16 @@ export function MediaContent({
             <audio src={mediaUrl} controls className="max-w-[240px]" preload="metadata" />
           ) : (
             <p className="text-sm opacity-70">[Áudio não disponível]</p>
+          )}
+          {transcricaoAudio ? (
+            <div className={`flex items-start gap-1.5 p-2 rounded-md text-xs ${
+              isOutbound ? 'bg-primary-foreground/10' : 'bg-muted-foreground/10'
+            }`}>
+              <Type className="h-3 w-3 mt-0.5 shrink-0 opacity-60" />
+              <p className="whitespace-pre-wrap break-words leading-relaxed">{transcricaoAudio}</p>
+            </div>
+          ) : (
+            <p className="text-[10px] opacity-40 italic">(sem transcrição)</p>
           )}
         </div>
       );
