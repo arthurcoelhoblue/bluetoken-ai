@@ -571,8 +571,32 @@ async function isDuplicate(
 }
 
 /**
+ * Registra falha na criação de deal para reconciliação posterior.
+ */
+async function logDealCreationFailure(
+  supabase: SupabaseClient,
+  leadId: string,
+  empresa: string,
+  phoneE164: string,
+  motivo: string
+): Promise<void> {
+  try {
+    await supabase.from('deal_creation_failures').insert({
+      lead_id: leadId,
+      empresa,
+      phone_e164: phoneE164,
+      motivo,
+    });
+    log.warn('autoCreateDeal: falha registrada para reconciliação', { leadId, empresa, motivo });
+  } catch (err) {
+    log.error('autoCreateDeal: erro ao registrar falha', { error: String(err) });
+  }
+}
+
+/**
  * Auto-cria deal para o contact se não existir deal ABERTO.
  * Título: "Nome [campanha]" conforme regra anti-limbo.
+ * Retry com backoff na busca do contact (3 tentativas: 800ms, 1500ms, 3000ms).
  */
 async function autoCreateDealIfNeeded(
   supabase: SupabaseClient,
@@ -581,23 +605,32 @@ async function autoCreateDealIfNeeded(
   phoneE164: string
 ): Promise<void> {
   try {
-    // Esperar trigger fn_sync_lead_to_contact criar o contacts
-    await new Promise(r => setTimeout(r, 600));
+    // Retry com backoff para aguardar trigger fn_sync_lead_to_contact
+    const RETRY_DELAYS = [800, 1500, 3000];
+    let contactId: string | null = null;
 
-    // Buscar contacts.id via legacy_lead_id
-    const { data: crmContact } = await supabase
-      .from('contacts')
-      .select('id')
-      .eq('legacy_lead_id', resolvedLeadId)
-      .eq('empresa', empresa)
-      .maybeSingle();
+    for (let attempt = 0; attempt < RETRY_DELAYS.length; attempt++) {
+      await new Promise(r => setTimeout(r, RETRY_DELAYS[attempt]));
 
-    if (!crmContact) {
-      log.warn('autoCreateDeal: contacts não encontrado (trigger pode estar pendente)', { resolvedLeadId, empresa });
-      return;
+      const { data: crmContact } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('legacy_lead_id', resolvedLeadId)
+        .eq('empresa', empresa)
+        .maybeSingle();
+
+      if (crmContact) {
+        contactId = (crmContact as { id: string }).id;
+        break;
+      }
+
+      log.info('autoCreateDeal: contact não encontrado, retry', { attempt: attempt + 1, resolvedLeadId });
     }
 
-    const contactId = (crmContact as { id: string }).id;
+    if (!contactId) {
+      await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'CONTACT_NOT_FOUND');
+      return;
+    }
 
     // Verificar se já existe deal ABERTO
     const { data: existingDeal } = await supabase
@@ -622,7 +655,7 @@ async function autoCreateDealIfNeeded(
       .maybeSingle();
 
     if (!pipeline) {
-      log.warn('autoCreateDeal: nenhum pipeline default encontrado', { empresa });
+      await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'NO_PIPELINE');
       return;
     }
 
@@ -640,7 +673,7 @@ async function autoCreateDealIfNeeded(
       .maybeSingle();
 
     if (!firstStage) {
-      log.warn('autoCreateDeal: nenhum estágio aberto encontrado', { pipelineId });
+      await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'NO_STAGE');
       return;
     }
 
@@ -679,7 +712,6 @@ async function autoCreateDealIfNeeded(
     let ownerId: string | null = null;
 
     if (sellers && sellers.length > 0) {
-      // Filtrar vendedores que têm acesso a essa empresa
       const sellerIds = (sellers as { id: string; role: string }[]).map(s => s.id);
 
       const { data: accessData } = await supabase
@@ -691,7 +723,6 @@ async function autoCreateDealIfNeeded(
       const validSellerIds = (accessData as { user_id: string }[] | null)?.map(a => a.user_id) ?? [];
 
       if (validSellerIds.length > 0) {
-        // Contar deals abertos por vendedor
         const { data: dealCounts } = await supabase
           .from('deals')
           .select('owner_id')
@@ -705,7 +736,6 @@ async function autoCreateDealIfNeeded(
           countMap.set(d.owner_id, (countMap.get(d.owner_id) ?? 0) + 1);
         }
 
-        // Menor carga
         let minCount = Infinity;
         for (const [sid, count] of countMap) {
           if (count < minCount) {
@@ -730,7 +760,7 @@ async function autoCreateDealIfNeeded(
     }
 
     if (!ownerId) {
-      log.error('autoCreateDeal: nenhum owner disponível', { empresa });
+      await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'NO_OWNER');
       return;
     }
 
@@ -749,7 +779,7 @@ async function autoCreateDealIfNeeded(
       .single();
 
     if (dealErr) {
-      log.error('autoCreateDeal: erro ao criar deal', { error: dealErr.message });
+      await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'INSERT_ERROR');
       return;
     }
 
@@ -761,6 +791,7 @@ async function autoCreateDealIfNeeded(
     });
   } catch (err) {
     log.error('autoCreateDeal: erro inesperado', { error: String(err) });
+    await logDealCreationFailure(supabase, resolvedLeadId, empresa, phoneE164, 'INSERT_ERROR').catch(() => {});
   }
 }
 
