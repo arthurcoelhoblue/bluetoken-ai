@@ -159,3 +159,6 @@ verify_jwt = false
 [functions.tokeniza-gov-sync-orchestrator]
 verify_jwt = false
 
+[functions.deal-reconciler]
+verify_jwt = false
+
