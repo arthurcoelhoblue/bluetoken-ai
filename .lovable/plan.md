@@ -1,40 +1,70 @@
 
 
-# Ensinar a Amélia a partir das Lacunas de Conhecimento
+# Conversas — Filtros Inteligentes + Modo Kanban
 
-## Problema Atual
-O componente `KnowledgeGaps` mostra o que a Amélia não soube responder (tópico, descrição, exemplos de perguntas), mas as únicas ações disponíveis são **ver exemplos** e **marcar como resolvida**. Não existe forma de fornecer a resposta correta diretamente a partir da lacuna.
+## Resumo
 
-## Solução
-Adicionar um botão "Ensinar" em cada lacuna que abre um formulário inline (ou dialog) pré-preenchido com a pergunta da lacuna, onde o gestor digita a resposta correta. Ao salvar:
-1. Cria uma FAQ aprovada automaticamente (admin) ou pendente (não-admin), usando o hook `useCreateFaq` existente
-2. Marca a lacuna como `RESOLVIDO` automaticamente e vincula o `suggested_faq_id` (coluna já existente na tabela)
+Duas melhorias na aba Conversas: (1) filtros inteligentes com ordenação por prioridade IA, e (2) modo Kanban read-only agrupando conversas por etapa do deal vinculado. Toggle lista/kanban no header.
 
-## Alterações
+## 1. Enriquecer dados no `useAtendimentos`
 
-### 1. `KnowledgeGaps.tsx` — Adicionar fluxo "Ensinar"
-- Adicionar estado para controlar qual gap está sendo respondido (`teachingGapId`)
-- Quando o gestor clica no botão "Ensinar" (ícone `MessageSquarePlus` ou similar), expandir um formulário inline com:
-  - **Pergunta** (pré-preenchida com `gap.topic`, editável)
-  - **Resposta** (textarea vazio para o gestor preencher)
-  - **Categoria** (select com `FAQ_CATEGORIAS`)
-- Botão "Salvar e Ensinar" que:
-  - Chama `useCreateFaq` com status `APROVADO` (se admin) ou `PENDENTE`
-  - Atualiza a lacuna para `RESOLVIDO` com `suggested_faq_id` apontando para a FAQ criada
-  - Invalida queries de gaps e FAQs
-  - Exibe toast de sucesso
+O hook já busca deals (para ownership), mas não traz `stage_id`, `temperatura`, `score_*`. Precisa:
 
-### 2. Nenhuma mudança de banco de dados
-A coluna `suggested_faq_id` já existe em `knowledge_gaps`. A tabela `knowledge_faq` já suporta o fluxo. Nenhuma migration necessária.
+- Expandir a query de deals para incluir `stage_id, temperatura, score_engajamento, score_intencao, score_urgencia`
+- Trazer `pipeline_stages.nome` e `pipeline_stages.cor` via join
+- Buscar `modo` e `last_inbound_at` da `lead_conversation_state` (já busca `assumido_por`, falta esses dois)
+- Adicionar esses campos na interface `Atendimento`:
 
-### 3. Nenhuma mudança em edge functions
-O fluxo usa hooks existentes (`useCreateFaq`) e mutations diretas no Supabase client.
+```typescript
+// Novos campos
+modo: string | null;
+temperatura: string | null;
+deal_stage_nome: string | null;
+deal_stage_cor: string | null;
+deal_stage_id: string | null;
+deal_id: string | null;
+score_engajamento: number | null;
+score_intencao: number | null;
+score_urgencia: number | null;
+last_inbound_at: string | null;
+```
 
-## Detalhes Técnicos
+## 2. Filtros Inteligentes (modo lista)
 
-O formulário inline dentro de cada gap card reutiliza a lógica de criação do `FaqFormDialog`, mas simplificada:
-- Pré-preenche `pergunta` com `gap.topic`
-- Se há `sample_queries`, mostra como referência para o gestor entender o contexto
-- Após criar a FAQ, faz `update` na `knowledge_gaps` com `status: 'RESOLVIDO'` e `suggested_faq_id: novaFaqId`
-- Usa `checkFaqAutoApproval` para admins ou envia como PENDENTE para não-admins (mesma lógica do `FaqFormDialog`)
+Substituir o Select atual por chips/toggles de filtro rápido:
+
+| Filtro | Lógica |
+|---|---|
+| Aguardando resposta | `modo = MANUAL` + `ultima_direcao = INBOUND` |
+| SLA estourado | `last_inbound_at` > 2h atrás (sem resposta outbound depois) |
+| Esfriando 🔥→❄️ | `temperatura IN (QUENTE, MORNO)` + `ultimo_contato` > 24h |
+| Intenção de compra | `ultimo_intent IN (INTERESSE_COMPRA, AGENDAMENTO_REUNIAO)` |
+| Não lidas | `ultima_direcao = INBOUND` (lead esperando) |
+
+**Ordenação IA**: Botão "Prioridade IA" que reordena combinando:
+- Peso 40: temperatura (QUENTE=1, MORNO=0.5, FRIO=0.1)
+- Peso 30: SLA (quanto mais estourado, maior)
+- Peso 20: intent (INTERESSE_COMPRA=1, outros=0.3)
+- Peso 10: score_engajamento normalizado
+
+## 3. Modo Kanban
+
+- Toggle `Lista | Kanban` no header (ícones List/Columns)
+- No Kanban, buscar etapas do pipeline do deal vinculado
+- Agrupar conversas por `deal_stage_nome`
+- Colunas horizontais com scroll, cards compactos (nome, última msg, tempo, badge temperatura)
+- Coluna extra "Sem deal" para leads sem deal vinculado
+- **Read-only** — sem drag-and-drop (gestão de estágio é no Pipeline)
+
+## 4. Arquivos a criar/modificar
+
+| Arquivo | Ação |
+|---|---|
+| `src/hooks/useAtendimentos.ts` | Enriquecer interface + query com deal stage, temperatura, modo, last_inbound_at |
+| `src/pages/ConversasPage.tsx` | Adicionar toggle lista/kanban, filtros inteligentes, ordenação IA |
+| `src/components/conversas/ConversasKanban.tsx` | **Novo** — componente Kanban read-only |
+| `src/components/conversas/ConversasFilters.tsx` | **Novo** — chips de filtro inteligente |
+| `src/components/conversas/ConversaCard.tsx` | **Novo** — card reutilizado em lista e kanban |
+
+Nenhuma migration de banco necessária — todos os dados já existem.
 
