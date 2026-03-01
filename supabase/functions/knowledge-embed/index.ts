@@ -9,11 +9,7 @@ const corsHeaders = {
 const MAX_CHUNK_TOKENS = 500;
 const CHARS_PER_TOKEN = 4;
 const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
-const BATCH_SIZE = 200; // Max chunks per invocation to avoid CPU timeout
-
-// ============================================
-// TEXT SANITIZATION
-// ============================================
+const BATCH_SIZE = 200;
 
 function sanitizeText(text: string): string {
   return text
@@ -21,10 +17,6 @@ function sanitizeText(text: string): string {
     .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
     .replace(/\uFFFD/g, '');
 }
-
-// ============================================
-// SEMANTIC CHUNKING — Split by structure first
-// ============================================
 
 function semanticChunk(text: string, titlePrefix: string): string[] {
   if (!text || text.trim().length < 20) return [];
@@ -99,10 +91,6 @@ function extractLastSentence(text: string): string {
   return sentences[sentences.length - 1].trim();
 }
 
-// ============================================
-// EMBEDDING GENERATION
-// ============================================
-
 async function generateEmbedding(text: string, openaiKey: string): Promise<number[] | null> {
   try {
     const resp = await fetch("https://api.openai.com/v1/embeddings", {
@@ -132,7 +120,6 @@ async function embedChunks(opts: EmbedChunksOptions) {
   const { supabase, chunks, sourceType, sourceId, empresa, metadata, openaiKey, startFrom = 0, skipDelete = false } = opts;
   let embedded = 0, errors = 0;
 
-  // Delete existing embeddings only on first batch
   if (!skipDelete && startFrom === 0) {
     const { error: deleteError } = await supabase
       .from("knowledge_embeddings")
@@ -164,7 +151,6 @@ async function embedChunks(opts: EmbedChunksOptions) {
       if (error) { console.error(`Upsert error chunk ${i}:`, error); errors++; } else embedded++;
     } else errors++;
 
-    // Log progress and update chunks_count incrementally every 20 chunks
     if ((i + 1) % 20 === 0) {
       console.log(`[embed] Progress: ${i + 1}/${chunks.length} chunks processed (${embedded} ok, ${errors} errors)`);
       if (sourceType === 'behavioral') {
@@ -176,10 +162,6 @@ async function embedChunks(opts: EmbedChunksOptions) {
   }
   return { embedded, errors };
 }
-
-// ============================================
-// PDF TEXT EXTRACTION via pdf-parse
-// ============================================
 
 async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePath: string): Promise<string | null> {
   try {
@@ -254,10 +236,6 @@ async function extractPdfText(supabase: any, storagePath: string): Promise<strin
   return extractPdfTextFromBucket(supabase, "knowledge-documents", storagePath);
 }
 
-// ============================================
-// FIRE-AND-FORGET CONTINUATION
-// ============================================
-
 function fireContinuation(supabaseUrl: string, serviceRoleKey: string, body: Record<string, unknown>) {
   const url = `${supabaseUrl}/functions/v1/knowledge-embed`;
   console.log(`[embed] Firing continuation from chunk ${body.start_from} ...`);
@@ -272,6 +250,113 @@ function fireContinuation(supabaseUrl: string, serviceRoleKey: string, body: Rec
 }
 
 // ============================================
+// SONNET REFINEMENT — Intelligence layer
+// ============================================
+
+const SONNET_REFINE_SYSTEM = `Você é um especialista em metodologias de vendas. Seu trabalho é analisar trechos de livros/materiais de vendas e:
+
+1. EXTRAIR técnicas práticas, frameworks acionáveis, perguntas estratégicas, padrões de comportamento e dicas de negociação
+2. ENRIQUECER o conteúdo com contexto quando necessário para que o trecho seja auto-contido e útil
+3. DESCARTAR conteúdo sem valor prático: índices, sumários, agradecimentos, copyright, páginas de referência, epígrafes, dedicatórias, notas de rodapé bibliográficas, páginas em branco
+
+Regras:
+- Se o chunk contém técnicas, frameworks ou insights acionáveis de vendas: retorne o conteúdo refinado, mantendo a substância mas organizando de forma clara
+- Se o chunk é puramente administrativo/sem valor prático: retorne EXATAMENTE a palavra "SKIP" (nada mais)
+- NÃO resuma demais — mantenha os detalhes práticos
+- NÃO invente informações que não estejam no texto original
+- Mantenha o idioma original do texto`;
+
+async function refineChunkWithSonnet(chunk: string, bookTitle: string, anthropicKey: string): Promise<string | null> {
+  try {
+    const resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "x-api-key": anthropicKey,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: SONNET_REFINE_SYSTEM,
+        messages: [
+          {
+            role: "user",
+            content: `Livro: "${bookTitle}"\n\nTrecho para analisar:\n\n${chunk}`,
+          },
+        ],
+      }),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text();
+      console.error(`[Sonnet] API error ${resp.status}:`, errText);
+      // On API error, keep original chunk rather than losing data
+      return chunk;
+    }
+
+    const data = await resp.json();
+    const content = data.content?.[0]?.text?.trim();
+
+    if (!content) return chunk; // fallback: keep original
+    if (content === "SKIP") {
+      console.log(`[Sonnet] Chunk skipped (no practical value)`);
+      return null;
+    }
+
+    return content;
+  } catch (e) {
+    console.error("[Sonnet] Refinement error:", e);
+    return chunk; // fallback: keep original on error
+  }
+}
+
+async function refineChunksWithSonnet(chunks: string[], bookTitle: string, anthropicKey: string): Promise<string[]> {
+  const refined: string[] = [];
+  let skipped = 0;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const result = await refineChunkWithSonnet(chunks[i], bookTitle, anthropicKey);
+    if (result === null) {
+      skipped++;
+    } else {
+      refined.push(result);
+    }
+
+    if ((i + 1) % 10 === 0) {
+      console.log(`[Sonnet] Refinement progress: ${i + 1}/${chunks.length} (${skipped} skipped)`);
+    }
+  }
+
+  console.log(`[Sonnet] Refinement complete: ${chunks.length} input → ${refined.length} output (${skipped} skipped)`);
+  return refined;
+}
+
+// ============================================
+// ARCHIVE — delete PDF & mark as archived
+// ============================================
+
+async function archiveBook(supabase: any, bookId: string, storagePath: string | null) {
+  // Delete PDF from storage
+  if (storagePath) {
+    const { error } = await supabase.storage.from('behavioral-books').remove([storagePath]);
+    if (error) {
+      console.error(`[Archive] Failed to delete PDF from storage:`, error);
+    } else {
+      console.log(`[Archive] PDF deleted from storage: ${storagePath}`);
+    }
+  }
+
+  // Mark as archived
+  await supabase.from("behavioral_knowledge").update({
+    arquivado: true,
+    storage_path: null,
+  }).eq("id", bookId);
+
+  console.log(`[Archive] Book ${bookId} marked as archived`);
+}
+
+// ============================================
 // MAIN HANDLER
 // ============================================
 
@@ -282,6 +367,7 @@ serve(async (req) => {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY")?.replace(/[^\x20-\x7E]/g, '');
+    const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || '';
 
     if (!OPENAI_API_KEY) {
       return new Response(JSON.stringify({ error: "OPENAI_API_KEY not configured" }), {
@@ -332,44 +418,51 @@ serve(async (req) => {
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_behavioral" && source_id) {
-      const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("id", source_id).single();
+      const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at, arquivado").eq("id", source_id).single();
       if (!book) return new Response(JSON.stringify({ error: "Behavioral knowledge not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       
+      // Block re-indexing of archived books
+      if (book.arquivado || !book.storage_path) {
+        return new Response(JSON.stringify({ error: "Este livro já foi arquivado. O PDF foi processado e removido. Reindexação não é possível.", archived: true }), {
+          status: 409, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
       // On continuation (start_from > 0), skip concurrency lock and PDF extraction
       if (startFrom > 0) {
         console.log(`[Behavioral] Continuation from chunk ${startFrom} for "${book.titulo}"`);
-        // Re-extract text and re-chunk to get the same chunks array
-        const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
-        if (!extractedText) {
+        // Continuation receives pre-refined chunks via body
+        const continuationChunks = body.refined_chunks as string[] | undefined;
+        if (!continuationChunks || continuationChunks.length === 0) {
           await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
-          return new Response(JSON.stringify({ error: "Could not extract text on continuation" }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ error: "No refined chunks provided for continuation" }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
-        const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
-        const chunks = semanticChunk(fullText, titlePrefix);
         
-        const endIdx = Math.min(startFrom + BATCH_SIZE, chunks.length);
-        console.log(`[Behavioral] Processing chunks ${startFrom}-${endIdx - 1} of ${chunks.length}`);
+        const endIdx = Math.min(startFrom + BATCH_SIZE, continuationChunks.length);
+        console.log(`[Behavioral] Processing chunks ${startFrom}-${endIdx - 1} of ${continuationChunks.length}`);
         
         const r = await embedChunks({
-          supabase, chunks: chunks.slice(0, endIdx), sourceType: "behavioral", sourceId: source_id,
+          supabase, chunks: continuationChunks.slice(0, endIdx), sourceType: "behavioral", sourceId: source_id,
           empresa: book.empresa, metadata: { titulo: book.titulo, autor: book.autor, tipo: "livro" },
           openaiKey: OPENAI_API_KEY, startFrom, skipDelete: true,
         });
         totalEmbedded = r.embedded; totalErrors = r.errors;
         
         // If there are more chunks, fire another continuation
-        if (endIdx < chunks.length) {
+        if (endIdx < continuationChunks.length) {
           await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'processing' }).eq("id", source_id);
-          fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx });
-          return new Response(JSON.stringify({ success: true, embedded: r.embedded, errors: r.errors, status: 'partial', next_from: endIdx, total_chunks: chunks.length }), {
+          fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx, refined_chunks: continuationChunks });
+          return new Response(JSON.stringify({ success: true, embedded: r.embedded, errors: r.errors, status: 'partial', next_from: endIdx, total_chunks: continuationChunks.length }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
           });
         }
         
-        // Final batch done — count total embeddings
+        // Final batch done — count total embeddings and archive
         const { count } = await supabase.from("knowledge_embeddings").select("id", { count: "exact", head: true }).eq("source_type", "behavioral").eq("source_id", source_id);
         await supabase.from("behavioral_knowledge").update({ chunks_count: count || r.embedded, embed_status: 'done' }).eq("id", source_id);
+        
+        // Archive: delete PDF and mark as archived
+        await archiveBook(supabase, source_id, book.storage_path);
         
       } else {
         // First invocation — full flow
@@ -398,8 +491,19 @@ serve(async (req) => {
           console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
           const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
           const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
-          const chunks = semanticChunk(fullText, titlePrefix);
-          console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
+          const rawChunks = semanticChunk(fullText, titlePrefix);
+          console.log(`[Behavioral] Generated ${rawChunks.length} raw chunks for "${book.titulo}"`);
+          
+          // INTELLIGENCE LAYER: Refine chunks with Claude Sonnet
+          let chunks: string[];
+          if (ANTHROPIC_API_KEY) {
+            console.log(`[Behavioral] Starting Sonnet refinement for ${rawChunks.length} chunks...`);
+            chunks = await refineChunksWithSonnet(rawChunks, book.titulo, ANTHROPIC_API_KEY);
+            console.log(`[Behavioral] After refinement: ${chunks.length} chunks (${rawChunks.length - chunks.length} discarded)`);
+          } else {
+            console.warn(`[Behavioral] ANTHROPIC_API_KEY not configured — skipping Sonnet refinement`);
+            chunks = rawChunks;
+          }
           
           // If too many chunks, process only first batch and fire continuation
           const endIdx = Math.min(BATCH_SIZE, chunks.length);
@@ -411,15 +515,19 @@ serve(async (req) => {
           totalEmbedded = r.embedded; totalErrors = r.errors;
           
           if (endIdx < chunks.length) {
-            // More chunks to process — fire continuation
+            // More chunks to process — fire continuation with refined chunks
             await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'processing' }).eq("id", source_id);
-            fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx });
+            fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx, refined_chunks: chunks });
             return new Response(JSON.stringify({ success: true, embedded: r.embedded, errors: r.errors, status: 'partial', next_from: endIdx, total_chunks: chunks.length }), {
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
           
           await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", source_id);
+          
+          // Archive: delete PDF and mark as archived
+          await archiveBook(supabase, source_id, book.storage_path);
+          
         } catch (embedError) {
           await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
           throw embedError;
@@ -476,11 +584,12 @@ serve(async (req) => {
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
-      // Embed Behavioral Knowledge (books/methodologies) — fire individually to handle batching
-      let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("ativo", true);
+      // Embed Behavioral Knowledge — only non-archived books
+      let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at, arquivado").eq("ativo", true).eq("arquivado", false);
       if (targetEmpresa) booksQuery = booksQuery.eq("empresa", targetEmpresa);
       const { data: allBooks } = await booksQuery;
       for (const book of (allBooks || [])) {
+        if (!book.storage_path) continue; // skip books without PDF
         if (book.embed_status === 'processing' && book.embed_started_at) {
           const startedAt = new Date(book.embed_started_at).getTime();
           if (startedAt > Date.now() - 5 * 60 * 1000) {
@@ -488,7 +597,6 @@ serve(async (req) => {
             continue;
           }
         }
-        // Fire each book as separate invocation to avoid timeout accumulation
         fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id: book.id });
         console.log(`[Behavioral] Queued "${book.titulo}" for embedding`);
       }

@@ -14,10 +14,11 @@ export interface BehavioralKnowledge {
   titulo: string;
   autor: string | null;
   descricao: string | null;
-  storage_path: string;
+  storage_path: string | null;
   nome_arquivo: string;
   ativo: boolean;
   chunks_count: number;
+  arquivado: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -92,7 +93,7 @@ export function useToggleBehavioralBook() {
 export function useDeleteBehavioralBook() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, storagePath }: { id: string; storagePath: string }) => {
+    mutationFn: async ({ id, storagePath }: { id: string; storagePath: string | null }) => {
       // Delete embeddings
       await supabase.from('knowledge_embeddings' as any)
         .delete()
@@ -104,8 +105,10 @@ export function useDeleteBehavioralBook() {
         .delete()
         .eq('id', id);
       if (error) throw error;
-      // Delete file
-      await supabase.storage.from('behavioral-books').remove([storagePath]);
+      // Delete file only if it still exists in storage
+      if (storagePath) {
+        await supabase.storage.from('behavioral-books').remove([storagePath]);
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['behavioral-knowledge'] });
