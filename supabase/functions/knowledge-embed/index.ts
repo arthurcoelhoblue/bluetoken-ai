@@ -11,6 +11,17 @@ const CHARS_PER_TOKEN = 4;
 const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
 
 // ============================================
+// TEXT SANITIZATION
+// ============================================
+
+function sanitizeText(text: string): string {
+  return text
+    .replace(/\u0000/g, '')
+    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '')
+    .replace(/\uFFFD/g, '');
+}
+
+// ============================================
 // SEMANTIC CHUNKING — Split by structure first
 // ============================================
 
@@ -117,12 +128,12 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
   let embedded = 0, errors = 0;
   await supabase.from("knowledge_embeddings").delete().eq("source_type", sourceType).eq("source_id", sourceId);
   for (let i = 0; i < chunks.length; i++) {
-    const embedding = await generateEmbedding(chunks[i], openaiKey);
+    const sanitizedChunk = sanitizeText(chunks[i]);
+    const embedding = await generateEmbedding(sanitizedChunk, openaiKey);
     if (embedding) {
       const { error } = await supabase.from("knowledge_embeddings").insert({
         source_type: sourceType, source_id: sourceId, chunk_index: i,
-        chunk_text: chunks[i], embedding: JSON.stringify(embedding), metadata, empresa,
-        // fts is auto-populated by trigger
+        chunk_text: sanitizedChunk, embedding: JSON.stringify(embedding), metadata, empresa,
       });
       if (error) { console.error("Insert error:", error); errors++; } else embedded++;
     } else errors++;
@@ -131,8 +142,97 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
 }
 
 // ============================================
-// PDF TEXT EXTRACTION
+// PDF TEXT EXTRACTION (enhanced)
 // ============================================
+
+function decodePdfEscapes(text: string): string {
+  return text
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\\\/g, '\\')
+    .replace(/\\(\d{3})/g, (_match: string, octal: string) => {
+      const code = parseInt(octal, 8);
+      return code > 31 && code < 127 ? String.fromCharCode(code) : '';
+    });
+}
+
+async function tryInflateStream(rawStream: Uint8Array): Promise<string | null> {
+  try {
+    // Try zlib inflate (FlateDecode) using DecompressionStream
+    const ds = new DecompressionStream("deflate");
+    const writer = ds.writable.getWriter();
+    const reader = ds.readable.getReader();
+    
+    writer.write(rawStream).catch(() => {});
+    writer.close().catch(() => {});
+    
+    const chunks: Uint8Array[] = [];
+    let totalLen = 0;
+    const maxLen = 5 * 1024 * 1024; // 5MB safety limit
+    
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      totalLen += value.length;
+      if (totalLen > maxLen) break;
+    }
+    
+    const merged = new Uint8Array(totalLen);
+    let offset = 0;
+    for (const c of chunks) {
+      merged.set(c, offset);
+      offset += c.length;
+    }
+    
+    return new TextDecoder("latin1").decode(merged);
+  } catch {
+    return null;
+  }
+}
+
+function extractTextFromStream(content: string): string[] {
+  const textParts: string[] = [];
+  
+  // Method 1: Tj operator
+  const tjRegex = /\(([^)]*)\)\s*Tj/g;
+  let match;
+  while ((match = tjRegex.exec(content)) !== null) {
+    const decoded = decodePdfEscapes(match[1]).trim();
+    if (decoded) textParts.push(decoded);
+  }
+  
+  // Method 2: TJ array operator
+  const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
+  while ((match = tjArrayRegex.exec(content)) !== null) {
+    const items = match[1];
+    const itemRegex = /\(([^)]*)\)/g;
+    let itemMatch;
+    while ((itemMatch = itemRegex.exec(items)) !== null) {
+      const decoded = decodePdfEscapes(itemMatch[1]).trim();
+      if (decoded) textParts.push(decoded);
+    }
+  }
+  
+  // Method 3: BT/ET blocks with Tj/TJ inside (if not already captured)
+  if (textParts.length === 0) {
+    const btEtRegex = /BT\s([\s\S]*?)ET/g;
+    while ((match = btEtRegex.exec(content)) !== null) {
+      const block = match[1];
+      const innerTjRegex = /\(([^)]*)\)\s*Tj/g;
+      let innerMatch;
+      while ((innerMatch = innerTjRegex.exec(block)) !== null) {
+        const decoded = decodePdfEscapes(innerMatch[1]).trim();
+        if (decoded) textParts.push(decoded);
+      }
+    }
+  }
+  
+  return textParts;
+}
 
 async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePath: string): Promise<string | null> {
   try {
@@ -142,35 +242,57 @@ async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePa
     const bytes = new Uint8Array(arrayBuffer);
     const textDecoder = new TextDecoder("latin1");
     const raw = textDecoder.decode(bytes);
+    
+    console.log(`[PDF] Downloaded ${bucket}/${storagePath}, size: ${bytes.length} bytes`);
+    
     const textParts: string[] = [];
+    
+    // Extract streams (both compressed and uncompressed)
     const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
     let match;
+    let streamIndex = 0;
+    
     while ((match = streamRegex.exec(raw)) !== null) {
-      const content = match[1];
-      const tjRegex = /\(([^)]*)\)\s*Tj/g;
-      let tjMatch;
-      while ((tjMatch = tjRegex.exec(content)) !== null) {
-        if (tjMatch[1].trim()) textParts.push(tjMatch[1]);
+      streamIndex++;
+      const streamContent = match[1];
+      
+      // Try uncompressed text extraction first
+      const uncompressedText = extractTextFromStream(streamContent);
+      if (uncompressedText.length > 0) {
+        textParts.push(...uncompressedText);
+        continue;
       }
-      const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
-      let tjArrayMatch;
-      while ((tjArrayMatch = tjArrayRegex.exec(content)) !== null) {
-        const items = tjArrayMatch[1];
-        const itemRegex = /\(([^)]*)\)/g;
-        let itemMatch;
-        while ((itemMatch = itemRegex.exec(items)) !== null) {
-          if (itemMatch[1].trim()) textParts.push(itemMatch[1]);
+      
+      // Try FlateDecode (zlib decompression)
+      const streamBytes = new Uint8Array(streamContent.length);
+      for (let i = 0; i < streamContent.length; i++) {
+        streamBytes[i] = streamContent.charCodeAt(i);
+      }
+      
+      const inflated = await tryInflateStream(streamBytes);
+      if (inflated) {
+        const compressedText = extractTextFromStream(inflated);
+        if (compressedText.length > 0) {
+          textParts.push(...compressedText);
         }
       }
     }
+    
+    console.log(`[PDF] Processed ${streamIndex} streams, extracted ${textParts.length} text fragments`);
+    
+    // Fallback: broad parentheses extraction
     if (textParts.length === 0) {
+      console.log(`[PDF] Using fallback parentheses extraction`);
       const parenRegex = /\(([^)]{3,})\)/g;
       while ((match = parenRegex.exec(raw)) !== null) {
-        const text = match[1].replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\/g, '');
+        const text = decodePdfEscapes(match[1]);
         if (text.trim().length > 2 && !/^[0-9.]+$/.test(text.trim())) textParts.push(text);
       }
     }
-    const fullText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+    
+    const fullText = sanitizeText(textParts.join(' ').replace(/\s+/g, ' ').trim());
+    console.log(`[PDF] Final extracted text length: ${fullText.length} chars`);
+    
     return fullText.length > 10 ? fullText : null;
   } catch (e) { console.error("PDF extraction failed:", e); return null; }
 }
@@ -247,12 +369,13 @@ serve(async (req) => {
           status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
+      console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
       const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
       const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
       const chunks = semanticChunk(fullText, titlePrefix);
+      console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
       const r = await embedChunks(supabase, chunks, "behavioral", source_id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
       totalEmbedded = r.embedded; totalErrors = r.errors;
-      // Update chunks_count
       await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded }).eq("id", source_id);
 
     } else if (action === "embed_all" || action === "reindex") {
@@ -325,6 +448,8 @@ serve(async (req) => {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
+
+    console.log(`[knowledge-embed] Action: ${action}, embedded: ${totalEmbedded}, errors: ${totalErrors}`);
 
     return new Response(JSON.stringify({ success: true, embedded: totalEmbedded, errors: totalErrors, chunking: 'semantic' }), {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
