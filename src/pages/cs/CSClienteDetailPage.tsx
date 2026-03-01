@@ -61,6 +61,7 @@ function DetailSidebarMetrics({ customer }: { customer: any }) {
       <CardContent className="space-y-2 text-sm">
         {isTokeniza ? (
           <>
+            <div className="flex justify-between"><span className="text-muted-foreground">Cadastro Tokeniza</span><span>{customer.contact?.data_cadastro_plataforma ? format(new Date(customer.contact.data_cadastro_plataforma), 'dd/MM/yy') : '—'}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Total Investido</span><span className="font-medium">R$ {(tm?.total_investido ?? 0).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Ticket Médio</span><span className="font-medium">R$ {(tm?.ticket_medio ?? 0).toLocaleString('pt-BR')}</span></div>
             <div className="flex justify-between"><span className="text-muted-foreground">Investimentos</span><span>{tm?.qtd_investimentos ?? 0}</span></div>

@@ -1229,6 +1229,7 @@ export type Database = {
           canal_origem: string | null
           cpf: string | null
           created_at: string
+          data_cadastro_plataforma: string | null
           ddi: string | null
           email: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
@@ -1270,6 +1271,7 @@ export type Database = {
           canal_origem?: string | null
           cpf?: string | null
           created_at?: string
+          data_cadastro_plataforma?: string | null
           ddi?: string | null
           email?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
@@ -1311,6 +1313,7 @@ export type Database = {
           canal_origem?: string | null
           cpf?: string | null
           created_at?: string
+          data_cadastro_plataforma?: string | null
           ddi?: string | null
           email?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]

@@ -29,6 +29,7 @@ interface Investor {
   kyc_status: string;
   suitability: string | null;
   is_active: boolean;
+  registered_at: string | null;
   positions: Position[];
 }
 
@@ -157,6 +158,7 @@ Deno.serve(async (req) => {
             notas: `KYC: ${investor.kyc_status}`,
             tags, is_cliente: isCliente, is_active: investor.is_active,
             canal_origem: "TOKENIZA_GOV", tipo: isCliente ? "CLIENTE" : "LEAD",
+            data_cadastro_plataforma: investor.registered_at || undefined,
             updated_at: new Date().toISOString(),
           }).eq("id", existingContact.id);
           if (updateErr) { console.error(`[sync] contact update ${cpfClean}:`, updateErr.message); stats.errors++; continue; }
@@ -169,6 +171,7 @@ Deno.serve(async (req) => {
             empresa: "TOKENIZA", notas: `KYC: ${investor.kyc_status}`,
             tags, is_cliente: isCliente, is_active: investor.is_active,
             canal_origem: "TOKENIZA_GOV", tipo: isCliente ? "CLIENTE" : "LEAD",
+            data_cadastro_plataforma: investor.registered_at || null,
           }).select("id").single();
           if (insertErr || !newContact) { console.error(`[sync] contact insert ${cpfClean}:`, insertErr?.message); stats.errors++; continue; }
           contactId = newContact.id;
@@ -196,6 +199,7 @@ Deno.serve(async (req) => {
           suitability: investor.suitability,
           person_type: investor.person_type,
           external_id: investor.external_id,
+          data_cadastro_plataforma: investor.registered_at || null,
         };
 
         const { data: existingCustomer } = await supabase
