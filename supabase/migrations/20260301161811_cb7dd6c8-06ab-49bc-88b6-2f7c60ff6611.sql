@@ -1,0 +1,1 @@
+ALTER TABLE public.knowledge_search_feedback ADD COLUMN IF NOT EXISTS classified_at TIMESTAMPTZ;

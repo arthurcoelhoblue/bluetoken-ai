@@ -3673,6 +3673,7 @@ export type Database = {
       knowledge_search_feedback: {
         Row: {
           chunks_returned: Json | null
+          classified_at: string | null
           created_at: string
           empresa: string
           escalou_por_baixa_confianca: boolean | null
@@ -3686,6 +3687,7 @@ export type Database = {
         }
         Insert: {
           chunks_returned?: Json | null
+          classified_at?: string | null
           created_at?: string
           empresa: string
           escalou_por_baixa_confianca?: boolean | null
@@ -3699,6 +3701,7 @@ export type Database = {
         }
         Update: {
           chunks_returned?: Json | null
+          classified_at?: string | null
           created_at?: string
           empresa?: string
           escalou_por_baixa_confianca?: boolean | null
