@@ -19,11 +19,17 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+type Prioridade = 'CRITICA' | 'ALTA' | 'MEDIA' | 'BAIXA';
+
 interface NotifyCloserRequest {
   lead_id: string;
   empresa: EmpresaTipo;
   motivo: string;
   closer_email?: string;
+  prioridade?: Prioridade;
+  intent?: string;
+  temperatura?: string;
+  notify_user_id?: string; // owner do contato/deal para notificação in-app
   contexto?: {
     lead_nome?: string;
     intent?: string;
@@ -143,6 +149,9 @@ serve(async (req) => {
       }
     }
 
+    // Calcular prioridade se não fornecida
+    const prioridade = body.prioridade || 'MEDIA';
+
     // Inserir notificação no banco
     const { data: notification, error: insertError } = await supabase
       .from('closer_notifications')
@@ -152,6 +161,9 @@ serve(async (req) => {
         closer_email: closerEmail,
         motivo: body.motivo,
         contexto: leadInfo,
+        prioridade,
+        intent: body.intent || leadInfo.intent || null,
+        temperatura: body.temperatura || leadInfo.temperatura || null,
       })
       .select('id')
       .single();
@@ -165,18 +177,20 @@ serve(async (req) => {
 
     // Enviar email para o closer
     try {
-      const emailResponse = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/email-send`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          to: closerEmail,
-          subject: `🔥 Lead Quente: ${leadInfo.lead_nome} - ${body.empresa}`,
+          const prioridadeEmoji: Record<string, string> = { CRITICA: '🔴🔥', ALTA: '🟠🔥', MEDIA: '🟡', BAIXA: '⚪' };
+          const emoji = prioridadeEmoji[prioridade] || '🔥';
+          const emailResponse = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/email-send`, {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to: closerEmail,
+              subject: `${emoji} Lead ${prioridade}: ${leadInfo.lead_nome} - ${body.empresa}`,
           html: `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-              <h1 style="color: #dc2626; margin-bottom: 20px;">🔥 Lead Quente Detectado!</h1>
+              <h1 style="color: #dc2626; margin-bottom: 20px;">${emoji} Lead ${escapeHtml(prioridade)} Detectado!</h1>
               
               <div style="background: #fef2f2; border-radius: 8px; padding: 16px; margin-bottom: 20px;">
                <h2 style="margin: 0 0 10px 0; color: #333;">${escapeHtml(leadInfo.lead_nome || '')}</h2>

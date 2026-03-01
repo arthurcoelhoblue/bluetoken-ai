@@ -356,7 +356,7 @@ serve(async (req) => {
       run_id: msg.run_id,
       empresa: msg.empresa,
       acao: finalAcao,
-      acao_detalhes: classifierResult.acao_detalhes || {},
+      acao_detalhes: { ...(classifierResult.acao_detalhes || {}), intent: classifierResult.intent },
       telefone,
       resposta: canRespond ? respostaTexto : null,
       source,
