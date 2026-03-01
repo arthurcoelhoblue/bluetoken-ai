@@ -13,16 +13,22 @@ const TIPO_LABELS: Record<string, string> = {
   SLA_ESTOURADO: '⚠️ SLA',
   DEAL_PARADO: '⏳ Deal Parado',
   DEAL_AUTO_CRIADO: '✨ Novo Deal',
+  DEAL_NOVO_PRIORITARIO: '🔔 Deal Prioritário',
   AMELIA_INSIGHT: '🧠 Insight Amélia',
   AMELIA_ALERTA: '🚨 Alerta Amélia',
   AMELIA_CORRECAO: '📝 Correção Amélia',
   AMELIA_SEQUENCIA: '⛓️ Sequência Risco',
+  ALERTA: '⚠️ Alerta',
+  SYSTEM_ALERT: '🔧 Sistema',
+  CS_CHURN_RISK: '📉 Risco Churn',
+  CS_BRIEFING: '📋 Briefing CS',
+  INFO: 'ℹ️ Informação',
 };
 
 const FILTER_GROUPS: Record<string, string[]> = {
-  ALERTAS: ['SLA_ESTOURADO', 'AMELIA_ALERTA', 'AMELIA_SEQUENCIA'],
-  INSIGHTS: ['AMELIA_INSIGHT', 'AMELIA_CORRECAO', 'LEAD_QUENTE'],
-  DEALS: ['DEAL_PARADO', 'DEAL_AUTO_CRIADO'],
+  ALERTAS: ['SLA_ESTOURADO', 'AMELIA_ALERTA', 'AMELIA_SEQUENCIA', 'ALERTA', 'SYSTEM_ALERT', 'CS_CHURN_RISK'],
+  INSIGHTS: ['AMELIA_INSIGHT', 'AMELIA_CORRECAO', 'LEAD_QUENTE', 'INFO', 'CS_BRIEFING'],
+  DEALS: ['DEAL_PARADO', 'DEAL_AUTO_CRIADO', 'DEAL_NOVO_PRIORITARIO'],
 };
 
 function timeAgo(dateStr: string): string {
@@ -44,6 +50,12 @@ export function NotificationBell() {
     if (filter === 'ALL') return true;
     return FILTER_GROUPS[filter]?.includes(n.tipo) ?? true;
   });
+
+  const groupCounts = {
+    ALERTAS: notifications?.filter(n => FILTER_GROUPS.ALERTAS.includes(n.tipo)).length ?? 0,
+    INSIGHTS: notifications?.filter(n => FILTER_GROUPS.INSIGHTS.includes(n.tipo)).length ?? 0,
+    DEALS: notifications?.filter(n => FILTER_GROUPS.DEALS.includes(n.tipo)).length ?? 0,
+  };
 
   const handleClick = (notif: { id: string; link: string | null; lida: boolean }) => {
     if (!notif.lida) markAsRead.mutate(notif.id);
@@ -79,9 +91,9 @@ export function NotificationBell() {
         <div className="px-3 py-2 border-b">
           <ToggleGroup type="single" value={filter} onValueChange={(v) => v && setFilter(v)} className="justify-start gap-1">
             <ToggleGroupItem value="ALL" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-primary data-[state=on]:text-primary-foreground">Todas</ToggleGroupItem>
-            <ToggleGroupItem value="ALERTAS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-destructive data-[state=on]:text-destructive-foreground">🚨 Alertas</ToggleGroupItem>
-            <ToggleGroupItem value="INSIGHTS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">💡 Insights</ToggleGroupItem>
-            <ToggleGroupItem value="DEALS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground">📊 Deals</ToggleGroupItem>
+            <ToggleGroupItem value="ALERTAS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-destructive data-[state=on]:text-destructive-foreground">🚨 Alertas{groupCounts.ALERTAS > 0 ? ` (${groupCounts.ALERTAS})` : ''}</ToggleGroupItem>
+            <ToggleGroupItem value="INSIGHTS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-accent data-[state=on]:text-accent-foreground">💡 Insights{groupCounts.INSIGHTS > 0 ? ` (${groupCounts.INSIGHTS})` : ''}</ToggleGroupItem>
+            <ToggleGroupItem value="DEALS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground">📊 Deals{groupCounts.DEALS > 0 ? ` (${groupCounts.DEALS})` : ''}</ToggleGroupItem>
           </ToggleGroup>
         </div>
         <ScrollArea className="h-80">

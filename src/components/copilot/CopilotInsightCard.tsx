@@ -1,4 +1,4 @@
-import { AlertTriangle, TrendingUp, Clock, Target, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, TrendingUp, Clock, Target, Sparkles, X, ExternalLink } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -17,6 +17,20 @@ const PRIORITY_VARIANT: Record<string, 'destructive' | 'default' | 'secondary'> 
   ALTA: 'destructive',
   MEDIA: 'default',
   BAIXA: 'secondary',
+};
+
+const CATEGORY_ROUTE: Record<string, string> = {
+  FOLLOW_UP: '/conversas',
+  DEAL_PARADO: '/pipeline',
+  SLA_RISCO: '/pipeline',
+  META_RISCO: '/meu-dia',
+};
+
+const CATEGORY_ACTION_LABEL: Record<string, string> = {
+  FOLLOW_UP: 'Ir para conversas →',
+  DEAL_PARADO: 'Ver pipeline →',
+  SLA_RISCO: 'Ver pipeline →',
+  META_RISCO: 'Ver metas →',
 };
 
 interface Props {
@@ -53,6 +67,23 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
     }
   };
 
+  const handleCategoryAction = () => {
+    const route = CATEGORY_ROUTE[insight.categoria];
+    if (route) navigate(route);
+  };
+
+  // Determine if there's a primary action available
+  const hasLeadAction = !!(insight.lead_id && leadNome && empresa);
+  const hasDealAction = !!insight.deal_id;
+  const hasCategoryAction = !!(CATEGORY_ROUTE[insight.categoria] && !hasLeadAction && !hasDealAction);
+  const isActionable = hasLeadAction || hasDealAction || hasCategoryAction;
+
+  const handleCardClick = () => {
+    if (hasLeadAction) return handleLeadClick();
+    if (hasDealAction) return handleDealClick();
+    if (hasCategoryAction) return handleCategoryAction();
+  };
+
   // Render titulo with lead name as a clickable link
   const renderTitulo = () => {
     if (!leadNome || !insight.lead_id || !empresa) {
@@ -68,7 +99,7 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
       <span className="font-medium break-words">
         {before}
         <button
-          onClick={handleLeadClick}
+          onClick={(e) => { e.stopPropagation(); handleLeadClick(); }}
           className="text-primary hover:underline font-medium"
         >
           {leadNome}
@@ -79,7 +110,10 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
   };
 
   return (
-    <div className="flex items-start gap-2 p-3 rounded-lg border bg-accent/30 text-sm">
+    <div
+      className={`flex items-start gap-2 p-3 rounded-lg border bg-accent/30 text-sm transition-colors ${isActionable ? 'cursor-pointer hover:bg-accent/50' : ''}`}
+      onClick={isActionable ? handleCardClick : undefined}
+    >
       <div className="mt-0.5 shrink-0">
         {ICON_MAP[insight.categoria] || <Sparkles className="h-4 w-4 text-muted-foreground" />}
       </div>
@@ -94,20 +128,28 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
           {descricao}
         </p>
         <div className="flex items-center gap-3 flex-wrap">
-          {insight.lead_id && leadNome && empresa && (
+          {hasLeadAction && (
             <button
-              onClick={handleLeadClick}
-              className="text-xs text-primary hover:underline font-medium mt-1"
+              onClick={(e) => { e.stopPropagation(); handleLeadClick(); }}
+              className="text-xs text-primary hover:underline font-medium mt-1 flex items-center gap-1"
             >
-              Ver perfil de {leadNome} →
+              Ver perfil de {leadNome} <ExternalLink className="h-3 w-3" />
             </button>
           )}
-          {insight.deal_id && (
+          {hasDealAction && (
             <button
-              onClick={handleDealClick}
-              className="text-xs text-primary hover:underline font-medium mt-1"
+              onClick={(e) => { e.stopPropagation(); handleDealClick(); }}
+              className="text-xs text-primary hover:underline font-medium mt-1 flex items-center gap-1"
             >
-              Ver negócio →
+              Ver negócio <ExternalLink className="h-3 w-3" />
+            </button>
+          )}
+          {hasCategoryAction && (
+            <button
+              onClick={(e) => { e.stopPropagation(); handleCategoryAction(); }}
+              className="text-xs text-primary hover:underline font-medium mt-1 flex items-center gap-1"
+            >
+              {CATEGORY_ACTION_LABEL[insight.categoria]} <ExternalLink className="h-3 w-3" />
             </button>
           )}
         </div>
@@ -116,7 +158,7 @@ export function CopilotInsightCard({ insight, onDismiss, leadNome, empresa }: Pr
         variant="ghost"
         size="icon"
         className="h-6 w-6 shrink-0"
-        onClick={() => onDismiss(insight.id)}
+        onClick={(e) => { e.stopPropagation(); onDismiss(insight.id); }}
       >
         <X className="h-3 w-3" />
       </Button>
