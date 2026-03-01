@@ -472,6 +472,7 @@ export type Database = {
       }
       behavioral_knowledge: {
         Row: {
+          arquivado: boolean
           ativo: boolean
           autor: string | null
           chunks_count: number
@@ -487,6 +488,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          arquivado?: boolean
           ativo?: boolean
           autor?: string | null
           chunks_count?: number
@@ -502,6 +504,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          arquivado?: boolean
           ativo?: boolean
           autor?: string | null
           chunks_count?: number

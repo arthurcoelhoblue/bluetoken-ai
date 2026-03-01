@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { BookOpen, Upload, Trash2, RefreshCw, Loader2, Power, PowerOff, Brain } from "lucide-react";
+import { BookOpen, Upload, Trash2, RefreshCw, Loader2, Power, PowerOff, Brain, Archive } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -155,24 +155,32 @@ export function BehavioralKnowledgeTab() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0 ml-2">
+                    {book.arquivado && (
+                      <Badge variant="outline" className="text-xs gap-1">
+                        <Archive className="h-3 w-3" />
+                        Arquivado
+                      </Badge>
+                    )}
                     <Switch
                       checked={book.ativo}
                       onCheckedChange={(checked) => toggle.mutate({ id: book.id, ativo: checked })}
                       title={book.ativo ? 'Ativo' : 'Inativo'}
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => handleReindex(book.id, book.titulo)}
-                      disabled={embedding === book.id}
-                      title="Reindexar"
-                    >
-                      {embedding === book.id ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-4 w-4" />
-                      )}
-                    </Button>
+                    {!book.arquivado && book.storage_path && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleReindex(book.id, book.titulo)}
+                        disabled={embedding === book.id}
+                        title="Reindexar"
+                      >
+                        {embedding === book.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <RefreshCw className="h-4 w-4" />
+                        )}
+                      </Button>
+                    )}
                     <AlertDialog>
                       <AlertDialogTrigger asChild>
                         <Button variant="ghost" size="icon" className="text-destructive hover:text-destructive">
