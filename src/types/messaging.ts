@@ -50,6 +50,7 @@ export interface LeadMessage {
   media_filename: string | null;
   media_caption: string | null;
   media_meta_id: string | null;
+  transcricao_audio?: string | null;
 }
 
 // Mensagem com contexto (para UI)

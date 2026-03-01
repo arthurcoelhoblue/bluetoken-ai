@@ -169,6 +169,7 @@ function MessageBubble({
               mediaCaption={message.media_caption}
               conteudo={message.conteudo}
               isOutbound={isOutbound}
+              transcricaoAudio={message.transcricao_audio}
             />
           )}
 
