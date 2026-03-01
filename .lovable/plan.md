@@ -1,34 +1,27 @@
 
 
-# Diagnóstico e Correção: Botão "Aprender" sem efeito visível
+## Diagnóstico
 
-## Problema
-A função executa com sucesso mas não produz mudanças porque:
-- Os 13 feedbacks estão todos como `PENDENTE` — nunca foram classificados como UTIL/NAO_UTIL
-- Os 11 knowledge_gaps têm `frequency = 1` — o threshold para sugestão automática é `>= 5`
+O problema **não é o botão** em si — os botões de "Ensinar" existem no código e funcionam. O problema é que **nenhuma lacuna aparece na lista** porque:
 
-## Causa raiz
-O fluxo de classificação de feedback não está funcionando. Preciso verificar onde o `outcome` deveria ser atualizado de PENDENTE para UTIL/NAO_UTIL. Provavelmente está faltando lógica no `response-generator.ts` ou no fluxo de conversa da Amélia.
+1. Todas as 11 lacunas no banco estão com `empresa = 'TOKENIZA'`
+2. A empresa ativa selecionada no seu painel é "Blue Consult" (que mapeia para `BLUE`)
+3. O componente filtra `WHERE empresa = 'BLUE'` e não encontra nada → mostra "Nenhuma lacuna detectada"
 
-## Plano (2 partes)
+## Solução
 
-### 1. Adicionar classificação automática de feedback
-No `response-generator.ts`, após a Amélia gerar uma resposta usando RAG, o sistema já registra o feedback como PENDENTE. Precisa haver uma lógica que infira o outcome baseado na reação do lead:
-- Se o lead faz uma pergunta de follow-up sobre o mesmo tema → `UTIL`
-- Se o lead repete a mesma pergunta ou diz "não entendi" → `NAO_UTIL`
-- Se o lead muda de assunto ou avança no funil → `UTIL`
+Duas correções:
 
-Isso deve ser feito no `sdr-ia-interpret` quando processa a próxima mensagem do lead.
+### 1. Remover filtro de empresa na aba Lacunas (ou usar multi-empresa)
+Na `ProductKnowledgeList.tsx`, passar `activeCompanies` em vez de apenas `activeCompany` para o componente `KnowledgeGaps`, permitindo ver lacunas de todas as empresas do usuário.
 
-### 2. Feedback visual no botão "Aprender"
-Atualmente o toast mostra "0 chunks otimizados, 0 FAQs sugeridas" — o que parece um erro para o usuário. Melhorar o feedback:
-- Se não há dados para processar, mostrar mensagem explicativa: "Sem feedbacks classificados ainda. O sistema aprende à medida que leads interagem com a Amélia."
-- Mostrar o breakdown dos dados encontrados (13 pendentes, 0 úteis, etc.)
+### 2. Atualizar `KnowledgeGaps.tsx` para aceitar múltiplas empresas
+- Alterar a prop de `empresa: string` para `empresas: string[]`
+- Usar `.in("empresa", empresas)` na query ao invés de `.eq("empresa", empresa)`
+- Mostrar um badge com a empresa de cada lacuna para contexto
 
-## Arquivos impactados
-
-| Arquivo | Ação |
+| Arquivo | Mudança |
 |---|---|
-| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Adicionar lógica de inferência de feedback (UTIL/NAO_UTIL) baseada no comportamento do lead |
-| `src/components/knowledge/KnowledgeRAGStatus.tsx` | Melhorar feedback visual do botão Aprender com mensagens contextuais |
+| `src/pages/admin/ProductKnowledgeList.tsx` | Passar `activeCompanies` para `KnowledgeGaps` |
+| `src/components/knowledge/KnowledgeGaps.tsx` | Aceitar array de empresas e filtrar com `.in()` |
 
