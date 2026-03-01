@@ -570,6 +570,200 @@ async function isDuplicate(
   return !!data;
 }
 
+/**
+ * Auto-cria deal para o contact se não existir deal ABERTO.
+ * Título: "Nome [campanha]" conforme regra anti-limbo.
+ */
+async function autoCreateDealIfNeeded(
+  supabase: SupabaseClient,
+  resolvedLeadId: string,
+  empresa: EmpresaTipo,
+  phoneE164: string
+): Promise<void> {
+  try {
+    // Esperar trigger fn_sync_lead_to_contact criar o contacts
+    await new Promise(r => setTimeout(r, 600));
+
+    // Buscar contacts.id via legacy_lead_id
+    const { data: crmContact } = await supabase
+      .from('contacts')
+      .select('id')
+      .eq('legacy_lead_id', resolvedLeadId)
+      .eq('empresa', empresa)
+      .maybeSingle();
+
+    if (!crmContact) {
+      log.warn('autoCreateDeal: contacts não encontrado (trigger pode estar pendente)', { resolvedLeadId, empresa });
+      return;
+    }
+
+    const contactId = (crmContact as { id: string }).id;
+
+    // Verificar se já existe deal ABERTO
+    const { data: existingDeal } = await supabase
+      .from('deals')
+      .select('id')
+      .eq('contact_id', contactId)
+      .eq('status', 'ABERTO')
+      .limit(1)
+      .maybeSingle();
+
+    if (existingDeal) {
+      log.info('autoCreateDeal: deal ABERTO já existe', { dealId: (existingDeal as { id: string }).id });
+      return;
+    }
+
+    // Buscar pipeline default da empresa
+    const { data: pipeline } = await supabase
+      .from('pipelines')
+      .select('id')
+      .eq('empresa', empresa)
+      .eq('is_default', true)
+      .maybeSingle();
+
+    if (!pipeline) {
+      log.warn('autoCreateDeal: nenhum pipeline default encontrado', { empresa });
+      return;
+    }
+
+    const pipelineId = (pipeline as { id: string }).id;
+
+    // Buscar primeiro estágio aberto (menor posicao, não won/lost)
+    const { data: firstStage } = await supabase
+      .from('pipeline_stages')
+      .select('id')
+      .eq('pipeline_id', pipelineId)
+      .eq('is_won', false)
+      .eq('is_lost', false)
+      .order('posicao', { ascending: true })
+      .limit(1)
+      .maybeSingle();
+
+    if (!firstStage) {
+      log.warn('autoCreateDeal: nenhum estágio aberto encontrado', { pipelineId });
+      return;
+    }
+
+    const stageId = (firstStage as { id: string }).id;
+
+    // Buscar nome e campanha do lead_contacts
+    const { data: leadInfo } = await supabase
+      .from('lead_contacts')
+      .select('nome, utm_campaign')
+      .eq('lead_id', resolvedLeadId)
+      .eq('empresa', empresa)
+      .maybeSingle();
+
+    const nome = (leadInfo as { nome: string | null; utm_campaign: string | null } | null)?.nome || null;
+    const campaign = (leadInfo as { nome: string | null; utm_campaign: string | null } | null)?.utm_campaign || null;
+
+    // Montar título: "Nome [campanha]"
+    let titulo: string;
+    if (nome && campaign) {
+      titulo = `${nome} [${campaign}]`;
+    } else if (nome) {
+      titulo = nome;
+    } else if (campaign) {
+      titulo = `Lead WhatsApp [${campaign}]`;
+    } else {
+      titulo = `Lead WhatsApp ${phoneE164}`;
+    }
+
+    // Round-robin: vendedor com menos deals abertos na empresa
+    const { data: sellers } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('is_active', true)
+      .in('role', ['VENDEDOR', 'ADMIN']);
+
+    let ownerId: string | null = null;
+
+    if (sellers && sellers.length > 0) {
+      // Filtrar vendedores que têm acesso a essa empresa
+      const sellerIds = (sellers as { id: string; role: string }[]).map(s => s.id);
+
+      const { data: accessData } = await supabase
+        .from('user_access_assignments')
+        .select('user_id')
+        .eq('empresa', empresa)
+        .in('user_id', sellerIds);
+
+      const validSellerIds = (accessData as { user_id: string }[] | null)?.map(a => a.user_id) ?? [];
+
+      if (validSellerIds.length > 0) {
+        // Contar deals abertos por vendedor
+        const { data: dealCounts } = await supabase
+          .from('deals')
+          .select('owner_id')
+          .eq('status', 'ABERTO')
+          .eq('pipeline_id', pipelineId)
+          .in('owner_id', validSellerIds);
+
+        const countMap = new Map<string, number>();
+        for (const sid of validSellerIds) countMap.set(sid, 0);
+        for (const d of (dealCounts as { owner_id: string }[] | null) ?? []) {
+          countMap.set(d.owner_id, (countMap.get(d.owner_id) ?? 0) + 1);
+        }
+
+        // Menor carga
+        let minCount = Infinity;
+        for (const [sid, count] of countMap) {
+          if (count < minCount) {
+            minCount = count;
+            ownerId = sid;
+          }
+        }
+      }
+    }
+
+    // Fallback: buscar qualquer admin
+    if (!ownerId) {
+      const { data: admin } = await supabase
+        .from('profiles')
+        .select('id')
+        .eq('role', 'ADMIN')
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+
+      ownerId = (admin as { id: string } | null)?.id ?? null;
+    }
+
+    if (!ownerId) {
+      log.error('autoCreateDeal: nenhum owner disponível', { empresa });
+      return;
+    }
+
+    const { data: newDeal, error: dealErr } = await supabase
+      .from('deals')
+      .insert({
+        contact_id: contactId,
+        pipeline_id: pipelineId,
+        stage_id: stageId,
+        titulo,
+        owner_id: ownerId,
+        status: 'ABERTO',
+        temperatura: 'FRIO',
+      })
+      .select('id')
+      .single();
+
+    if (dealErr) {
+      log.error('autoCreateDeal: erro ao criar deal', { error: dealErr.message });
+      return;
+    }
+
+    log.info('autoCreateDeal: deal criado com sucesso', {
+      dealId: (newDeal as { id: string }).id,
+      titulo,
+      ownerId,
+      empresa,
+    });
+  } catch (err) {
+    log.error('autoCreateDeal: erro inesperado', { error: String(err) });
+  }
+}
+
 async function saveInboundMessage(
   supabase: SupabaseClient,
   payload: InboundPayload,
@@ -681,7 +875,15 @@ async function saveInboundMessage(
   
   const savedMessage = data as { id: string };
   log.info('Mensagem salva', { messageId: savedMessage.id, empresa });
-  
+
+  // Auto-criar deal (regra anti-limbo) — fire-and-forget para não bloquear resposta
+  if (resolvedLeadId && empresa) {
+    const phoneE164 = normalizePhone(payload.from);
+    const e164Fmt = phoneE164.startsWith('+') ? phoneE164 : `+${phoneE164}`;
+    autoCreateDealIfNeeded(supabase, resolvedLeadId, empresa, e164Fmt)
+      .catch(err => log.error('autoCreateDeal background error', { error: String(err) }));
+  }
+
   if (activeRun) {
     await supabase.from('lead_cadence_events').insert({
       lead_cadence_run_id: activeRun.id,

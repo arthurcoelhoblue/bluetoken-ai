@@ -275,11 +275,11 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
         }
 
         if (!isAdmin && userId) {
+          // Regra anti-limbo: vendedor só vê conversas com deal onde é owner ou que assumiu
           const ownsOpenDeal = dealInfo?.ownerIds.includes(userId) ?? false;
           const assumedConversation = state?.assumido_por === userId;
-          const noDealYet = !dealInfo;
 
-          if (!ownsOpenDeal && !assumedConversation && !noDealYet) {
+          if (!ownsOpenDeal && !assumedConversation) {
             continue;
           }
         }

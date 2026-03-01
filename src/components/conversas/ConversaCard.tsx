@@ -9,6 +9,7 @@ import {
   Clock,
   Flame,
   Snowflake,
+  Sparkles,
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
@@ -83,6 +84,11 @@ export function ConversaCard({ atendimento: a, compact = false }: ConversaCardPr
               </Badge>
             )}
             {!compact && <TemperaturaBadge temperatura={a.temperatura} />}
+            {a.modo !== 'MANUAL' && a.modo && (
+              <Badge variant="outline" className="text-[10px] py-0 gap-0.5 bg-accent/50 text-accent-foreground border-accent">
+                <Sparkles className="h-3 w-3" />IA
+              </Badge>
+            )}
           </div>
           <p className="text-xs text-muted-foreground truncate mt-0.5">
             {a.ultima_mensagem || 'Sem mensagens'}

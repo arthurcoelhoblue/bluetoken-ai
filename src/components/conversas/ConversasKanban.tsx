@@ -42,17 +42,7 @@ export function ConversasKanban({ atendimentos }: ConversasKanbanProps) {
 
     const sorted = Array.from(stageMap.values()).sort((a, b) => a.posicao - b.posicao);
 
-    // Add "Sem deal" column at the end if there are items
-    if (semDeal.length > 0) {
-      sorted.push({
-        id: '__sem_deal__',
-        nome: 'Sem deal',
-        cor: 'hsl(var(--muted-foreground))',
-        posicao: 9999,
-        items: semDeal,
-      });
-    }
-
+    // Regra anti-limbo: conversas sem deal não aparecem no kanban
     return sorted;
   }, [atendimentos]);
 
