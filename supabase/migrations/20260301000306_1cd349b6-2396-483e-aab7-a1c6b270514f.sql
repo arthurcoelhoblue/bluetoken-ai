@@ -1,0 +1,1 @@
+ALTER TABLE public.lead_messages ADD COLUMN transcricao_audio TEXT;
