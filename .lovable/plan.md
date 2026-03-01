@@ -1,64 +1,36 @@
 
 
-# Blindagem Anti-Limbo: Retry + Reconciliação
+# Fix: Sanitizar nome do arquivo no upload de livros comportamentais
 
 ## Problema
+O Storage rejeita keys com caracteres especiais (acentos, cedilha, etc.). O código em `useBehavioralKnowledge.ts` usa `file.name` diretamente no `filePath`, gerando paths como `BLUE/123-As armas da persuasão.pdf` que retornam `400 InvalidKey`.
 
-A `autoCreateDealIfNeeded` no `whatsapp-inbound` é fire-and-forget com 6 pontos de falha silenciosa (trigger pendente, pipeline/stage/owner não encontrado, erro de insert, timeout). Se falhar, a conversa fica sem deal permanentemente.
+O mesmo problema pode afetar `useProductKnowledge.ts` (upload de documentos de produto).
 
-## Plano
+## Correção
 
-### 1. Retry com backoff no `autoCreateDealIfNeeded` (whatsapp-inbound)
+### 1. `src/hooks/useBehavioralKnowledge.ts`
+Adicionar função de sanitização que remove acentos e caracteres especiais do nome do arquivo antes de montar o path de upload:
 
-Substituir o `setTimeout(600ms)` fixo por um loop de retry (3 tentativas, delays de 800ms, 1500ms, 3000ms) na etapa de buscar o `contacts` via `legacy_lead_id`. Se após 3 tentativas o contact não existir, registrar em uma tabela de falhas para reconciliação.
-
-### 2. Tabela `deal_creation_failures` (migration)
-
-```sql
-CREATE TABLE public.deal_creation_failures (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  lead_id TEXT NOT NULL,
-  empresa TEXT NOT NULL,
-  phone_e164 TEXT,
-  motivo TEXT NOT NULL,        -- 'CONTACT_NOT_FOUND', 'NO_PIPELINE', 'NO_STAGE', 'NO_OWNER', 'INSERT_ERROR'
-  tentativas INT DEFAULT 1,
-  resolvido BOOLEAN DEFAULT false,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  resolved_at TIMESTAMPTZ
-);
+```typescript
+function sanitizeFileName(name: string): string {
+  return name
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '') // remove acentos
+    .replace(/[^a-zA-Z0-9._-]/g, '_'); // substitui outros chars por _
+}
 ```
 
-Com RLS para admins e índice em `resolvido = false`.
+Usar no `filePath`: `${empresa}/${Date.now()}-${sanitizeFileName(file.name)}`
 
-### 3. Registrar falhas ao invés de `return` silencioso
+Manter `file.name` original no campo `nome_arquivo` do banco (para exibição).
 
-Em cada ponto de falha da `autoCreateDealIfNeeded` (pipeline não encontrado, stage não encontrado, owner indisponível, erro de insert), ao invés de apenas logar e retornar, inserir um registro na `deal_creation_failures` com o motivo específico.
-
-### 4. Edge function `deal-reconciler` (CRON a cada 10min)
-
-Nova edge function que:
-1. Busca registros em `deal_creation_failures` onde `resolvido = false` e `tentativas < 5`
-2. Para cada um, re-executa a lógica de criação de deal (buscar contact, pipeline, stage, owner, insert)
-3. Se sucesso: marca `resolvido = true, resolved_at = now()`
-4. Se falha: incrementa `tentativas`
-5. Se `tentativas >= 5`: loga alerta e cria notificação para admins
-
-### 5. CRON job para o reconciler
-
-```sql
-SELECT cron.schedule('deal-reconciler-10min', '*/10 * * * *', ...);
-```
-
-### 6. Notificação para admin quando falha persiste
-
-Após 5 tentativas falhadas, inserir na tabela `notifications` um alerta para todos os admins da empresa: "Lead X está sem deal vinculado — ação manual necessária".
+### 2. `src/hooks/useProductKnowledge.ts`
+Aplicar a mesma sanitização no `useUploadKnowledgeDocument` que também usa `file.name` no path do Storage.
 
 ## Arquivos
-
 | Arquivo | Ação |
 |---|---|
-| `supabase/functions/whatsapp-inbound/index.ts` | Retry com backoff + registrar falhas em `deal_creation_failures` |
-| `supabase/functions/deal-reconciler/index.ts` | **Novo** — CRON reconciliador |
-| Migration SQL | Tabela `deal_creation_failures` + RLS |
-| CRON SQL | Agendar `deal-reconciler` a cada 10min |
+| `src/hooks/useBehavioralKnowledge.ts` | Sanitizar `file.name` no path de upload |
+| `src/hooks/useProductKnowledge.ts` | Mesma sanitização no upload de documentos |
 
