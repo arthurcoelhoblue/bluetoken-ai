@@ -1,100 +1,42 @@
 
 
-# Base de Conhecimento Comportamental — Amélia aprende com livros
+# Fix: Indexação de livros retornando zero chunks
 
-## Conceito
+## Problema identificado
 
-Criar uma camada separada de conhecimento **comportamental/metodológico** onde o gestor faz upload de PDFs de livros de vendas (SPIN Selling, Challenger Sale, GPCT, etc.) e a Amélia absorve essas técnicas para moldar **como** ela vende — separado da base de produtos que define **o que** ela vende.
+Os logs mostram o erro `"\\u0000 cannot be converted to text."` (código PostgreSQL `22P05`). O extrator de PDF está gerando texto com caracteres nulos (`\0`) que o PostgreSQL rejeita na inserção. O embedding é gerado com sucesso pela OpenAI, mas o INSERT falha — resultando em 0 chunks indexados.
 
-## Arquitetura
+## Solução
 
-```text
-┌─────────────────────────────────┐
-│  Upload PDF (livro)             │
-│  Admin → Metodologia de Vendas  │
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│  behavioral_knowledge (tabela)  │
-│  título, autor, descrição,      │
-│  storage_path, empresa, ativo   │
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│  knowledge-embed (edge fn)      │
-│  action: "embed_behavioral"     │
-│  source_type: "behavioral"      │
-│  Semantic chunking do PDF       │
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│  knowledge_embeddings           │
-│  source_type = "behavioral"     │
-│  Chunks indexados via RAG       │
-└──────────┬──────────────────────┘
-           │
-           ▼
-┌─────────────────────────────────┐
-│  response-generator.ts          │
-│  Busca comportamental separada  │
-│  → Injeta como "metodologia"    │
-│  no system prompt               │
-└─────────────────────────────────┘
+### 1. Sanitizar texto extraído do PDF
+
+Adicionar uma função `sanitizeText()` que remove `\u0000` e outros caracteres de controle problemáticos do texto extraído, aplicada em dois pontos:
+
+- Na função `extractPdfTextFromBucket` — limpar o texto final antes de retornar
+- Na função `embedChunks` — limpar cada `chunk_text` antes do INSERT como segunda camada de proteção
+
+```typescript
+function sanitizeText(text: string): string {
+  return text.replace(/\u0000/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+}
 ```
 
-## Plano de Implementação
+### 2. Melhorar extração de PDF
 
-### Passo 1 — Tabela `behavioral_knowledge`
+O extrator atual usa regex em streams PDF raw, que é muito limitado para livros complexos. Adicionar:
 
-Nova tabela para armazenar referências aos livros/materiais de metodologia:
+- Decodificação de streams FlateDecode (comprimidos com zlib) — a maioria dos PDFs modernos usa compressão
+- Fallback para extração de texto via BT/ET operators além de Tj/TJ
+- Limpeza de caracteres de escape PDF (`\n`, `\r`, octal escapes)
 
-- `id` (uuid PK)
-- `empresa` (text, ex: TOKENIZA, BLUE)
-- `titulo` (text — nome do livro)
-- `autor` (text nullable)
-- `descricao` (text nullable — breve resumo do que o livro ensina)
-- `storage_path` (text — caminho no bucket)
-- `nome_arquivo` (text)
-- `ativo` (boolean default true)
-- `created_at`, `updated_at`
+### 3. Logging de diagnóstico
 
-Bucket de storage: reutilizar `knowledge-documents` ou criar `behavioral-books`.
-
-### Passo 2 — Extensão do `knowledge-embed`
-
-Adicionar nova action `embed_behavioral` que:
-1. Busca o registro em `behavioral_knowledge`
-2. Faz download do PDF do storage
-3. Extrai texto (reutiliza `extractPdfText` existente)
-4. Faz semantic chunking com prefix `[Metodologia: {titulo}]`
-5. Grava em `knowledge_embeddings` com `source_type = "behavioral"`
-
-Também incluir no `embed_all`/`reindex` para reindexar materiais comportamentais.
-
-### Passo 3 — Busca comportamental no `response-generator`
-
-No fluxo de geração de resposta da Amélia:
-1. Fazer uma busca semântica separada filtrando `source_type = 'behavioral'` com a mensagem do lead
-2. Recuperar 2-3 chunks de metodologia relevantes
-3. Injetar no system prompt como seção `## METODOLOGIA DE VENDAS` — orientações de **como** conduzir a conversa, não como informação factual
-
-Isso garante que a Amélia aplique técnicas do livro (ex: perguntas SPIN, abordagem Challenger) sem confundir com dados de produto.
-
-### Passo 4 — UI de gestão
-
-Nova aba ou seção em **Configuração → Base de Conhecimento** chamada "Metodologia de Vendas":
-- Lista de livros/materiais enviados com status de indexação
-- Upload de PDF com campos: título, autor, descrição
-- Toggle ativo/inativo por material
-- Botão "Reindexar" individual
-- Indicador de quantos chunks foram gerados
+Adicionar log do tamanho do texto extraído e número de chunks gerados para facilitar debug futuro.
 
 ## Detalhes Técnicos
 
-- **Extração de PDF**: O extrator atual (`extractPdfText`) é básico (regex em streams PDF). Para livros complexos, pode precisar de melhoria futura, mas funciona para PDFs com texto embarcado.
-- **Separação semântica**: Chunks comportamentais recebem `source_type = "behavioral"` para nunca serem confundidos com dados de produto no RAG de produtos.
-- **Prompt injection**: A seção de metodologia é injetada como **diretriz comportamental**, não como fato — a Amélia usa as técnicas mas não cita o livro ao lead.
+- **Arquivo**: `supabase/functions/knowledge-embed/index.ts`
+- **Funções afetadas**: `extractPdfTextFromBucket()`, `embedChunks()`, `sanitizeText()` (nova)
+- **Impacto**: Apenas na edge function de embedding — sem alteração no response-generator nem no knowledge-search
+- **Compatibilidade**: Nenhum impacto nas melhorias de desempenho da Amélia — são camadas diferentes
 
