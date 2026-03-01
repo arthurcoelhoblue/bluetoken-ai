@@ -384,6 +384,63 @@ async function doDownload(
   }
 }
 
+// ---- Transcribe audio via Gemini 2.5 Flash ----
+async function transcribeAudio(
+  supabase: ReturnType<typeof createServiceClient>,
+  audioUrl: string
+): Promise<string | null> {
+  const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
+  if (!LOVABLE_API_KEY) {
+    log.error("LOVABLE_API_KEY not configured, cannot transcribe audio");
+    return null;
+  }
+
+  // Download audio from storage URL
+  const audioResp = await fetch(audioUrl);
+  if (!audioResp.ok) {
+    log.error("Failed to download audio for transcription", { status: audioResp.status, url: audioUrl });
+    return null;
+  }
+  const audioBuffer = await audioResp.arrayBuffer();
+  const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${LOVABLE_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_audio",
+              input_audio: { data: base64Audio, format: "ogg" },
+            },
+            {
+              type: "text",
+              text: "Transcreva este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, sem aspas, sem prefixos.",
+            },
+          ],
+        },
+      ],
+      max_tokens: 2048,
+    }),
+  });
+
+  if (!resp.ok) {
+    log.error("Gemini transcription failed", { status: resp.status, body: await resp.text() });
+    return null;
+  }
+
+  const data = await resp.json();
+  const text = data.choices?.[0]?.message?.content || "";
+  return text.trim() || null;
+}
+
 // ---- Extract media info from message ----
 function extractMediaInfo(msg: Record<string, unknown>): MediaInfo {
   const type = msg.type as string;
@@ -606,10 +663,33 @@ async function handleMessage(
     });
   }
 
-  // Trigger SDR-IA interpret (fire-and-forget, only for text messages)
-  if (lead && mediaInfo.tipo_midia === "text") {
+  // Trigger SDR-IA interpret for text and audio messages
+  if (lead && (mediaInfo.tipo_midia === "text" || mediaInfo.tipo_midia === "audio")) {
     const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
     const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+
+    // If audio, transcribe first before sending to SDR-IA
+    if (mediaInfo.tipo_midia === "audio" && mediaUrl) {
+      try {
+        const transcribedText = await transcribeAudio(supabase, mediaUrl);
+        if (transcribedText) {
+          // Update message: move "[Áudio]" to transcricao_audio, set conteudo to transcribed text
+          await supabase
+            .from("lead_messages")
+            .update({
+              conteudo: transcribedText,
+              transcricao_audio: transcribedText,
+            })
+            .eq("id", savedId);
+          log.info("Audio transcribed", { savedId, length: transcribedText.length });
+        } else {
+          log.warn("Audio transcription returned empty", { savedId });
+        }
+      } catch (e) {
+        log.error("Audio transcription failed", { savedId, error: String(e) });
+        // Don't block — still try SDR-IA with "[Áudio]" content
+      }
+    }
 
     for (let attempt = 0; attempt <= 2; attempt++) {
       try {

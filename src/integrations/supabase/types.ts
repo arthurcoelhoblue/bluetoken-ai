@@ -4224,6 +4224,7 @@ export type Database = {
           step_ordem: number | null
           template_codigo: string | null
           tipo_midia: string
+          transcricao_audio: string | null
           updated_at: string
           whatsapp_message_id: string | null
         }
@@ -4254,6 +4255,7 @@ export type Database = {
           step_ordem?: number | null
           template_codigo?: string | null
           tipo_midia?: string
+          transcricao_audio?: string | null
           updated_at?: string
           whatsapp_message_id?: string | null
         }
@@ -4284,6 +4286,7 @@ export type Database = {
           step_ordem?: number | null
           template_codigo?: string | null
           tipo_midia?: string
+          transcricao_audio?: string | null
           updated_at?: string
           whatsapp_message_id?: string | null
         }
