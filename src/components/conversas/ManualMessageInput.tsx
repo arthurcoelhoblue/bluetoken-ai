@@ -7,7 +7,7 @@ import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
 import { TemplatePickerDialog } from './TemplatePickerDialog';
-import { AudioRecorder } from './AudioRecorder';
+import { MediaAttachments } from './MediaAttachments';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -28,7 +28,7 @@ export function ManualMessageInput({
   const [text, setText] = useState('');
   const [dealDialogOpen, setDealDialogOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
-  const [pendingAudioUrl, setPendingAudioUrl] = useState<string | null>(null);
+  const [pendingMedia, setPendingMedia] = useState<{ url: string; type: string; filename?: string } | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [windowExpired, setWindowExpired] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -117,22 +117,24 @@ export function ManualMessageInput({
     doSend(trimmed);
   };
 
-  const handleAudioReady = (audioUrl: string) => {
+  const handleMediaReady = (mediaUrl: string, mediaType: string, filename?: string) => {
     if (contact && !hasDeal) {
-      setPendingAudioUrl(audioUrl);
+      setPendingMedia({ url: mediaUrl, type: mediaType, filename });
       setPendingMessage('');
       setDealDialogOpen(true);
       return;
     }
 
-    doSend('[Áudio]', 'audio', audioUrl);
+    const label = mediaType === 'audio' ? '[Áudio]' : mediaType === 'image' ? '[Imagem]' : mediaType === 'video' ? '[Vídeo]' : `[Documento: ${filename || 'arquivo'}]`;
+    doSend(label, mediaType, mediaUrl);
   };
 
   const handleDealCreated = (_dealId: string) => {
     refetchDeals();
-    if (pendingAudioUrl) {
-      doSend('[Áudio]', 'audio', pendingAudioUrl);
-      setPendingAudioUrl(null);
+    if (pendingMedia) {
+      const label = pendingMedia.type === 'audio' ? '[Áudio]' : pendingMedia.type === 'image' ? '[Imagem]' : `[Documento: ${pendingMedia.filename || 'arquivo'}]`;
+      doSend(label, pendingMedia.type, pendingMedia.url);
+      setPendingMedia(null);
     } else if (pendingMessage) {
       doSend(pendingMessage);
       setPendingMessage('');
@@ -204,8 +206,8 @@ export function ManualMessageInput({
           rows={1}
           disabled={sendMutation.isPending || windowExpired}
         />
-        <AudioRecorder
-          onAudioReady={handleAudioReady}
+        <MediaAttachments
+          onMediaReady={handleMediaReady}
           disabled={sendMutation.isPending || windowExpired}
         />
         <Button
