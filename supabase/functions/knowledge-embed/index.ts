@@ -50,10 +50,7 @@ function semanticChunk(text: string, titlePrefix: string): string[] {
     if (candidateLen <= MAX_CHUNK_CHARS) {
       buffer = buffer ? `${buffer}\n\n${para}` : para;
     } else {
-      // Flush buffer
       if (buffer) chunks.push(buffer);
-      
-      // If paragraph itself exceeds limit, split it
       if (para.length > MAX_CHUNK_CHARS) {
         const subChunks = splitLargeParagraph(para);
         chunks.push(...subChunks);
@@ -69,15 +66,12 @@ function semanticChunk(text: string, titlePrefix: string): string[] {
   const result: string[] = [];
   for (let i = 0; i < chunks.length; i++) {
     let chunk = titlePrefix ? `${titlePrefix}\n${chunks[i]}` : chunks[i];
-    
-    // Add last sentence of previous chunk as overlap (except first chunk)
     if (i > 0) {
       const prevLastSentence = extractLastSentence(chunks[i - 1]);
       if (prevLastSentence && prevLastSentence.length > 15) {
         chunk = `${titlePrefix}\n[contexto anterior] ${prevLastSentence}\n\n${chunks[i]}`;
       }
     }
-    
     result.push(chunk);
   }
 
@@ -126,113 +120,49 @@ async function generateEmbedding(text: string, openaiKey: string): Promise<numbe
 
 async function embedChunks(supabase: any, chunks: string[], sourceType: string, sourceId: string, empresa: string, metadata: Record<string, unknown>, openaiKey: string) {
   let embedded = 0, errors = 0;
-  await supabase.from("knowledge_embeddings").delete().eq("source_type", sourceType).eq("source_id", sourceId);
+
+  // Delete existing embeddings first
+  const { error: deleteError } = await supabase
+    .from("knowledge_embeddings")
+    .delete()
+    .eq("source_type", sourceType)
+    .eq("source_id", sourceId);
+
+  if (deleteError) {
+    console.error("Delete error (non-blocking):", deleteError);
+  }
+
   for (let i = 0; i < chunks.length; i++) {
     const sanitizedChunk = sanitizeText(chunks[i]);
     const embedding = await generateEmbedding(sanitizedChunk, openaiKey);
     if (embedding) {
-      const { error } = await supabase.from("knowledge_embeddings").insert({
-        source_type: sourceType, source_id: sourceId, chunk_index: i,
-        chunk_text: sanitizedChunk, embedding: JSON.stringify(embedding), metadata, empresa,
-      });
-      if (error) { console.error("Insert error:", error); errors++; } else embedded++;
+      // Use upsert to handle duplicates gracefully on retries
+      const { error } = await supabase.from("knowledge_embeddings").upsert(
+        {
+          source_type: sourceType,
+          source_id: sourceId,
+          chunk_index: i,
+          chunk_text: sanitizedChunk,
+          embedding: JSON.stringify(embedding),
+          metadata,
+          empresa,
+        },
+        { onConflict: "source_type,source_id,chunk_index" }
+      );
+      if (error) { console.error(`Upsert error chunk ${i}:`, error); errors++; } else embedded++;
     } else errors++;
+
+    // Log progress every 20 chunks
+    if ((i + 1) % 20 === 0) {
+      console.log(`[embed] Progress: ${i + 1}/${chunks.length} chunks processed (${embedded} ok, ${errors} errors)`);
+    }
   }
   return { embedded, errors };
 }
 
 // ============================================
-// PDF TEXT EXTRACTION (enhanced)
+// PDF TEXT EXTRACTION via pdf-parse
 // ============================================
-
-function decodePdfEscapes(text: string): string {
-  return text
-    .replace(/\\n/g, '\n')
-    .replace(/\\r/g, '\r')
-    .replace(/\\t/g, '\t')
-    .replace(/\\\(/g, '(')
-    .replace(/\\\)/g, ')')
-    .replace(/\\\\/g, '\\')
-    .replace(/\\(\d{3})/g, (_match: string, octal: string) => {
-      const code = parseInt(octal, 8);
-      return code > 31 && code < 127 ? String.fromCharCode(code) : '';
-    });
-}
-
-async function tryInflateStream(rawStream: Uint8Array): Promise<string | null> {
-  try {
-    // Try zlib inflate (FlateDecode) using DecompressionStream
-    const ds = new DecompressionStream("deflate");
-    const writer = ds.writable.getWriter();
-    const reader = ds.readable.getReader();
-    
-    writer.write(rawStream).catch(() => {});
-    writer.close().catch(() => {});
-    
-    const chunks: Uint8Array[] = [];
-    let totalLen = 0;
-    const maxLen = 5 * 1024 * 1024; // 5MB safety limit
-    
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      totalLen += value.length;
-      if (totalLen > maxLen) break;
-    }
-    
-    const merged = new Uint8Array(totalLen);
-    let offset = 0;
-    for (const c of chunks) {
-      merged.set(c, offset);
-      offset += c.length;
-    }
-    
-    return new TextDecoder("latin1").decode(merged);
-  } catch {
-    return null;
-  }
-}
-
-function extractTextFromStream(content: string): string[] {
-  const textParts: string[] = [];
-  
-  // Method 1: Tj operator
-  const tjRegex = /\(([^)]*)\)\s*Tj/g;
-  let match;
-  while ((match = tjRegex.exec(content)) !== null) {
-    const decoded = decodePdfEscapes(match[1]).trim();
-    if (decoded) textParts.push(decoded);
-  }
-  
-  // Method 2: TJ array operator
-  const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
-  while ((match = tjArrayRegex.exec(content)) !== null) {
-    const items = match[1];
-    const itemRegex = /\(([^)]*)\)/g;
-    let itemMatch;
-    while ((itemMatch = itemRegex.exec(items)) !== null) {
-      const decoded = decodePdfEscapes(itemMatch[1]).trim();
-      if (decoded) textParts.push(decoded);
-    }
-  }
-  
-  // Method 3: BT/ET blocks with Tj/TJ inside (if not already captured)
-  if (textParts.length === 0) {
-    const btEtRegex = /BT\s([\s\S]*?)ET/g;
-    while ((match = btEtRegex.exec(content)) !== null) {
-      const block = match[1];
-      const innerTjRegex = /\(([^)]*)\)\s*Tj/g;
-      let innerMatch;
-      while ((innerMatch = innerTjRegex.exec(block)) !== null) {
-        const decoded = decodePdfEscapes(innerMatch[1]).trim();
-        if (decoded) textParts.push(decoded);
-      }
-    }
-  }
-  
-  return textParts;
-}
 
 async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePath: string): Promise<string | null> {
   try {
@@ -240,61 +170,73 @@ async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePa
     if (error || !data) { console.error("Storage download error:", error); return null; }
     const arrayBuffer = await data.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
-    const textDecoder = new TextDecoder("latin1");
-    const raw = textDecoder.decode(bytes);
-    
     console.log(`[PDF] Downloaded ${bucket}/${storagePath}, size: ${bytes.length} bytes`);
-    
-    const textParts: string[] = [];
-    
-    // Extract streams (both compressed and uncompressed)
-    const streamRegex = /stream\r?\n([\s\S]*?)\r?\nendstream/g;
-    let match;
-    let streamIndex = 0;
-    
-    while ((match = streamRegex.exec(raw)) !== null) {
-      streamIndex++;
-      const streamContent = match[1];
-      
-      // Try uncompressed text extraction first
-      const uncompressedText = extractTextFromStream(streamContent);
-      if (uncompressedText.length > 0) {
-        textParts.push(...uncompressedText);
-        continue;
-      }
-      
-      // Try FlateDecode (zlib decompression)
-      const streamBytes = new Uint8Array(streamContent.length);
-      for (let i = 0; i < streamContent.length; i++) {
-        streamBytes[i] = streamContent.charCodeAt(i);
-      }
-      
-      const inflated = await tryInflateStream(streamBytes);
-      if (inflated) {
-        const compressedText = extractTextFromStream(inflated);
-        if (compressedText.length > 0) {
-          textParts.push(...compressedText);
-        }
-      }
+
+    // Use pdf-parse for proper text extraction
+    let extractedText = '';
+    try {
+      const pdfParse = (await import("npm:pdf-parse@1.1.1")).default;
+      const result = await pdfParse(bytes);
+      extractedText = result.text || '';
+      console.log(`[PDF] pdf-parse extracted ${extractedText.length} chars, ${result.numpages} pages`);
+    } catch (parseError) {
+      console.error("[PDF] pdf-parse failed, using fallback:", parseError);
+      // Fallback to regex extraction
+      extractedText = fallbackExtractPdf(bytes) || '';
     }
-    
-    console.log(`[PDF] Processed ${streamIndex} streams, extracted ${textParts.length} text fragments`);
-    
-    // Fallback: broad parentheses extraction
-    if (textParts.length === 0) {
-      console.log(`[PDF] Using fallback parentheses extraction`);
-      const parenRegex = /\(([^)]{3,})\)/g;
-      while ((match = parenRegex.exec(raw)) !== null) {
-        const text = decodePdfEscapes(match[1]);
-        if (text.trim().length > 2 && !/^[0-9.]+$/.test(text.trim())) textParts.push(text);
-      }
-    }
-    
-    const fullText = sanitizeText(textParts.join(' ').replace(/\s+/g, ' ').trim());
-    console.log(`[PDF] Final extracted text length: ${fullText.length} chars`);
-    
-    return fullText.length > 10 ? fullText : null;
+
+    const sanitized = sanitizeText(extractedText.trim());
+    console.log(`[PDF] Final text length: ${sanitized.length} chars`);
+    return sanitized.length > 10 ? sanitized : null;
   } catch (e) { console.error("PDF extraction failed:", e); return null; }
+}
+
+// Fallback regex-based PDF extraction (for when pdf-parse fails)
+function fallbackExtractPdf(bytes: Uint8Array): string | null {
+  const raw = new TextDecoder("latin1").decode(bytes);
+  const textParts: string[] = [];
+
+  // Extract from BT/ET blocks
+  const btEtRegex = /BT\s([\s\S]*?)ET/g;
+  let match;
+  while ((match = btEtRegex.exec(raw)) !== null) {
+    const block = match[1];
+    const tjRegex = /\(([^)]*)\)\s*Tj/g;
+    let tjMatch;
+    while ((tjMatch = tjRegex.exec(block)) !== null) {
+      const text = tjMatch[1]
+        .replace(/\\n/g, '\n')
+        .replace(/\\r/g, '\r')
+        .replace(/\\\(/g, '(')
+        .replace(/\\\)/g, ')')
+        .replace(/\\\\/g, '\\')
+        .trim();
+      if (text.length > 1) textParts.push(text);
+    }
+    // TJ arrays
+    const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
+    let arrMatch;
+    while ((arrMatch = tjArrayRegex.exec(block)) !== null) {
+      const itemRegex = /\(([^)]*)\)/g;
+      let itemMatch;
+      while ((itemMatch = itemRegex.exec(arrMatch[1])) !== null) {
+        const text = itemMatch[1].trim();
+        if (text.length > 0) textParts.push(text);
+      }
+    }
+  }
+
+  // Broader fallback
+  if (textParts.length === 0) {
+    const parenRegex = /\(([^)]{3,})\)/g;
+    while ((match = parenRegex.exec(raw)) !== null) {
+      const text = match[1].trim();
+      if (text.length > 2 && !/^[0-9.]+$/.test(text)) textParts.push(text);
+    }
+  }
+
+  const fullText = textParts.join(' ').replace(/\s+/g, ' ').trim();
+  return fullText.length > 10 ? fullText : null;
 }
 
 async function extractPdfText(supabase: any, storagePath: string): Promise<string | null> {
