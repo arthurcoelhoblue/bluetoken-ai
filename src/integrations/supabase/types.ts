@@ -369,6 +369,8 @@ export type Database = {
           chunks_count: number
           created_at: string
           descricao: string | null
+          embed_started_at: string | null
+          embed_status: string
           empresa: string
           id: string
           nome_arquivo: string
@@ -382,6 +384,8 @@ export type Database = {
           chunks_count?: number
           created_at?: string
           descricao?: string | null
+          embed_started_at?: string | null
+          embed_status?: string
           empresa: string
           id?: string
           nome_arquivo: string
@@ -395,6 +399,8 @@ export type Database = {
           chunks_count?: number
           created_at?: string
           descricao?: string | null
+          embed_started_at?: string | null
+          embed_status?: string
           empresa?: string
           id?: string
           nome_arquivo?: string
