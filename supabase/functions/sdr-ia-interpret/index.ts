@@ -14,7 +14,7 @@ import { isHorarioComercial } from "../_shared/business-hours.ts";
 // Local modules (previously separate Edge Functions)
 import { loadFullContext, type ParsedContext } from "./message-parser.ts";
 import { classifyIntent, type ClassifierResult } from "./intent-classifier.ts";
-import { sanitizeResponse } from "./response-generator.ts";
+import { sanitizeResponse, generateResponse } from "./response-generator.ts";
 import { executeActions } from "./action-executor.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
@@ -176,9 +176,9 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 5. SANITIZE RESPONSE (direct call, no HTTP)
+    // 5. GENERATE RESPONSE VIA SONNET (not from classifier)
     // ========================================
-    let respostaTexto: string | null = classifierResult.resposta_sugerida || null;
+    let respostaTexto: string | null = null;
     const deveResponder = classifierResult.deve_responder ?? false;
 
     // Normalize actions BEFORE anti-limbo logic so invalid actions are handled correctly
@@ -207,7 +207,7 @@ serve(async (req) => {
     // Also: if clear semantic signal present OR deterministic fallback, don't treat as comprehension failure
     const isFailedIntent = !isContextualShortReply && !hasClearSemanticSignal && !isDeterministicFallback && (
       classifierResult.intent === 'NAO_ENTENDI'
-      || (classifierResult.intent === 'OUTRO' && (classifierResult.confidence < 0.8 || !classifierResult.resposta_sugerida || classifierResult.resposta_sugerida.length <= 20))
+      || (classifierResult.intent === 'OUTRO' && classifierResult.confidence < 0.8)
     );
     const ESCALATION_THRESHOLD = 3;
 
@@ -240,7 +240,7 @@ serve(async (req) => {
         classifierResult._ia_null_count_update = Math.max(0, iaNullCount - 1);
       }
       if (!respostaTexto || respostaTexto.length <= 20 || respostaTexto.toLowerCase().includes('reformul') || respostaTexto.toLowerCase().includes('não entendi')) {
-        respostaTexto = empresa === 'BLUE'
+        respostaTexto = msg.empresa === 'BLUE'
           ? 'Boa pergunta! Posso te explicar melhor como funciona. O que exatamente você gostaria de saber?'
           : 'Ótima dúvida! Deixa eu te explicar com mais detalhes. Qual ponto específico te interessa?';
       }
@@ -293,6 +293,37 @@ serve(async (req) => {
     if (acao === 'ESCALAR_HUMANO' && !respostaTexto) {
       respostaTexto = 'Vou te conectar com alguém da equipe que pode te ajudar melhor com isso!';
       classifierResult.deve_responder = true;
+    }
+
+    // ========================================
+    // 5a. GENERATE RESPONSE VIA SONNET (when deve_responder and no static override)
+    // ========================================
+    if ((classifierResult.deve_responder || deveResponder) && !respostaTexto) {
+      try {
+        log.info('Generating response via Sonnet (generateResponse)', { intent: classifierResult.intent, disc: classifierResult.disc_estimado });
+        const genResult = await generateResponse(supabase, {
+          intent: classifierResult.intent,
+          confidence: classifierResult.confidence,
+          temperatura: (parsedContext.classificacao as Record<string, unknown>)?.temperatura as string || 'MORNO',
+          sentimento: classifierResult.sentimento,
+          acao_recomendada: classifierResult.acao || classifierResult.acao_recomendada,
+          mensagem_normalizada: msg.conteudo,
+          empresa: msg.empresa,
+          canal: 'WHATSAPP',
+          contato: parsedContext.contato as Record<string, unknown> | undefined,
+          classificacao: parsedContext.classificacao as Record<string, unknown> | undefined,
+          conversation_state: {
+            ...(parsedContext.conversationState as Record<string, unknown> || {}),
+            perfil_disc: classifierResult.disc_estimado || (parsedContext.conversationState as Record<string, unknown>)?.perfil_disc,
+          },
+          historico: parsedContext.historico as { direcao: string; conteudo: string }[],
+        });
+        respostaTexto = genResult.resposta;
+        log.info('Sonnet response generated', { length: respostaTexto?.length, model: genResult.model });
+      } catch (genError) {
+        log.error('generateResponse failed, using fallback', { error: genError instanceof Error ? genError.message : String(genError) });
+        respostaTexto = `Olá${parsedContext.leadNome ? ` ${parsedContext.leadNome}` : ''}! Recebi sua mensagem. Vou encaminhar para um especialista que pode te ajudar melhor. 😊`;
+      }
     }
 
     if (respostaTexto && (classifierResult.deve_responder || deveResponder)) {
