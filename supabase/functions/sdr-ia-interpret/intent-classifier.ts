@@ -385,7 +385,7 @@ async function fetchRelevantKnowledgeRAG(mensagem: string, empresa: EmpresaTipo)
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query: mensagem, empresa, top_k: 5, threshold: 0.3 }),
+      body: JSON.stringify({ query: mensagem, empresa, top_k: 5, threshold: 0.55 }),
     });
 
     if (!resp.ok) {
@@ -434,7 +434,7 @@ Amélia, 32 anos, economista, especialista em finanças digitais do Grupo Blue (
 ## COMUNICAÇÃO: Curta/natural. UMA pergunta por mensagem. NUNCA "Ótima pergunta!". NUNCA prometa enviar algo depois ("vou te mandar", "já envio", "segue o resumo"). Inclua TODO o conteúdo na PRÓPRIA resposta. Se não tiver a informação, diga que vai verificar com a equipe.
 ## DESQUALIFICAÇÃO: Lead sem perfil → DESQUALIFICAR_LEAD
 
-## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{}},"disc_estimado":null,"departamento_destino":null}`;
+## FORMATO JSON: {"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"novo_estado_funil":"...","frameworks_atualizados":{"spin":{}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}`;
 
 // ========================================
 // IDENTIDADE POR EMPRESA (injetada no prompt)
@@ -462,14 +462,8 @@ Amélia, 32 anos, economista, Grupo Blue Labs (3 anos). Atua em 4 verticais: Blu
 - C (Conforme): Perguntas técnicas, "me manda os dados", "qual a rentabilidade exata", comparações, ceticismo
 Retorne em disc_estimado: D, I, S ou C. Se não for possível determinar, retorne null.
 
-## DISC → RESPOSTA OBRIGATÓRIA
-Quando disc_estimado = "C": a resposta_sugerida DEVE conter dados numéricos concretos (rentabilidade, prazos, valores exatos da seção PRODUTOS). NUNCA use frases vagas como "boa rentabilidade" ou "retorno atrativo". Cite números específicos. Se não houver dados, diga "vou levantar os números exatos com a equipe".
-Quando disc_estimado = "D": a resposta_sugerida DEVE ser ≤3 frases, direto ao ponto, sem rodeios, sem perguntas desnecessárias.
-Quando disc_estimado = "S": a resposta_sugerida DEVE enfatizar segurança, garantias reais e regulação. Não apresse o lead.
-Quando disc_estimado = "I": a resposta_sugerida DEVE incluir exemplos de sucesso ou histórias. Tom entusiasmado mas profissional.
-
 ## FORMATO JSON OBRIGATÓRIO:
-{"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"resposta_sugerida":"...","novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
+{"intent":"...","confidence":0.85,"summary":"...","acao":"...","sentimento":"POSITIVO|NEUTRO|NEGATIVO","deve_responder":true,"novo_estado_funil":"...","frameworks_atualizados":{"spin":{"s":"dado"}},"disc_estimado":null,"departamento_destino":null,"lead_facts_extraidos":{"cargo":null,"empresa_lead":null,"pain_points":[],"concorrentes":[],"decisor":null,"volume_operacoes":null,"patrimonio_faixa":null}}
 
 ## LEAD_FACTS: Extraia SEMPRE quaisquer fatos concretos mencionados pelo lead (cargo, empresa do lead, dores, concorrentes, decisor, volume de operações, patrimônio). Retorne em "lead_facts_extraidos". Campos sem informação = null ou [].
 
@@ -500,20 +494,21 @@ export async function classifyIntent(supabase: SupabaseClient, params: ClassifyP
   const { mensagem_normalizada, empresa, historico, classificacao, conversation_state, contato, mode, triageSummary, leadNome, cadenciaNome, pessoaContext, reprocessContext, foraDoHorario } = params;
   const isPassiveChat = mode === 'PASSIVE_CHAT';
 
-  // A/B testing prompt
+  // A/B testing prompt — DESATIVADO durante reestruturação (Passo 6)
   let dynamicPrompt = '';
   let selectedPromptVersionId: string | null = null;
-  try {
-    const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-ia-interpret').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
-    if (pvList && pvList.length > 0) {
-      const totalWeight = pvList.reduce((s: number, p: { ab_weight: number | null }) => s + (p.ab_weight || 100), 0);
-      let rand = Math.random() * totalWeight;
-      let selected = pvList[0];
-      for (const pv of pvList) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
-      dynamicPrompt = selected.content;
-      selectedPromptVersionId = selected.id;
-    }
-  } catch { /* ignore */ }
+  // TODO: Reativar após estabilização da nova arquitetura classificador/gerador
+  // try {
+  //   const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-ia-interpret').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
+  //   if (pvList && pvList.length > 0) {
+  //     const totalWeight = pvList.reduce((s: number, p: { ab_weight: number | null }) => s + (p.ab_weight || 100), 0);
+  //     let rand = Math.random() * totalWeight;
+  //     let selected = pvList[0];
+  //     for (const pv of pvList) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
+  //     dynamicPrompt = selected.content;
+  //     selectedPromptVersionId = selected.id;
+  //   }
+  // } catch { /* ignore */ }
 
   let activeSystemPrompt = isPassiveChat ? PASSIVE_CHAT_PROMPT : (dynamicPrompt || SYSTEM_PROMPT);
 
@@ -802,7 +797,7 @@ REGRAS FORA DO HORÁRIO:
     functionName: 'sdr-intent-classifier',
     empresa,
     temperature: 0.3,
-    maxTokens: 1500,
+    maxTokens: 800,
     promptVersionId: selectedPromptVersionId || undefined,
     supabase,
     model: 'claude-haiku',  // Haiku 4.5 — menor custo, suficiente para classificação

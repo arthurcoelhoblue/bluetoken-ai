@@ -206,7 +206,7 @@ serve(async (req) => {
     }
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-    const { query, empresa, top_k = 5, threshold = 0.2 } = await req.json();
+    const { query, empresa, top_k = 5, threshold = 0.55 } = await req.json();
 
     if (!query || !empresa) {
       return new Response(JSON.stringify({ error: "query and empresa are required" }), {

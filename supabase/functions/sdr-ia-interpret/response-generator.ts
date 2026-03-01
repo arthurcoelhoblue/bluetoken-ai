@@ -208,7 +208,7 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 5, threshold: 0.3 }),
+      body: JSON.stringify({ query: mensagem_normalizada, empresa, top_k: 5, threshold: 0.55 }),
     });
 
     if (ragResp.ok) {
@@ -277,30 +277,66 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
   }
 
   if (!productsText) {
-    const { data: products } = await supabase.from('product_knowledge').select('produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
-    const typedProducts = (products || []) as ProductRow[];
-    productsText = typedProducts.map((p) => {
-      let line = `${p.produto_nome}: ${p.descricao_curta || ''}`;
-      if (p.preco_texto) line += ` | Preço: ${p.preco_texto}`;
-      if (p.diferenciais) line += ` | Diferenciais: ${p.diferenciais}`;
-      return line;
-    }).join('\n') || 'Nenhum produto cadastrado — NÃO invente informações.';
+    // Fallback enriquecido: carregar products + knowledge_sections + knowledge_faq
+    const { data: products } = await supabase.from('product_knowledge').select('id, produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
+    const typedProducts = (products || []) as (ProductRow & { id: string })[];
+    
+    if (typedProducts.length > 0) {
+      const productIds = typedProducts.map(p => p.id);
+      
+      // Carregar knowledge_sections associadas (top 3 por produto)
+      const { data: sections } = await supabase.from('knowledge_sections')
+        .select('product_knowledge_id, titulo, conteudo')
+        .in('product_knowledge_id', productIds)
+        .order('ordem')
+        .limit(15);
+      
+      // Carregar knowledge_faq associados (top 5 por produto)
+      const { data: faqs } = await supabase.from('knowledge_faq')
+        .select('pergunta, resposta')
+        .eq('empresa', empresa)
+        .limit(10);
+      
+      productsText = typedProducts.map((p) => {
+        let line = `### ${p.produto_nome}\n${p.descricao_curta || ''}`;
+        if (p.preco_texto) line += `\nPreço: ${p.preco_texto}`;
+        if (p.diferenciais) line += `\nDiferenciais: ${p.diferenciais}`;
+        // Append sections for this product
+        const productSections = (sections || []).filter((s: any) => s.product_knowledge_id === p.id);
+        for (const s of productSections) {
+          line += `\n**${(s as any).titulo}**: ${(s as any).conteudo}`;
+        }
+        return line;
+      }).join('\n\n');
+      
+      // Append FAQs
+      if (faqs && faqs.length > 0) {
+        productsText += '\n\n## PERGUNTAS FREQUENTES\n';
+        for (const faq of faqs) {
+          productsText += `- **${(faq as any).pergunta}**: ${(faq as any).resposta}\n`;
+        }
+      }
+    } else {
+      productsText = 'Nenhum produto cadastrado — NÃO invente informações.';
+    }
   }
 
   let systemPrompt = '';
   let selectedPromptId: string | null = params.promptVersionId || null;
-  try {
-    const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-response-generator').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
-    if (pvList && pvList.length > 0) {
-      const rows = pvList as PromptVersionRow[];
-      const totalWeight = rows.reduce((sum: number, p) => sum + (p.ab_weight || 100), 0);
-      let rand = Math.random() * totalWeight;
-      let selected = rows[0];
-      for (const pv of rows) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
-      systemPrompt = selected.content;
-      selectedPromptId = selected.id;
-    }
-  } catch { /* use default */ }
+  // A/B testing — DESATIVADO durante reestruturação (Passo 6)
+  // TODO: Reativar após estabilização da nova arquitetura classificador/gerador
+  // try {
+  //   const { data: pvList } = await supabase.from('prompt_versions').select('id, content, ab_weight').eq('function_name', 'sdr-response-generator').eq('prompt_key', 'system').eq('is_active', true).gt('ab_weight', 0);
+  //   if (pvList && pvList.length > 0) {
+  //     const rows = pvList as PromptVersionRow[];
+  //     const totalWeight = rows.reduce((sum: number, p) => sum + (p.ab_weight || 100), 0);
+  //     let rand = Math.random() * totalWeight;
+  //     let selected = rows[0];
+  //     for (const pv of rows) { rand -= (pv.ab_weight || 100); if (rand <= 0) { selected = pv; break; } }
+  //     systemPrompt = selected.content;
+  //     selectedPromptId = selected.id;
+  //   }
+  // } catch { /* use default */ }
 
   // Build DISC tone block
   const discTone = getDiscToneInstruction(conversation_state?.perfil_disc as string | null);
@@ -343,7 +379,16 @@ ${empresa === 'AXIA' ? `
 ## 🚫 PROCESSO AXIA — REGRA CRÍTICA
 A Axia fornece plataformas modulares. Primeiro módulo: R$ 14.900/mês, módulos adicionais: R$ 4.900/mês.
 O objetivo é entender o projeto do lead e agendar uma demo técnica.
-PROIBIDO: prometer customizações não listadas ou prazos de entrega sem consultar a equipe técnica.` : ''}`;
+PROIBIDO: prometer customizações não listadas ou prazos de entrega sem consultar a equipe técnica.` : ''}
+
+## 🎯 DIRETRIZ DE ANCORAGEM (GROUNDING) — OBRIGATÓRIA
+Sua resposta DEVE ser baseada EXCLUSIVAMENTE nas informações da seção PRODUTOS abaixo.
+- Se a informação estiver nos PRODUTOS, responda diretamente com dados concretos.
+- Se a informação NÃO estiver nos PRODUTOS, você está PROIBIDO de inventar.
+  Responda: "Preciso confirmar com a equipe para te dar a informação exata."
+  ou "Não tenho essa informação no momento, mas vou verificar para você."
+- NUNCA use seu conhecimento geral para complementar. Use APENAS o contexto fornecido.
+- Se o lead perguntar algo não coberto pelos PRODUTOS, reconheça a pergunta e diga que vai verificar.`;
   } else if (discTone) {
     systemPrompt += `\n\n${discTone}`;
   }
