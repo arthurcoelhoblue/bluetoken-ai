@@ -1,61 +1,64 @@
 
 
-# Regra Anti-Limbo: Deal Obrigatório para Toda Conversa
+# Blindagem Anti-Limbo: Retry + Reconciliação
 
-## Contexto
+## Problema
 
-Hoje, o `whatsapp-inbound` cria `lead_contacts` (e via trigger, `contacts`) mas **não cria deals**. Deals só são criados manualmente (vendedor via `CreateDealFromConversationDialog`) ou pela IA quando escala leads quentes (`autoCreateDeal` no `sdr-ia-interpret`). Isso gera "conversas sem deal" no dashboard.
-
-A `lead_contacts` já tem `utm_campaign` e `nome` disponíveis — exatamente o que precisamos para o título do deal.
+A `autoCreateDealIfNeeded` no `whatsapp-inbound` é fire-and-forget com 6 pontos de falha silenciosa (trigger pendente, pipeline/stage/owner não encontrado, erro de insert, timeout). Se falhar, a conversa fica sem deal permanentemente.
 
 ## Plano
 
-### 1. Auto-criação de deal no `whatsapp-inbound` (backend)
+### 1. Retry com backoff no `autoCreateDealIfNeeded` (whatsapp-inbound)
 
-Após salvar a mensagem inbound e ter um `resolvedLeadId` + `empresa`, o webhook vai:
+Substituir o `setTimeout(600ms)` fixo por um loop de retry (3 tentativas, delays de 800ms, 1500ms, 3000ms) na etapa de buscar o `contacts` via `legacy_lead_id`. Se após 3 tentativas o contact não existir, registrar em uma tabela de falhas para reconciliação.
 
-1. Esperar ~500ms para o trigger `fn_sync_lead_to_contact` criar o `contacts` correspondente
-2. Buscar o `contacts.id` via `legacy_lead_id`
-3. Verificar se já existe deal ABERTO para esse contact
-4. Se não existe, criar deal automaticamente:
-   - **Pipeline**: default da empresa (`is_default = true`)
-   - **Stage**: primeiro estágio aberto (menor `posicao`, `is_won = false`, `is_lost = false`)
-   - **Título**: `"Nome do Lead [campanha]"` — usando `lead_contacts.nome` + `lead_contacts.utm_campaign`; se campanha vazia, só o nome; se nome vazio, `"Lead WhatsApp [telefone]"`
-   - **Owner**: Round-robin (vendedor com menos deals abertos na empresa), usando a mesma lógica que já existe no `action-executor.ts`
-   - **Temperatura**: `FRIO` (inbound inicial)
+### 2. Tabela `deal_creation_failures` (migration)
 
-### 2. Filtro anti-limbo no frontend (`useAtendimentos.ts`)
+```sql
+CREATE TABLE public.deal_creation_failures (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  lead_id TEXT NOT NULL,
+  empresa TEXT NOT NULL,
+  phone_e164 TEXT,
+  motivo TEXT NOT NULL,        -- 'CONTACT_NOT_FOUND', 'NO_PIPELINE', 'NO_STAGE', 'NO_OWNER', 'INSERT_ERROR'
+  tentativas INT DEFAULT 1,
+  resolvido BOOLEAN DEFAULT false,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);
+```
 
-- **Vendedor (não-admin)**: remover a condição `noDealYet` — só vê conversas com deal onde é owner ou que assumiu
-- **Admin**: mantém visibilidade total
+Com RLS para admins e índice em `resolvido = false`.
 
-### 3. Kanban — remover coluna "Sem deal" (`ConversasKanban.tsx`)
+### 3. Registrar falhas ao invés de `return` silencioso
 
-Remover o bloco que cria a coluna `__sem_deal__` (linhas 46-54). Todas as conversas no kanban terão deal.
+Em cada ponto de falha da `autoCreateDealIfNeeded` (pipeline não encontrado, stage não encontrado, owner indisponível, erro de insert), ao invés de apenas logar e retornar, inserir um registro na `deal_creation_failures` com o motivo específico.
 
-### 4. Card visual — badge "IA atendendo" (`ConversaCard.tsx`)
+### 4. Edge function `deal-reconciler` (CRON a cada 10min)
 
-Quando `modo !== 'MANUAL'` e é visível para admin, mostrar badge contextual.
+Nova edge function que:
+1. Busca registros em `deal_creation_failures` onde `resolvido = false` e `tentativas < 5`
+2. Para cada um, re-executa a lógica de criação de deal (buscar contact, pipeline, stage, owner, insert)
+3. Se sucesso: marca `resolvido = true, resolved_at = now()`
+4. Se falha: incrementa `tentativas`
+5. Se `tentativas >= 5`: loga alerta e cria notificação para admins
 
-### 5. Mobile
+### 5. CRON job para o reconciler
 
-Revisar os novos elementos para responsividade (cards, filtros, kanban scroll touch).
+```sql
+SELECT cron.schedule('deal-reconciler-10min', '*/10 * * * *', ...);
+```
 
-## Arquivos a modificar
+### 6. Notificação para admin quando falha persiste
+
+Após 5 tentativas falhadas, inserir na tabela `notifications` um alerta para todos os admins da empresa: "Lead X está sem deal vinculado — ação manual necessária".
+
+## Arquivos
 
 | Arquivo | Ação |
 |---|---|
-| `supabase/functions/whatsapp-inbound/index.ts` | Adicionar auto-criação de deal após `saveInboundMessage` com título `"Nome [campanha]"` e round-robin owner |
-| `src/hooks/useAtendimentos.ts` | Remover `noDealYet` para não-admins |
-| `src/components/conversas/ConversasKanban.tsx` | Remover coluna "Sem deal" |
-| `src/components/conversas/ConversaCard.tsx` | Badge "IA atendendo" para contexto admin |
-
-## Detalhes do título do deal
-
-```text
-Nome presente + campanha presente → "João Silva [Meta Ads Investidores]"
-Nome presente + sem campanha      → "João Silva"
-Sem nome + campanha presente      → "Lead WhatsApp [Meta Ads Investidores]"
-Sem nome + sem campanha           → "Lead WhatsApp +5511999887766"
-```
+| `supabase/functions/whatsapp-inbound/index.ts` | Retry com backoff + registrar falhas em `deal_creation_failures` |
+| `supabase/functions/deal-reconciler/index.ts` | **Novo** — CRON reconciliador |
+| Migration SQL | Tabela `deal_creation_failures` + RLS |
+| CRON SQL | Agendar `deal-reconciler` a cada 10min |
 
