@@ -1,63 +1,45 @@
 
 
-# Corrigir transcrição de áudio do WhatsApp
+# Usar OpenAI Whisper API para transcrição de áudio
 
 ## Problema
-O áudio do WhatsApp chega em OGG/Opus. A API `input_audio` do GPT aceita apenas `wav` e `mp3`. O código envia `format: "ogg"` (linha 421), causando erro 400.
+O Lovable AI Gateway (endpoint multimodal) não aceita áudio OGG nativamente. O WhatsApp envia áudio em OGG/Opus. Enviar como `format: "mp3"` é mentir sobre o formato e provavelmente falha.
 
 ## Solução
-Converter o áudio OGG para MP3 antes de enviar à API. Como não temos ffmpeg no edge runtime, a abordagem mais robusta é usar a **API de Speech-to-Text do OpenAI (Whisper)** que aceita OGG nativamente, em vez do endpoint multimodal `input_audio`.
-
-Porém, o Lovable AI Gateway não expõe o endpoint Whisper (`/v1/audio/transcriptions`). Alternativas:
-
-1. **Usar Gemini Flash via Lovable AI Gateway** — Gemini aceita áudio inline em qualquer formato (OGG, MP3, WAV). Trocar o modelo para `google/gemini-2.5-flash` e usar o formato de conteúdo adequado para áudio.
-
-2. **Usar OpenAI Whisper diretamente** — via `OPENAI_API_KEY` que já existe nos secrets, chamar `https://api.openai.com/v1/audio/transcriptions` com o arquivo OGG como form-data.
-
-### Recomendação: Opção 1 (Gemini Flash via Gateway)
-- Sem custo adicional de API key
-- Gemini aceita OGG nativamente via inline_data
-- Mais rápido e mais barato que GPT-5-mini
+Usar a **API Whisper do OpenAI** diretamente via `OPENAI_API_KEY` (já configurada nos secrets). O Whisper aceita OGG nativamente como multipart form-data e é o modelo de referência para speech-to-text.
 
 ## Mudança
 
-**Arquivo**: `supabase/functions/meta-webhook/index.ts`, linhas 407-432
+**Arquivo**: `supabase/functions/meta-webhook/index.ts`, função `transcribeAudio` (linhas ~398-441)
 
-Trocar a chamada multimodal GPT por Gemini Flash:
+Substituir a chamada multimodal ao Lovable Gateway por uma chamada direta ao endpoint Whisper:
 
 ```typescript
-const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+const OPENAI_API_KEY = Deno.env.get("OPENAI_API_KEY");
+if (!OPENAI_API_KEY) {
+  log.error("OPENAI_API_KEY not configured");
+  return null;
+}
+
+const audioResp = await fetch(audioUrl);
+if (!audioResp.ok) return null;
+const audioBlob = await audioResp.blob();
+
+const formData = new FormData();
+formData.append("file", new File([audioBlob], "audio.ogg", { type: "audio/ogg" }));
+formData.append("model", "whisper-1");
+formData.append("language", "pt");
+formData.append("response_format", "text");
+
+const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
   method: "POST",
-  headers: {
-    Authorization: `Bearer ${LOVABLE_API_KEY}`,
-    "Content-Type": "application/json",
-  },
-  body: JSON.stringify({
-    model: "google/gemini-2.5-flash",
-    messages: [
-      {
-        role: "user",
-        content: [
-          {
-            type: "input_audio",
-            input_audio: { data: base64Audio, format: "mp3" },
-          },
-          {
-            type: "text",
-            text: "Transcreva este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, sem aspas, sem prefixos.",
-          },
-        ],
-      },
-    ],
-    max_tokens: 2048,
-  }),
+  headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+  body: formData,
 });
 ```
 
-O Gemini via gateway aceita áudio em formato inline. Se `mp3` também falhar via gateway, usaremos o fallback direto com OpenAI Whisper API (`OPENAI_API_KEY`) que aceita OGG como multipart form-data.
-
-Também verificar e aplicar a mesma correção no `call-transcribe/index.ts` (linha 141) que usa `format: 'mp3'` — esse já está correto.
-
-## Também corrigir
-O mesmo padrão existe em `call-transcribe/index.ts` mas já usa `format: 'mp3'` — sem mudança necessária lá.
+- Remove a conversão para base64 (desnecessária — Whisper usa multipart)
+- Remove a dependência do `LOVABLE_API_KEY` para transcrição
+- Whisper aceita OGG, MP3, WAV, M4A nativamente
+- Mantém o log de erro e retorno `null` em caso de falha
 
