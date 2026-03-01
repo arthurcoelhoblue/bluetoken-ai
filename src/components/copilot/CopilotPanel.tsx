@@ -77,7 +77,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
   const abortRef = useRef<AbortController | null>(null);
 
   const {
-    messages, isLoading: historyLoading, saveMessage, clearHistory,
+    messages, isLoading: historyLoading, saveMessage, saveMessageQuiet, clearHistory,
     addLocalMessage, updateLastMessage, sessionBreaks,
   } = useCopilotMessages({
     contextType: context.type,
@@ -214,9 +214,9 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
         }
       }
 
-      // Save final assistant message to DB
+      // Save final assistant message to DB (quiet — placeholder already in state)
       if (assistantContent) {
-        await saveMessage('assistant', assistantContent, {
+        await saveMessageQuiet('assistant', assistantContent, {
           model_used: metaData.model,
           tokens_input: metaData.tokens_input,
           tokens_output: metaData.tokens_output,

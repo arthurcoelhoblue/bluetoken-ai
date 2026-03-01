@@ -211,20 +211,32 @@ serve(async (req) => {
     try {
       const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
       if (lastUserMsg) {
-        const { data: searchResult, error: searchError } = await supabase.functions.invoke('knowledge-search', {
-          body: {
+        const knowledgeSearchUrl = `${envConfig.SUPABASE_URL}/functions/v1/knowledge-search`;
+        const searchResp = await fetch(knowledgeSearchUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+          body: JSON.stringify({
             query: lastUserMsg,
             empresa,
             source_type_filter: 'behavioral',
             top_k: 5,
-          },
+          }),
         });
-        if (!searchError && searchResult?.results?.length > 0) {
-          const chunks = searchResult.results
-            .map((r: { content: string; similarity: number }) => r.content)
-            .join('\n---\n');
-          coachingBlock = `\n\n## COACHING TÁTICO — Metodologia de Vendas\nAplique as técnicas abaixo de forma prática nas suas recomendações ao vendedor. NÃO cite nomes de livros ou autores. Traduza os conceitos em dicas acionáveis de abordagem, timing, perguntas estratégicas e técnicas de negociação.\n\n${chunks}`;
-          log.info('Coaching behavioral injetado', { chunks: searchResult.results.length });
+
+        if (searchResp.ok) {
+          const searchResult = await searchResp.json();
+          if (searchResult?.results?.length > 0) {
+            const chunks = searchResult.results
+              .map((r: { content: string; similarity: number }) => r.content)
+              .join('\n---\n');
+            coachingBlock = `\n\n## COACHING TÁTICO — Metodologia de Vendas\nAplique as técnicas abaixo de forma prática nas suas recomendações ao vendedor. NÃO cite nomes de livros ou autores. Traduza os conceitos em dicas acionáveis de abordagem, timing, perguntas estratégicas e técnicas de negociação.\n\n${chunks}`;
+            log.info('Coaching behavioral injetado', { chunks: searchResult.results.length });
+          }
+        } else {
+          log.warn('knowledge-search returned non-OK', { status: searchResp.status });
         }
       }
     } catch (coachErr) {
