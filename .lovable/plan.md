@@ -1,43 +1,44 @@
 
 
-# Diagnóstico: Contatos CS aparecendo apenas ~900
+# Incluir Data de Cadastro na Sincronização Tokeniza Gov
 
-## O que está acontecendo
+## Situação Atual
 
-Os dados **estão todos no banco** -- o sync do Tokeniza Gov está funcionando:
+A API de exportação do Gov (`investor-export`) busca investidores mas **não inclui** o campo `created_at` no select:
 
-| Dado | Quantidade |
-|------|-----------|
-| Contatos TOKENIZA (total) | 4.481 |
-| cs_customers ativos (com investimento) | 981 |
-| cs_customers inativos (cadastrados sem investimento) | 3.504 |
-| Contratos (posições de investimento) | 7.843 |
-| Clientes com contratos | 966 |
+```
+.select("id, external_id, full_name, email, phone, document, person_type, kyc_status, suitability, is_active")
+```
 
-O motivo de você ver apenas ~900 é que a **tela de Clientes CS** (`CSClientesPage`) inicia com o filtro `is_active: true` por padrão. Os 3.504 cadastrados sem investimento foram importados como `is_active: false` e ficam escondidos.
+A data de cadastro na plataforma Tokeniza existe na tabela `investors.created_at` do Gov, mas não está sendo exportada nem consumida.
 
-## Proposta
+## Plano
 
-### 1. Mudar o filtro padrão da tela CS Clientes
+### Passo 1 — Expor `created_at` na API de exportação (projeto Gov)
 
-Remover o filtro `is_active: true` como padrão, ou trocar por um seletor visível com 3 opções: "Todos", "Ativos", "Inativos" -- para que o usuário escolha o que quer ver.
+No arquivo `supabase/functions/investor-export/index.ts` do projeto [Tokeniza Gov Integration](/projects/f8d2848a-cdde-44c2-8a72-46b4113f9a87):
+- Adicionar `created_at` ao select da tabela `investors` (linha 38)
+- Incluir `registered_at: inv.created_at` no objeto retornado por investidor (linha 131-142)
 
-### 2. Melhorar a visualização de status
+### Passo 2 — Adicionar coluna `data_cadastro_plataforma` na tabela `contacts`
 
-Adicionar badges visuais claros de "Investidor Ativo" vs "Cadastrado" na listagem, para diferenciar rapidamente sem depender de filtro oculto.
+Nova coluna `timestamptz` nullable para armazenar a data de cadastro na plataforma Tokeniza, sem confundir com o `created_at` do nosso sistema (que é a data de criação do registro aqui na Amélia).
 
-### 3. Atualizar contadores do Dashboard CS
+### Passo 3 — Consumir o campo no `tokeniza-gov-sync`
 
-Os cards de métricas no Dashboard CS também filtram por `is_active: true`. Ajustar para mostrar:
-- Total de clientes na base (todos)
-- Investidores ativos
-- Cadastrados sem investimento
+No `supabase/functions/tokeniza-gov-sync/index.ts`:
+- Adicionar `registered_at` à interface `Investor`
+- Gravar `data_cadastro_plataforma: investor.registered_at` no insert/update de `contacts`
+- Também salvar em `sgt_dados_extras` do `cs_customers` como `data_cadastro_plataforma`
 
-Assim fica claro que a base tem os ~4.500 registros e não apenas ~900.
+### Passo 4 — Exibir na UI
 
-## Detalhes técnicos
+Mostrar a data de cadastro na plataforma nos detalhes do cliente CS, ao lado das outras informações do investidor.
 
-- **Arquivo**: `src/pages/cs/CSClientesPage.tsx` linha 33 -- mudar `{ is_active: true }` para `{}` e adicionar toggle de filtro no UI
-- **Arquivo**: `src/pages/cs/CSDashboardPage.tsx` linhas 24-25 -- ajustar métricas para incluir totais
-- O hook `useCSCustomers` já suporta o filtro is_active como opcional, não precisa de mudança
+## Detalhes Técnicos
+
+- **Projeto Gov**: edição em `investor-export/index.ts` — 2 linhas
+- **Migration**: `ALTER TABLE contacts ADD COLUMN data_cadastro_plataforma timestamptz`
+- **Edge function**: `tokeniza-gov-sync/index.ts` — interface + insert/update
+- **UI**: componente de detalhe do cliente CS
 
