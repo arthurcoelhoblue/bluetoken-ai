@@ -7,6 +7,7 @@ import { useSendManualMessage } from '@/hooks/useConversationMode';
 import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
 import { TemplatePickerDialog } from './TemplatePickerDialog';
+import { AudioRecorder } from './AudioRecorder';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -27,6 +28,7 @@ export function ManualMessageInput({
   const [text, setText] = useState('');
   const [dealDialogOpen, setDealDialogOpen] = useState(false);
   const [pendingMessage, setPendingMessage] = useState('');
+  const [pendingAudioUrl, setPendingAudioUrl] = useState<string | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [windowExpired, setWindowExpired] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -74,16 +76,19 @@ export function ManualMessageInput({
     autoResize();
   }, [text, autoResize]);
 
-  const doSend = (message: string) => {
-    if (!message || !telefone) return;
+  const doSend = (message: string, mediaType?: string, mediaUrl?: string) => {
+    if (!telefone) return;
+    if (!message && !mediaUrl) return;
+
     sendMutation.mutate(
       {
         ...(leadId ? { leadId } : {}),
         ...(contactId ? { contactId } : {}),
         empresa,
         telefone,
-        conteudo: message,
+        conteudo: message || '[Áudio]',
         modoAtual: modo,
+        ...(mediaType && mediaUrl ? { mediaType, mediaUrl } : {}),
       },
       {
         onSuccess: () => {
@@ -112,9 +117,23 @@ export function ManualMessageInput({
     doSend(trimmed);
   };
 
+  const handleAudioReady = (audioUrl: string) => {
+    if (contact && !hasDeal) {
+      setPendingAudioUrl(audioUrl);
+      setPendingMessage('');
+      setDealDialogOpen(true);
+      return;
+    }
+
+    doSend('[Áudio]', 'audio', audioUrl);
+  };
+
   const handleDealCreated = (_dealId: string) => {
     refetchDeals();
-    if (pendingMessage) {
+    if (pendingAudioUrl) {
+      doSend('[Áudio]', 'audio', pendingAudioUrl);
+      setPendingAudioUrl(null);
+    } else if (pendingMessage) {
       doSend(pendingMessage);
       setPendingMessage('');
     }
@@ -183,6 +202,10 @@ export function ManualMessageInput({
           placeholder={windowExpired ? 'Envie um template para reabrir a conversa...' : placeholder}
           className="min-h-[40px] max-h-[120px] resize-none flex-1"
           rows={1}
+          disabled={sendMutation.isPending || windowExpired}
+        />
+        <AudioRecorder
+          onAudioReady={handleAudioReady}
           disabled={sendMutation.isPending || windowExpired}
         />
         <Button

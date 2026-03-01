@@ -384,9 +384,9 @@ async function doDownload(
   }
 }
 
-// ---- Transcribe audio via Gemini 2.5 Flash ----
+// ---- Transcribe audio via OpenAI GPT ----
 async function transcribeAudio(
-  supabase: ReturnType<typeof createServiceClient>,
+  _supabase: ReturnType<typeof createServiceClient>,
   audioUrl: string
 ): Promise<string | null> {
   const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
@@ -411,7 +411,7 @@ async function transcribeAudio(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
+      model: "openai/gpt-5-mini",
       messages: [
         {
           role: "user",
@@ -432,7 +432,7 @@ async function transcribeAudio(
   });
 
   if (!resp.ok) {
-    log.error("Gemini transcription failed", { status: resp.status, body: await resp.text() });
+    log.error("GPT transcription failed", { status: resp.status, body: await resp.text() });
     return null;
   }
 
