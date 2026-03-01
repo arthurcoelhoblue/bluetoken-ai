@@ -1,55 +1,78 @@
+# Crítica e Plano de Adequações — Análise Competitiva Crisp.chat
+
+## Diagnóstico: Amélia vs. Arquitetura Crisp (4 Camadas)
+
+O relatório aponta que o diferencial do Crisp não é o modelo de IA, mas a **separação de responsabilidades em 4 camadas**. Veja o estado atual da Amélia:
 
 
-# Fix: Indexação incremental + batching para evitar CPU timeout
+| Camada Crisp                           | Estado na Amélia                                                                              | Avaliação        |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------- |
+| **1. Knowledge** (O que sabe)          | Implementado — `knowledge_sections`, `knowledge_faq`, `knowledge_embeddings`, RAG funcional   | ✅ Bom            |
+| **2. Instructions** (Como se comporta) | **Hardcoded** em `intent-classifier.ts` e `response-generator.ts` (~80 linhas de prompt fixo) | ❌ Problema grave |
+| **3. Routing Rules** (O que faz)       | **Hardcoded** — intents e ações fixas no código, sem tabela editável                          | ❌ Problema grave |
+| **4. Business Desc.** (Quem é)         | **Hardcoded** — `empresaDesc` e regras por empresa são strings fixas no código                | ⚠️ Parcial       |
 
-## Problema Raiz
-O livro "As armas da persuasão" gerou 402 chunks. A Edge Function processou 390 com sucesso mas foi encerrada por **CPU Time exceeded** antes de finalizar. Como `chunks_count` e `embed_status` só são atualizados na última linha (após todos os chunks), o livro ficou com `chunks_count: 0` e `embed_status: 'processing'`.
 
-## Correção (2 partes)
+### Problemas concretos identificados
 
-### 1. Atualizar `chunks_count` incrementalmente durante o processamento
-No `embedChunks()`, a cada 20 chunks processados (onde já existe o log de progresso), fazer um UPDATE parcial no `behavioral_knowledge` com o `embedded` acumulado até aquele ponto. Assim, mesmo se a função morrer no meio, o `chunks_count` reflete o progresso real.
+1. **Prompt monolítico**: O `SYSTEM_PROMPT` do intent-classifier tem ~25 linhas misturando persona, DISC, framework, compliance e formato JSON. Qualquer ajuste exige deploy.
+2. **Threshold de confiança RAG muito baixo**: O threshold atual é `0.55` (linha 211 do response-generator). O relatório recomenda `0.70` para reduzir alucinações.
+3. **Sem limiar de "não sei"**: A Amélia tenta responder mesmo com chunks de baixa similaridade. O Crisp escala para humano quando não tem confiança.
+4. **Ciclo de revisão existe mas está subutilizado**: Há `knowledge_search_feedback` e `knowledge_gaps`, mas falta UI de revisão semanal com ação direta (criar FAQ a partir de gap).
+5. **Tabela `prompt_versions` existe mas está desativada**: O código de A/B testing está comentado tanto no classifier quanto no generator.
 
-```typescript
-// Dentro do loop de embedChunks, junto com o log de progresso:
-if ((i + 1) % 20 === 0) {
-  console.log(`[embed] Progress: ${i+1}/${chunks.length}...`);
-  // Atualizar chunks_count parcial se for behavioral
-  if (sourceType === 'behavioral') {
-    await supabase.from("behavioral_knowledge")
-      .update({ chunks_count: embedded })
-      .eq("id", sourceId);
-  }
-}
-```
+---
 
-### 2. Processar em batches com resposta antecipada para livros grandes
-Para livros com mais de ~250 chunks, a função deve:
-- Processar os primeiros N chunks (ex: 200) dentro do request
-- Retornar imediatamente com `{ embedded: 200, total: 402, status: 'partial' }`
-- Disparar uma segunda chamada via `fetch()` fire-and-forget para continuar do chunk 201 em diante
+## Plano de Adequações (3 fases)
 
-Isso exige adicionar um parâmetro `start_from` na action `embed_behavioral` e usar o `chunk_index` para saber de onde continuar sem re-deletar embeddings já inseridos.
+### Fase 1 — Desacoplamento: Tabelas de Instructions e Routing Rules
 
-### 3. Fix imediato: corrigir dados atuais
-Atualizar o registro atual para refletir os 390 embeddings que já existem:
-```sql
-UPDATE behavioral_knowledge 
-SET chunks_count = 390, embed_status = 'done' 
-WHERE id = '41535467-e403-46f9-9e09-7a4ff2d92854';
-```
+Criar duas novas tabelas para tornar instruções e regras editáveis sem deploy:
 
-E o "Previsivelmente Irracional" que também está com status `processing` e 222 embeddings (mas mostra 373):
-```sql
-UPDATE behavioral_knowledge 
-SET chunks_count = 222, embed_status = 'done' 
-WHERE id = '91cbbe69-e3e2-42d2-ad72-767dc4c857f3';
-```
+**Tabela `ai_instructions**`
 
-## Arquivos
+- `id`, `empresa`, `tipo` (enum: `PERSONA`, `TOM`, `COMPLIANCE`, `CANAL`, `PROCESSO`), `conteudo` (text), `ordem` (int), `ativo` (bool), `created_at`, `updated_at`
+- Migrar o conteúdo hardcoded atual para registros nesta tabela
 
-| Arquivo | Ação |
-|---|---|
-| `supabase/functions/knowledge-embed/index.ts` | Atualização incremental de `chunks_count` + lógica de batching com `start_from` |
-| Migration SQL | Fix dos dados atuais (chunks_count e embed_status) |
+**Tabela `ai_routing_rules**`
 
+- `id`, `empresa`, `intent` (text), `condicao` (jsonb — ex: `{"confidence_min": 0.8, "temperatura": "QUENTE"}`), `acao` (text — ex: `ESCALAR_HUMANO`), `prioridade` (int), `ativo` (bool), `created_at`, `updated_at`
+- Migrar as regras de roteamento fixas (como "se cancelamento → escalar") para registros editáveis
+
+**Tabela `ai_business_descriptions**`
+
+- `id`, `empresa`, `descricao` (text), `regras_criticas` (text), `ativo` (bool)
+- Migrar `empresaDesc`, `TOKENIZA_CRITICAL_RULE`, etc. para cá
+
+No `sdr-ia-interpret`, o classifier e o generator passam a montar o prompt dinamicamente buscando essas 3 tabelas + knowledge (RAG) em runtime.
+
+### Fase 2 — Threshold de confiança e "Diga que não sabe"
+
+- Subir threshold do RAG de `0.55` → `0.70` no `response-generator.ts`
+- Adicionar lógica: se o melhor chunk retornado tem similarity < 0.70, a Amélia responde com frase padrão configurável ("Preciso confirmar com a equipe") em vez de tentar responder
+- Adicionar coluna `escalou_por_baixa_confianca` (bool) no `knowledge_search_feedback` para rastrear quantas vezes isso acontece
+
+### Fase 3 — UI de Gerenciamento (Admin)
+
+Nova página em Configuração com 3 abas:
+
+1. **Instruções IA**: CRUD das `ai_instructions` por empresa — editor de texto para cada tipo (Persona, Tom, Compliance, Canal, Processo). Toggle ativo/inativo.
+2. **Regras de Roteamento**: CRUD das `ai_routing_rules` — tabela editável com intent, condição, ação e prioridade. Drag-and-drop para reordenar.
+3. **Descrição do Negócio**: CRUD das `ai_business_descriptions` — editor por empresa com campos de descrição geral e regras críticas.
+
+Reativar a UI de `prompt_versions` para A/B testing do system prompt do classifier.
+
+---
+
+## Arquivos impactados
+
+
+| Arquivo                                                     | Ação                                                                                                    |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| Migration SQL                                               | Criar tabelas `ai_instructions`, `ai_routing_rules`, `ai_business_descriptions` + seed com dados atuais |
+| `supabase/functions/sdr-ia-interpret/intent-classifier.ts`  | Buscar instructions + business desc do banco em vez de hardcode                                         |
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Buscar instructions do banco + subir threshold para 0.70 + lógica "não sei"                             |
+| `src/pages/admin/AiSettings.tsx` (novo)                     | UI de gerenciamento das 3 camadas                                                                       |
+| `src/components/admin/AiInstructionsTab.tsx` (novo)         | CRUD de instruções                                                                                      |
+| `src/components/admin/AiRoutingRulesTab.tsx` (novo)         | CRUD de regras de roteamento                                                                            |
+| `src/components/admin/AiBusinessDescTab.tsx` (novo)         | CRUD de descrições de negócio                                                                           |
