@@ -7,8 +7,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
-import type { TipoLead } from "../_shared/types.ts";
-import { resolveTargetPipeline, findExistingDealForPerson } from "../_shared/pipeline-routing.ts";
+// (imports de pipeline-routing e cadence removidos — SGT agora é apenas enriquecimento)
 import { checkWebhookRateLimit, rateLimitResponse, simpleHash } from "../_shared/webhook-rate-limit.ts";
 
 import type { SGTPayload, LeadClassificationResult } from "./types.ts";
@@ -16,8 +15,6 @@ import { validateWebhookToken } from "./auth.ts";
 import { validatePayload, generateIdempotencyKey } from "./validation.ts";
 import { normalizeSGTEvent, sanitizeLeadContact, upsertPessoaFromContact } from "./normalization.ts";
 import { classificarLead } from "./classification.ts";
-import { decidirCadenciaParaLead, iniciarCadenciaParaLead } from "./cadence.ts";
-import { isRenewalLead } from "../_shared/name-sanitizer.ts";
 
 const log = createLogger('sgt-webhook');
 const corsHeaders = getWebhookCorsHeaders("x-sgt-signature, x-sgt-timestamp, x-webhook-secret");
@@ -356,258 +353,30 @@ serve(async (req) => {
       } as Record<string, unknown>);
     }
 
+    // Classificação do lead (mantida para enriquecimento)
     let classification: LeadClassificationResult | null = null;
-    let cadenceResult: { cadenceCodigo: string | null; runId?: string; skipped?: boolean } = { cadenceCodigo: null };
 
     try {
       classification = await classificarLead(supabase, newEvent.id, leadNormalizado);
-      
-      // AUTO-CRIAÇÃO DE DEAL
-      try {
-        const { data: contactForDeal } = await supabase
-          .from('contacts')
-          .select('id, telefone_e164, email, cpf')
-          .eq('legacy_lead_id', payload.lead_id)
-          .eq('empresa', payload.empresa)
-          .maybeSingle();
-
-        if (contactForDeal) {
-          const tipoLead: TipoLead = (payload.dados_lead as Record<string, unknown>)?.tipo_lead as TipoLead || (payload as Record<string, unknown>).tipo_lead as TipoLead || 'INVESTIDOR';
-          const temperatura = classification?.temperatura || 'FRIO';
-          const isPriority = 
-            payload.dados_lead.stage === 'Atacar agora!' ||
-            !!payload.dados_lead.data_levantou_mao ||
-            payload.prioridade === 'URGENTE';
-
-          const duplicateMatch = await findExistingDealForPerson(supabase, payload.empresa, {
-            telefone_e164: contactForDeal.telefone_e164,
-            telefone: leadNormalizado.telefone,
-            email: leadNormalizado.email,
-            cpf: contactForDeal.cpf,
-          });
-
-          if (duplicateMatch) {
-            log.info('Duplicata detectada', { match: duplicateMatch });
-            const enrichUpdates: Record<string, unknown> = {};
-            if (leadNormalizado.email && !contactForDeal.email) enrichUpdates.email = leadNormalizado.email;
-            if (Object.keys(enrichUpdates).length > 0) {
-              await supabase.from('contacts').update(enrichUpdates).eq('id', duplicateMatch.contactId);
-              log.info('Contact enriquecido', { updates: enrichUpdates });
-            }
-            await supabase.from('sgt_event_logs').insert({
-              event_id: newEvent.id, status: 'PROCESSADO',
-              mensagem: `Duplicata detectada: deal ${duplicateMatch.dealId} já existe para contact ${duplicateMatch.contactId}`,
-            } as Record<string, unknown>);
-          } else {
-            // Detectar se é lead de renovação
-            const isRenewal = isRenewalLead(leadNormalizado.campanhas_origem, leadNormalizado.stage);
-            
-            let routing;
-            if (isRenewal) {
-              // Tentar rotear para pipeline de renovação
-              const { data: renewalPipeline } = await supabase
-                .from('pipelines')
-                .select('id, pipeline_stages!inner(id, posicao)')
-                .eq('empresa', payload.empresa)
-                .eq('tipo', 'RENOVACAO')
-                .eq('ativo', true)
-                .order('posicao', { referencedTable: 'pipeline_stages', ascending: true })
-                .limit(1)
-                .maybeSingle();
-              
-              if (renewalPipeline && renewalPipeline.pipeline_stages?.[0]) {
-                routing = {
-                  pipelineId: renewalPipeline.id,
-                  stageId: renewalPipeline.pipeline_stages[0].id,
-                };
-                log.info('Lead de renovação roteado para pipeline RENOVACAO', { routing });
-              } else {
-                routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
-                log.info('Pipeline RENOVACAO não encontrado, usando roteamento padrão', { routing });
-              }
-            } else {
-              routing = resolveTargetPipeline(payload.empresa, tipoLead, temperatura, isPriority);
-            }
-            log.info('Roteamento', { ...routing, empresa: payload.empresa, tipoLead, temperatura, isPriority, isRenewal });
-
-            // Título do deal: incluir campanha se existir
-            const campanhaLabel = leadNormalizado.campanhas_origem.length > 0 
-              ? ` — ${leadNormalizado.campanhas_origem[0]}` 
-              : '';
-            const dealTitulo = `${leadNormalizado.nome}${campanhaLabel} — Inbound SGT`;
-            
-            // ====== Round-Robin: buscar vendedor least-loaded ======
-            let assignedOwnerId: string | null = null;
-            try {
-              const { data: sellers } = await supabase
-                .from('user_access_assignments')
-                .select('user_id, profiles!inner(is_vendedor, is_active)')
-                .eq('empresa', payload.empresa)
-                .eq('profiles.is_vendedor', true)
-                .eq('profiles.is_active', true);
-
-              if (sellers && sellers.length > 0) {
-                // Count open deals per seller in the target pipeline
-                const sellerIds = sellers.map((s: Record<string, unknown>) => s.user_id as string);
-                const { data: dealCounts } = await supabase
-                  .from('deals')
-                  .select('owner_id')
-                  .in('owner_id', sellerIds)
-                  .eq('pipeline_id', routing.pipelineId)
-                  .eq('status', 'ABERTO');
-
-                const countMap: Record<string, number> = {};
-                for (const sid of sellerIds) countMap[sid] = 0;
-                for (const d of dealCounts ?? []) {
-                  if (d.owner_id) countMap[d.owner_id] = (countMap[d.owner_id] || 0) + 1;
-                }
-
-                // Pick seller with fewest open deals
-                let minCount = Infinity;
-                for (const [uid, cnt] of Object.entries(countMap)) {
-                  if (cnt < minCount) { minCount = cnt; assignedOwnerId = uid; }
-                }
-                log.info('Vendedor atribuído (round-robin)', { ownerId: assignedOwnerId, openDeals: minCount });
-              }
-
-              // Fallback: buscar ADMIN da empresa
-              if (!assignedOwnerId) {
-                const { data: admins } = await supabase
-                  .from('user_access_assignments')
-                  .select('user_id, profiles!inner(is_active)')
-                  .eq('empresa', payload.empresa)
-                  .eq('profiles.is_active', true);
-                const { data: adminRoles } = await supabase
-                  .from('user_roles')
-                  .select('user_id')
-                  .eq('role', 'ADMIN');
-                const adminIds = new Set((adminRoles ?? []).map((r: Record<string, unknown>) => r.user_id));
-                const adminInEmpresa = (admins ?? []).find((a: Record<string, unknown>) => adminIds.has(a.user_id as string));
-                if (adminInEmpresa) {
-                  assignedOwnerId = adminInEmpresa.user_id as string;
-                  log.info('Vendedor fallback (ADMIN)', { ownerId: assignedOwnerId });
-                }
-              }
-            } catch (e) {
-              log.error('Erro ao buscar vendedor para round-robin', { error: (e as Error).message });
-            }
-
-            if (!assignedOwnerId) {
-              log.warn('Nenhum vendedor disponível para a empresa, deal NÃO criado', { empresa: payload.empresa });
-            }
-
-            const { data: newDeal, error: dealError } = assignedOwnerId
-              ? await supabase
-                .from('deals')
-                .insert({
-                  contact_id: contactForDeal.id, pipeline_id: routing.pipelineId,
-                  stage_id: routing.stageId, titulo: dealTitulo,
-                  valor: 0, moeda: 'BRL', temperatura,
-                  status: 'ABERTO', origem: 'SGT',
-                  owner_id: assignedOwnerId,
-                  utm_source: leadNormalizado.utm_source, utm_medium: leadNormalizado.utm_medium,
-                  utm_campaign: leadNormalizado.utm_campaign, utm_content: leadNormalizado.utm_content,
-                  utm_term: leadNormalizado.utm_term,
-                } as Record<string, unknown>)
-                .select('id').single()
-              : { data: null, error: { message: 'Nenhum vendedor disponível' } };
-
-            if (dealError) {
-              log.error('Erro ao criar deal', { error: dealError.message });
-            } else {
-              log.info('Deal criado', { dealId: newDeal.id, pipelineId: routing.pipelineId, temperatura });
-
-              await supabase.from('deal_activities').insert({
-                deal_id: newDeal.id, tipo: 'CRIACAO',
-                descricao: `Deal criado via SGT (${isPriority ? 'PRIORIDADE' : temperatura}) → ${payload.empresa}${tipoLead !== 'INVESTIDOR' ? ` [${tipoLead}]` : ''}`,
-                metadata: {
-                  origem: 'SGT', temperatura, is_priority: isPriority,
-                  lead_id: payload.lead_id, evento: payload.evento,
-                  tipo_lead: tipoLead, pipeline_id: routing.pipelineId,
-                },
-              } as Record<string, unknown>);
-
-              if (isPriority || temperatura === 'QUENTE') {
-                const { data: adminRoles } = await supabase
-                  .from('user_roles').select('user_id')
-                  .in('role', ['ADMIN', 'CLOSER']).limit(10);
-                for (const admin of adminRoles ?? []) {
-                  await supabase.from('notifications').insert({
-                    user_id: admin.user_id,
-                    tipo: 'DEAL_NOVO_PRIORITARIO',
-                    titulo: isPriority ? '🔥 Lead pediu atendimento urgente!' : '🔥 Lead QUENTE entrou no pipeline!',
-                    mensagem: `${leadNormalizado.nome} — ${payload.empresa}`,
-                    empresa: payload.empresa,
-                    link: `/pipeline?deal=${newDeal.id}`,
-                    entity_id: newDeal.id, entity_type: 'deal',
-                    metadata: { deal_id: newDeal.id, temperatura, lead_id: payload.lead_id },
-                  } as Record<string, unknown>);
-                }
-              }
-
-              if (temperatura === 'FRIO' && convState?.modo !== 'MANUAL') {
-                const warmingCode = payload.empresa === 'BLUE' 
-                  ? 'WARMING_INBOUND_FRIO_BLUE' 
-                  : 'WARMING_INBOUND_FRIO_TOKENIZA';
-                const { data: warmingCadence } = await supabase
-                  .from('cadences').select('id').eq('codigo', warmingCode).eq('ativo', true).maybeSingle();
-                if (warmingCadence) {
-                  // Validar UUID antes de inserir cadência
-                  const UUID_RE_W = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                  if (!UUID_RE_W.test(payload.lead_id)) {
-                    log.error('lead_id inválido para warming cadence, pulando', { leadId: payload.lead_id });
-                  } else {
-                  const { data: warmingRun } = await supabase
-                    .from('lead_cadence_runs')
-                    .insert({
-                      cadence_id: warmingCadence.id, lead_id: payload.lead_id,
-                      empresa: payload.empresa, status: 'ATIVA',
-                      last_step_ordem: 0, next_step_ordem: 1,
-                      next_run_at: new Date().toISOString(),
-                    } as Record<string, unknown>)
-                    .select('id').single();
-                  if (warmingRun) {
-                    await supabase.from('deal_cadence_runs').insert({
-                      deal_id: newDeal.id, cadence_run_id: warmingRun.id,
-                      trigger_stage_id: routing.stageId, trigger_type: 'AUTO_WARMING', status: 'ACTIVE',
-                    } as Record<string, unknown>);
-                    log.info('Cadência de aquecimento iniciada', { runId: warmingRun.id });
-                  }
-                  }
-                }
-              }
-            }
-          }
-        }
-      } catch (dealErr) {
-        log.error('Erro no fluxo de auto-criação de deal', { error: dealErr instanceof Error ? dealErr.message : String(dealErr) });
-      }
-
-      const cadenceCodigo = decidirCadenciaParaLead(classification, payload.evento);
-      cadenceResult.cadenceCodigo = cadenceCodigo;
-
-      if (cadenceCodigo) {
-        const result = await iniciarCadenciaParaLead(
-          supabase, payload.lead_id, payload.empresa,
-          cadenceCodigo, classification, newEvent.id
-        );
-        cadenceResult.runId = result.runId;
-        cadenceResult.skipped = result.skipped;
-
-        if (!result.success && !result.skipped) {
-          log.warn('Falha ao iniciar cadência', { reason: result.reason });
-        }
-      }
+      log.info('Lead classificado', {
+        icp: classification.icp, temperatura: classification.temperatura,
+        prioridade: classification.prioridade, scoreInterno: classification.scoreInterno,
+      });
 
       await supabase.from('sgt_events').update({ processado_em: new Date().toISOString() }).eq('id', newEvent.id);
 
-    } catch (pipelineError) {
-      log.error('Erro no pipeline', { error: pipelineError instanceof Error ? pipelineError.message : String(pipelineError) });
+      await supabase.from('sgt_event_logs').insert({
+        event_id: newEvent.id, status: 'PROCESSADO',
+        mensagem: `Enriquecimento concluído — ICP: ${classification.icp}, Temp: ${classification.temperatura}`,
+      } as Record<string, unknown>);
+
+    } catch (classificationError) {
+      log.error('Erro na classificação', { error: classificationError instanceof Error ? classificationError.message : String(classificationError) });
       
       await supabase.from('sgt_event_logs').insert({
         event_id: newEvent.id, status: 'ERRO',
-        mensagem: 'Erro no pipeline de classificação/cadência',
-        erro_stack: pipelineError instanceof Error ? pipelineError.stack : String(pipelineError),
+        mensagem: 'Erro na classificação do lead',
+        erro_stack: classificationError instanceof Error ? classificationError.stack : String(classificationError),
       } as Record<string, unknown>);
     }
 
@@ -615,14 +384,11 @@ serve(async (req) => {
       JSON.stringify({
         success: true, event_id: newEvent.id,
         lead_id: payload.lead_id, evento: payload.evento, empresa: payload.empresa,
+        enrichment_only: true,
         classification: classification ? {
           icp: classification.icp, persona: classification.persona,
           temperatura: classification.temperatura, prioridade: classification.prioridade,
           score_interno: classification.scoreInterno,
-        } : null,
-        cadence: cadenceResult.cadenceCodigo ? {
-          codigo: cadenceResult.cadenceCodigo, run_id: cadenceResult.runId,
-          skipped: cadenceResult.skipped || false,
         } : null,
       }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
