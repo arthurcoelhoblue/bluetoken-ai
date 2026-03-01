@@ -1,56 +1,33 @@
 
 
-# Fix: "Deal deve ter um vendedor (owner_id) atribuído"
+# Refatorar sgt-webhook para apenas enriquecimento
 
-## Problema
-O trigger `validate_deal_owner` exige `owner_id` em todo deal, mas o `sgt-webhook` cria deals sem atribuir vendedor (linha 439-450 do `index.ts`). Isso causa erro em toda entrada de lead via SGT.
+## O que será removido (linhas 365-600)
 
-## Causa Raiz
-O insert do deal no webhook não inclui `owner_id`. O trigger bloqueia o INSERT e o erro é capturado no catch (linha 452), mas o deal nunca é criado.
+1. **Auto-criação de deal** (linhas 365-584): busca de contact, detecção de duplicata, routing de pipeline, round-robin de vendedor, insert em `deals`, criação de `deal_activities`, notificações de deal prioritário, cadência de aquecimento
+2. **Cadências do SGT** (linhas 586-600): `decidirCadenciaParaLead`, `iniciarCadenciaParaLead`
+3. **Imports não mais necessários**: `resolveTargetPipeline`, `findExistingDealForPerson`, `decidirCadenciaParaLead`, `iniciarCadenciaParaLead`, `isRenewalLead`, `TipoLead`
 
-## Solução: Round-Robin por empresa
+## O que permanece (linhas 1-364)
 
-### 1. Alterar `sgt-webhook/index.ts` — Atribuição automática de vendedor
-Antes do insert do deal (linha ~439), buscar um vendedor disponível por round-robin:
+- Validação, autenticação, rate limiting, idempotência
+- Insert em `sgt_events` + `sgt_event_logs`
+- Normalização do lead
+- Upsert em `lead_contacts` com dados enriquecidos (LinkedIn, Mautic, Chatwoot)
+- Sanitização de telefone/email
+- Upsert de pessoa global
+- Auto-criação/merge de contact CRM (sem deal)
+- Registro de issues de contato
+- Descarte de leads inválidos
+- Verificação de modo MANUAL
+- Criação de `lead_conversation_state`
+- Classificação do lead (ICP, temperatura) — mantida para enriquecimento
 
-```
-Query: profiles com is_vendedor=true + user_access_assignments para a empresa
-Ordenar pelo vendedor com menos deals abertos no pipeline alvo
-Atribuir owner_id ao deal
-```
+## Resposta simplificada
 
-Lógica:
-- Buscar vendedores ativos da empresa (`is_vendedor = true`, `is_active = true`)
-- Contar deals abertos por vendedor no pipeline alvo
-- Selecionar o vendedor com menos deals (least-loaded)
-- Se nenhum vendedor disponível, buscar ADMIN da empresa como fallback
-- Se ainda nenhum, logar warning e pular criação do deal (sem crashar)
+A resposta JSON será simplificada: retorna `classification` mas sem `cadence` e sem informações de deal.
 
-### 2. Detalhes técnicos
+## Arquivo
 
-No `index.ts`, antes da linha 439, adicionar:
-```typescript
-// Buscar vendedor least-loaded para a empresa
-const { data: sellers } = await supabase
-  .from('user_access_assignments')
-  .select('user_id, profiles!inner(is_vendedor, is_active)')
-  .eq('empresa', payload.empresa)
-  .eq('profiles.is_vendedor', true)
-  .eq('profiles.is_active', true);
-
-let assignedOwnerId: string | null = null;
-if (sellers && sellers.length > 0) {
-  // Contar deals abertos por vendedor
-  // Atribuir ao com menos deals
-}
-```
-
-Incluir `owner_id: assignedOwnerId` no insert do deal.
-
-Se `assignedOwnerId` é null, pular criação do deal com log de warning em vez de crashar.
-
-## Resultado
-- Deals criados automaticamente com vendedor atribuído via round-robin
-- Sem mais erros no Sentry por falta de `owner_id`
-- Distribuição equilibrada de leads entre vendedores
+- `supabase/functions/sgt-webhook/index.ts` — remover bloco de deal+cadência, limpar imports, simplificar resposta
 
