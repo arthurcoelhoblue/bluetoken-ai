@@ -1,38 +1,47 @@
 
 
-## Diagnóstico: Copilot envia mensagem duplicada
+## Plano: Refinamento inteligente via Sonnet + auto-exclusão do PDF
 
-### Causa raiz
-O fluxo de streaming cria uma mensagem placeholder via `addLocalMessage` e a atualiza token-a-token via `updateLastMessage`. Quando o streaming termina, `saveMessage('assistant', ...)` salva no banco **E** adiciona uma SEGUNDA cópia na lista local de mensagens. Resultado: a mensagem aparece duplicada — uma incompleta (placeholder que para de atualizar) e outra completa.
+### Conceito
 
-### Bug secundário: coaching behavioral não injeta
-Os logs mostram `hasCoaching: false` em todas as chamadas. O `knowledge-search` está retornando vazio, possivelmente porque a edge function é invocada internamente sem o service role correto ou a query não encontra chunks behavioral para a empresa.
+O pipeline fica em duas etapas:
+1. **Mecânica (pdf-parse)** — extrai texto bruto do PDF (barato, já existe)
+2. **Inteligência (Claude Sonnet)** — recebe os chunks brutos e refina cada um, extraindo pontos relevantes, técnicas práticas e frameworks acionáveis. Chunks irrelevantes (índice, agradecimentos, páginas em branco) são descartados
 
----
+Após indexação completa: PDF deletado do Storage, registro marcado como `arquivado`, reindexação bloqueada.
 
-### Correção 1: Eliminar duplicata de mensagens
+### Fluxo técnico
 
-**Arquivo:** `src/hooks/useCopilotMessages.ts`
+```text
+PDF upload → pdf-parse (texto bruto)
+          → semanticChunk (chunking mecânico)
+          → Claude Sonnet por chunk (refina/descarta)
+          → embedding dos chunks refinados
+          → delete PDF do Storage
+          → marca arquivado = true
+```
 
-Criar uma nova função `saveMessageOnly` que salva no banco SEM adicionar ao state local (porque o placeholder já está lá). Depois, substituir o placeholder pelo registro real do banco (com ID correto).
+### Mudanças
 
-**Arquivo:** `src/components/copilot/CopilotPanel.tsx`
-
-Alterar o fluxo pós-streaming para:
-1. Salvar no banco sem duplicar no state (usar a nova função)
-2. Atualizar o ID do placeholder com o ID real retornado do banco
-
-### Correção 2: Investigar coaching behavioral
-
-**Arquivo:** `supabase/functions/copilot-chat/index.ts`
-
-Trocar `supabase.functions.invoke('knowledge-search')` por uma chamada HTTP direta com `Authorization: Bearer <service_role_key>`, pois `functions.invoke` dentro de outra edge function pode não resolver corretamente.
-
----
-
-| Arquivo | Mudança |
+| Componente | O que muda |
 |---|---|
-| `src/hooks/useCopilotMessages.ts` | Adicionar `saveMessageQuiet` que persiste no DB sem duplicar no state |
-| `src/components/copilot/CopilotPanel.tsx` | Usar `saveMessageQuiet` após streaming para evitar duplicata |
-| `supabase/functions/copilot-chat/index.ts` | Usar fetch HTTP direto para knowledge-search em vez de functions.invoke |
+| **DB Migration** | Adicionar `arquivado BOOLEAN DEFAULT false` à tabela `behavioral_knowledge` |
+| **`supabase/functions/knowledge-embed/index.ts`** | Nova função `refineChunkWithSonnet(chunk, bookTitle)` que envia cada chunk ao Claude Sonnet via `ANTHROPIC_API_KEY` (já configurada) com prompt pedindo para extrair técnicas práticas e descartar conteúdo irrelevante. Retorna chunk refinado ou `null` (descartado). Integrar no fluxo `embed_behavioral`: após `semanticChunk`, passar cada chunk pelo Sonnet antes de gerar embeddings. Após último batch concluído (`embed_status = 'done'`): deletar PDF do Storage (`behavioral-books`) e marcar `arquivado = true`, setar `storage_path = null`. Na continuação, se `arquivado = true` ou `storage_path` é null, rejeitar com erro. |
+| **`src/components/knowledge/BehavioralKnowledgeTab.tsx`** | Esconder botão de reindexar quando `arquivado = true` ou `storage_path` é null. Mostrar badge "Arquivado" no lugar. Ajustar exclusão para não tentar deletar arquivo se `storage_path` é null. |
+| **`src/hooks/useBehavioralKnowledge.ts`** | Adicionar `arquivado` e `storage_path` ao tipo `BehavioralKnowledge`. Ajustar `useDeleteBehavioralBook` para verificar `storagePath` antes de deletar do Storage. |
+
+### Prompt do Sonnet para refinamento
+
+O prompt instrui o modelo a:
+- Extrair técnicas, frameworks e dicas acionáveis de vendas
+- Descartar conteúdo sem valor prático (índice, copyright, agradecimentos, páginas de referência)
+- Manter o conteúdo substancial intacto, apenas enriquecendo com contexto
+- Retornar `SKIP` se o chunk não tem valor prático
+
+### Sobre custos
+
+- pdf-parse: custo zero (biblioteca local)
+- Sonnet por chunk (~500 tokens input + ~500 output): ~$0.009 por chunk
+- Livro médio (~100 chunks): ~$0.90 total de refinamento
+- Embedding (OpenAI text-embedding-3-small): custo existente inalterado
 
