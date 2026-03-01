@@ -385,7 +385,7 @@ async function fetchRelevantKnowledgeRAG(mensagem: string, empresa: EmpresaTipo)
         'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ query: mensagem, empresa, top_k: 5, threshold: 0.55 }),
+      body: JSON.stringify({ query: mensagem, empresa, top_k: 5, threshold: 0.70 }),
     });
 
     if (!resp.ok) {

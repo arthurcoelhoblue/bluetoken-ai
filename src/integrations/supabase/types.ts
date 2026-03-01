@@ -76,6 +76,75 @@ export type Database = {
           },
         ]
       }
+      ai_business_descriptions: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string
+          empresa: string
+          id: string
+          identidade: string | null
+          regras_criticas: string | null
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao: string
+          empresa: string
+          id?: string
+          identidade?: string | null
+          regras_criticas?: string | null
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string
+          empresa?: string
+          id?: string
+          identidade?: string | null
+          regras_criticas?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      ai_instructions: {
+        Row: {
+          ativo: boolean
+          conteudo: string
+          created_at: string
+          empresa: string
+          id: string
+          ordem: number
+          tipo: Database["public"]["Enums"]["ai_instruction_tipo"]
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          conteudo: string
+          created_at?: string
+          empresa: string
+          id?: string
+          ordem?: number
+          tipo: Database["public"]["Enums"]["ai_instruction_tipo"]
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          conteudo?: string
+          created_at?: string
+          empresa?: string
+          id?: string
+          ordem?: number
+          tipo?: Database["public"]["Enums"]["ai_instruction_tipo"]
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       ai_model_benchmarks: {
         Row: {
           acao_recomendada: string | null
@@ -157,6 +226,45 @@ export type Database = {
           id?: string
           user_id?: string | null
           window_start?: string
+        }
+        Relationships: []
+      }
+      ai_routing_rules: {
+        Row: {
+          acao: string
+          ativo: boolean
+          condicao: Json
+          created_at: string
+          empresa: string
+          id: string
+          intent: string
+          prioridade: number
+          resposta_padrao: string | null
+          updated_at: string
+        }
+        Insert: {
+          acao: string
+          ativo?: boolean
+          condicao?: Json
+          created_at?: string
+          empresa: string
+          id?: string
+          intent: string
+          prioridade?: number
+          resposta_padrao?: string | null
+          updated_at?: string
+        }
+        Update: {
+          acao?: string
+          ativo?: boolean
+          condicao?: Json
+          created_at?: string
+          empresa?: string
+          id?: string
+          intent?: string
+          prioridade?: number
+          resposta_padrao?: string | null
+          updated_at?: string
         }
         Relationships: []
       }
@@ -3567,6 +3675,7 @@ export type Database = {
           chunks_returned: Json | null
           created_at: string
           empresa: string
+          escalou_por_baixa_confianca: boolean | null
           expanded_query: string | null
           id: string
           lead_id: string | null
@@ -3579,6 +3688,7 @@ export type Database = {
           chunks_returned?: Json | null
           created_at?: string
           empresa: string
+          escalou_por_baixa_confianca?: boolean | null
           expanded_query?: string | null
           id?: string
           lead_id?: string | null
@@ -3591,6 +3701,7 @@ export type Database = {
           chunks_returned?: Json | null
           created_at?: string
           empresa?: string
+          escalou_por_baixa_confianca?: boolean | null
           expanded_query?: string | null
           id?: string
           lead_id?: string | null
@@ -7658,6 +7769,12 @@ export type Database = {
       }
     }
     Enums: {
+      ai_instruction_tipo:
+        | "PERSONA"
+        | "TOM"
+        | "COMPLIANCE"
+        | "CANAL"
+        | "PROCESSO"
       atendimento_modo: "SDR_IA" | "MANUAL" | "HIBRIDO"
       cadence_event_tipo:
         | "AGENDADO"
@@ -7931,6 +8048,13 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
+      ai_instruction_tipo: [
+        "PERSONA",
+        "TOM",
+        "COMPLIANCE",
+        "CANAL",
+        "PROCESSO",
+      ],
       atendimento_modo: ["SDR_IA", "MANUAL", "HIBRIDO"],
       cadence_event_tipo: [
         "AGENDADO",
