@@ -1,70 +1,61 @@
 
 
-# Conversas — Filtros Inteligentes + Modo Kanban
+# Regra Anti-Limbo: Deal Obrigatório para Toda Conversa
 
-## Resumo
+## Contexto
 
-Duas melhorias na aba Conversas: (1) filtros inteligentes com ordenação por prioridade IA, e (2) modo Kanban read-only agrupando conversas por etapa do deal vinculado. Toggle lista/kanban no header.
+Hoje, o `whatsapp-inbound` cria `lead_contacts` (e via trigger, `contacts`) mas **não cria deals**. Deals só são criados manualmente (vendedor via `CreateDealFromConversationDialog`) ou pela IA quando escala leads quentes (`autoCreateDeal` no `sdr-ia-interpret`). Isso gera "conversas sem deal" no dashboard.
 
-## 1. Enriquecer dados no `useAtendimentos`
+A `lead_contacts` já tem `utm_campaign` e `nome` disponíveis — exatamente o que precisamos para o título do deal.
 
-O hook já busca deals (para ownership), mas não traz `stage_id`, `temperatura`, `score_*`. Precisa:
+## Plano
 
-- Expandir a query de deals para incluir `stage_id, temperatura, score_engajamento, score_intencao, score_urgencia`
-- Trazer `pipeline_stages.nome` e `pipeline_stages.cor` via join
-- Buscar `modo` e `last_inbound_at` da `lead_conversation_state` (já busca `assumido_por`, falta esses dois)
-- Adicionar esses campos na interface `Atendimento`:
+### 1. Auto-criação de deal no `whatsapp-inbound` (backend)
 
-```typescript
-// Novos campos
-modo: string | null;
-temperatura: string | null;
-deal_stage_nome: string | null;
-deal_stage_cor: string | null;
-deal_stage_id: string | null;
-deal_id: string | null;
-score_engajamento: number | null;
-score_intencao: number | null;
-score_urgencia: number | null;
-last_inbound_at: string | null;
-```
+Após salvar a mensagem inbound e ter um `resolvedLeadId` + `empresa`, o webhook vai:
 
-## 2. Filtros Inteligentes (modo lista)
+1. Esperar ~500ms para o trigger `fn_sync_lead_to_contact` criar o `contacts` correspondente
+2. Buscar o `contacts.id` via `legacy_lead_id`
+3. Verificar se já existe deal ABERTO para esse contact
+4. Se não existe, criar deal automaticamente:
+   - **Pipeline**: default da empresa (`is_default = true`)
+   - **Stage**: primeiro estágio aberto (menor `posicao`, `is_won = false`, `is_lost = false`)
+   - **Título**: `"Nome do Lead [campanha]"` — usando `lead_contacts.nome` + `lead_contacts.utm_campaign`; se campanha vazia, só o nome; se nome vazio, `"Lead WhatsApp [telefone]"`
+   - **Owner**: Round-robin (vendedor com menos deals abertos na empresa), usando a mesma lógica que já existe no `action-executor.ts`
+   - **Temperatura**: `FRIO` (inbound inicial)
 
-Substituir o Select atual por chips/toggles de filtro rápido:
+### 2. Filtro anti-limbo no frontend (`useAtendimentos.ts`)
 
-| Filtro | Lógica |
-|---|---|
-| Aguardando resposta | `modo = MANUAL` + `ultima_direcao = INBOUND` |
-| SLA estourado | `last_inbound_at` > 2h atrás (sem resposta outbound depois) |
-| Esfriando 🔥→❄️ | `temperatura IN (QUENTE, MORNO)` + `ultimo_contato` > 24h |
-| Intenção de compra | `ultimo_intent IN (INTERESSE_COMPRA, AGENDAMENTO_REUNIAO)` |
-| Não lidas | `ultima_direcao = INBOUND` (lead esperando) |
+- **Vendedor (não-admin)**: remover a condição `noDealYet` — só vê conversas com deal onde é owner ou que assumiu
+- **Admin**: mantém visibilidade total
 
-**Ordenação IA**: Botão "Prioridade IA" que reordena combinando:
-- Peso 40: temperatura (QUENTE=1, MORNO=0.5, FRIO=0.1)
-- Peso 30: SLA (quanto mais estourado, maior)
-- Peso 20: intent (INTERESSE_COMPRA=1, outros=0.3)
-- Peso 10: score_engajamento normalizado
+### 3. Kanban — remover coluna "Sem deal" (`ConversasKanban.tsx`)
 
-## 3. Modo Kanban
+Remover o bloco que cria a coluna `__sem_deal__` (linhas 46-54). Todas as conversas no kanban terão deal.
 
-- Toggle `Lista | Kanban` no header (ícones List/Columns)
-- No Kanban, buscar etapas do pipeline do deal vinculado
-- Agrupar conversas por `deal_stage_nome`
-- Colunas horizontais com scroll, cards compactos (nome, última msg, tempo, badge temperatura)
-- Coluna extra "Sem deal" para leads sem deal vinculado
-- **Read-only** — sem drag-and-drop (gestão de estágio é no Pipeline)
+### 4. Card visual — badge "IA atendendo" (`ConversaCard.tsx`)
 
-## 4. Arquivos a criar/modificar
+Quando `modo !== 'MANUAL'` e é visível para admin, mostrar badge contextual.
+
+### 5. Mobile
+
+Revisar os novos elementos para responsividade (cards, filtros, kanban scroll touch).
+
+## Arquivos a modificar
 
 | Arquivo | Ação |
 |---|---|
-| `src/hooks/useAtendimentos.ts` | Enriquecer interface + query com deal stage, temperatura, modo, last_inbound_at |
-| `src/pages/ConversasPage.tsx` | Adicionar toggle lista/kanban, filtros inteligentes, ordenação IA |
-| `src/components/conversas/ConversasKanban.tsx` | **Novo** — componente Kanban read-only |
-| `src/components/conversas/ConversasFilters.tsx` | **Novo** — chips de filtro inteligente |
-| `src/components/conversas/ConversaCard.tsx` | **Novo** — card reutilizado em lista e kanban |
+| `supabase/functions/whatsapp-inbound/index.ts` | Adicionar auto-criação de deal após `saveInboundMessage` com título `"Nome [campanha]"` e round-robin owner |
+| `src/hooks/useAtendimentos.ts` | Remover `noDealYet` para não-admins |
+| `src/components/conversas/ConversasKanban.tsx` | Remover coluna "Sem deal" |
+| `src/components/conversas/ConversaCard.tsx` | Badge "IA atendendo" para contexto admin |
 
-Nenhuma migration de banco necessária — todos os dados já existem.
+## Detalhes do título do deal
+
+```text
+Nome presente + campanha presente → "João Silva [Meta Ads Investidores]"
+Nome presente + sem campanha      → "João Silva"
+Sem nome + campanha presente      → "Lead WhatsApp [Meta Ads Investidores]"
+Sem nome + sem campanha           → "Lead WhatsApp +5511999887766"
+```
 
