@@ -22,7 +22,7 @@ export default function ProductKnowledgeList() {
   const [empresaFilter, setEmpresaFilter] = useState<'BLUE' | 'TOKENIZA' | 'MPUPPE' | 'AXIA' | 'all'>('all');
   const [searchTerm, setSearchTerm] = useState("");
   const navigate = useNavigate();
-  const { activeCompany } = useCompany();
+  const { activeCompanies } = useCompany();
 
   const { data: products, isLoading } = useProductKnowledgeList(
     empresaFilter === 'all' ? undefined : empresaFilter
@@ -157,7 +157,7 @@ export default function ProductKnowledgeList() {
           </TabsContent>
 
           <TabsContent value="gaps" className="mt-4">
-            <KnowledgeGaps empresa={activeCompany || 'BLUE'} />
+            <KnowledgeGaps empresas={activeCompanies} />
           </TabsContent>
         </Tabs>
       </div>
