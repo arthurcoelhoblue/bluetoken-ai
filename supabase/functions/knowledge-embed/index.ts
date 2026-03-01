@@ -9,6 +9,7 @@ const corsHeaders = {
 const MAX_CHUNK_TOKENS = 500;
 const CHARS_PER_TOKEN = 4;
 const MAX_CHUNK_CHARS = MAX_CHUNK_TOKENS * CHARS_PER_TOKEN;
+const BATCH_SIZE = 200; // Max chunks per invocation to avoid CPU timeout
 
 // ============================================
 // TEXT SANITIZATION
@@ -28,7 +29,6 @@ function sanitizeText(text: string): string {
 function semanticChunk(text: string, titlePrefix: string): string[] {
   if (!text || text.trim().length < 20) return [];
 
-  // Step 1: Split by headings (##, ###) and double newlines
   const sections = text.split(/(?=^#{2,3}\s)/m);
   const rawParagraphs: string[] = [];
 
@@ -40,7 +40,6 @@ function semanticChunk(text: string, titlePrefix: string): string[] {
     }
   }
 
-  // Step 2: Merge small paragraphs, split large ones
   const chunks: string[] = [];
   let buffer = '';
 
@@ -62,7 +61,6 @@ function semanticChunk(text: string, titlePrefix: string): string[] {
   }
   if (buffer) chunks.push(buffer);
 
-  // Step 3: Add title prefix and semantic overlap
   const result: string[] = [];
   for (let i = 0; i < chunks.length; i++) {
     let chunk = titlePrefix ? `${titlePrefix}\n${chunks[i]}` : chunks[i];
@@ -118,25 +116,39 @@ async function generateEmbedding(text: string, openaiKey: string): Promise<numbe
   } catch (e) { console.error("Embedding generation failed:", e); return null; }
 }
 
-async function embedChunks(supabase: any, chunks: string[], sourceType: string, sourceId: string, empresa: string, metadata: Record<string, unknown>, openaiKey: string) {
+interface EmbedChunksOptions {
+  supabase: any;
+  chunks: string[];
+  sourceType: string;
+  sourceId: string;
+  empresa: string;
+  metadata: Record<string, unknown>;
+  openaiKey: string;
+  startFrom?: number;
+  skipDelete?: boolean;
+}
+
+async function embedChunks(opts: EmbedChunksOptions) {
+  const { supabase, chunks, sourceType, sourceId, empresa, metadata, openaiKey, startFrom = 0, skipDelete = false } = opts;
   let embedded = 0, errors = 0;
 
-  // Delete existing embeddings first
-  const { error: deleteError } = await supabase
-    .from("knowledge_embeddings")
-    .delete()
-    .eq("source_type", sourceType)
-    .eq("source_id", sourceId);
+  // Delete existing embeddings only on first batch
+  if (!skipDelete && startFrom === 0) {
+    const { error: deleteError } = await supabase
+      .from("knowledge_embeddings")
+      .delete()
+      .eq("source_type", sourceType)
+      .eq("source_id", sourceId);
 
-  if (deleteError) {
-    console.error("Delete error (non-blocking):", deleteError);
+    if (deleteError) {
+      console.error("Delete error (non-blocking):", deleteError);
+    }
   }
 
-  for (let i = 0; i < chunks.length; i++) {
+  for (let i = startFrom; i < chunks.length; i++) {
     const sanitizedChunk = sanitizeText(chunks[i]);
     const embedding = await generateEmbedding(sanitizedChunk, openaiKey);
     if (embedding) {
-      // Use upsert to handle duplicates gracefully on retries
       const { error } = await supabase.from("knowledge_embeddings").upsert(
         {
           source_type: sourceType,
@@ -152,9 +164,14 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
       if (error) { console.error(`Upsert error chunk ${i}:`, error); errors++; } else embedded++;
     } else errors++;
 
-    // Log progress every 20 chunks
+    // Log progress and update chunks_count incrementally every 20 chunks
     if ((i + 1) % 20 === 0) {
       console.log(`[embed] Progress: ${i + 1}/${chunks.length} chunks processed (${embedded} ok, ${errors} errors)`);
+      if (sourceType === 'behavioral') {
+        await supabase.from("behavioral_knowledge")
+          .update({ chunks_count: embedded })
+          .eq("id", sourceId);
+      }
     }
   }
   return { embedded, errors };
@@ -172,7 +189,6 @@ async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePa
     const bytes = new Uint8Array(arrayBuffer);
     console.log(`[PDF] Downloaded ${bucket}/${storagePath}, size: ${bytes.length} bytes`);
 
-    // Use pdf-parse for proper text extraction
     let extractedText = '';
     try {
       const pdfParse = (await import("npm:pdf-parse@1.1.1")).default;
@@ -181,7 +197,6 @@ async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePa
       console.log(`[PDF] pdf-parse extracted ${extractedText.length} chars, ${result.numpages} pages`);
     } catch (parseError) {
       console.error("[PDF] pdf-parse failed, using fallback:", parseError);
-      // Fallback to regex extraction
       extractedText = fallbackExtractPdf(bytes) || '';
     }
 
@@ -191,12 +206,10 @@ async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePa
   } catch (e) { console.error("PDF extraction failed:", e); return null; }
 }
 
-// Fallback regex-based PDF extraction (for when pdf-parse fails)
 function fallbackExtractPdf(bytes: Uint8Array): string | null {
   const raw = new TextDecoder("latin1").decode(bytes);
   const textParts: string[] = [];
 
-  // Extract from BT/ET blocks
   const btEtRegex = /BT\s([\s\S]*?)ET/g;
   let match;
   while ((match = btEtRegex.exec(raw)) !== null) {
@@ -213,7 +226,6 @@ function fallbackExtractPdf(bytes: Uint8Array): string | null {
         .trim();
       if (text.length > 1) textParts.push(text);
     }
-    // TJ arrays
     const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
     let arrMatch;
     while ((arrMatch = tjArrayRegex.exec(block)) !== null) {
@@ -226,7 +238,6 @@ function fallbackExtractPdf(bytes: Uint8Array): string | null {
     }
   }
 
-  // Broader fallback
   if (textParts.length === 0) {
     const parenRegex = /\(([^)]{3,})\)/g;
     while ((match = parenRegex.exec(raw)) !== null) {
@@ -241,6 +252,23 @@ function fallbackExtractPdf(bytes: Uint8Array): string | null {
 
 async function extractPdfText(supabase: any, storagePath: string): Promise<string | null> {
   return extractPdfTextFromBucket(supabase, "knowledge-documents", storagePath);
+}
+
+// ============================================
+// FIRE-AND-FORGET CONTINUATION
+// ============================================
+
+function fireContinuation(supabaseUrl: string, serviceRoleKey: string, body: Record<string, unknown>) {
+  const url = `${supabaseUrl}/functions/v1/knowledge-embed`;
+  console.log(`[embed] Firing continuation from chunk ${body.start_from} ...`);
+  fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${serviceRoleKey}`,
+    },
+    body: JSON.stringify(body),
+  }).catch(err => console.error("[embed] Continuation fire-and-forget error:", err));
 }
 
 // ============================================
@@ -263,7 +291,8 @@ serve(async (req) => {
 
     const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const body = await req.json();
-    const { action, source_id, empresa } = body;
+    const { action, source_id, empresa, start_from: rawStartFrom } = body;
+    const startFrom = rawStartFrom ? parseInt(rawStartFrom, 10) : 0;
     let totalEmbedded = 0, totalErrors = 0;
 
     if (action === "embed_section" && source_id) {
@@ -274,7 +303,7 @@ serve(async (req) => {
       
       const titlePrefix = `[${product.produto_nome}] ${section.titulo}`;
       const chunks = semanticChunk(section.conteudo, titlePrefix);
-      const r = await embedChunks(supabase, chunks, "section", source_id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
+      const r = await embedChunks({ supabase, chunks, sourceType: "section", sourceId: source_id, empresa: product.empresa, metadata: { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, openaiKey: OPENAI_API_KEY });
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_faq" && source_id) {
@@ -282,7 +311,7 @@ serve(async (req) => {
       if (!faq) return new Response(JSON.stringify({ error: "FAQ not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       const fullText = `Pergunta: ${faq.pergunta}\nResposta: ${faq.resposta}`;
       const chunks = semanticChunk(fullText, `[FAQ] ${faq.categoria}`);
-      const r = await embedChunks(supabase, chunks, "faq", source_id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
+      const r = await embedChunks({ supabase, chunks, sourceType: "faq", sourceId: source_id, empresa: faq.empresa, metadata: { categoria: faq.categoria, pergunta: faq.pergunta }, openaiKey: OPENAI_API_KEY });
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_document" && source_id) {
@@ -299,47 +328,102 @@ serve(async (req) => {
       const titlePrefix = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}`;
       const fullText = doc.descricao ? `${doc.descricao}\n\n${extractedText}` : extractedText;
       const chunks = semanticChunk(fullText, titlePrefix);
-      const r = await embedChunks(supabase, chunks, "document", source_id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
+      const r = await embedChunks({ supabase, chunks, sourceType: "document", sourceId: source_id, empresa: product.empresa, metadata: { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, openaiKey: OPENAI_API_KEY });
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
     } else if (action === "embed_behavioral" && source_id) {
       const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("id", source_id).single();
       if (!book) return new Response(JSON.stringify({ error: "Behavioral knowledge not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
       
-      // Concurrency lock: skip if already processing (started < 5 min ago)
-      if (book.embed_status === 'processing' && book.embed_started_at) {
-        const startedAt = new Date(book.embed_started_at).getTime();
-        const fiveMinAgo = Date.now() - 5 * 60 * 1000;
-        if (startedAt > fiveMinAgo) {
-          console.log(`[Behavioral] SKIPPED "${book.titulo}" — already processing since ${book.embed_started_at}`);
-          return new Response(JSON.stringify({ success: true, skipped: true, reason: "already_processing", titulo: book.titulo }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-
-      // Set processing lock
-      await supabase.from("behavioral_knowledge").update({ embed_status: 'processing', embed_started_at: new Date().toISOString() }).eq("id", source_id);
-
-      try {
+      // On continuation (start_from > 0), skip concurrency lock and PDF extraction
+      if (startFrom > 0) {
+        console.log(`[Behavioral] Continuation from chunk ${startFrom} for "${book.titulo}"`);
+        // Re-extract text and re-chunk to get the same chunks array
         const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
         if (!extractedText) {
           await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
-          return new Response(JSON.stringify({ error: "Could not extract text from book", document: book.nome_arquivo }), {
-            status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
+          return new Response(JSON.stringify({ error: "Could not extract text on continuation" }), { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } });
         }
-        console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
         const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
         const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
         const chunks = semanticChunk(fullText, titlePrefix);
-        console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
-        const r = await embedChunks(supabase, chunks, "behavioral", source_id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
+        
+        const endIdx = Math.min(startFrom + BATCH_SIZE, chunks.length);
+        console.log(`[Behavioral] Processing chunks ${startFrom}-${endIdx - 1} of ${chunks.length}`);
+        
+        const r = await embedChunks({
+          supabase, chunks: chunks.slice(0, endIdx), sourceType: "behavioral", sourceId: source_id,
+          empresa: book.empresa, metadata: { titulo: book.titulo, autor: book.autor, tipo: "livro" },
+          openaiKey: OPENAI_API_KEY, startFrom, skipDelete: true,
+        });
         totalEmbedded = r.embedded; totalErrors = r.errors;
-        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", source_id);
-      } catch (embedError) {
-        await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
-        throw embedError;
+        
+        // If there are more chunks, fire another continuation
+        if (endIdx < chunks.length) {
+          await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'processing' }).eq("id", source_id);
+          fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx });
+          return new Response(JSON.stringify({ success: true, embedded: r.embedded, errors: r.errors, status: 'partial', next_from: endIdx, total_chunks: chunks.length }), {
+            headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+        }
+        
+        // Final batch done — count total embeddings
+        const { count } = await supabase.from("knowledge_embeddings").select("id", { count: "exact", head: true }).eq("source_type", "behavioral").eq("source_id", source_id);
+        await supabase.from("behavioral_knowledge").update({ chunks_count: count || r.embedded, embed_status: 'done' }).eq("id", source_id);
+        
+      } else {
+        // First invocation — full flow
+        // Concurrency lock
+        if (book.embed_status === 'processing' && book.embed_started_at) {
+          const startedAt = new Date(book.embed_started_at).getTime();
+          const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+          if (startedAt > fiveMinAgo) {
+            console.log(`[Behavioral] SKIPPED "${book.titulo}" — already processing since ${book.embed_started_at}`);
+            return new Response(JSON.stringify({ success: true, skipped: true, reason: "already_processing", titulo: book.titulo }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+        }
+
+        await supabase.from("behavioral_knowledge").update({ embed_status: 'processing', embed_started_at: new Date().toISOString() }).eq("id", source_id);
+
+        try {
+          const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
+          if (!extractedText) {
+            await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
+            return new Response(JSON.stringify({ error: "Could not extract text from book", document: book.nome_arquivo }), {
+              status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          console.log(`[Behavioral] Extracted ${extractedText.length} chars from "${book.titulo}"`);
+          const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
+          const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
+          const chunks = semanticChunk(fullText, titlePrefix);
+          console.log(`[Behavioral] Generated ${chunks.length} chunks for "${book.titulo}"`);
+          
+          // If too many chunks, process only first batch and fire continuation
+          const endIdx = Math.min(BATCH_SIZE, chunks.length);
+          const r = await embedChunks({
+            supabase, chunks: chunks.slice(0, endIdx), sourceType: "behavioral", sourceId: source_id,
+            empresa: book.empresa, metadata: { titulo: book.titulo, autor: book.autor, tipo: "livro" },
+            openaiKey: OPENAI_API_KEY,
+          });
+          totalEmbedded = r.embedded; totalErrors = r.errors;
+          
+          if (endIdx < chunks.length) {
+            // More chunks to process — fire continuation
+            await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'processing' }).eq("id", source_id);
+            fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id, start_from: endIdx });
+            return new Response(JSON.stringify({ success: true, embedded: r.embedded, errors: r.errors, status: 'partial', next_from: endIdx, total_chunks: chunks.length }), {
+              headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+          
+          await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", source_id);
+        } catch (embedError) {
+          await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", source_id);
+          throw embedError;
+        }
       }
 
     } else if (action === "embed_all" || action === "reindex") {
@@ -363,7 +447,7 @@ serve(async (req) => {
         if (!product) continue;
         const titlePrefix = `[${product.produto_nome}] ${section.titulo}`;
         const chunks = semanticChunk(section.conteudo, titlePrefix);
-        const r = await embedChunks(supabase, chunks, "section", section.id, product.empresa, { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, OPENAI_API_KEY);
+        const r = await embedChunks({ supabase, chunks, sourceType: "section", sourceId: section.id, empresa: product.empresa, metadata: { tipo: section.tipo, titulo: section.titulo, produto: product.produto_nome }, openaiKey: OPENAI_API_KEY });
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
@@ -374,7 +458,7 @@ serve(async (req) => {
       for (const faq of (allFaqs || [])) {
         const fullText = `Pergunta: ${faq.pergunta}\nResposta: ${faq.resposta}`;
         const chunks = semanticChunk(fullText, `[FAQ] ${faq.categoria}`);
-        const r = await embedChunks(supabase, chunks, "faq", faq.id, faq.empresa, { categoria: faq.categoria, pergunta: faq.pergunta }, OPENAI_API_KEY);
+        const r = await embedChunks({ supabase, chunks, sourceType: "faq", sourceId: faq.id, empresa: faq.empresa, metadata: { categoria: faq.categoria, pergunta: faq.pergunta }, openaiKey: OPENAI_API_KEY });
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
@@ -388,16 +472,15 @@ serve(async (req) => {
         const titlePrefix = `[${product.produto_nome}] Documento: ${doc.nome_arquivo}`;
         const fullText = doc.descricao ? `${doc.descricao}\n\n${extractedText}` : extractedText;
         const chunks = semanticChunk(fullText, titlePrefix);
-        const r = await embedChunks(supabase, chunks, "document", doc.id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
+        const r = await embedChunks({ supabase, chunks, sourceType: "document", sourceId: doc.id, empresa: product.empresa, metadata: { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, openaiKey: OPENAI_API_KEY });
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
-      // Embed Behavioral Knowledge (books/methodologies)
+      // Embed Behavioral Knowledge (books/methodologies) — fire individually to handle batching
       let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo, embed_status, embed_started_at").eq("ativo", true);
       if (targetEmpresa) booksQuery = booksQuery.eq("empresa", targetEmpresa);
       const { data: allBooks } = await booksQuery;
       for (const book of (allBooks || [])) {
-        // Skip if already processing
         if (book.embed_status === 'processing' && book.embed_started_at) {
           const startedAt = new Date(book.embed_started_at).getTime();
           if (startedAt > Date.now() - 5 * 60 * 1000) {
@@ -405,18 +488,9 @@ serve(async (req) => {
             continue;
           }
         }
-        await supabase.from("behavioral_knowledge").update({ embed_status: 'processing', embed_started_at: new Date().toISOString() }).eq("id", book.id);
-        const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
-        if (!extractedText) { 
-          await supabase.from("behavioral_knowledge").update({ embed_status: 'error' }).eq("id", book.id);
-          totalErrors++; continue; 
-        }
-        const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
-        const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
-        const chunks = semanticChunk(fullText, titlePrefix);
-        const r = await embedChunks(supabase, chunks, "behavioral", book.id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
-        totalEmbedded += r.embedded; totalErrors += r.errors;
-        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded, embed_status: 'done' }).eq("id", book.id);
+        // Fire each book as separate invocation to avoid timeout accumulation
+        fireContinuation(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, { action: "embed_behavioral", source_id: book.id });
+        console.log(`[Behavioral] Queued "${book.titulo}" for embedding`);
       }
 
     } else {
