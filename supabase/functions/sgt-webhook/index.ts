@@ -436,18 +436,81 @@ serve(async (req) => {
               : '';
             const dealTitulo = `${leadNormalizado.nome}${campanhaLabel} — Inbound SGT`;
             
-            const { data: newDeal, error: dealError } = await supabase
-              .from('deals')
-              .insert({
-                contact_id: contactForDeal.id, pipeline_id: routing.pipelineId,
-                stage_id: routing.stageId, titulo: dealTitulo,
-                valor: 0, moeda: 'BRL', temperatura,
-                status: 'ABERTO', origem: 'SGT',
-                utm_source: leadNormalizado.utm_source, utm_medium: leadNormalizado.utm_medium,
-                utm_campaign: leadNormalizado.utm_campaign, utm_content: leadNormalizado.utm_content,
-                utm_term: leadNormalizado.utm_term,
-              } as Record<string, unknown>)
-              .select('id').single();
+            // ====== Round-Robin: buscar vendedor least-loaded ======
+            let assignedOwnerId: string | null = null;
+            try {
+              const { data: sellers } = await supabase
+                .from('user_access_assignments')
+                .select('user_id, profiles!inner(is_vendedor, is_active)')
+                .eq('empresa', payload.empresa)
+                .eq('profiles.is_vendedor', true)
+                .eq('profiles.is_active', true);
+
+              if (sellers && sellers.length > 0) {
+                // Count open deals per seller in the target pipeline
+                const sellerIds = sellers.map((s: Record<string, unknown>) => s.user_id as string);
+                const { data: dealCounts } = await supabase
+                  .from('deals')
+                  .select('owner_id')
+                  .in('owner_id', sellerIds)
+                  .eq('pipeline_id', routing.pipelineId)
+                  .eq('status', 'ABERTO');
+
+                const countMap: Record<string, number> = {};
+                for (const sid of sellerIds) countMap[sid] = 0;
+                for (const d of dealCounts ?? []) {
+                  if (d.owner_id) countMap[d.owner_id] = (countMap[d.owner_id] || 0) + 1;
+                }
+
+                // Pick seller with fewest open deals
+                let minCount = Infinity;
+                for (const [uid, cnt] of Object.entries(countMap)) {
+                  if (cnt < minCount) { minCount = cnt; assignedOwnerId = uid; }
+                }
+                log.info('Vendedor atribuído (round-robin)', { ownerId: assignedOwnerId, openDeals: minCount });
+              }
+
+              // Fallback: buscar ADMIN da empresa
+              if (!assignedOwnerId) {
+                const { data: admins } = await supabase
+                  .from('user_access_assignments')
+                  .select('user_id, profiles!inner(is_active)')
+                  .eq('empresa', payload.empresa)
+                  .eq('profiles.is_active', true);
+                const { data: adminRoles } = await supabase
+                  .from('user_roles')
+                  .select('user_id')
+                  .eq('role', 'ADMIN');
+                const adminIds = new Set((adminRoles ?? []).map((r: Record<string, unknown>) => r.user_id));
+                const adminInEmpresa = (admins ?? []).find((a: Record<string, unknown>) => adminIds.has(a.user_id as string));
+                if (adminInEmpresa) {
+                  assignedOwnerId = adminInEmpresa.user_id as string;
+                  log.info('Vendedor fallback (ADMIN)', { ownerId: assignedOwnerId });
+                }
+              }
+            } catch (e) {
+              log.error('Erro ao buscar vendedor para round-robin', { error: (e as Error).message });
+            }
+
+            if (!assignedOwnerId) {
+              log.warn('Nenhum vendedor disponível para a empresa, deal NÃO criado', { empresa: payload.empresa });
+            }
+
+            const { data: newDeal, error: dealError } = assignedOwnerId
+              ? await supabase
+                .from('deals')
+                .insert({
+                  contact_id: contactForDeal.id, pipeline_id: routing.pipelineId,
+                  stage_id: routing.stageId, titulo: dealTitulo,
+                  valor: 0, moeda: 'BRL', temperatura,
+                  status: 'ABERTO', origem: 'SGT',
+                  owner_id: assignedOwnerId,
+                  utm_source: leadNormalizado.utm_source, utm_medium: leadNormalizado.utm_medium,
+                  utm_campaign: leadNormalizado.utm_campaign, utm_content: leadNormalizado.utm_content,
+                  utm_term: leadNormalizado.utm_term,
+                } as Record<string, unknown>)
+                .select('id').single()
+              : { data: null, error: { message: 'Nenhum vendedor disponível' } };
 
             if (dealError) {
               log.error('Erro ao criar deal', { error: dealError.message });
