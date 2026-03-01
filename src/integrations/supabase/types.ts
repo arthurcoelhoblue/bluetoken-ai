@@ -7516,47 +7516,87 @@ export type Database = {
         }
         Returns: boolean
       }
-      hybrid_search_knowledge: {
-        Args: {
-          p_empresa: string
-          p_rrf_k?: number
-          p_threshold?: number
-          p_top_k?: number
-          query_embedding: string
-          query_text: string
-        }
-        Returns: {
-          chunk_text: string
-          id: string
-          metadata: Json
-          rrf_score: number
-          search_source: string
-          similarity: number
-          source_id: string
-          source_type: string
-        }[]
-      }
+      hybrid_search_knowledge:
+        | {
+            Args: {
+              p_empresa: string
+              p_rrf_k?: number
+              p_threshold?: number
+              p_top_k?: number
+              query_embedding: string
+              query_text: string
+            }
+            Returns: {
+              chunk_text: string
+              id: string
+              metadata: Json
+              rrf_score: number
+              search_source: string
+              similarity: number
+              source_id: string
+              source_type: string
+            }[]
+          }
+        | {
+            Args: {
+              p_empresa: string
+              p_rrf_k?: number
+              p_source_type_filter?: string
+              p_threshold?: number
+              p_top_k?: number
+              query_embedding: string
+              query_text: string
+            }
+            Returns: {
+              chunk_text: string
+              id: string
+              metadata: Json
+              rrf_score: number
+              search_source: string
+              similarity: number
+              source_id: string
+              source_type: string
+            }[]
+          }
       increment_faq_use_count: { Args: { faq_id: string }; Returns: undefined }
       provision_tenant_schema: {
         Args: { tenant_empresa: string }
         Returns: undefined
       }
-      search_knowledge_embeddings: {
-        Args: {
-          p_empresa: string
-          p_threshold?: number
-          p_top_k?: number
-          query_embedding: string
-        }
-        Returns: {
-          chunk_text: string
-          id: string
-          metadata: Json
-          similarity: number
-          source_id: string
-          source_type: string
-        }[]
-      }
+      search_knowledge_embeddings:
+        | {
+            Args: {
+              p_empresa: string
+              p_threshold?: number
+              p_top_k?: number
+              query_embedding: string
+            }
+            Returns: {
+              chunk_text: string
+              id: string
+              metadata: Json
+              similarity: number
+              source_id: string
+              source_type: string
+            }[]
+          }
+        | {
+            Args: {
+              p_empresa: string
+              p_source_type_filter?: string
+              p_threshold?: number
+              p_top_k?: number
+              query_embedding: string
+            }
+            Returns: {
+              chunk_text: string
+              id: string
+              metadata: Json
+              similarity: number
+              source_id: string
+              source_type: string
+            }[]
+          }
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       update_conversation_with_intent: {

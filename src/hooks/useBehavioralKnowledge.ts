@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { useCompany } from "@/contexts/CompanyContext";
+
 
 export interface BehavioralKnowledge {
   id: string;
@@ -17,18 +17,13 @@ export interface BehavioralKnowledge {
 }
 
 export function useBehavioralKnowledgeList() {
-  const { activeCompany } = useCompany();
   return useQuery({
-    queryKey: ['behavioral-knowledge', activeCompany],
+    queryKey: ['behavioral-knowledge'],
     queryFn: async () => {
-      let query = supabase
+      const { data, error } = await supabase
         .from('behavioral_knowledge' as any)
         .select('*')
         .order('created_at', { ascending: false });
-      if (activeCompany) {
-        query = query.eq('empresa', activeCompany);
-      }
-      const { data, error } = await query;
       if (error) throw error;
       return (data || []) as unknown as BehavioralKnowledge[];
     },
