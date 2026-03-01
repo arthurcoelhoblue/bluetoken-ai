@@ -134,9 +134,9 @@ async function embedChunks(supabase: any, chunks: string[], sourceType: string, 
 // PDF TEXT EXTRACTION
 // ============================================
 
-async function extractPdfText(supabase: any, storagePath: string): Promise<string | null> {
+async function extractPdfTextFromBucket(supabase: any, bucket: string, storagePath: string): Promise<string | null> {
   try {
-    const { data, error } = await supabase.storage.from("knowledge-documents").download(storagePath);
+    const { data, error } = await supabase.storage.from(bucket).download(storagePath);
     if (error || !data) { console.error("Storage download error:", error); return null; }
     const arrayBuffer = await data.arrayBuffer();
     const bytes = new Uint8Array(arrayBuffer);
@@ -173,6 +173,10 @@ async function extractPdfText(supabase: any, storagePath: string): Promise<strin
     const fullText = textParts.join(' ').replace(/\s+/g, ' ').trim();
     return fullText.length > 10 ? fullText : null;
   } catch (e) { console.error("PDF extraction failed:", e); return null; }
+}
+
+async function extractPdfText(supabase: any, storagePath: string): Promise<string | null> {
+  return extractPdfTextFromBucket(supabase, "knowledge-documents", storagePath);
 }
 
 // ============================================
@@ -234,6 +238,23 @@ serve(async (req) => {
       const r = await embedChunks(supabase, chunks, "document", source_id, product.empresa, { documento: doc.nome_arquivo, produto: product.produto_nome, tipo: doc.tipo_documento }, OPENAI_API_KEY);
       totalEmbedded = r.embedded; totalErrors = r.errors;
 
+    } else if (action === "embed_behavioral" && source_id) {
+      const { data: book } = await supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo").eq("id", source_id).single();
+      if (!book) return new Response(JSON.stringify({ error: "Behavioral knowledge not found" }), { status: 404, headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
+      if (!extractedText) {
+        return new Response(JSON.stringify({ error: "Could not extract text from book", document: book.nome_arquivo }), {
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
+      const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
+      const chunks = semanticChunk(fullText, titlePrefix);
+      const r = await embedChunks(supabase, chunks, "behavioral", source_id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
+      totalEmbedded = r.embedded; totalErrors = r.errors;
+      // Update chunks_count
+      await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded }).eq("id", source_id);
+
     } else if (action === "embed_all" || action === "reindex") {
       const targetEmpresa = empresa || null;
       if (action === "reindex") {
@@ -284,8 +305,23 @@ serve(async (req) => {
         totalEmbedded += r.embedded; totalErrors += r.errors;
       }
 
+      // Embed Behavioral Knowledge (books/methodologies)
+      let booksQuery = supabase.from("behavioral_knowledge").select("id, empresa, titulo, autor, descricao, storage_path, nome_arquivo").eq("ativo", true);
+      if (targetEmpresa) booksQuery = booksQuery.eq("empresa", targetEmpresa);
+      const { data: allBooks } = await booksQuery;
+      for (const book of (allBooks || [])) {
+        const extractedText = await extractPdfTextFromBucket(supabase, "behavioral-books", book.storage_path);
+        if (!extractedText) { totalErrors++; continue; }
+        const titlePrefix = `[Metodologia: ${book.titulo}${book.autor ? ` — ${book.autor}` : ''}]`;
+        const fullText = book.descricao ? `${book.descricao}\n\n${extractedText}` : extractedText;
+        const chunks = semanticChunk(fullText, titlePrefix);
+        const r = await embedChunks(supabase, chunks, "behavioral", book.id, book.empresa, { titulo: book.titulo, autor: book.autor, tipo: "livro" }, OPENAI_API_KEY);
+        totalEmbedded += r.embedded; totalErrors += r.errors;
+        await supabase.from("behavioral_knowledge").update({ chunks_count: r.embedded }).eq("id", book.id);
+      }
+
     } else {
-      return new Response(JSON.stringify({ error: "Invalid action. Use: embed_section, embed_faq, embed_document, embed_all, reindex" }), {
+      return new Response(JSON.stringify({ error: "Invalid action. Use: embed_section, embed_faq, embed_document, embed_behavioral, embed_all, reindex" }), {
         status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
