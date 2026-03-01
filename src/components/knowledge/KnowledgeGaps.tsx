@@ -26,7 +26,7 @@ interface KnowledgeGap {
   updated_at: string;
 }
 
-export function KnowledgeGaps({ empresa }: { empresa: string }) {
+export function KnowledgeGaps({ empresas }: { empresas: string[] }) {
   const queryClient = useQueryClient();
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [teachingGapId, setTeachingGapId] = useState<string | null>(null);
@@ -34,12 +34,12 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
   const createFaq = useCreateFaq();
 
   const { data: gaps, isLoading, refetch } = useQuery({
-    queryKey: ["knowledge-gaps", empresa],
+    queryKey: ["knowledge-gaps", empresas],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("knowledge_gaps")
         .select("*")
-        .eq("empresa", empresa)
+        .in("empresa", empresas)
         .order("frequency", { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -181,6 +181,9 @@ export function KnowledgeGaps({ empresa }: { empresa: string }) {
                       )}
                     </div>
                     <div className="flex items-center gap-1.5 flex-shrink-0">
+                      <Badge variant="outline" className="text-xs">
+                        {gap.empresa}
+                      </Badge>
                       <Badge variant="secondary" className="text-xs">
                         {gap.frequency}x
                       </Badge>
