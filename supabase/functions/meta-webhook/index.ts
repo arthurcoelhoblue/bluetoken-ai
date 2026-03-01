@@ -411,14 +411,14 @@ async function transcribeAudio(
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
-      model: "openai/gpt-5-mini",
+      model: "google/gemini-2.5-flash",
       messages: [
         {
           role: "user",
           content: [
             {
               type: "input_audio",
-              input_audio: { data: base64Audio, format: "ogg" },
+              input_audio: { data: base64Audio, format: "mp3" },
             },
             {
               type: "text",
