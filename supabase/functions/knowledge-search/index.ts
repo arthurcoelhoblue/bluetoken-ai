@@ -252,6 +252,7 @@ serve(async (req) => {
         p_empresa: empresa,
         p_top_k: Math.max(top_k * 2, 10), // Get more for re-ranking
         p_threshold: threshold,
+        p_source_type_filter: source_type_filter || null,
       });
 
       if (!error && results && results.length > 0) {
@@ -264,10 +265,6 @@ serve(async (req) => {
           search_source: r.search_source,
           metadata: r.metadata,
         }));
-        // Filter by source_type if requested
-        if (source_type_filter) {
-          chunks = chunks.filter((c: any) => c.source_type === source_type_filter);
-        }
       }
     }
 
@@ -278,6 +275,7 @@ serve(async (req) => {
         p_empresa: empresa,
         p_top_k: top_k,
         p_threshold: threshold,
+        p_source_type_filter: source_type_filter || null,
       });
       if (results && results.length > 0) {
         searchMethod = "vector_fallback";
@@ -285,9 +283,6 @@ serve(async (req) => {
           text: r.chunk_text, source_type: r.source_type, source_id: r.source_id,
           similarity: r.similarity, metadata: r.metadata,
         }));
-        if (source_type_filter) {
-          chunks = chunks.filter((c: any) => c.source_type === source_type_filter);
-        }
       }
     }
 
