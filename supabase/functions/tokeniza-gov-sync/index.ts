@@ -107,6 +107,11 @@ Deno.serve(async (req) => {
     const endIdx = Math.min(startIdx + pageSize, totalInvestors);
     const slice = data.investors.slice(startIdx, endIdx);
 
+    // Debug: check if registered_at is present in first investor
+    if (slice.length > 0) {
+      const sample = slice[0];
+      console.log(`[tokeniza-gov-sync] Sample investor keys: ${Object.keys(sample).join(', ')}, registered_at=${sample.registered_at}`);
+    }
     console.log(`[tokeniza-gov-sync] Total: ${totalInvestors}, slice [${startIdx}..${endIdx}] (${slice.length})`);
 
     if (slice.length === 0) {
