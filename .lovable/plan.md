@@ -1,78 +1,34 @@
-# Crítica e Plano de Adequações — Análise Competitiva Crisp.chat
-
-## Diagnóstico: Amélia vs. Arquitetura Crisp (4 Camadas)
-
-O relatório aponta que o diferencial do Crisp não é o modelo de IA, mas a **separação de responsabilidades em 4 camadas**. Veja o estado atual da Amélia:
 
 
-| Camada Crisp                           | Estado na Amélia                                                                              | Avaliação        |
-| -------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------- |
-| **1. Knowledge** (O que sabe)          | Implementado — `knowledge_sections`, `knowledge_faq`, `knowledge_embeddings`, RAG funcional   | ✅ Bom            |
-| **2. Instructions** (Como se comporta) | **Hardcoded** em `intent-classifier.ts` e `response-generator.ts` (~80 linhas de prompt fixo) | ❌ Problema grave |
-| **3. Routing Rules** (O que faz)       | **Hardcoded** — intents e ações fixas no código, sem tabela editável                          | ❌ Problema grave |
-| **4. Business Desc.** (Quem é)         | **Hardcoded** — `empresaDesc` e regras por empresa são strings fixas no código                | ⚠️ Parcial       |
+# Diagnóstico e Correção: Botão "Aprender" sem efeito visível
 
+## Problema
+A função executa com sucesso mas não produz mudanças porque:
+- Os 13 feedbacks estão todos como `PENDENTE` — nunca foram classificados como UTIL/NAO_UTIL
+- Os 11 knowledge_gaps têm `frequency = 1` — o threshold para sugestão automática é `>= 5`
 
-### Problemas concretos identificados
+## Causa raiz
+O fluxo de classificação de feedback não está funcionando. Preciso verificar onde o `outcome` deveria ser atualizado de PENDENTE para UTIL/NAO_UTIL. Provavelmente está faltando lógica no `response-generator.ts` ou no fluxo de conversa da Amélia.
 
-1. **Prompt monolítico**: O `SYSTEM_PROMPT` do intent-classifier tem ~25 linhas misturando persona, DISC, framework, compliance e formato JSON. Qualquer ajuste exige deploy.
-2. **Threshold de confiança RAG muito baixo**: O threshold atual é `0.55` (linha 211 do response-generator). O relatório recomenda `0.70` para reduzir alucinações.
-3. **Sem limiar de "não sei"**: A Amélia tenta responder mesmo com chunks de baixa similaridade. O Crisp escala para humano quando não tem confiança.
-4. **Ciclo de revisão existe mas está subutilizado**: Há `knowledge_search_feedback` e `knowledge_gaps`, mas falta UI de revisão semanal com ação direta (criar FAQ a partir de gap).
-5. **Tabela `prompt_versions` existe mas está desativada**: O código de A/B testing está comentado tanto no classifier quanto no generator.
+## Plano (2 partes)
 
----
+### 1. Adicionar classificação automática de feedback
+No `response-generator.ts`, após a Amélia gerar uma resposta usando RAG, o sistema já registra o feedback como PENDENTE. Precisa haver uma lógica que infira o outcome baseado na reação do lead:
+- Se o lead faz uma pergunta de follow-up sobre o mesmo tema → `UTIL`
+- Se o lead repete a mesma pergunta ou diz "não entendi" → `NAO_UTIL`
+- Se o lead muda de assunto ou avança no funil → `UTIL`
 
-## Plano de Adequações (3 fases)
+Isso deve ser feito no `sdr-ia-interpret` quando processa a próxima mensagem do lead.
 
-### Fase 1 — Desacoplamento: Tabelas de Instructions e Routing Rules
-
-Criar duas novas tabelas para tornar instruções e regras editáveis sem deploy:
-
-**Tabela `ai_instructions**`
-
-- `id`, `empresa`, `tipo` (enum: `PERSONA`, `TOM`, `COMPLIANCE`, `CANAL`, `PROCESSO`), `conteudo` (text), `ordem` (int), `ativo` (bool), `created_at`, `updated_at`
-- Migrar o conteúdo hardcoded atual para registros nesta tabela
-
-**Tabela `ai_routing_rules**`
-
-- `id`, `empresa`, `intent` (text), `condicao` (jsonb — ex: `{"confidence_min": 0.8, "temperatura": "QUENTE"}`), `acao` (text — ex: `ESCALAR_HUMANO`), `prioridade` (int), `ativo` (bool), `created_at`, `updated_at`
-- Migrar as regras de roteamento fixas (como "se cancelamento → escalar") para registros editáveis
-
-**Tabela `ai_business_descriptions**`
-
-- `id`, `empresa`, `descricao` (text), `regras_criticas` (text), `ativo` (bool)
-- Migrar `empresaDesc`, `TOKENIZA_CRITICAL_RULE`, etc. para cá
-
-No `sdr-ia-interpret`, o classifier e o generator passam a montar o prompt dinamicamente buscando essas 3 tabelas + knowledge (RAG) em runtime.
-
-### Fase 2 — Threshold de confiança e "Diga que não sabe"
-
-- Subir threshold do RAG de `0.55` → `0.70` no `response-generator.ts`
-- Adicionar lógica: se o melhor chunk retornado tem similarity < 0.70, a Amélia responde com frase padrão configurável ("Preciso confirmar com a equipe") em vez de tentar responder
-- Adicionar coluna `escalou_por_baixa_confianca` (bool) no `knowledge_search_feedback` para rastrear quantas vezes isso acontece
-
-### Fase 3 — UI de Gerenciamento (Admin)
-
-Nova página em Configuração com 3 abas:
-
-1. **Instruções IA**: CRUD das `ai_instructions` por empresa — editor de texto para cada tipo (Persona, Tom, Compliance, Canal, Processo). Toggle ativo/inativo.
-2. **Regras de Roteamento**: CRUD das `ai_routing_rules` — tabela editável com intent, condição, ação e prioridade. Drag-and-drop para reordenar.
-3. **Descrição do Negócio**: CRUD das `ai_business_descriptions` — editor por empresa com campos de descrição geral e regras críticas.
-
-Reativar a UI de `prompt_versions` para A/B testing do system prompt do classifier.
-
----
+### 2. Feedback visual no botão "Aprender"
+Atualmente o toast mostra "0 chunks otimizados, 0 FAQs sugeridas" — o que parece um erro para o usuário. Melhorar o feedback:
+- Se não há dados para processar, mostrar mensagem explicativa: "Sem feedbacks classificados ainda. O sistema aprende à medida que leads interagem com a Amélia."
+- Mostrar o breakdown dos dados encontrados (13 pendentes, 0 úteis, etc.)
 
 ## Arquivos impactados
 
+| Arquivo | Ação |
+|---|---|
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Adicionar lógica de inferência de feedback (UTIL/NAO_UTIL) baseada no comportamento do lead |
+| `src/components/knowledge/KnowledgeRAGStatus.tsx` | Melhorar feedback visual do botão Aprender com mensagens contextuais |
 
-| Arquivo                                                     | Ação                                                                                                    |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| Migration SQL                                               | Criar tabelas `ai_instructions`, `ai_routing_rules`, `ai_business_descriptions` + seed com dados atuais |
-| `supabase/functions/sdr-ia-interpret/intent-classifier.ts`  | Buscar instructions + business desc do banco em vez de hardcode                                         |
-| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Buscar instructions do banco + subir threshold para 0.70 + lógica "não sei"                             |
-| `src/pages/admin/AiSettings.tsx` (novo)                     | UI de gerenciamento das 3 camadas                                                                       |
-| `src/components/admin/AiInstructionsTab.tsx` (novo)         | CRUD de instruções                                                                                      |
-| `src/components/admin/AiRoutingRulesTab.tsx` (novo)         | CRUD de regras de roteamento                                                                            |
-| `src/components/admin/AiBusinessDescTab.tsx` (novo)         | CRUD de descrições de negócio                                                                           |
