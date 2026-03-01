@@ -395,49 +395,39 @@ async function transcribeAudio(
     return null;
   }
 
+  const OPENAI_API_KEY = (Deno.env.get("OPENAI_API_KEY") || "").replace(/[^\x20-\x7E]/g, '');
+  if (!OPENAI_API_KEY) {
+    log.error("OPENAI_API_KEY not configured for audio transcription");
+    return null;
+  }
+
   // Download audio from storage URL
   const audioResp = await fetch(audioUrl);
   if (!audioResp.ok) {
     log.error("Failed to download audio for transcription", { status: audioResp.status, url: audioUrl });
     return null;
   }
-  const audioBuffer = await audioResp.arrayBuffer();
-  const base64Audio = btoa(String.fromCharCode(...new Uint8Array(audioBuffer)));
+  const audioBlob = await audioResp.blob();
 
-  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  // Use OpenAI Whisper API directly — accepts OGG natively
+  const formData = new FormData();
+  formData.append("file", new File([audioBlob], "audio.ogg", { type: "audio/ogg" }));
+  formData.append("model", "whisper-1");
+  formData.append("language", "pt");
+  formData.append("response_format", "text");
+
+  const resp = await fetch("https://api.openai.com/v1/audio/transcriptions", {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${LOVABLE_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_audio",
-              input_audio: { data: base64Audio, format: "mp3" },
-            },
-            {
-              type: "text",
-              text: "Transcreva este áudio em português brasileiro. Retorne APENAS o texto transcrito, sem formatação, sem aspas, sem prefixos.",
-            },
-          ],
-        },
-      ],
-      max_tokens: 2048,
-    }),
+    headers: { Authorization: `Bearer ${OPENAI_API_KEY}` },
+    body: formData,
   });
 
   if (!resp.ok) {
-    log.error("GPT transcription failed", { status: resp.status, body: await resp.text() });
+    log.error("Whisper transcription failed", { status: resp.status, body: await resp.text() });
     return null;
   }
 
-  const data = await resp.json();
-  const text = data.choices?.[0]?.message?.content || "";
+  const text = await resp.text();
   return text.trim() || null;
 }
 
