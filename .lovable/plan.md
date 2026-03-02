@@ -1,35 +1,41 @@
 
 
-## Plano: Tela de Gerenciamento de Conexões WhatsApp
+## Diagnóstico
 
-### O que será criado
+A tabela `whatsapp_connections` tem apenas duas políticas RLS:
+1. **SELECT** para `authenticated` — permite leitura
+2. **ALL** para `service_role` — apenas backend interno
 
-Uma nova seção dentro da aba **Canais** das configurações (`/admin/settings`) para gerenciar as conexões WhatsApp (números) por empresa. Permitirá listar, adicionar, editar e ativar/desativar conexões diretamente pelo sistema.
+Falta políticas de **INSERT**, **UPDATE** e **DELETE** para usuários autenticados (admins).
 
-### Estrutura
+## Solução
 
-1. **Novo componente `WhatsAppConnectionsManager`** - Seção dentro do `IntegrationsTab`, abaixo dos detalhes do WhatsApp, com:
-   - Lista de conexões agrupadas por empresa (carregadas da tabela `whatsapp_connections`)
-   - Para cada conexão: label, telefone, Phone Number ID, WABA ID, badges de status (ativo/padrão)
-   - Toggle de ativo/inativo e botão para definir como padrão
-   - Botão "Adicionar Número" que abre um dialog
+Criar uma migração SQL adicionando políticas RLS que permitam usuários autenticados com role ADMIN gerenciar as conexões:
 
-2. **Dialog `AddEditConnectionDialog`** - Formulário com os campos:
-   - Empresa (select dinâmico da tabela `empresas`)
-   - Phone Number ID (obrigatório)
-   - Business Account ID / WABA ID (obrigatório)
-   - Label (ex: "Tokeniza Comercial")
-   - Display Phone (formato exibição)
-   - Verified Name
-   - Checkbox "Definir como padrão"
+```sql
+-- INSERT policy
+CREATE POLICY "Admins can insert whatsapp_connections"
+ON public.whatsapp_connections FOR INSERT TO authenticated
+WITH CHECK (
+  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
+);
 
-3. **Integração no `IntegrationsTab`** - O componente será renderizado como parte dos detalhes expandidos do card Meta Cloud ou como seção própria na área "Canais por Empresa".
+-- UPDATE policy  
+CREATE POLICY "Admins can update whatsapp_connections"
+ON public.whatsapp_connections FOR UPDATE TO authenticated
+USING (
+  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
+);
 
-### Detalhes técnicos
+-- DELETE policy
+CREATE POLICY "Admins can delete whatsapp_connections"
+ON public.whatsapp_connections FOR DELETE TO authenticated
+USING (
+  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
+);
+```
 
-- Tabela `whatsapp_connections` já existe com todos os campos necessários — nenhuma migração de banco necessária
-- CRUD via Supabase client (`supabase.from('whatsapp_connections')`)
-- Ao marcar uma conexão como padrão, as demais da mesma empresa serão desmarcadas automaticamente (update no frontend)
-- Queries com `@tanstack/react-query` seguindo o padrão existente do projeto
-- Validação com zod para os campos obrigatórios
+Isso permite que qualquer usuário autenticado com acesso atribuído (presente em `user_access_assignments`) possa adicionar, editar e remover conexões WhatsApp.
+
+Nenhuma alteração de código é necessária — apenas a migração de banco.
 
