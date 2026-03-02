@@ -128,7 +128,14 @@ Deno.serve(async (req) => {
         }
       }
     } else if (eventType === 'NOTIFY_RECORD') {
-      const recordingUrl = params.get('call_id_with_rec') || '';
+      const rawRecordingValue = params.get('call_id_with_rec') || '';
+      // Zadarma sends call_id_with_rec as a recording identifier, not a full URL
+      // Build the actual recording URL if it's not already one
+      const recordingUrl = rawRecordingValue.startsWith('http')
+        ? rawRecordingValue
+        : rawRecordingValue
+          ? `https://my.zadarma.com/api/v1/pbx/record/download/${rawRecordingValue}`
+          : '';
       const callIdForRec = params.get('pbx_call_id') || pbxCallId;
       const { data: existing } = await supabase.from('calls').select('id, deal_id').eq('pbx_call_id', callIdForRec).maybeSingle();
       if (existing) {
