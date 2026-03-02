@@ -131,6 +131,10 @@ async function transcribeWithGPTMultimodal(recordingUrl: string, empresa: string
   if (!LOVABLE_API_KEY) return null;
 
   try {
+    if (!recordingUrl.startsWith('http')) {
+      log.warn('Invalid recording URL (not HTTP)', { recordingUrl });
+      return null;
+    }
     const audioResp = await fetch(recordingUrl);
     if (!audioResp.ok) return null;
     const audioBuffer = await audioResp.arrayBuffer();
@@ -209,7 +213,7 @@ Deno.serve(async (req) => {
     }
 
     // 2. Fallback: GPT multimodal
-    if (!transcriptResult && call.recording_url) {
+    if (!transcriptResult && call.recording_url && call.recording_url.startsWith('http')) {
       transcriptResult = await transcribeWithGPTMultimodal(call.recording_url, call.empresa);
       if (transcriptResult) {
         transcriptionSource = 'gpt';
