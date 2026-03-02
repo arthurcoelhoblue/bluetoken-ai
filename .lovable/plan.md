@@ -1,19 +1,35 @@
 
 
-## Diagnóstico
+## Plano: Tela de Gerenciamento de Conexões WhatsApp
 
-O preview está mostrando uma **página branca sem erros** no console. A investigação revelou:
+### O que será criado
 
-1. O HTML (`index.html`) carrega normalmente
-2. Os scripts de infraestrutura do Vite (`@vite/client`, `@react-refresh`) carregam com sucesso
-3. O **`src/main.tsx` nunca é servido** — o servidor Vite não entrega o entry point da aplicação
-4. Não há erros de compilação ou runtime no console
+Uma nova seção dentro da aba **Canais** das configurações (`/admin/settings`) para gerenciar as conexões WhatsApp (números) por empresa. Permitirá listar, adicionar, editar e ativar/desativar conexões diretamente pelo sistema.
 
-Isso indica um **problema transiente do servidor de desenvolvimento Vite**, não um bug no código. Os arquivos editados (`ConnectionPicker.tsx`, `ManualMessageInput.tsx`, `TemplatePickerDialog.tsx`, `useConversationMode.ts`) estão sintaticamente corretos e não causam erros de build.
+### Estrutura
 
-## Solução
+1. **Novo componente `WhatsAppConnectionsManager`** - Seção dentro do `IntegrationsTab`, abaixo dos detalhes do WhatsApp, com:
+   - Lista de conexões agrupadas por empresa (carregadas da tabela `whatsapp_connections`)
+   - Para cada conexão: label, telefone, Phone Number ID, WABA ID, badges de status (ativo/padrão)
+   - Toggle de ativo/inativo e botão para definir como padrão
+   - Botão "Adicionar Número" que abre um dialog
 
-Este problema requer um **restart do servidor de desenvolvimento**. Clique no botão **"Restart"** (ícone ao lado do refresh) no topo do preview para reiniciar o Vite dev server. Um simples refresh da página não resolve porque o servidor já está em estado inconsistente.
+2. **Dialog `AddEditConnectionDialog`** - Formulário com os campos:
+   - Empresa (select dinâmico da tabela `empresas`)
+   - Phone Number ID (obrigatório)
+   - Business Account ID / WABA ID (obrigatório)
+   - Label (ex: "Tokeniza Comercial")
+   - Display Phone (formato exibição)
+   - Verified Name
+   - Checkbox "Definir como padrão"
 
-Se o restart não funcionar, tente restaurar para a versão anterior pelo histórico e reaplicar as mudanças.
+3. **Integração no `IntegrationsTab`** - O componente será renderizado como parte dos detalhes expandidos do card Meta Cloud ou como seção própria na área "Canais por Empresa".
+
+### Detalhes técnicos
+
+- Tabela `whatsapp_connections` já existe com todos os campos necessários — nenhuma migração de banco necessária
+- CRUD via Supabase client (`supabase.from('whatsapp_connections')`)
+- Ao marcar uma conexão como padrão, as demais da mesma empresa serão desmarcadas automaticamente (update no frontend)
+- Queries com `@tanstack/react-query` seguindo o padrão existente do projeto
+- Validação com zod para os campos obrigatórios
 
