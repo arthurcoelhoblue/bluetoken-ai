@@ -214,14 +214,27 @@ Deno.serve(async (req) => {
       case 'get_redirection': {
         const { sip_id } = payload;
         if (!sip_id) throw new Error('sip_id required');
-        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', { id: String(sip_id) });
+        // Zadarma expects full SIP ID (e.g. "472122-108"), not just extension number
+        let fullSipId = String(sip_id);
+        if (!fullSipId.includes('-')) {
+          const pbxInfo = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
+          const pbxId = pbxInfo?.pbx_id || pbxInfo?.info?.sip_id || '';
+          fullSipId = `${pbxId}-${fullSipId}`;
+        }
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', { id: fullSipId });
         break;
       }
       case 'set_redirection': {
         const { sip_id, type: redirType, destination } = payload;
         if (!sip_id || !redirType || !destination) throw new Error('sip_id, type and destination required');
+        let fullSipIdSet = String(sip_id);
+        if (!fullSipIdSet.includes('-')) {
+          const pbxInfo2 = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
+          const pbxId2 = pbxInfo2?.pbx_id || pbxInfo2?.info?.sip_id || '';
+          fullSipIdSet = `${pbxId2}-${fullSipIdSet}`;
+        }
         const redirParams: Record<string, string> = {
-          id: String(sip_id),
+          id: fullSipIdSet,
           type: String(redirType),
           destination: String(destination),
         };
