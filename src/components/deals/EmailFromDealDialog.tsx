@@ -37,6 +37,25 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
     onOpenChange(isOpen);
   };
 
+  const parseSseResponse = (raw: string): string => {
+    let fullContent = '';
+    const lines = raw.split('\n');
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith('data:')) continue;
+      const payload = trimmed.slice(5).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const json = JSON.parse(payload);
+        const delta = json?.choices?.[0]?.delta?.content;
+        if (delta) fullContent += delta;
+      } catch {
+        // skip unparseable lines
+      }
+    }
+    return fullContent;
+  };
+
   const handleGenerateDraft = async () => {
     setIsGenerating(true);
     try {
@@ -51,21 +70,47 @@ export function EmailFromDealDialog({ open, onOpenChange, dealId, contactEmail, 
 
       if (error) throw error;
 
-      try {
-        const content = data?.content || '';
-        const jsonMatch = content.match(/\{[\s\S]*"subject"[\s\S]*"body"[\s\S]*\}/);
-        if (jsonMatch) {
+      // data may be a ReadableStream (SSE), a string, or a JSON object
+      let rawText = '';
+      if (data instanceof ReadableStream) {
+        const reader = data.getReader();
+        const decoder = new TextDecoder();
+        let done = false;
+        while (!done) {
+          const chunk = await reader.read();
+          done = chunk.done;
+          if (chunk.value) rawText += decoder.decode(chunk.value, { stream: !done });
+        }
+      } else if (typeof data === 'string') {
+        rawText = data;
+      } else if (data?.content) {
+        rawText = data.content;
+      } else {
+        rawText = JSON.stringify(data);
+      }
+
+      // Try SSE parsing first
+      let content = parseSseResponse(rawText);
+      // Fallback: if SSE parsing yielded nothing, use raw text
+      if (!content) content = rawText;
+
+      // Extract JSON {subject, body} from the content
+      const jsonMatch = content.match(/\{[\s\S]*"subject"[\s\S]*"body"[\s\S]*\}/);
+      if (jsonMatch) {
+        try {
           const parsed = JSON.parse(jsonMatch[0]);
           form.setValue('subject', parsed.subject || '');
           form.setValue('body', parsed.body || '');
           toast.success('Rascunho gerado pela Amélia');
-        } else {
+        } catch {
           form.setValue('body', content);
           toast.success('Conteúdo gerado — ajuste o assunto');
         }
-      } catch {
-        form.setValue('body', data?.content || '');
+      } else if (content.trim()) {
+        form.setValue('body', content);
         toast.success('Conteúdo gerado — ajuste o assunto');
+      } else {
+        toast.error('Amélia não retornou conteúdo');
       }
     } catch (e) {
       toast.error('Não foi possível gerar o rascunho');
