@@ -10,7 +10,6 @@ import { getWebhookCorsHeaders } from "../_shared/cors.ts";
 import { createServiceClient, envConfig } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { isHorarioComercial } from "../_shared/business-hours.ts";
-import { isHorarioComercial } from "../_shared/business-hours.ts";
 
 // Local modules (previously separate Edge Functions)
 import { loadFullContext, type ParsedContext } from "./message-parser.ts";
