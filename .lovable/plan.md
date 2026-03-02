@@ -1,49 +1,32 @@
 
 
-## Submeter Templates da Blue para a Meta
+## Correção: Template sem parâmetros na chamada Meta API
 
-### Situação Atual
+### Problema
 
-Existem **12 templates** da Blue com `meta_status = 'LOCAL'` que precisam ser enviados à Meta para aprovação. O endpoint `whatsapp-template-manager` (POST) já faz a submissão individual, mas:
+Os templates da Blue têm variáveis (ex: `{{1}}` para o nome do contato), mas ao enviar via Meta API, os `components` passados são o formato de **definição** do template (com `example`), não o formato de **envio** (com `parameters`). A Meta rejeita com erro 132000: "number of localizable_params (0) does not match expected (1)".
 
-1. Os templates têm `conteudo` em texto simples com variáveis `{{primeiro_nome}}` — precisam ser convertidos para o formato Meta (`{{1}}` + exemplo)
-2. Os nomes (`codigo`) estão em UPPERCASE — Meta exige lowercase com underscores
-3. Não há lógica de envio em lote
+O `amelia-mass-action` já faz essa conversão corretamente (linhas 154-177), mas o `cadence-runner` e envios manuais via `whatsapp-send` não fazem.
 
-### Plano
+### Solução
 
-**1. Criar endpoint de batch submit** no `whatsapp-template-manager` (nova rota PUT ou query param `?action=batch-submit`)
+Centralizar a conversão no `whatsapp-send/index.ts` — antes de chamar `sendTemplateViaMetaCloud`, detectar se os `metaComponents` recebidos estão no formato de definição (têm `example`/`text` mas não `parameters`) e convertê-los automaticamente para o formato de envio.
 
-- Buscar todos os templates `LOCAL` da empresa no banco
-- Para cada template:
-  - Converter `codigo` para lowercase (ex: `BLUE_INBOUND_DIA0` → `blue_inbound_dia0`)
-  - Converter `{{primeiro_nome}}` para `{{1}}` no body component
-  - Montar `components` no formato Meta: `[{ type: "BODY", text: "...", example: { body_text: [["Cliente"]] } }]`
-  - Categoria: `MARKETING` (são mensagens de prospecção)
-  - Submeter via POST à Meta API
-  - Atualizar `meta_status`, `meta_template_id`, `meta_components` no banco
-- Retornar resumo: quantos enviados, quantos falharam
+**Arquivo**: `supabase/functions/whatsapp-send/index.ts`
 
-**2. Deploy e execução**
+Lógica a adicionar antes da chamada `sendTemplateViaMetaCloud`:
 
-- Redeployar `whatsapp-template-manager`
-- Chamar o endpoint via curl para submeter todos os templates da Blue de uma vez
+1. Verificar se `metaComponents` contém componentes no formato de definição (campo `example` presente ou ausência de `parameters`)
+2. Para cada componente BODY com placeholders `{{N}}`:
+   - Contar os placeholders
+   - Mapear `{{1}}` → nome do contato (buscar do `contacts` via `contactId`)
+   - Demais parâmetros: usar valores do `example.body_text` como fallback
+3. Montar o array no formato correto: `[{ type: "body", parameters: [{ type: "text", text: "João" }] }]`
+4. Se `metaComponents` é `undefined`/vazio mas o template tem parâmetros, buscar `meta_components` do banco e aplicar a mesma conversão
 
-### Templates que serão enviados
+**Busca do nome do contato**: já temos `contactId` disponível no fluxo — fazer um `select nome from contacts where id = contactId` se necessário.
 
-| Código | Nome |
-|--------|------|
-| BLUE_INBOUND_DIA0 | Boas-vindas Blue |
-| BLUE_INBOUND_DIA1 | Follow-up D+1 Blue |
-| BLUE_INBOUND_DIA3 | Follow-up D+3 Blue |
-| FOLLOWUP_INBOUND | Follow-up Inbound - Blue |
-| BLUE_INBOUND_DIA2 | Inbound - Dia 2 |
-| BLUE_IR_URGENTE_IMEDIATO | IR Urgente - Contato Imediato |
-| BLUE_IR_URGENTE_DIA0 | IR Urgente - Dia 0 |
-| BLUE_IR_DIA1 | IR Urgente - Dia 1 |
-| BLUE_IR_FOLLOWUP_1H | IR Urgente - Follow-up 1h |
-| BLUE_IR_URGENTE_2H | IR Urgente - Follow-up 2h |
-| SAUDACAO_INBOUND | Saudação Inbound - Blue |
+### Deploy
 
-Todos serão submetidos como categoria **MARKETING**, idioma **pt_BR**.
+Redeployar `whatsapp-send` após a alteração.
 
