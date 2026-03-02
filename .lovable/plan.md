@@ -1,35 +1,37 @@
 
 
-## Plano: Corrigir validação de recording_url no call-transcribe
+## Plano: Corrigir parsing do sync_extensions
 
 ### Causa raiz
 
-O webhook Zadarma está gravando o timestamp Unix no campo `recording_url` em vez da URL real do áudio. Quando a transcrição Zadarma falha e o fallback GPT multimodal tenta `fetch(recordingUrl)`, ele recebe `"1772454999.9337386"` que não é uma URL válida → `TypeError: Invalid URL`.
+A API Zadarma retorna `{ numbers: [100, 103, 104, ...], pbx_id: 472122 }` mas o código procura por `extensions`, `info.extensions` ou `pbx_internals` — nenhum desses campos existe na resposta. Resultado: sempre retorna `extensions: []`.
 
 ### Correção
 
-No `supabase/functions/call-transcribe/index.ts`, adicionar validação na função `transcribeWithGPTMultimodal` antes do `fetch`:
+No `supabase/functions/zadarma-proxy/index.ts`, no case `sync_extensions` (linhas 257-278):
+
+1. Adicionar `pbxResult?.numbers` como fonte de dados
+2. Quando `numbers` é um array de inteiros simples (como `[100, 103, 108]`), mapear cada número para `{ extension_number, sip_login }` usando o `pbx_id` retornado
 
 ```typescript
-// No início de transcribeWithGPTMultimodal, antes do fetch:
-if (!recordingUrl.startsWith('http')) {
-  log.warn('Invalid recording URL (not HTTP)', { recordingUrl });
-  return null;
+const rawExts = pbxResult?.extensions || pbxResult?.info?.extensions || pbxResult?.pbx_internals || [];
+const rawNumbers = pbxResult?.numbers || [];
+const sipId = pbxResult?.pbx_id || pbxResult?.info?.sip_id || pbxResult?.sip_id || '';
+
+let extensionsList = [];
+
+if (Array.isArray(rawNumbers) && rawNumbers.length > 0 && extensionsList.length === 0) {
+  // Zadarma returns { numbers: [100, 103, ...], pbx_id: 472122 }
+  extensionsList = rawNumbers.map(n => ({
+    extension_number: String(n),
+    sip_login: sipId ? `${sipId}-${n}` : '',
+  }));
 }
 ```
 
-Também adicionar a mesma validação no bloco principal (linha ~198) antes de chamar a função:
+Isso vai produzir: `[{ extension_number: "100", sip_login: "472122-100" }, { extension_number: "108", sip_login: "472122-108" }, ...]`
 
-```typescript
-// Fallback: GPT multimodal — validar URL
-if (!transcriptResult && call.recording_url && call.recording_url.startsWith('http')) {
-```
+### Arquivo alterado
 
-### Investigação adicional
-
-Verificar o webhook Zadarma (`zadarma-webhook`) para entender por que está salvando timestamp no campo `recording_url`. Pode ser necessário corrigir o mapeamento lá também para evitar dados sujos futuros.
-
-### Arquivos alterados
-
-1. `supabase/functions/call-transcribe/index.ts` — validação de URL
+1. `supabase/functions/zadarma-proxy/index.ts` — fix do parsing no case `sync_extensions`
 
