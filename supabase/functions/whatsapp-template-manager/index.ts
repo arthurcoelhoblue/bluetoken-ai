@@ -281,7 +281,7 @@ serve(async (req) => {
 
       let synced = 0;
       for (const local of (locals || [])) {
-        const meta = metaMap.get(local.codigo);
+        const meta = metaMap.get(local.codigo.toLowerCase());
         if (meta) {
           const newStatus = meta.status?.toUpperCase() || 'PENDING';
           if (newStatus !== local.meta_status) {
