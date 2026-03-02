@@ -403,8 +403,9 @@ serve(async (req) => {
             }
 
             const sendComponents: Array<{ type: string; parameters: Array<{ type: string; text: string }> }> = [];
-            for (const comp of resolvedComponents as Array<{ type: string; text?: string; example?: { body_text?: string[][] } }>) {
-              if (comp.type?.toUpperCase() === 'BODY' && comp.text) {
+            for (const comp of resolvedComponents as Array<{ type: string; text?: string; example?: { body_text?: string[][] }; format?: string }>) {
+              const compType = comp.type?.toUpperCase();
+              if (compType === 'BODY' && comp.text) {
                 const placeholderMatches = comp.text.match(/\{\{\d+\}\}/g);
                 if (placeholderMatches && placeholderMatches.length > 0) {
                   const parameters = placeholderMatches.map((_: string, idx: number) => {
@@ -414,12 +415,29 @@ serve(async (req) => {
                   });
                   sendComponents.push({ type: 'body', parameters });
                 }
+              } else if (compType === 'HEADER' && comp.text) {
+                // HEADER with text variables
+                const headerPlaceholders = comp.text.match(/\{\{\d+\}\}/g);
+                if (headerPlaceholders && headerPlaceholders.length > 0) {
+                  const parameters = headerPlaceholders.map(() => ({ type: 'text' as const, text: contactName }));
+                  sendComponents.push({ type: 'header', parameters });
+                }
+                // HEADER without variables: don't send component (Meta doesn't need it)
               }
+              // FOOTER and BUTTONS without parameters: skip (Meta doesn't need them at send time)
             }
             if (sendComponents.length > 0) {
               resolvedComponents = sendComponents;
               log.info('Converted components', { count: sendComponents.length, firstParam: sendComponents[0]?.parameters?.[0]?.text });
+            } else {
+              // No variable components needed - send with empty components
+              resolvedComponents = [];
             }
+          } else {
+            // Already in send format — strip any stray definition-only keys (text, format, example)
+            resolvedComponents = (resolvedComponents as any[])
+              .filter((c: any) => c.parameters && Array.isArray(c.parameters) && c.parameters.length > 0)
+              .map((c: any) => ({ type: c.type?.toLowerCase(), parameters: c.parameters }));
           }
         }
 
