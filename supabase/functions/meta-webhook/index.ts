@@ -57,32 +57,83 @@ function generatePhoneVariations(phone: string): string[] {
   return [...new Set(variations)];
 }
 
-// ---- HMAC signature validation ----
-async function verifySignature(
-  body: string,
-  signatureHeader: string | null
-): Promise<boolean> {
-  const appSecret = Deno.env.get("META_APP_SECRET");
-  if (!appSecret) {
-    log.warn("META_APP_SECRET not configured, skipping signature validation");
-    return true;
-  }
-  if (!signatureHeader) return false;
-
-  const expectedSig = signatureHeader.replace("sha256=", "");
+// ---- HMAC signature validation (multi-secret) ----
+async function computeHmacHex(secret: string, body: string): Promise<string> {
   const key = await crypto.subtle.importKey(
     "raw",
-    new TextEncoder().encode(appSecret),
+    new TextEncoder().encode(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
     ["sign"]
   );
   const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(body));
-  const hexSig = Array.from(new Uint8Array(sig))
+  return Array.from(new Uint8Array(sig))
     .map((b) => b.toString(16).padStart(2, "0"))
     .join("");
+}
 
-  return hexSig === expectedSig;
+async function verifySignatureMulti(
+  body: string,
+  signatureHeader: string | null,
+  secrets: Array<{ source: string; secret: string }>
+): Promise<{ valid: boolean; matchedSource?: string }> {
+  if (secrets.length === 0) {
+    log.warn("No app_secrets configured, skipping signature validation");
+    return { valid: true, matchedSource: "none (no secrets configured)" };
+  }
+  if (!signatureHeader) return { valid: false };
+
+  const expectedSig = signatureHeader.replace("sha256=", "");
+
+  for (const { source, secret } of secrets) {
+    const hexSig = await computeHmacHex(secret, body);
+    if (hexSig === expectedSig) {
+      return { valid: true, matchedSource: source };
+    }
+  }
+
+  return { valid: false };
+}
+
+/** Collect all known app_secrets from env var + whatsapp_connections table */
+async function collectAppSecrets(
+  supabase: ReturnType<typeof createServiceClient>
+): Promise<Array<{ source: string; secret: string }>> {
+  const secrets: Array<{ source: string; secret: string }> = [];
+
+  // 1. Environment variable
+  const envSecret = Deno.env.get("META_APP_SECRET");
+  if (envSecret) {
+    secrets.push({ source: "env:META_APP_SECRET", secret: envSecret });
+  }
+
+  // 2. All active whatsapp_connections with app_secret
+  try {
+    const { data: connections } = await supabase
+      .from("whatsapp_connections")
+      .select("id, empresa, app_secret, label")
+      .eq("is_active", true)
+      .not("app_secret", "is", null);
+
+    if (connections) {
+      for (const conn of connections) {
+        if (conn.app_secret && typeof conn.app_secret === "string" && conn.app_secret.trim()) {
+          // Avoid duplicates (env var might be the same as a DB secret)
+          const alreadyExists = secrets.some((s) => s.secret === conn.app_secret);
+          if (!alreadyExists) {
+            secrets.push({
+              source: `db:${conn.empresa}/${conn.label || conn.id}`,
+              secret: conn.app_secret,
+            });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    log.error("Failed to fetch app_secrets from DB", { error: String(err) });
+  }
+
+  return secrets;
 }
 
 // ---- Resolve empresa from phone_number_id ----
@@ -779,15 +830,22 @@ serve(async (req) => {
 
   const rawBody = await req.text();
 
-  // Signature validation
+  // Create service client early (needed for multi-secret validation)
+  const supabase = createServiceClient();
+
+  // Collect all known app_secrets and validate signature
   const sigHeader = req.headers.get("x-hub-signature-256");
-  const sigValid = await verifySignature(rawBody, sigHeader);
-  if (!sigValid) {
-    log.error("Invalid signature");
+  const appSecrets = await collectAppSecrets(supabase);
+  const sigResult = await verifySignatureMulti(rawBody, sigHeader, appSecrets);
+  if (!sigResult.valid) {
+    log.error("Invalid signature", { secretsChecked: appSecrets.length });
     return new Response(
       JSON.stringify({ error: "Invalid signature" }),
       { status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
+  }
+  if (sigResult.matchedSource) {
+    log.info("Signature validated", { source: sigResult.matchedSource });
   }
 
   let body: Record<string, unknown>;
@@ -805,7 +863,6 @@ serve(async (req) => {
     return new Response("OK", { status: 200 });
   }
 
-  const supabase = createServiceClient();
   const results: Array<{ type: string; result: unknown }> = [];
 
   const entries = (body.entry as Array<Record<string, unknown>>) || [];
