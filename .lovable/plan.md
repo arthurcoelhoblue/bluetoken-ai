@@ -1,51 +1,49 @@
 
 
-## Diagnóstico: "Invalid signature" no meta-webhook
+## Submeter Templates da Blue para a Meta
 
-### Problema Identificado
+### Situação Atual
 
-As mensagens da Meta estão sendo rejeitadas com **"Invalid signature"** porque o webhook usa uma única variável de ambiente `META_APP_SECRET` para validar a assinatura HMAC, mas as empresas **Blue** e **Tokeniza** usam **aplicativos Meta diferentes** com `app_secret` distintos.
+Existem **12 templates** da Blue com `meta_status = 'LOCAL'` que precisam ser enviados à Meta para aprovação. O endpoint `whatsapp-template-manager` (POST) já faz a submissão individual, mas:
 
-Fluxo atual:
-```text
-Meta POST → verifySignature(body, sigHeader)  ← usa META_APP_SECRET (global)
-           ↓
-         FALHA se o app_secret do app Meta que enviou ≠ META_APP_SECRET
-```
+1. Os templates têm `conteudo` em texto simples com variáveis `{{primeiro_nome}}` — precisam ser convertidos para o formato Meta (`{{1}}` + exemplo)
+2. Os nomes (`codigo`) estão em UPPERCASE — Meta exige lowercase com underscores
+3. Não há lógica de envio em lote
 
-Dados encontrados:
-- **Blue**: `app_secret = 5714...` (no banco, tabela `whatsapp_connections`)
-- **Tokeniza**: sem `app_secret` no banco (depende da env var `META_APP_SECRET`)
-- Os logs mostram dezenas de **"Invalid signature"** consecutivos, indicando que mensagens de um dos apps estão sendo rejeitadas
+### Plano
 
-### Solução Proposta
+**1. Criar endpoint de batch submit** no `whatsapp-template-manager` (nova rota PUT ou query param `?action=batch-submit`)
 
-Alterar `verifySignature` para uma abordagem **multi-secret** — tentar validar a assinatura contra todos os `app_secret` conhecidos (env var + banco):
+- Buscar todos os templates `LOCAL` da empresa no banco
+- Para cada template:
+  - Converter `codigo` para lowercase (ex: `BLUE_INBOUND_DIA0` → `blue_inbound_dia0`)
+  - Converter `{{primeiro_nome}}` para `{{1}}` no body component
+  - Montar `components` no formato Meta: `[{ type: "BODY", text: "...", example: { body_text: [["Cliente"]] } }]`
+  - Categoria: `MARKETING` (são mensagens de prospecção)
+  - Submeter via POST à Meta API
+  - Atualizar `meta_status`, `meta_template_id`, `meta_components` no banco
+- Retornar resumo: quantos enviados, quantos falharam
 
-1. **Coletar todos os app_secrets disponíveis**: env var `META_APP_SECRET` + todos os `app_secret` ativos em `whatsapp_connections`
-2. **Tentar validar contra cada um**: se qualquer um bater, aceitar a mensagem
-3. **Manter fallback**: se nenhum `app_secret` estiver configurado, aceitar (comportamento atual para dev)
+**2. Deploy e execução**
 
-```text
-Meta POST → verifySignature(body, sigHeader)
-           ↓
-         Tenta META_APP_SECRET (env var)
-         Tenta app_secret da Blue (banco)
-         Tenta app_secret da Tokeniza (banco)
-           ↓
-         Se qualquer um validar → OK
-         Se nenhum → 401
-```
+- Redeployar `whatsapp-template-manager`
+- Chamar o endpoint via curl para submeter todos os templates da Blue de uma vez
 
-### Alterações
+### Templates que serão enviados
 
-**Arquivo**: `supabase/functions/meta-webhook/index.ts`
+| Código | Nome |
+|--------|------|
+| BLUE_INBOUND_DIA0 | Boas-vindas Blue |
+| BLUE_INBOUND_DIA1 | Follow-up D+1 Blue |
+| BLUE_INBOUND_DIA3 | Follow-up D+3 Blue |
+| FOLLOWUP_INBOUND | Follow-up Inbound - Blue |
+| BLUE_INBOUND_DIA2 | Inbound - Dia 2 |
+| BLUE_IR_URGENTE_IMEDIATO | IR Urgente - Contato Imediato |
+| BLUE_IR_URGENTE_DIA0 | IR Urgente - Dia 0 |
+| BLUE_IR_DIA1 | IR Urgente - Dia 1 |
+| BLUE_IR_FOLLOWUP_1H | IR Urgente - Follow-up 1h |
+| BLUE_IR_URGENTE_2H | IR Urgente - Follow-up 2h |
+| SAUDACAO_INBOUND | Saudação Inbound - Blue |
 
-- Refatorar `verifySignature()` para aceitar uma lista de secrets e testar cada um
-- Antes da validação, buscar todos os `app_secret` ativos de `whatsapp_connections`
-- Criar o service client antes da validação (mover para cima)
-- Manter log indicando qual secret validou (para debug)
-
-### Deploy
-- Redeployar `meta-webhook` após a alteração
+Todos serão submetidos como categoria **MARKETING**, idioma **pt_BR**.
 
