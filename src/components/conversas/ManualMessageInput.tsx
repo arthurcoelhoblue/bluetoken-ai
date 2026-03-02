@@ -247,6 +247,7 @@ export function ManualMessageInput({
           leadId={leadId}
           contactId={contactId ?? undefined}
           onSent={handleTemplateSent}
+          initialConnectionId={connectionId}
         />
       )}
 
