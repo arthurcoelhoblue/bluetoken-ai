@@ -3,6 +3,7 @@ import { IntegrationCard } from "./IntegrationCard";
 import { CompanyChannelCard } from "./CompanyChannelCard";
 import { WhatsAppInlineDetails } from "./WhatsAppInlineDetails";
 import { EmailInlineDetails } from "./EmailInlineDetails";
+import { WhatsAppConnectionsManager } from "./WhatsAppConnectionsManager";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
@@ -110,6 +111,8 @@ export function IntegrationsTab() {
           );
         })}
       </div>
+
+      <WhatsAppConnectionsManager />
 
       {perCompanyIntegrations.length > 0 && (
         <div className="space-y-4">
