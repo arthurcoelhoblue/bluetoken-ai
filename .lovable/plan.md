@@ -1,33 +1,40 @@
 
 
-## Plano: Credenciais Meta por Conexão (não por Empresa)
+## Diagnóstico
 
-### Problema atual
+O toggle do Meta Cloud para BLUE **aparenta funcionar** (toast de sucesso aparece), mas na verdade **não faz nada**. O motivo:
 
-O Access Token e App Secret foram implementados **por empresa** via `system_settings`. Mas na prática, uma mesma empresa pode ter múltiplos números em apps Meta diferentes (ex: Tokeniza). Cada conexão WhatsApp precisa do seu próprio par de credenciais.
+- A tabela `integration_company_config` só tem uma linha para BLUE com `channel = 'mensageria'`
+- Não existe linha para `channel = 'meta_cloud'`
+- O `toggleConfig` usa `.update()`, que retorna 204 (sucesso) mesmo quando zero linhas são afetadas
+- O toast de sucesso é exibido mesmo sem nenhuma alteração real no banco
 
-### Solução
+A TOKENIZA funciona porque alguém inseriu manualmente as duas linhas (mensageria + meta_cloud).
 
-Mover Access Token e App Secret para dentro de cada **conexão WhatsApp** (`whatsapp_connections`), nos campos do dialog de adicionar/editar.
+## Solução
 
-### Alterações
+Trocar o `.update()` por `.upsert()` no `useIntegrationCompanyConfig.ts`. Assim, quando a linha não existir, ela é criada automaticamente.
 
-**1. Migração de banco** — Adicionar colunas `access_token` e `app_secret` à tabela `whatsapp_connections`:
-```sql
-ALTER TABLE public.whatsapp_connections 
-  ADD COLUMN access_token text,
-  ADD COLUMN app_secret text;
+### Alteração
+
+**`src/hooks/useIntegrationCompanyConfig.ts`** — No `toggleConfig.mutationFn`, substituir:
+
+```typescript
+// DE:
+.update({ enabled, updated_at: ... })
+.eq("empresa", empresa)
+.eq("channel", channel);
+
+// PARA:
+.upsert({
+  empresa,
+  channel,
+  enabled,
+  updated_at: new Date().toISOString(),
+}, { onConflict: "empresa,channel" });
 ```
 
-**2. `AddEditConnectionDialog.tsx`** — Adicionar campos Access Token e App Secret (com toggle de visibilidade) ao formulário existente. Os valores serão salvos direto na conexão.
+Isso garante que ao ativar qualquer canal para qualquer empresa, a linha é criada se não existir. A trigger `enforce_channel_exclusivity` já cuida de desativar o canal oposto.
 
-**3. `WhatsAppConnectionsManager.tsx`** — Passar `access_token` e `app_secret` no create/update mutation.
-
-**4. `CompanyChannelCard.tsx`** — Remover o componente `MetaCloudConfigFields` (não é mais necessário).
-
-**5. `channel-resolver.ts` (edge function)** — Alterar `resolveMetaCloudConfig` para ler `access_token` direto da conexão em vez de buscar em `system_settings`. Fallback para `system_settings` e env var mantido por compatibilidade.
-
-### Resultado
-
-Cada número WhatsApp terá seu próprio Access Token e App Secret, configurados no mesmo lugar onde se cadastra o número. Funciona para cenários com múltiplos apps Meta na mesma empresa.
+Nenhuma migração de banco necessária — a tabela já tem constraint unique em `(empresa, channel)`.
 
