@@ -585,7 +585,20 @@ function ZadarmaConfigContent() {
   const parsedStats = useMemo(() => {
     if (!zadarmaStats?.stats) return [];
     const items = Array.isArray(zadarmaStats.stats) ? zadarmaStats.stats : [];
-    return items as Array<{
+    return items.map((s: Record<string, unknown>) => ({
+      id: s.call_id ?? s.id ?? undefined,
+      sip: s.sip ?? undefined,
+      callstart: s.callstart ?? undefined,
+      from: s.clid ?? s.from ?? undefined,
+      to: s.destination != null ? String(s.destination) : (s.to ?? undefined),
+      duration: s.duration ?? s.seconds ?? undefined,
+      billseconds: s.billseconds ?? s.seconds ?? undefined,
+      disposition: s.disposition ?? undefined,
+      cost: s.cost ?? undefined,
+      currency: s.currency ?? undefined,
+      pbx_call_id: s.pbx_call_id ?? undefined,
+      is_recorded: s.is_recorded === 'true' || s.is_recorded === true || s.is_recorded === 1 ? 1 : 0,
+    })) as Array<{
       id?: string;
       sip?: string;
       callstart?: string;
