@@ -64,7 +64,9 @@ export function WhatsAppConnectionsManager() {
           display_phone: values.display_phone || null,
           verified_name: values.verified_name || null,
           is_default: values.is_default,
-        },
+          access_token: values.access_token || null,
+          app_secret: values.app_secret || null,
+        } as any,
         { onSuccess: () => setDialogOpen(false) }
       );
     } else {
@@ -77,7 +79,9 @@ export function WhatsAppConnectionsManager() {
           display_phone: values.display_phone || null,
           verified_name: values.verified_name || null,
           is_default: values.is_default,
-        },
+          access_token: values.access_token || null,
+          app_secret: values.app_secret || null,
+        } as any,
         { onSuccess: () => setDialogOpen(false) }
       );
     }

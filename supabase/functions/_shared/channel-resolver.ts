@@ -47,12 +47,12 @@ export async function resolveMetaCloudConfig(
   empresa: string,
   connectionId?: string,
 ): Promise<ChannelConfig> {
-  let conn: { phone_number_id: string; business_account_id: string | null } | null = null;
+  let conn: { phone_number_id: string; business_account_id: string | null; access_token: string | null; app_secret: string | null } | null = null;
 
   if (connectionId) {
     const { data } = await supabase
       .from('whatsapp_connections')
-      .select('phone_number_id, business_account_id')
+      .select('phone_number_id, business_account_id, access_token, app_secret')
       .eq('id', connectionId)
       .eq('is_active', true)
       .maybeSingle();
@@ -61,7 +61,7 @@ export async function resolveMetaCloudConfig(
     // Try default first, then any active
     const { data: defaultConn } = await supabase
       .from('whatsapp_connections')
-      .select('phone_number_id, business_account_id')
+      .select('phone_number_id, business_account_id, access_token, app_secret')
       .eq('empresa', empresa)
       .eq('is_active', true)
       .eq('is_default', true)
@@ -70,7 +70,7 @@ export async function resolveMetaCloudConfig(
     if (!conn) {
       const { data: anyConn } = await supabase
         .from('whatsapp_connections')
-        .select('phone_number_id, business_account_id')
+        .select('phone_number_id, business_account_id, access_token, app_secret')
         .eq('empresa', empresa)
         .eq('is_active', true)
         .limit(1)
@@ -81,25 +81,26 @@ export async function resolveMetaCloudConfig(
 
   if (!conn?.phone_number_id) return { mode: 'DIRECT' };
 
-  const settingsKey = `meta_cloud_${empresa.toLowerCase()}`;
-  const { data: setting } = await supabase
-    .from('system_settings')
-    .select('value')
-    .eq('category', 'integrations')
-    .eq('key', settingsKey)
-    .maybeSingle();
+  // 1. Try access_token from the connection itself
+  let accessToken = conn.access_token as string | undefined;
 
-  const accessToken = (setting?.value as Record<string, unknown>)?.access_token as string | undefined;
+  // 2. Fallback: system_settings (legacy per-empresa config)
+  if (!accessToken) {
+    const settingsKey = `meta_cloud_${empresa.toLowerCase()}`;
+    const { data: setting } = await supabase
+      .from('system_settings')
+      .select('value')
+      .eq('category', 'integrations')
+      .eq('key', settingsKey)
+      .maybeSingle();
+    accessToken = (setting?.value as Record<string, unknown>)?.access_token as string | undefined;
+  }
 
+  // 3. Fallback: environment variable
   if (!accessToken) {
     const envToken = getOptionalEnv(`META_ACCESS_TOKEN_${empresa.toUpperCase()}`);
     if (!envToken) return { mode: 'DIRECT' };
-    return {
-      mode: 'META_CLOUD',
-      metaPhoneNumberId: conn.phone_number_id,
-      metaAccessToken: envToken,
-      metaBusinessAccountId: conn.business_account_id,
-    };
+    accessToken = envToken;
   }
 
   return {

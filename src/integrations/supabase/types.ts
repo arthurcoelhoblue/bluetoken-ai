@@ -6137,6 +6137,8 @@ export type Database = {
       }
       whatsapp_connections: {
         Row: {
+          access_token: string | null
+          app_secret: string | null
           business_account_id: string
           created_at: string
           display_phone: string | null
@@ -6150,6 +6152,8 @@ export type Database = {
           verified_name: string | null
         }
         Insert: {
+          access_token?: string | null
+          app_secret?: string | null
           business_account_id: string
           created_at?: string
           display_phone?: string | null
@@ -6163,6 +6167,8 @@ export type Database = {
           verified_name?: string | null
         }
         Update: {
+          access_token?: string | null
+          app_secret?: string | null
           business_account_id?: string
           created_at?: string
           display_phone?: string | null
