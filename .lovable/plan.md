@@ -1,20 +1,11 @@
 
 
-## Correção: Coluna `erro_envio` não existe
+## Atualizar META_WEBHOOK_VERIFY_TOKEN
 
-O `meta-webhook` tenta gravar `erro_envio` na tabela `lead_messages`, mas a coluna real se chama `erro_detalhe`.
+Recebi o valor. Vou atualizar o secret `META_WEBHOOK_VERIFY_TOKEN` com o valor informado (`571453dad3248bb37ab8e9f1f10d4917`).
 
-### Alteração
+Após a atualização, na configuração do Meta Developer Console você usará:
 
-**`supabase/functions/meta-webhook/index.ts`** (linha 730) — Trocar `erro_envio` por `erro_detalhe`:
-
-```typescript
-// DE:
-updateData.erro_envio = JSON.stringify(status.errors);
-
-// PARA:
-updateData.erro_detalhe = JSON.stringify(status.errors);
-```
-
-Uma linha. Sem migração de banco necessária.
+- **Callback URL**: `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/meta-webhook`
+- **Verify Token**: `571453dad3248bb37ab8e9f1f10d4917`
 
