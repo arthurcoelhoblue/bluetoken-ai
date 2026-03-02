@@ -1,39 +1,38 @@
-## Plano: Corrigir preços inventados da Blue na base de conhecimento
-
-### Problema
-
-A Amélia está citando uma tabela de preços fictícia (Starter R$297, Silver R$497, etc.) porque existem **chunks e seções** na base de conhecimento com dados errados. A política comercial real da Blue tem planos completamente diferentes.
-
-### Dados reais (PDF 2026)
 
 
-| Produto                                 | Preço             | Descrição                                                                                                                                                                                                      |
-| --------------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| IR Cripto - Licença Sistema Blue Cripto | R$ 998            | Carteiras/exchanges ilimitadas, até 25k transações/ano, porém é uma licença de sistea, ou seja, o cliente faz tudo e nós teos contadores experientes de suporte, mas a operacionalização é toda com o cliente. |
-| IR Cripto - Diamond                     | R$ 2.997          | Até 4 carteiras/exchanges, até 25k transações/ano                                                                                                                                                              |
-| IR Cripto - Gold                        | R$ 4.497          | Carteiras/exchanges ilimitadas, até 25k transações/ano                                                                                                                                                         |
-| Pacote 5k operações adicionais          | R$ 500            | Upgrade de limite                                                                                                                                                                                              |
-| Apuração de dependentes                 | R$ 500/dependente | Dependente investidor do titular                                                                                                                                                                               |
-| Upgrade Diamond → Gold                  | R$ 1.500          | Upgrade de plano                                                                                                                                                                                               |
-| Sistema de apuração                     | R$ 997            | 12 meses de acesso                                                                                                                                                                                             |
-| IR Simples (sem cripto)                 | R$ 300            | IR simples sem apuração de criptoativos                                                                                                                                                                        |
-| Consultoria Geral                       | R$ 1.200/hora     | Com Mychel Mendes ou especialistas                                                                                                                                                                             |
-| Consultoria Privacidade                 | R$ 1.500/hora     | Estratégia de privacidade                                                                                                                                                                                      |
-| Consultoria G20                         | R$ 60.000/ano     | Consultoria em grupo, 12 meses                                                                                                                                                                                 |
+## Problema
 
+O `connectionId` selecionado no `ConnectionPicker` não está sendo passado corretamente para o backend. Existem dois bugs:
 
-**Pagamento**: Pix à vista, cripto, ou cartão até 12x sem juros.
-**Descontos**: 10% cartão, 15% Pix/Cripto (alçada time comercial/CS).
-**Venda proporcional**: (Valor/12) × meses + 10%.
+1. **ConnectionPicker não notifica o pai quando há 2+ conexões**: O componente calcula `selectedId` internamente como fallback, mas só chama `onChange` automaticamente quando há exatamente 1 conexão. Com 2+ conexões (caso da Tokeniza), o estado `connectionId` no `ManualMessageInput` permanece `''`, e o backend usa a conexão `is_default = true` (o número errado).
 
-### Ações
+2. **TemplatePickerDialog tem seu próprio `connectionId` independente**: Mesmo que o usuário selecione o número no input principal, ao abrir o Template Picker, ele tem seu próprio estado `connectionId` começando vazio, ignorando a seleção anterior.
 
-1. **Atualizar seção FAQ "Quanto custa?"** (`id: 4837ac7e`) — substituir conteúdo pelos planos reais
-2. **Atualizar seção Pitch "Exemplo de conversa"** (`id: fdff3b5c`) — reescrever com valores corretos
-3. **Deletar embeddings antigos** dessas 2 seções (`source_id` = `4837ac7e` e `fdff3b5c`)
-4. **Inserir novos chunks** com o texto atualizado e correto para reindexação via RAG
-5. **Criar chunk adicional** com regras comerciais (descontos, venda proporcional, serviços complementares)
+### Conexões Tokeniza
+| Label | phone_number_id | is_default |
+|-------|-----------------|------------|
+| *(sem label)* | 1009376255595711 | **true** |
+| Comercial - Tokeniza BR | 1054747871049688 | false |
 
-### Observação técnica
+Quando `connectionId` vai vazio, o backend sempre usa `is_default = true` → número errado.
 
-Os embeddings vetoriais antigos precisam ser deletados e regenerados (via edge function `knowledge-embed` ou inserção direta). Sem isso, o RAG continuará encontrando os chunks com preços errados.
+---
+
+## Solução
+
+### 1. ConnectionPicker: auto-notificar o pai ao montar com 2+ conexões
+
+No `ConnectionPicker`, adicionar um `useEffect` que chama `onChange(defaultConn.id)` quando o componente monta e o pai ainda não tem valor selecionado. Isso garante que o `connectionId` do pai seja preenchido com a conexão padrão imediatamente.
+
+### 2. ManualMessageInput: passar connectionId para o TemplatePickerDialog
+
+Adicionar prop `connectionId` ao `TemplatePickerDialog` e usá-lo como valor inicial do estado interno do picker, para que a seleção do número principal seja respeitada ao abrir templates.
+
+### Arquivos a alterar
+
+| Arquivo | Mudança |
+|---------|---------|
+| `src/components/conversas/ConnectionPicker.tsx` | Adicionar `useEffect` para chamar `onChange` com o default ao montar |
+| `src/components/conversas/TemplatePickerDialog.tsx` | Aceitar prop `initialConnectionId` e usar como valor inicial |
+| `src/components/conversas/ManualMessageInput.tsx` | Passar `connectionId` para `TemplatePickerDialog` |
+
