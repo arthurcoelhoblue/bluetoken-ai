@@ -26,6 +26,7 @@ interface TemplatePickerDialogProps {
   leadId?: string;
   contactId?: string;
   onSent?: () => void;
+  initialConnectionId?: string;
 }
 
 export function TemplatePickerDialog({
@@ -36,11 +37,12 @@ export function TemplatePickerDialog({
   leadId,
   contactId,
   onSent,
+  initialConnectionId,
 }: TemplatePickerDialogProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
   const [variables, setVariables] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
-  const [connectionId, setConnectionId] = useState<string>('');
+  const [connectionId, setConnectionId] = useState<string>(initialConnectionId || '');
   const queryClient = useQueryClient();
 
   const { data: templates = [], isLoading } = useQuery({

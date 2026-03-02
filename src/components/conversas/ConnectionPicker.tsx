@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
   Select,
@@ -43,12 +44,15 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
   const defaultConn = connections.find((c) => c.is_default) || connections[0];
   const selectedId = value || defaultConn?.id;
 
-  // If only 1 connection, auto-select and don't render
-  if (!isLoading && connections.length <= 1) {
-    if (connections.length === 1 && !value) {
-      // Trigger onChange so parent has the connectionId
-      setTimeout(() => onChange(connections[0].id), 0);
+  // Auto-notify parent with default connection whenever value is empty
+  useEffect(() => {
+    if (!isLoading && defaultConn && !value) {
+      onChange(defaultConn.id);
     }
+  }, [isLoading, defaultConn, value, onChange]);
+
+  // If only 1 connection, don't render picker UI
+  if (!isLoading && connections.length <= 1) {
     return null;
   }
 
