@@ -4422,6 +4422,7 @@ export type Database = {
           enviado_em: string | null
           erro_detalhe: string | null
           estado: string
+          from_phone_number_id: string | null
           id: string
           lead_id: string | null
           lido_em: string | null
@@ -4453,6 +4454,7 @@ export type Database = {
           enviado_em?: string | null
           erro_detalhe?: string | null
           estado?: string
+          from_phone_number_id?: string | null
           id?: string
           lead_id?: string | null
           lido_em?: string | null
@@ -4484,6 +4486,7 @@ export type Database = {
           enviado_em?: string | null
           erro_detalhe?: string | null
           estado?: string
+          from_phone_number_id?: string | null
           id?: string
           lead_id?: string | null
           lido_em?: string | null
@@ -6140,6 +6143,8 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id: string
           is_active: boolean
+          is_default: boolean | null
+          label: string | null
           phone_number_id: string
           updated_at: string
           verified_name: string | null
@@ -6151,6 +6156,8 @@ export type Database = {
           empresa: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           is_active?: boolean
+          is_default?: boolean | null
+          label?: string | null
           phone_number_id: string
           updated_at?: string
           verified_name?: string | null
@@ -6162,6 +6169,8 @@ export type Database = {
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
           id?: string
           is_active?: boolean
+          is_default?: boolean | null
+          label?: string | null
           phone_number_id?: string
           updated_at?: string
           verified_name?: string | null

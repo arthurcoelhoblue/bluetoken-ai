@@ -130,6 +130,7 @@ interface SendManualParams {
   modoAtual?: AtendimentoModo;
   mediaType?: string;
   mediaUrl?: string;
+  connectionId?: string;
 }
 
 export function useSendManualMessage() {
@@ -138,7 +139,7 @@ export function useSendManualMessage() {
   const takeover = useConversationTakeover();
 
   return useMutation({
-    mutationFn: async ({ leadId, contactId, empresa, telefone, conteudo, modoAtual, mediaType, mediaUrl }: SendManualParams) => {
+    mutationFn: async ({ leadId, contactId, empresa, telefone, conteudo, modoAtual, mediaType, mediaUrl, connectionId }: SendManualParams) => {
       if (!user?.id) throw new Error('Usuário não autenticado');
 
       if (leadId && modoAtual !== 'MANUAL') {
@@ -158,6 +159,7 @@ export function useSendManualMessage() {
           mensagem: conteudo,
           empresa,
           ...(mediaType && mediaUrl ? { mediaType, mediaUrl } : {}),
+          ...(connectionId ? { connectionId } : {}),
         },
       });
 

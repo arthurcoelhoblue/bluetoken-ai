@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { Send, FileText, Search } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
+import { ConnectionPicker } from './ConnectionPicker';
 import { toast } from '@/hooks/use-toast';
 import type { MessageTemplate } from '@/hooks/useTemplates';
 
@@ -39,6 +40,7 @@ export function TemplatePickerDialog({
   const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
   const [variables, setVariables] = useState<Record<number, string>>({});
   const [search, setSearch] = useState('');
+  const [connectionId, setConnectionId] = useState<string>('');
   const queryClient = useQueryClient();
 
   const { data: templates = [], isLoading } = useQuery({
@@ -109,6 +111,7 @@ export function TemplatePickerDialog({
           metaTemplateName: selectedTemplate.codigo,
           metaLanguage: selectedTemplate.meta_language || 'pt_BR',
           metaComponents,
+          ...(connectionId ? { connectionId } : {}),
         },
       });
 
@@ -157,6 +160,11 @@ export function TemplatePickerDialog({
 
         {!selectedTemplate ? (
           <div className="space-y-3">
+            <ConnectionPicker
+              empresa={empresa}
+              value={connectionId}
+              onChange={setConnectionId}
+            />
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
