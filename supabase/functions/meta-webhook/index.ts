@@ -594,18 +594,68 @@ async function handleMessage(
 
   let lead = await findLeadByPhone(supabase, phoneNormalized, resolvedEmpresa);
   
+  // If lead found but in wrong empresa, re-search specifically in resolvedEmpresa
+  // resolvedEmpresa (from phone_number_id) is the source of truth
+  if (lead && lead.empresa !== resolvedEmpresa) {
+    log.info("Lead found in different empresa, re-searching in correct one", {
+      foundEmpresa: lead.empresa,
+      resolvedEmpresa,
+      leadId: lead.lead_id,
+    });
+    // Search exclusively in the correct empresa
+    const { data: correctLead } = await supabase
+      .from("lead_contacts")
+      .select("*")
+      .eq("empresa", resolvedEmpresa)
+      .or(`telefone.eq.${phoneNormalized},telefone_e164.eq.+${phoneNormalized.replace(/^\+/, "")}`)
+      .order("updated_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (correctLead) {
+      lead = correctLead as LeadContact;
+      log.info("Found lead in correct empresa", { leadId: lead.lead_id, empresa: lead.empresa });
+    } else {
+      // No lead in correct empresa, auto-create
+      lead = null;
+    }
+  }
+
   // Auto-create lead if not found
   if (!lead) {
     log.info("No lead found, auto-creating", { phone: phoneNormalized, empresa: resolvedEmpresa });
     lead = await autoCreateLead(supabase, phoneNormalized, resolvedEmpresa, profileName);
   }
 
-  const empresa: EmpresaTipo = lead?.empresa || resolvedEmpresa;
+  // Always use resolvedEmpresa (from phone_number_id) as source of truth
+  const empresa: EmpresaTipo = resolvedEmpresa;
 
   // Download media if applicable
   let mediaUrl: string | null = null;
   if (mediaInfo.media_meta_id && mediaInfo.media_mime_type) {
     mediaUrl = await downloadMetaMedia(supabase, mediaInfo.media_meta_id, mediaInfo.media_mime_type);
+  }
+
+  // Lookup contact_id from contacts table (by phone + empresa)
+  let contactId: string | null = null;
+  if (lead) {
+    const phoneE164 = phoneNormalized.startsWith("+") ? phoneNormalized : `+${phoneNormalized}`;
+    // Try e164 first, then legacy_lead_id
+    const { data: contact } = await supabase
+      .from("contacts")
+      .select("id")
+      .eq("empresa", empresa)
+      .eq("is_active", true)
+      .or(`telefone_e164.eq.${phoneE164},legacy_lead_id.eq.${lead.lead_id}`)
+      .limit(1)
+      .maybeSingle();
+    
+    if (contact) {
+      contactId = contact.id;
+      log.info("Contact found for inbound message", { contactId, leadId: lead.lead_id });
+    } else {
+      log.warn("No contact found for inbound message", { leadId: lead.lead_id, phone: phoneE164 });
+    }
   }
 
   // Find active cadence run
@@ -628,6 +678,7 @@ async function handleMessage(
     .from("lead_messages")
     .insert({
       lead_id: lead?.lead_id || null,
+      contact_id: contactId,
       empresa,
       run_id: runId,
       canal: "WHATSAPP",

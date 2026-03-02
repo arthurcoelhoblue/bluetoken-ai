@@ -1,32 +1,25 @@
 
 
-## Diagnóstico: Mensagens inbound não aparecem na conversa
+## Correção: Mensagens inbound roteadas para empresa errada + sem contact_id
 
-### Causa Raiz
+### Causa Raiz (atualizada)
 
-O webhook `meta-webhook` **recebe** as mensagens corretamente (logs confirmam: "Message saved", id `74038b25-...`). O problema é que a mensagem é salva **sem `contact_id`**, apenas com `lead_id` (formato legado `inbound_98317422_...`).
+Dois problemas identificados:
 
-A UI busca mensagens por duas vias:
-1. `lead_id=eq.{legacy_lead_id}` — mas o contato Arthur tem `legacy_lead_id: null`, então a query vai com `lead_id=eq.` (vazio) → retorna 0 resultados
-2. `contact_id=eq.{contactId}` — retorna apenas as 3 mensagens OUTBOUND que têm `contact_id` preenchido
+1. **Empresa errada**: `findLeadByPhone` encontrava o lead em qualquer empresa (fallback sem filtro). Quando um contato existia na TOKENIZA, mensagens vindas do número da BLUE eram salvas como TOKENIZA porque `lead.empresa` sobrescrevia `resolvedEmpresa`.
 
-As mensagens inbound ficam "órfãs" — têm `lead_id` mas não `contact_id`, e a UI não consegue encontrá-las.
+2. **Sem contact_id**: Mensagens inbound eram salvas sem `contact_id`, tornando-as invisíveis na UI para contatos sem `legacy_lead_id`.
 
-### Solução
+### Correção aplicada
 
 **Arquivo**: `supabase/functions/meta-webhook/index.ts`
 
-Na função `handleMessage`, após encontrar o lead via `findLeadByPhone`, buscar o registro correspondente na tabela `contacts` (pelo telefone + empresa) e incluir o `contact_id` no insert da mensagem.
+1. **Prioridade do `resolvedEmpresa`**: Quando o lead encontrado está em empresa diferente da resolvida via `phone_number_id`, re-busca exclusivamente na empresa correta. Se não encontrar, auto-cria.
 
-```
-1. Após encontrar/criar o lead_contact
-2. Buscar contacts.id WHERE telefone matches AND empresa = resolvedEmpresa
-3. Incluir contact_id no insert de lead_messages
-```
+2. **`const empresa = resolvedEmpresa`**: O `phone_number_id` é sempre a fonte de verdade, nunca mais sobrescrito pelo `lead.empresa`.
 
-Isso alinha o comportamento com o fluxo de envio manual (que já seta `contact_id`), garantindo que as mensagens inbound apareçam na conversa.
+3. **Lookup de `contact_id`**: Após encontrar o lead, busca o contato correspondente em `contacts` (por `telefone_e164` ou `legacy_lead_id` + empresa) e inclui no insert.
 
 ### Deploy
 
-Redeployar `meta-webhook` após a alteração.
-
+Redeployado `meta-webhook`.
