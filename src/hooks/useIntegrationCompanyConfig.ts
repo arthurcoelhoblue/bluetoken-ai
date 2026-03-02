@@ -50,9 +50,15 @@ export function useIntegrationCompanyConfig() {
     }) => {
       const { error } = await supabase
         .from("integration_company_config" as any)
-        .update({ enabled, updated_at: new Date().toISOString() } as never)
-        .eq("empresa", empresa)
-        .eq("channel", channel);
+        .upsert(
+          {
+            empresa,
+            channel,
+            enabled,
+            updated_at: new Date().toISOString(),
+          } as never,
+          { onConflict: "empresa,channel" }
+        );
 
       if (error) throw error;
     },
