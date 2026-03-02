@@ -2,18 +2,31 @@
 
 ## Problema
 
-O webhook registra chamadas de **todos** os ramais do PBX Zadarma, incluindo ramais que não estão mapeados no CRM. Isso acontece por causa do fallback nas linhas 67-69: quando o ramal não é encontrado na tabela `zadarma_extensions`, o código usa a primeira empresa ativa e registra a chamada mesmo assim.
+O `copilot-chat` retorna uma resposta **streaming SSE** (Server-Sent Events), mas o `EmailFromDealDialog` chama via `supabase.functions.invoke()` que espera JSON. O resultado é que `data` contém o texto bruto do SSE (ou um ReadableStream), não um objeto `{ content: "..." }`. Por isso `data?.content` é `undefined` e os campos ficam vazios — mesmo com o toast de "sucesso".
+
+O toast "Conteúdo gerado — ajuste o assunto" aparece porque o código cai no bloco `catch` interno (JSON.parse falha no conteúdo SSE) e faz `form.setValue('body', data?.content || '')` — que é string vazia.
 
 ## Correção
 
-No `supabase/functions/zadarma-webhook/index.ts`, **remover o fallback** e ignorar eventos de ramais não mapeados:
+No `EmailFromDealDialog.tsx`, na função `handleGenerateDraft`:
 
-1. **Linhas 66-69**: Remover o bloco `if (!empresa && empresasAtivas.length > 0)` que usa a primeira empresa como fallback
-2. **Linhas 71-74**: O bloco `if (!empresa)` já existe — alterar a mensagem de log para indicar que o ramal foi ignorado por não estar no CRM, e retornar `200 OK` (sem registrar chamada)
+1. **Ler o SSE corretamente**: Usar `supabase.functions.invoke()` com `{ responseType: 'text' }` (ou equivalente) para obter o corpo como texto
+2. **Parsear os chunks SSE**: Extrair o conteúdo dos eventos `data: {...}` do stream, concatenar os deltas de `choices[0].delta.content`
+3. **Manter o fallback**: Se o parsing SSE falhar, tentar o formato JSON direto (caso o backend caia no fallback não-streaming)
 
-Resultado: apenas chamadas de ramais cadastrados em `zadarma_extensions` serão registradas no banco.
+### Lógica de parsing SSE:
+
+```text
+1. Obter resposta como texto bruto
+2. Separar por linhas "data: ..."
+3. Para cada linha (exceto "data: [DONE]"):
+   - Parse JSON → extrair choices[0].delta.content
+   - Concatenar no fullContent
+4. Tentar extrair JSON {subject, body} do fullContent
+5. Preencher os campos do formulário
+```
 
 ### Arquivo alterado
 
-1. `supabase/functions/zadarma-webhook/index.ts` — remover fallback de empresa para ramais não mapeados
+1. `src/components/deals/EmailFromDealDialog.tsx` — corrigir leitura da resposta SSE do copilot-chat
 
