@@ -357,10 +357,76 @@ serve(async (req) => {
       } else if (isTemplateSend) {
         // ── TEMPLATE SEND ──
         log.info('Enviando template Meta Cloud', { template: metaTemplateName });
+
+        // --- Auto-convert metaComponents from definition format to send format ---
+        let resolvedComponents = metaComponents;
+
+        // If no components provided, fetch from DB
+        if (!resolvedComponents || (Array.isArray(resolvedComponents) && resolvedComponents.length === 0)) {
+          const { data: dbTemplate } = await supabase
+            .from('message_templates')
+            .select('meta_components')
+            .eq('empresa', empresa)
+            .eq('codigo', templateCodigo || metaTemplateName)
+            .maybeSingle();
+          if (dbTemplate?.meta_components) {
+            resolvedComponents = dbTemplate.meta_components as typeof metaComponents;
+            log.info('Loaded meta_components from DB', { templateCodigo });
+          }
+        }
+
+        // Detect definition format (has 'text'/'example' but no 'parameters') and convert
+        if (resolvedComponents && Array.isArray(resolvedComponents)) {
+          const isDefinitionFormat = resolvedComponents.some(
+            (c: any) => c.type?.toUpperCase() === 'BODY' && c.text && !c.parameters
+          );
+          if (isDefinitionFormat) {
+            log.info('Converting metaComponents from definition to send format');
+            // Fetch contact name for {{1}} substitution
+            let contactName = 'Cliente';
+            if (contactId) {
+              const { data: cData } = await supabase
+                .from('contacts')
+                .select('nome')
+                .eq('id', contactId)
+                .maybeSingle();
+              if (cData?.nome) contactName = cData.nome;
+            } else if (leadId) {
+              const { data: lcData } = await supabase
+                .from('lead_contacts')
+                .select('nome')
+                .eq('lead_id', leadId)
+                .eq('empresa', empresa)
+                .limit(1)
+                .maybeSingle();
+              if (lcData?.nome) contactName = lcData.nome;
+            }
+
+            const sendComponents: Array<{ type: string; parameters: Array<{ type: string; text: string }> }> = [];
+            for (const comp of resolvedComponents as Array<{ type: string; text?: string; example?: { body_text?: string[][] } }>) {
+              if (comp.type?.toUpperCase() === 'BODY' && comp.text) {
+                const placeholderMatches = comp.text.match(/\{\{\d+\}\}/g);
+                if (placeholderMatches && placeholderMatches.length > 0) {
+                  const parameters = placeholderMatches.map((_: string, idx: number) => {
+                    if (idx === 0) return { type: 'text' as const, text: contactName };
+                    const exampleVals = comp.example?.body_text?.[0];
+                    return { type: 'text' as const, text: exampleVals?.[idx] || '' };
+                  });
+                  sendComponents.push({ type: 'body', parameters });
+                }
+              }
+            }
+            if (sendComponents.length > 0) {
+              resolvedComponents = sendComponents;
+              log.info('Converted components', { count: sendComponents.length, firstParam: sendComponents[0]?.parameters?.[0]?.text });
+            }
+          }
+        }
+
         const metaResult = await sendTemplateViaMetaCloud(metaConfig, phoneToSend, {
           templateName: metaTemplateName!.toLowerCase(),
           languageCode: metaLanguage || 'pt_BR',
-          components: metaComponents,
+          components: resolvedComponents,
         });
         if (metaResult.success) {
           await supabase.from('lead_messages').update({
