@@ -727,7 +727,7 @@ async function handleStatus(
 
   const updateData: Record<string, unknown> = { estado: estadoInterno };
   if (status.status === "failed" && status.errors?.length) {
-    updateData.erro_envio = JSON.stringify(status.errors);
+    updateData.erro_detalhe = JSON.stringify(status.errors);
   }
 
   const { error, count } = await supabase
