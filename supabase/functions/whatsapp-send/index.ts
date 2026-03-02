@@ -37,6 +37,8 @@ interface WhatsAppSendRequest {
   mediaUrl?: string;
   mediaCaption?: string;
   mediaFilename?: string;
+  // Connection selection (multiple numbers per empresa)
+  connectionId?: string;
 }
 
 interface WhatsAppSendResponse {
@@ -163,6 +165,7 @@ serve(async (req) => {
     const mediaUrl = body.mediaUrl;
     const mediaCaption = body.mediaCaption;
     const mediaFilename = body.mediaFilename;
+    const connectionId = body.connectionId;
 
     const isTemplateSend = !!metaTemplateName;
     const isMediaSend = !!mediaType && !!mediaUrl;
@@ -342,7 +345,12 @@ serve(async (req) => {
     if (activeChannel === 'meta_cloud') {
       log.info('Roteando via META CLOUD', { empresa, isTemplateSend, isMediaSend });
       const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud } = await import('../_shared/channel-resolver.ts');
-      const metaConfig = await resolveMetaCloudConfig(supabase, empresa);
+      const metaConfig = await resolveMetaCloudConfig(supabase, empresa, connectionId);
+
+      // Save from_phone_number_id for audit
+      if (metaConfig.metaPhoneNumberId) {
+        await supabase.from('lead_messages').update({ from_phone_number_id: metaConfig.metaPhoneNumberId }).eq('id', messageId);
+      }
 
       if (metaConfig.mode !== 'META_CLOUD') {
         sendResult = { success: false, error: `Meta Cloud não configurado para ${empresa}` };

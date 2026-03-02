@@ -45,13 +45,39 @@ export async function resolveChannelConfig(
 export async function resolveMetaCloudConfig(
   supabase: SupabaseClient,
   empresa: string,
+  connectionId?: string,
 ): Promise<ChannelConfig> {
-  const { data: conn } = await supabase
-    .from('whatsapp_connections')
-    .select('phone_number_id, business_account_id')
-    .eq('empresa', empresa)
-    .eq('is_active', true)
-    .maybeSingle();
+  let conn: { phone_number_id: string; business_account_id: string | null } | null = null;
+
+  if (connectionId) {
+    const { data } = await supabase
+      .from('whatsapp_connections')
+      .select('phone_number_id, business_account_id')
+      .eq('id', connectionId)
+      .eq('is_active', true)
+      .maybeSingle();
+    conn = data;
+  } else {
+    // Try default first, then any active
+    const { data: defaultConn } = await supabase
+      .from('whatsapp_connections')
+      .select('phone_number_id, business_account_id')
+      .eq('empresa', empresa)
+      .eq('is_active', true)
+      .eq('is_default', true)
+      .maybeSingle();
+    conn = defaultConn;
+    if (!conn) {
+      const { data: anyConn } = await supabase
+        .from('whatsapp_connections')
+        .select('phone_number_id, business_account_id')
+        .eq('empresa', empresa)
+        .eq('is_active', true)
+        .limit(1)
+        .maybeSingle();
+      conn = anyConn;
+    }
+  }
 
   if (!conn?.phone_number_id) return { mode: 'DIRECT' };
 
@@ -202,6 +228,22 @@ export async function sendVideoViaMetaCloud(
   config: ChannelConfig, to: string, videoUrl: string, caption?: string,
 ): Promise<{ success: boolean; error?: string; messageId?: string }> {
   return sendMediaViaMetaCloud(config, to, 'video', { link: videoUrl }, caption);
+}
+
+/**
+ * List all active WhatsApp connections for a given empresa.
+ */
+export async function listActiveConnections(
+  supabase: SupabaseClient,
+  empresa: string,
+): Promise<Array<{ id: string; label: string | null; display_phone: string | null; verified_name: string | null; is_default: boolean }>> {
+  const { data } = await supabase
+    .from('whatsapp_connections')
+    .select('id, label, display_phone, verified_name, is_default')
+    .eq('empresa', empresa)
+    .eq('is_active', true)
+    .order('is_default', { ascending: false });
+  return (data ?? []) as any[];
 }
 
 async function sendMediaViaMetaCloud(

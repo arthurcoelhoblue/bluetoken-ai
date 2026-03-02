@@ -8,6 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 import { CreateDealFromConversationDialog } from './CreateDealFromConversationDialog';
 import { TemplatePickerDialog } from './TemplatePickerDialog';
 import { MediaAttachments } from './MediaAttachments';
+import { ConnectionPicker } from './ConnectionPicker';
 import type { AtendimentoModo } from '@/types/conversas';
 
 interface ManualMessageInputProps {
@@ -31,6 +32,7 @@ export function ManualMessageInput({
   const [pendingMedia, setPendingMedia] = useState<{ url: string; type: string; filename?: string } | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [windowExpired, setWindowExpired] = useState(false);
+  const [connectionId, setConnectionId] = useState<string>('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMutation = useSendManualMessage();
 
@@ -89,6 +91,7 @@ export function ManualMessageInput({
         conteudo: message || '[Áudio]',
         modoAtual: modo,
         ...(mediaType && mediaUrl ? { mediaType, mediaUrl } : {}),
+        ...(connectionId ? { connectionId } : {}),
       },
       {
         onSuccess: () => {
@@ -196,6 +199,12 @@ export function ManualMessageInput({
       )}
 
       <div className="flex items-end gap-2">
+        <ConnectionPicker
+          empresa={empresa}
+          value={connectionId}
+          onChange={setConnectionId}
+          className="shrink-0"
+        />
         <Textarea
           ref={textareaRef}
           value={text}
