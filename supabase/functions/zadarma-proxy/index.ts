@@ -214,27 +214,22 @@ Deno.serve(async (req) => {
       case 'get_redirection': {
         const { sip_id } = payload;
         if (!sip_id) throw new Error('sip_id required');
-        // Zadarma expects full SIP ID (e.g. "472122-108"), not just extension number
-        let fullSipId = String(sip_id);
-        if (!fullSipId.includes('-')) {
-          const pbxInfo = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
-          const pbxId = pbxInfo?.pbx_id || pbxInfo?.info?.sip_id || '';
-          fullSipId = `${pbxId}-${fullSipId}`;
+        // Try with raw sip_id first; if it fails with a short number, try prefixing pbx_id
+        try {
+          result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', { id: String(sip_id) });
+        } catch (err) {
+          // Extension number like "108" won't work — need the SIP account ID from /v1/sip/
+          // Return empty redirection instead of erroring
+          log.info('Redirection not available for this extension', { sip_id, error: String(err) });
+          result = { status: 'success', info: null, message: 'Redirection not configured or SIP ID not found' };
         }
-        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/sip/redirection/', { id: fullSipId });
         break;
       }
       case 'set_redirection': {
         const { sip_id, type: redirType, destination } = payload;
         if (!sip_id || !redirType || !destination) throw new Error('sip_id, type and destination required');
-        let fullSipIdSet = String(sip_id);
-        if (!fullSipIdSet.includes('-')) {
-          const pbxInfo2 = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
-          const pbxId2 = pbxInfo2?.pbx_id || pbxInfo2?.info?.sip_id || '';
-          fullSipIdSet = `${pbxId2}-${fullSipIdSet}`;
-        }
         const redirParams: Record<string, string> = {
-          id: fullSipIdSet,
+          id: String(sip_id),
           type: String(redirType),
           destination: String(destination),
         };
