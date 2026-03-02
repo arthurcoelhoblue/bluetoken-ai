@@ -1,41 +1,31 @@
 
 
-## Diagnóstico
+## Plano: Campos de Credenciais Meta Cloud por Empresa
 
-A tabela `whatsapp_connections` tem apenas duas políticas RLS:
-1. **SELECT** para `authenticated` — permite leitura
-2. **ALL** para `service_role` — apenas backend interno
+### Problema
+O card "WhatsApp Business Oficial" (Meta Cloud) na aba Canais permite apenas ativar/desativar por empresa. Não há campos para cadastrar o **Access Token** e **App Secret** necessários para a integração funcionar.
 
-Falta políticas de **INSERT**, **UPDATE** e **DELETE** para usuários autenticados (admins).
+### O que será criado
 
-## Solução
+Adicionar campos de configuração no `CompanyChannelCard` para o canal `meta_cloud`, similar ao que já existe para `mensageria` (que tem campos API Key e Connection Name).
 
-Criar uma migração SQL adicionando políticas RLS que permitam usuários autenticados com role ADMIN gerenciar as conexões:
+Quando o canal for `meta_cloud` e estiver ativo, exibir:
+- **Access Token** (campo password com toggle de visibilidade)
+- **App Secret** (campo password com toggle de visibilidade, usado para validação de assinatura no webhook)
+- Botão "Salvar" que aparece quando há mudanças
 
-```sql
--- INSERT policy
-CREATE POLICY "Admins can insert whatsapp_connections"
-ON public.whatsapp_connections FOR INSERT TO authenticated
-WITH CHECK (
-  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
-);
+### Onde os dados serão salvos
 
--- UPDATE policy  
-CREATE POLICY "Admins can update whatsapp_connections"
-ON public.whatsapp_connections FOR UPDATE TO authenticated
-USING (
-  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
-);
+Os valores serão salvos na tabela `system_settings` com:
+- `category`: `integrations`  
+- `key`: `meta_cloud_<empresa>` (ex: `meta_cloud_blue`)
+- `value`: `{ "enabled": true, "access_token": "...", "app_secret": "..." }`
 
--- DELETE policy
-CREATE POLICY "Admins can delete whatsapp_connections"
-ON public.whatsapp_connections FOR DELETE TO authenticated
-USING (
-  EXISTS (SELECT 1 FROM public.user_access_assignments WHERE user_id = auth.uid())
-);
-```
+Isso é compatível com o `channel-resolver.ts` que já lê `access_token` de `system_settings` com essa mesma chave. O `META_APP_SECRET` usado no `meta-webhook` também passará a ser lido por empresa.
 
-Isso permite que qualquer usuário autenticado com acesso atribuído (presente em `user_access_assignments`) possa adicionar, editar e remover conexões WhatsApp.
+### Alterações
 
-Nenhuma alteração de código é necessária — apenas a migração de banco.
+1. **`CompanyChannelCard.tsx`**: Criar componente `MetaCloudConfigFields` (análogo ao `MensageriaConfigFields` existente) com campos Access Token e App Secret, salvando via upsert em `system_settings`.
+
+2. **Sem migração de banco** — a tabela `system_settings` já existe e aceita qualquer JSON no campo `value`.
 
