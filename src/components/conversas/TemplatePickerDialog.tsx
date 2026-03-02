@@ -38,7 +38,7 @@ export function TemplatePickerDialog({
   onSent,
 }: TemplatePickerDialogProps) {
   const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
-  const [variables, setVariables] = useState<Record<number, string>>({});
+  const [variables, setVariables] = useState<Record<string, string>>({});
   const [search, setSearch] = useState('');
   const [connectionId, setConnectionId] = useState<string>('');
   const queryClient = useQueryClient();
@@ -69,12 +69,13 @@ export function TemplatePickerDialog({
   }, [templates, search]);
 
   // Extract {{1}}, {{2}} etc from template content
+  // Extract {{1}}, {{2}} or {{nome_variavel}} from template content
   const variableSlots = useMemo(() => {
     if (!selectedTemplate) return [];
-    const matches = selectedTemplate.conteudo.match(/\{\{(\d+)\}\}/g);
+    const matches = selectedTemplate.conteudo.match(/\{\{([^}]+)\}\}/g);
     if (!matches) return [];
-    const unique = [...new Set(matches.map((m) => parseInt(m.replace(/[{}]/g, ''))))];
-    return unique.sort((a, b) => a - b);
+    const unique = [...new Set(matches.map((m) => m.replace(/[{}]/g, '').trim()))];
+    return unique;
   }, [selectedTemplate]);
 
   const previewContent = useMemo(() => {
@@ -82,7 +83,7 @@ export function TemplatePickerDialog({
     let text = selectedTemplate.conteudo;
     variableSlots.forEach((slot) => {
       const val = variables[slot] || `{{${slot}}}`;
-      text = text.replace(new RegExp(`\\{\\{${slot}\\}\\}`, 'g'), val);
+      text = text.replace(new RegExp(`\\{\\{${slot.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\}\\}`, 'g'), val);
     });
     return text;
   }, [selectedTemplate, variables, variableSlots]);
