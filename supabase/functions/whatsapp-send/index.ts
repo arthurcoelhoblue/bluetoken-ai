@@ -358,7 +358,7 @@ serve(async (req) => {
         // ── TEMPLATE SEND ──
         log.info('Enviando template Meta Cloud', { template: metaTemplateName });
         const metaResult = await sendTemplateViaMetaCloud(metaConfig, phoneToSend, {
-          templateName: metaTemplateName!,
+          templateName: metaTemplateName!.toLowerCase(),
           languageCode: metaLanguage || 'pt_BR',
           components: metaComponents,
         });
