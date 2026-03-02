@@ -58,8 +58,88 @@ serve(async (req) => {
 
     // ========================================
     // POST — Create template on Meta + sync local
+    //   ?action=batch-submit → batch submit all LOCAL templates
     // ========================================
     if (method === 'POST') {
+      const action = url.searchParams.get('action');
+
+      // Batch submit all LOCAL templates
+      if (action === 'batch-submit') {
+        log.info('Batch submit started', { empresa });
+
+        const { data: locals, error: fetchErr } = await supabase
+          .from('message_templates')
+          .select('id, codigo, nome, conteudo, canal')
+          .eq('empresa', empresa)
+          .eq('meta_status', 'LOCAL')
+          .eq('canal', 'WHATSAPP')
+          .eq('ativo', true);
+
+        if (fetchErr) return json({ error: fetchErr.message }, 500);
+        if (!locals || locals.length === 0) return json({ success: true, message: 'No LOCAL templates', submitted: 0, failed: 0 });
+
+        log.info('Found LOCAL templates', { count: locals.length });
+        const batchResults: Array<{ codigo: string; success: boolean; metaId?: string; error?: string }> = [];
+
+        for (const tpl of locals) {
+          try {
+            const metaName = tpl.codigo.toLowerCase();
+            let rawText = tpl.conteudo as string;
+
+            // Meta doesn't allow variables at the very start or end
+            // Prefix with "Olá " if text starts with {{...}}
+            if (/^\{\{/.test(rawText)) {
+              rawText = 'Olá ' + rawText;
+            }
+            // If text ends with {{...}}, append a period
+            if (/\{\{[^}]+\}\}\s*$/.test(rawText)) {
+              rawText = rawText.trimEnd() + '.';
+            }
+
+            const varMap: Record<string, number> = {};
+            let varCounter = 0;
+            const bodyText = rawText.replace(
+              /\{\{(\w+)\}\}/g,
+              (_m: string, varName: string) => {
+                if (!(varName in varMap)) { varCounter++; varMap[varName] = varCounter; }
+                return `{{${varMap[varName]}}}`;
+              }
+            );
+            const exampleValues = Array(varCounter).fill('Cliente');
+            const comps = [{ type: 'BODY', text: bodyText, ...(varCounter > 0 ? { example: { body_text: [exampleValues] } } : {}) }];
+
+            const res = await fetch(`${META_BASE}/${config.metaBusinessAccountId}/message_templates`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.metaAccessToken}` },
+              body: JSON.stringify({ name: metaName, category: 'MARKETING', language: 'pt_BR', components: comps }),
+            });
+            const resData = await res.json();
+
+            if (!res.ok) {
+              log.error('Meta submit failed', { metaName, status: res.status, resData });
+              batchResults.push({ codigo: tpl.codigo, success: false, error: resData?.error?.message || `HTTP ${res.status}` });
+              continue;
+            }
+
+            await supabase.from('message_templates').update({
+              meta_template_id: resData.id, meta_status: resData.status || 'PENDING',
+              meta_category: 'MARKETING', meta_language: 'pt_BR', meta_components: comps,
+            }).eq('id', tpl.id);
+
+            batchResults.push({ codigo: tpl.codigo, success: true, metaId: resData.id });
+            log.info('Template submitted', { metaName, metaId: resData.id });
+            await new Promise((r) => setTimeout(r, 500));
+          } catch (e) {
+            batchResults.push({ codigo: tpl.codigo, success: false, error: e instanceof Error ? e.message : String(e) });
+          }
+        }
+
+        const submitted = batchResults.filter((r) => r.success).length;
+        const failed = batchResults.filter((r) => !r.success).length;
+        log.info('Batch completed', { empresa, submitted, failed });
+        return json({ success: true, submitted, failed, results: batchResults });
+      }
+
       const body = await req.json();
       const { name, category, language, components, localTemplateId } = body;
 
