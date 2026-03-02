@@ -28,7 +28,9 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Eye, EyeOff } from "lucide-react";
 import { useCompany } from "@/contexts/CompanyContext";
+import { useState } from "react";
 import type { Database } from "@/integrations/supabase/types";
 
 type WhatsAppConnection = Database["public"]["Tables"]["whatsapp_connections"]["Row"];
@@ -41,6 +43,8 @@ const schema = z.object({
   display_phone: z.string().optional(),
   verified_name: z.string().optional(),
   is_default: z.boolean().default(false),
+  access_token: z.string().optional(),
+  app_secret: z.string().optional(),
 });
 
 type FormValues = z.infer<typeof schema>;
@@ -73,8 +77,13 @@ export function AddEditConnectionDialog({
       display_phone: "",
       verified_name: "",
       is_default: false,
+      access_token: "",
+      app_secret: "",
     },
   });
+
+  const [showToken, setShowToken] = useState(false);
+  const [showSecret, setShowSecret] = useState(false);
 
   useEffect(() => {
     if (open && connection) {
@@ -86,6 +95,8 @@ export function AddEditConnectionDialog({
         display_phone: connection.display_phone || "",
         verified_name: connection.verified_name || "",
         is_default: connection.is_default || false,
+        access_token: (connection as any).access_token || "",
+        app_secret: (connection as any).app_secret || "",
       });
     } else if (open && !connection) {
       form.reset({
@@ -96,6 +107,8 @@ export function AddEditConnectionDialog({
         display_phone: "",
         verified_name: "",
         is_default: false,
+        access_token: "",
+        app_secret: "",
       });
     }
   }, [open, connection]);
@@ -205,6 +218,62 @@ export function AddEditConnectionDialog({
                   <FormLabel>Nome Verificado</FormLabel>
                   <FormControl>
                     <Input placeholder="Nome verificado na Meta" {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="access_token"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>Access Token (Meta)</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        type={showToken ? "text" : "password"}
+                        placeholder="EAAxxxxxxx..."
+                        {...field}
+                        className="pr-8"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowToken(!showToken)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="app_secret"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>App Secret (Meta)</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        type={showSecret ? "text" : "password"}
+                        placeholder="abcdef123..."
+                        {...field}
+                        className="pr-8"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowSecret(!showSecret)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      >
+                        {showSecret ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
