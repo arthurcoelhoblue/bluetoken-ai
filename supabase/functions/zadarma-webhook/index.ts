@@ -63,14 +63,9 @@ Deno.serve(async (req) => {
       if (ext) { empresa = ext.empresa; userId = ext.user_id; }
     }
 
-    // Fallback: use first active empresa
-    if (!empresa && empresasAtivas.length > 0) {
-      empresa = empresasAtivas[0];
-    }
-
     if (!empresa) {
-      log.error('No active empresa found in Zadarma config');
-      return new Response(JSON.stringify({ error: 'no_config' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      log.info('Ignoring call: extension not mapped in CRM', { internal: internalNumber, pbx_call_id: pbxCallId });
+      return new Response(JSON.stringify({ status: 'ignored', reason: 'unmapped_extension' }), { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Validate empresa is in empresas_ativas
