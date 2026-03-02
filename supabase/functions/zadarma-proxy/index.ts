@@ -256,18 +256,24 @@ Deno.serve(async (req) => {
       // ─── SYNC EXTENSIONS (list all from PBX) ──────────
       case 'sync_extensions': {
         const pbxResult = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/');
-        // Parse response: extensions come as { extensions: [{extension, sip},...] } or similar
         const rawExts = pbxResult?.extensions || pbxResult?.info?.extensions || pbxResult?.pbx_internals || [];
-        const sipId = pbxResult?.info?.sip_id || pbxResult?.sip_id || '';
+        const rawNumbers = pbxResult?.numbers || [];
+        const sipId = pbxResult?.pbx_id || pbxResult?.info?.sip_id || pbxResult?.sip_id || '';
         
         let extensionsList: Array<{ extension_number: string; sip_login: string }> = [];
-        if (Array.isArray(rawExts)) {
+
+        if (Array.isArray(rawNumbers) && rawNumbers.length > 0) {
+          // Zadarma returns { numbers: [100, 103, ...], pbx_id: 472122 }
+          extensionsList = rawNumbers.map((n: unknown) => ({
+            extension_number: String(n),
+            sip_login: sipId ? `${sipId}-${n}` : '',
+          }));
+        } else if (Array.isArray(rawExts)) {
           extensionsList = rawExts.map((e: Record<string, unknown>) => ({
             extension_number: String(e.extension || e.number || e.id || ''),
             sip_login: String(e.sip || e.sip_login || (sipId ? `${sipId}-${e.extension || e.number || e.id}` : '')),
           }));
         } else if (typeof rawExts === 'object') {
-          // Could be { "100": {...}, "101": {...} }
           extensionsList = Object.entries(rawExts).map(([num, info]: [string, unknown]) => ({
             extension_number: num,
             sip_login: typeof info === 'object' && info !== null && 'sip' in info ? String((info as Record<string, unknown>).sip) : (sipId ? `${sipId}-${num}` : ''),
