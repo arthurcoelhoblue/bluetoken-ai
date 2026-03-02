@@ -1,23 +1,32 @@
 
 
-## Correção: Variáveis nomeadas não detectadas no TemplatePickerDialog
+## Diagnóstico: Mensagens inbound não aparecem na conversa
 
-### Problema
+### Causa Raiz
 
-- **Blue** `conteudo`: `"Oi {{primeiro_nome}}, tudo bem?"` → regex `\{\{(\d+)\}\}` **não detecta**
-- **Tokeniza** `conteudo`: `"Oi {{1}}, tudo bem?"` → regex **detecta**
+O webhook `meta-webhook` **recebe** as mensagens corretamente (logs confirmam: "Message saved", id `74038b25-...`). O problema é que a mensagem é salva **sem `contact_id`**, apenas com `lead_id` (formato legado `inbound_98317422_...`).
 
-O `TemplatePickerDialog` só procura `{{número}}` — variáveis nomeadas como `{{primeiro_nome}}` são ignoradas.
+A UI busca mensagens por duas vias:
+1. `lead_id=eq.{legacy_lead_id}` — mas o contato Arthur tem `legacy_lead_id: null`, então a query vai com `lead_id=eq.` (vazio) → retorna 0 resultados
+2. `contact_id=eq.{contactId}` — retorna apenas as 3 mensagens OUTBOUND que têm `contact_id` preenchido
+
+As mensagens inbound ficam "órfãs" — têm `lead_id` mas não `contact_id`, e a UI não consegue encontrá-las.
 
 ### Solução
 
-Atualizar o `conteudo` dos 11 templates da Blue no banco para usar o formato numérico `{{1}}` (alinhado com o `meta_components.text`), já que a Meta usa `{{1}}`.
+**Arquivo**: `supabase/functions/meta-webhook/index.ts`
 
-Além disso, como medida defensiva, atualizar o `TemplatePickerDialog` para detectar **ambos** os formatos: `{{1}}` e `{{nome_variavel}}`.
+Na função `handleMessage`, após encontrar o lead via `findLeadByPhone`, buscar o registro correspondente na tabela `contacts` (pelo telefone + empresa) e incluir o `contact_id` no insert da mensagem.
 
-### Alterações
+```
+1. Após encontrar/criar o lead_contact
+2. Buscar contacts.id WHERE telefone matches AND empresa = resolvedEmpresa
+3. Incluir contact_id no insert de lead_messages
+```
 
-**1. Migration SQL** — Atualizar `conteudo` dos templates Blue de `{{primeiro_nome}}` para `{{1}}`
+Isso alinha o comportamento com o fluxo de envio manual (que já seta `contact_id`), garantindo que as mensagens inbound apareçam na conversa.
 
-**2. `TemplatePickerDialog.tsx`** — Expandir o regex de extração de variáveis para capturar `{{palavra}}` além de `{{número}}`, exibindo campos para preenchimento em ambos os casos.
+### Deploy
+
+Redeployar `meta-webhook` após a alteração.
 
