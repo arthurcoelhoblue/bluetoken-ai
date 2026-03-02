@@ -1,31 +1,33 @@
 
 
-## Plano: Campos de Credenciais Meta Cloud por Empresa
+## Plano: Credenciais Meta por Conexão (não por Empresa)
 
-### Problema
-O card "WhatsApp Business Oficial" (Meta Cloud) na aba Canais permite apenas ativar/desativar por empresa. Não há campos para cadastrar o **Access Token** e **App Secret** necessários para a integração funcionar.
+### Problema atual
 
-### O que será criado
+O Access Token e App Secret foram implementados **por empresa** via `system_settings`. Mas na prática, uma mesma empresa pode ter múltiplos números em apps Meta diferentes (ex: Tokeniza). Cada conexão WhatsApp precisa do seu próprio par de credenciais.
 
-Adicionar campos de configuração no `CompanyChannelCard` para o canal `meta_cloud`, similar ao que já existe para `mensageria` (que tem campos API Key e Connection Name).
+### Solução
 
-Quando o canal for `meta_cloud` e estiver ativo, exibir:
-- **Access Token** (campo password com toggle de visibilidade)
-- **App Secret** (campo password com toggle de visibilidade, usado para validação de assinatura no webhook)
-- Botão "Salvar" que aparece quando há mudanças
-
-### Onde os dados serão salvos
-
-Os valores serão salvos na tabela `system_settings` com:
-- `category`: `integrations`  
-- `key`: `meta_cloud_<empresa>` (ex: `meta_cloud_blue`)
-- `value`: `{ "enabled": true, "access_token": "...", "app_secret": "..." }`
-
-Isso é compatível com o `channel-resolver.ts` que já lê `access_token` de `system_settings` com essa mesma chave. O `META_APP_SECRET` usado no `meta-webhook` também passará a ser lido por empresa.
+Mover Access Token e App Secret para dentro de cada **conexão WhatsApp** (`whatsapp_connections`), nos campos do dialog de adicionar/editar.
 
 ### Alterações
 
-1. **`CompanyChannelCard.tsx`**: Criar componente `MetaCloudConfigFields` (análogo ao `MensageriaConfigFields` existente) com campos Access Token e App Secret, salvando via upsert em `system_settings`.
+**1. Migração de banco** — Adicionar colunas `access_token` e `app_secret` à tabela `whatsapp_connections`:
+```sql
+ALTER TABLE public.whatsapp_connections 
+  ADD COLUMN access_token text,
+  ADD COLUMN app_secret text;
+```
 
-2. **Sem migração de banco** — a tabela `system_settings` já existe e aceita qualquer JSON no campo `value`.
+**2. `AddEditConnectionDialog.tsx`** — Adicionar campos Access Token e App Secret (com toggle de visibilidade) ao formulário existente. Os valores serão salvos direto na conexão.
+
+**3. `WhatsAppConnectionsManager.tsx`** — Passar `access_token` e `app_secret` no create/update mutation.
+
+**4. `CompanyChannelCard.tsx`** — Remover o componente `MetaCloudConfigFields` (não é mais necessário).
+
+**5. `channel-resolver.ts` (edge function)** — Alterar `resolveMetaCloudConfig` para ler `access_token` direto da conexão em vez de buscar em `system_settings`. Fallback para `system_settings` e env var mantido por compatibilidade.
+
+### Resultado
+
+Cada número WhatsApp terá seu próprio Access Token e App Secret, configurados no mesmo lugar onde se cadastra o número. Funciona para cenários com múltiplos apps Meta na mesma empresa.
 
