@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -22,6 +22,7 @@ import {
 import { Plus, Copy, Check, Trash2, Code, X, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useCompany } from "@/contexts/CompanyContext";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 
@@ -98,6 +99,7 @@ function mergeFieldMap(
 }
 
 export function ElementorIntegrationManager() {
+  const { empresaRecords } = useCompany();
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -148,6 +150,17 @@ export function ElementorIntegrationManager() {
 
   const [newPipelineId, setNewPipelineId] = useState("");
   const [newStageId, setNewStageId] = useState("");
+
+  // Reset pipeline/stage when empresa changes
+  useEffect(() => {
+    setNewPipelineId("");
+    setNewStageId("");
+  }, [newEmpresa]);
+
+  // Reset stage when pipeline changes
+  useEffect(() => {
+    setNewStageId("");
+  }, [newPipelineId]);
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -294,9 +307,12 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
 }, 10, 1);`;
   };
 
+  const filteredPipelines = pipelines.filter(p => p.empresa === newEmpresa);
+
   const filteredStages = newPipelineId
     ? stages.filter(s => s.pipeline_id === newPipelineId)
-    : stages;
+    : [];
+
 
   const addExtraField = () => {
     setNewExtraFields(prev => [...prev, { ameliaKey: "", elementorId: "" }]);
@@ -358,10 +374,9 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                   <Select value={newEmpresa} onValueChange={setNewEmpresa}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-                      <SelectItem value="BLUE">Blue</SelectItem>
-                      <SelectItem value="MPUPPE">MPuppe</SelectItem>
-                      <SelectItem value="AXIA">Axia</SelectItem>
+                      {empresaRecords.filter(e => e.is_active).map(e => (
+                        <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -373,9 +388,9 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                   <Select value={newPipelineId} onValueChange={setNewPipelineId}>
                     <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
                     <SelectContent>
-                      {pipelines.map(p => (
+                      {filteredPipelines.map(p => (
                         <SelectItem key={p.id} value={p.id}>
-                          {p.nome} ({p.empresa})
+                          {p.nome}
                         </SelectItem>
                       ))}
                     </SelectContent>
