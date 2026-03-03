@@ -46,17 +46,20 @@ export function TemplatePickerDialog({
   const queryClient = useQueryClient();
 
   const { data: templates = [], isLoading } = useQuery({
-    queryKey: ['approved-templates', empresa],
+    queryKey: ['approved-templates', empresa, connectionId],
     enabled: open,
     queryFn: async () => {
-      const { data, error } = await supabase
+      let q = supabase
         .from('message_templates' as any)
         .select('*')
         .eq('empresa', empresa)
         .eq('canal', 'WHATSAPP')
         .eq('meta_status', 'APPROVED')
-        .eq('ativo', true)
-        .order('nome');
+        .eq('ativo', true);
+      if (connectionId) {
+        q = q.or(`connection_id.eq.${connectionId},connection_id.is.null`);
+      }
+      const { data, error } = await q.order('nome');
       if (error) throw error;
       return (data ?? []) as unknown as MessageTemplate[];
     },

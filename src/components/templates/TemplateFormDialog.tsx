@@ -16,6 +16,7 @@ import { MetaStatusBadge } from './MetaStatusBadge';
 import { MetaComponentsEditor, type MetaComponent } from './MetaComponentsEditor';
 import type { MessageTemplate, TemplateInsert, TemplateUpdate } from '@/hooks/useTemplates';
 import { useState } from 'react';
+import { ConnectionPicker } from '@/components/conversas/ConnectionPicker';
 
 const schema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
@@ -43,6 +44,7 @@ interface Props {
 export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSaving }: Props) {
   const isEditing = !!template;
   const [metaComponents, setMetaComponents] = useState<MetaComponent[]>([]);
+  const [connectionId, setConnectionId] = useState<string | null>(null);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
@@ -68,6 +70,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
         meta_language: template.meta_language ?? 'pt_BR',
       });
       setMetaComponents((template.meta_components as MetaComponent[]) || []);
+      setConnectionId(template.connection_id ?? null);
     } else {
       form.reset({
         nome: '', codigo: '', empresa: 'BLUE', canal: 'WHATSAPP',
@@ -75,10 +78,12 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
         meta_category: '', meta_language: 'pt_BR',
       });
       setMetaComponents([]);
+      setConnectionId(null);
     }
   }, [template, open]);
 
   const canal = form.watch('canal');
+  const empresa = form.watch('empresa');
   const conteudo = form.watch('conteudo');
 
   function handleSubmit(values: FormValues) {
@@ -94,6 +99,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
       meta_category: values.meta_category || null,
       meta_language: values.meta_language || 'pt_BR',
       meta_components: metaComponents.length > 0 ? metaComponents : null,
+      connection_id: values.canal === 'WHATSAPP' ? (connectionId || null) : null,
       ...(isEditing ? { id: template!.id } : {}),
     } as TemplateInsert | TemplateUpdate;
     onSave(payload);
@@ -179,6 +185,18 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
                 </FormItem>
               )} />
             </div>
+
+            {/* Connection picker for WhatsApp */}
+            {canal === 'WHATSAPP' && (
+              <div className="space-y-1">
+                <Label className="text-sm font-medium">Número WhatsApp</Label>
+                <ConnectionPicker
+                  empresa={empresa}
+                  value={connectionId || undefined}
+                  onChange={(id) => setConnectionId(id)}
+                />
+              </div>
+            )}
 
             {/* Meta fields for WhatsApp */}
             {canal === 'WHATSAPP' && (

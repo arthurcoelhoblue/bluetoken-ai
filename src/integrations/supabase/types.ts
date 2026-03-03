@@ -4764,6 +4764,7 @@ export type Database = {
           ativo: boolean
           canal: Database["public"]["Enums"]["canal_tipo"]
           codigo: string
+          connection_id: string | null
           conteudo: string
           created_at: string
           descricao: string | null
@@ -4784,6 +4785,7 @@ export type Database = {
           ativo?: boolean
           canal: Database["public"]["Enums"]["canal_tipo"]
           codigo: string
+          connection_id?: string | null
           conteudo: string
           created_at?: string
           descricao?: string | null
@@ -4804,6 +4806,7 @@ export type Database = {
           ativo?: boolean
           canal?: Database["public"]["Enums"]["canal_tipo"]
           codigo?: string
+          connection_id?: string | null
           conteudo?: string
           created_at?: string
           descricao?: string | null
@@ -4819,7 +4822,15 @@ export type Database = {
           updated_at?: string
           usa_llm?: boolean | null
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "message_templates_connection_id_fkey"
+            columns: ["connection_id"]
+            isOneToOne: false
+            referencedRelation: "whatsapp_connections"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       metas_vendedor: {
         Row: {

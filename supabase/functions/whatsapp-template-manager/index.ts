@@ -19,11 +19,14 @@ serve(async (req) => {
     const supabase = createServiceClient();
     const url = new URL(req.url);
     const empresa = url.searchParams.get('empresa');
+    const connectionId = url.searchParams.get('connectionId');
 
     if (!empresa) return json({ error: 'empresa query param required' }, 400);
 
-    // Resolve Meta credentials
-    const config = await resolveMetaCloudConfig(supabase, empresa);
+    // Resolve Meta credentials — prefer specific connection if provided
+    const config = connectionId
+      ? await resolveMetaCloudConfig(supabase, empresa, connectionId)
+      : await resolveMetaCloudConfig(supabase, empresa);
     if (config.mode !== 'META_CLOUD' || !config.metaAccessToken || !config.metaBusinessAccountId) {
       return json({ error: `Meta Cloud não configurado para ${empresa}` }, 400);
     }
@@ -67,13 +70,15 @@ serve(async (req) => {
       if (action === 'batch-submit') {
         log.info('Batch submit started', { empresa });
 
-        const { data: locals, error: fetchErr } = await supabase
+        let batchQuery = supabase
           .from('message_templates')
           .select('id, codigo, nome, conteudo, canal')
           .eq('empresa', empresa)
           .eq('meta_status', 'LOCAL')
           .eq('canal', 'WHATSAPP')
           .eq('ativo', true);
+        if (connectionId) batchQuery = batchQuery.eq('connection_id', connectionId);
+        const { data: locals, error: fetchErr } = await batchQuery;
 
         if (fetchErr) return json({ error: fetchErr.message }, 500);
         if (!locals || locals.length === 0) return json({ success: true, message: 'No LOCAL templates', submitted: 0, failed: 0 });
@@ -273,11 +278,13 @@ serve(async (req) => {
       }
 
       // Get local templates for this empresa that have been submitted
-      const { data: locals } = await supabase
+      let syncQuery = supabase
         .from('message_templates')
         .select('id, codigo, meta_template_id, meta_status')
         .eq('empresa', empresa)
         .neq('meta_status', 'LOCAL');
+      if (connectionId) syncQuery = syncQuery.eq('connection_id', connectionId);
+      const { data: locals } = await syncQuery;
 
       let synced = 0;
       for (const local of (locals || [])) {

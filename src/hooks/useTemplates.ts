@@ -21,6 +21,7 @@ export interface MessageTemplate {
   meta_language: string;
   meta_components: unknown | null;
   meta_rejected_reason: string | null;
+  connection_id: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -30,17 +31,18 @@ export type TemplateUpdate = Partial<TemplateInsert> & { id: string };
 
 const TEMPLATE_PAGE_SIZE = 25;
 
-export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null, page: number = 0, metaStatus?: MetaStatus | null) {
+export function useTemplates(canal?: 'WHATSAPP' | 'EMAIL' | null, page: number = 0, metaStatus?: MetaStatus | null, connectionId?: string | null) {
   const { activeCompanies } = useCompany();
 
   return useQuery({
-    queryKey: ['message_templates', activeCompanies, canal, page, metaStatus],
+    queryKey: ['message_templates', activeCompanies, canal, page, metaStatus, connectionId],
     queryFn: async () => {
       let q = supabase.from('message_templates' as any).select('*', { count: 'exact' });
 
       q = q.in('empresa', activeCompanies);
       if (canal) q = q.eq('canal', canal);
       if (metaStatus) q = q.eq('meta_status', metaStatus);
+      if (connectionId) q = q.eq('connection_id', connectionId);
       q = q.order('nome', { ascending: true })
         .range(page * TEMPLATE_PAGE_SIZE, (page + 1) * TEMPLATE_PAGE_SIZE - 1);
 
@@ -130,9 +132,9 @@ export function useDeleteTemplate() {
 export function useSyncMetaTemplates() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: async (empresa: string) => {
+    mutationFn: async ({ empresa, connectionId }: { empresa: string; connectionId?: string }) => {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${empresa}`;
+      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${empresa}&connectionId=${connectionId}`;
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
@@ -172,9 +174,10 @@ export function useSubmitTemplateToMeta() {
       category: string;
       language: string;
       components: unknown[];
+      connectionId?: string;
     }) => {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${params.empresa}`;
+      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${params.empresa}${params.connectionId ? `&connectionId=${params.connectionId}` : ''}`;
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
