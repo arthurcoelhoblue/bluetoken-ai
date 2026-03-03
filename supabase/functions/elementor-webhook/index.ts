@@ -75,8 +75,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Parse incoming body
-    const body = await req.json();
+    // Parse incoming body — support JSON and URL-encoded form data
+    const contentType = req.headers.get("content-type") || "";
+    let body: Record<string, unknown>;
+
+    if (contentType.includes("application/json")) {
+      body = await req.json();
+    } else if (contentType.includes("application/x-www-form-urlencoded")) {
+      const text = await req.text();
+      const params = new URLSearchParams(text);
+      body = {};
+      for (const [key, value] of params.entries()) {
+        // Handle nested keys like form[id] or fields[field_name][value]
+        body[key] = value;
+      }
+    } else {
+      // Try JSON as fallback
+      try {
+        body = await req.json();
+      } catch {
+        const text = await req.text();
+        const params = new URLSearchParams(text);
+        body = {};
+        for (const [key, value] of params.entries()) {
+          body[key] = value;
+        }
+      }
+    }
 
     // Extract field values — support both Elementor native format and flat format
     const fieldMap = mapping.field_map as Record<string, string>;
