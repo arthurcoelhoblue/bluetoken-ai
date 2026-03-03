@@ -67,8 +67,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Authenticate via X-Webhook-Token
-    if (tokenHeader !== mapping.token) {
+    // Authenticate via X-Webhook-Token (optional — only validates if mapping has a token)
+    if (mapping.token && tokenHeader !== mapping.token) {
       return new Response(JSON.stringify({ error: "Invalid webhook token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },

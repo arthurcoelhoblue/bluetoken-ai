@@ -235,11 +235,10 @@ ${hasTracking ? `
     $data['page_url'] = home_url(add_query_arg([], wp_get_referer() ?: ''));
     $data['referrer'] = isset($_SERVER['HTTP_REFERER']) ? esc_url_raw($_SERVER['HTTP_REFERER']) : '';
 ` : ''}
+    $headers = ['Content-Type' => 'application/json'];
+${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '    // Token de autenticação não configurado'}
     wp_remote_post('${getWebhookUrl(mapping.form_id)}', [
-        'headers' => [
-            'Content-Type' => 'application/json',
-            'X-Webhook-Token' => '${mapping.token}',
-        ],
+        'headers' => $headers,
         'body' => json_encode($data),
         'timeout' => 10,
     ]);
@@ -500,16 +499,22 @@ ${hasTracking ? `
 
                 <div className="space-y-2">
                   <Label className="text-xs font-medium">Token de Autenticação</Label>
-                  <div className="flex items-center gap-2">
-                    <Input value={mapping.token} readOnly className="font-mono text-xs" type="password" />
-                    <Button
-                      variant="outline" size="icon"
-                      onClick={() => handleCopy(mapping.token, `token-${mapping.id}`)}
-                    >
-                      {copiedId === `token-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                    </Button>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Enviar no header: <code className="rounded bg-muted px-1">X-Webhook-Token</code></p>
+                  {mapping.token ? (
+                    <>
+                      <div className="flex items-center gap-2">
+                        <Input value={mapping.token} readOnly className="font-mono text-xs" type="password" />
+                        <Button
+                          variant="outline" size="icon"
+                          onClick={() => handleCopy(mapping.token, `token-${mapping.id}`)}
+                        >
+                          {copiedId === `token-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <p className="text-xs text-muted-foreground">Enviar no header: <code className="rounded bg-muted px-1">X-Webhook-Token</code></p>
+                    </>
+                  ) : (
+                    <p className="text-xs text-muted-foreground italic">Sem token — webhook aceita requisições sem autenticação</p>
+                  )}
                 </div>
 
                 {/* Main fields */}

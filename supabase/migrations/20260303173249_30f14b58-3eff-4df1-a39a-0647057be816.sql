@@ -1,0 +1,1 @@
+ALTER TABLE public.elementor_form_mappings ALTER COLUMN token DROP NOT NULL;
