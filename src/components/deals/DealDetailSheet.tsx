@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageSquare, Sparkles, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useDealDetail,
@@ -27,6 +27,7 @@ import { DealTimelineTab } from '@/components/deals/DealTimelineTab';
 import { DealDadosTab } from '@/components/deals/DealDadosTab';
 import { DealLossDialog } from '@/components/deals/DealLossDialog';
 import { ScheduleActivityDialog } from '@/components/deals/ScheduleActivityDialog';
+import { DealProductsTab } from '@/components/deals/DealProductsTab';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import type { DealActivityType } from '@/types/dealDetail';
 
@@ -82,7 +83,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
   const orderedStages = (stages ?? []).filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
 
-  const tabCount = hasChat ? 5 : 4;
+  const tabCount = hasChat ? 6 : 5;
 
   // Check if deal has a future scheduled activity (task with prazo in the future)
   const hasFutureActivity = useCallback(() => {
@@ -182,6 +183,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                       Chat
                     </TabsTrigger>
                   )}
+                  <TabsTrigger value="produtos" className="gap-1">
+                    <Package className="h-3 w-3" />
+                    Produtos
+                  </TabsTrigger>
                   <TabsTrigger value="campos">Campos</TabsTrigger>
                   <TabsTrigger value="insights">
                     <Sparkles className="h-3 w-3 mr-1" />
@@ -223,6 +228,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                     />
                   </TabsContent>
                 )}
+
+                <TabsContent value="produtos">
+                  <DealProductsTab dealId={dealId!} empresa={deal.pipeline_empresa ?? null} />
+                </TabsContent>
 
                 <TabsContent value="campos" className="px-6 mt-3">
                   <CustomFieldsRenderer fields={resolvedFields} entityType="DEAL" entityId={dealId!} />
