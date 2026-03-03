@@ -6332,6 +6332,79 @@ export type Database = {
           },
         ]
       }
+      sgt_client_status: {
+        Row: {
+          cpf: string | null
+          created_at: string
+          data_finalizacao: string | null
+          email: string | null
+          empresa: string
+          id: string
+          nome: string
+          plano_atual: string | null
+          processed_at: string | null
+          renewal_deal_created: string | null
+          status_declaracao: string
+          telefone: string | null
+          updated_at: string
+          vendedor_responsavel: string | null
+        }
+        Insert: {
+          cpf?: string | null
+          created_at?: string
+          data_finalizacao?: string | null
+          email?: string | null
+          empresa: string
+          id?: string
+          nome: string
+          plano_atual?: string | null
+          processed_at?: string | null
+          renewal_deal_created?: string | null
+          status_declaracao?: string
+          telefone?: string | null
+          updated_at?: string
+          vendedor_responsavel?: string | null
+        }
+        Update: {
+          cpf?: string | null
+          created_at?: string
+          data_finalizacao?: string | null
+          email?: string | null
+          empresa?: string
+          id?: string
+          nome?: string
+          plano_atual?: string | null
+          processed_at?: string | null
+          renewal_deal_created?: string | null
+          status_declaracao?: string
+          telefone?: string | null
+          updated_at?: string
+          vendedor_responsavel?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sgt_client_status_renewal_deal_created_fkey"
+            columns: ["renewal_deal_created"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sgt_client_status_renewal_deal_created_fkey"
+            columns: ["renewal_deal_created"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sgt_client_status_renewal_deal_created_fkey"
+            columns: ["renewal_deal_created"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+        ]
+      }
       sgt_event_logs: {
         Row: {
           created_at: string
