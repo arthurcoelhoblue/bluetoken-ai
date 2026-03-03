@@ -8,6 +8,7 @@ import { AuthProvider } from "@/contexts/AuthContext";
 import { CompanyProvider } from "@/contexts/CompanyContext";
 import { ProtectedRoute } from "@/components/auth/ProtectedRoute";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { toast } from "sonner";
 
@@ -95,6 +96,7 @@ const App = () => (
       <BrowserRouter>
         <AuthProvider>
           <CompanyProvider>
+          <ChunkErrorBoundary>
           <ErrorBoundary>
             <Suspense fallback={<LoadingSpinner />}>
               <Routes>
@@ -186,6 +188,7 @@ const App = () => (
               </Routes>
             </Suspense>
           </ErrorBoundary>
+          </ChunkErrorBoundary>
           </CompanyProvider>
         </AuthProvider>
       </BrowserRouter>
