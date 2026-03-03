@@ -341,17 +341,37 @@ async function dispararMensagem(
     let metaComponents: unknown;
 
     if (channelConfig.mode === 'META_CLOUD') {
-      // Look up the template to check for Meta template info
-      const { data: tmpl } = await supabase
+      // Look up the template for the active connection first, fallback to any
+      let tmplQuery = supabase
         .from('message_templates')
-        .select('meta_template_id, meta_status, meta_language, meta_components')
+        .select('codigo, meta_template_id, meta_status, meta_language, meta_components')
         .eq('empresa', empresa)
-        .eq('codigo', templateCodigo)
-        .eq('ativo', true)
-        .maybeSingle();
+        .eq('ativo', true);
+
+      if (channelConfig.connectionId) {
+        // Prefer template tied to the active connection
+        tmplQuery = tmplQuery.eq('connection_id', channelConfig.connectionId);
+      }
+
+      // Try exact match first
+      let { data: tmpl } = await tmplQuery.eq('codigo', templateCodigo).maybeSingle();
+
+      // If not found with connection filter, try without (legacy templates)
+      if (!tmpl && channelConfig.connectionId) {
+        const { data: legacyTmpl } = await supabase
+          .from('message_templates')
+          .select('codigo, meta_template_id, meta_status, meta_language, meta_components')
+          .eq('empresa', empresa)
+          .eq('codigo', templateCodigo)
+          .eq('ativo', true)
+          .is('connection_id', null)
+          .maybeSingle();
+        tmpl = legacyTmpl;
+      }
 
       if (tmpl?.meta_template_id && tmpl?.meta_status === 'APPROVED') {
-        metaTemplateName = tmpl.meta_template_id;
+        // Use codigo as template name (not meta_template_id which is numeric)
+        metaTemplateName = tmpl.codigo;
         metaLanguage = tmpl.meta_language || 'pt_BR';
         metaComponents = tmpl.meta_components;
         log.info('Template Meta Cloud encontrado', { metaTemplateName, metaLanguage });
@@ -378,6 +398,7 @@ async function dispararMensagem(
         payload.metaTemplateName = metaTemplateName;
         payload.metaLanguage = metaLanguage;
         if (metaComponents) payload.metaComponents = metaComponents;
+        if (channelConfig.connectionId) payload.connectionId = channelConfig.connectionId;
       }
 
       const response = await fetch(`${supabaseUrl}/functions/v1/whatsapp-send`, {
