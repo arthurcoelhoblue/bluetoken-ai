@@ -163,7 +163,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Call lp-lead-ingest internally
+    // Build ingest payload
     const ingestPayload = {
       empresa: mapping.empresa || "TOKENIZA",
       pipeline_id: mapping.pipeline_id,
@@ -186,23 +186,37 @@ Deno.serve(async (req) => {
       },
     };
 
-    const ingestResponse = await fetch(`${SUPABASE_URL}/functions/v1/lp-lead-ingest`, {
+    // Fire-and-forget: call lp-lead-ingest asynchronously so we return fast to WordPress
+    // Use EdgeRuntime.waitUntil if available, otherwise just fire the promise
+    const ingestPromise = fetch(`${SUPABASE_URL}/functions/v1/lp-lead-ingest`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "Authorization": `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       },
       body: JSON.stringify(ingestPayload),
+    }).then(async (r) => {
+      const result = await r.text();
+      console.log(`[elementor-webhook] lp-lead-ingest responded ${r.status}:`, result);
+    }).catch((err) => {
+      console.error("[elementor-webhook] lp-lead-ingest error:", err);
     });
 
-    const ingestResult = await ingestResponse.json();
+    // Keep the function alive until ingest completes, but return immediately
+    if (typeof (globalThis as any).EdgeRuntime?.waitUntil === "function") {
+      (globalThis as any).EdgeRuntime.waitUntil(ingestPromise);
+    } else {
+      // Fallback: just let it run (Deno.serve keeps the isolate alive for pending promises)
+      ingestPromise;
+    }
 
+    // Return 200 immediately to WordPress/Elementor
     return new Response(JSON.stringify({
       success: true,
+      message: "Lead received successfully",
       form_id: formId,
-      ...ingestResult,
     }), {
-      status: ingestResponse.ok ? 200 : ingestResponse.status,
+      status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (err) {
