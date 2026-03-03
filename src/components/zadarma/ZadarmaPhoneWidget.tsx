@@ -454,6 +454,14 @@ export function ZadarmaPhoneWidget() {
           )}
         </div>
       )}
+      <CallSummaryDialog
+        open={showCallSummary}
+        onOpenChange={setShowCallSummary}
+        dealId={lastCallDealId}
+        contactName={lastCallContact}
+        phoneNumber={lastCallNumber}
+        callDuration={lastCallDuration}
+      />
     </div>
   );
 }

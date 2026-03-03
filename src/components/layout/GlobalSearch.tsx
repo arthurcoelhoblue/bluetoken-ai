@@ -74,9 +74,10 @@ export function GlobalSearch() {
 
       // 4. Deal Notes
       const notesQuery = supabase
-        .from('deal_notes' as any)
+        .from('deal_notes')
         .select('id, conteudo, deal_id, deals!inner(titulo, pipelines!inner(empresa))')
         .ilike('conteudo', searchTerm)
+        .in('deals.pipelines.empresa', activeCompanies)
         .limit(5);
 
       // 5. Deal Activities (tarefas)
@@ -84,6 +85,7 @@ export function GlobalSearch() {
         .from('deal_activities')
         .select('id, descricao, tipo, deal_id, deals!inner(titulo, pipelines!inner(empresa))')
         .ilike('descricao', searchTerm)
+        .in('deals.pipelines.empresa', activeCompanies)
         .limit(5);
 
       // 6. Lead Messages
