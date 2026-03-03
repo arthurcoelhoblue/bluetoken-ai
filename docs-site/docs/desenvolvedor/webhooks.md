@@ -30,6 +30,17 @@ Recebe mensagens do chat do site:
 
 Recebe mensagens do WhatsApp Business API.
 
+### Elementor Webhook (`elementor-webhook`)
+
+Recebe leads de formulários WordPress/Elementor com mapeamento configurável:
+
+- **Autenticação** via `X-Webhook-Token` por formulário
+- **Mapeamento dinâmico** de campos (configurável na UI)
+- **Suporte** a formato nativo do Elementor (`fields.field_id.value`) e formato flat
+- **Encaminhamento** automático para `lp-lead-ingest`
+- **Rate limiting** por token
+- **UTM tracking** via body ou query params
+
 ## Rate Limiting
 
 Webhooks usam rate limiting compartilhado via `webhook-rate-limit.ts`:

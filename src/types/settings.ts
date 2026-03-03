@@ -215,4 +215,13 @@ export const WEBHOOKS: WebhookInfo[] = [
     method: 'POST',
     authType: 'None',
   },
+  {
+    id: 'elementor-webhook',
+    name: 'Elementor Webhook',
+    description: 'Recebe leads de formulários WordPress/Elementor com mapeamento configurável',
+    path: '/functions/v1/elementor-webhook',
+    method: 'POST',
+    authType: 'Bearer',
+    secretName: 'X-Webhook-Token (por formulário)',
+  },
 ];
