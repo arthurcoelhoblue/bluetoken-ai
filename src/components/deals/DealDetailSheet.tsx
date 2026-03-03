@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MessageSquare, Sparkles, Package } from 'lucide-react';
+import { MessageSquare, Sparkles, Package, Video } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useDealDetail,
@@ -27,6 +27,7 @@ import { DealTimelineTab } from '@/components/deals/DealTimelineTab';
 import { DealDadosTab } from '@/components/deals/DealDadosTab';
 import { DealLossDialog } from '@/components/deals/DealLossDialog';
 import { DealProductsTab } from '@/components/deals/DealProductsTab';
+import { DealMeetingsTab } from '@/components/deals/DealMeetingsTab';
 import { ScheduleActivityDialog } from '@/components/deals/ScheduleActivityDialog';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
 import type { DealActivityType } from '@/types/deal';
@@ -114,7 +115,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
     });
   };
 
-  const tabCount = 5 + (hasChat ? 1 : 0);
+  const tabCount = 6 + (hasChat ? 1 : 0);
 
   const handleWin = () => {
     if (!deal) return;
@@ -173,6 +174,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                     <Package className="h-3 w-3" />
                     Produtos
                   </TabsTrigger>
+                  <TabsTrigger value="reunioes" className="gap-1">
+                    <Video className="h-3 w-3" />
+                    Reuniões
+                  </TabsTrigger>
                   <TabsTrigger value="campos">Campos</TabsTrigger>
                   <TabsTrigger value="insights">
                     <Sparkles className="h-3 w-3 mr-1" />
@@ -217,6 +222,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
                 <TabsContent value="produtos">
                   <DealProductsTab dealId={dealId!} pipelineEmpresa={deal.pipeline_empresa} />
+                </TabsContent>
+
+                <TabsContent value="reunioes">
+                  <DealMeetingsTab dealId={dealId!} />
                 </TabsContent>
 
                 <TabsContent value="campos" className="px-6 mt-3">

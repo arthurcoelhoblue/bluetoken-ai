@@ -16,6 +16,7 @@ import { loadFullContext, type ParsedContext } from "./message-parser.ts";
 import { classifyIntent, type ClassifierResult } from "./intent-classifier.ts";
 import { sanitizeResponse, generateResponse } from "./response-generator.ts";
 import { executeActions } from "./action-executor.ts";
+import { handleMeetingScheduling, startMeetingScheduling } from "./meeting-scheduler.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 const log = createLogger('sdr-ia-interpret');
@@ -129,6 +130,36 @@ serve(async (req) => {
     if (parsedContext.optOut) {
       log.info('Lead opt-out, skipping');
       return new Response(JSON.stringify({ success: true, optOutBlocked: true }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+    }
+
+    // ========================================
+    // 3b. MEETING SCHEDULING FLOW CHECK
+    // ========================================
+    const meetingCtx = {
+      leadId: msg.lead_id,
+      empresa: msg.empresa,
+      contactId: (parsedContext.contato as Record<string, unknown>)?.id as string | undefined,
+      dealId: parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).id as string : undefined,
+      ownerId: parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined,
+      mensagem: msg.conteudo,
+      telefone: parsedContext.telefone || undefined,
+    };
+
+    const meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
+    if (meetingResult.handled && meetingResult.response) {
+      // Save as intent and send response
+      const intentId = await saveInterpretation(supabase, msg, {
+        intent: 'AGENDAMENTO_REUNIAO',
+        confidence: 1.0,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+        deve_responder: true,
+      } as ClassifierResult, true, true, meetingResult.response);
+      return new Response(JSON.stringify({
+        success: true, intentId,
+        intent: 'AGENDAMENTO_REUNIAO', confidence: 1.0,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', respostaEnviada: true,
+        responseText: meetingResult.response,
+      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
     // Check manual mode — skip when reprocessing (mode already switched to SDR_IA)
