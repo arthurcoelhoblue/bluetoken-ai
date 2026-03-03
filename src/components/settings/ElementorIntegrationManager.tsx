@@ -19,8 +19,9 @@ import {
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Plus, Copy, Check, Trash2, Code, ExternalLink } from "lucide-react";
+import { Plus, Copy, Check, Trash2, Code, X } from "lucide-react";
 import { toast } from "sonner";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
 
@@ -28,6 +29,18 @@ const AMELIA_FIELDS = [
   { key: "nome", label: "Nome", required: true },
   { key: "email", label: "Email", required: true },
   { key: "telefone", label: "Telefone", required: false },
+];
+
+const TRACKING_FIELDS = [
+  { key: "utm_source", label: "UTM Source" },
+  { key: "utm_medium", label: "UTM Medium" },
+  { key: "utm_campaign", label: "UTM Campaign" },
+  { key: "utm_content", label: "UTM Content" },
+  { key: "utm_term", label: "UTM Term" },
+  { key: "page_url", label: "Page URL" },
+  { key: "referrer", label: "Referrer" },
+  { key: "gclid", label: "Google Click ID (gclid)" },
+  { key: "fbclid", label: "Facebook Click ID (fbclid)" },
 ];
 
 interface FormMapping {
@@ -44,12 +57,54 @@ interface FormMapping {
   updated_at: string;
 }
 
+interface ExtraField {
+  ameliaKey: string;
+  elementorId: string;
+}
+
+const MAIN_KEYS = ["nome", "email", "telefone"];
+const TRACKING_KEYS = TRACKING_FIELDS.map(f => f.key);
+
+function splitFieldMap(fieldMap: Record<string, string>) {
+  const main: Record<string, string> = {};
+  const extras: ExtraField[] = [];
+  const tracking: Record<string, string> = {};
+
+  for (const [key, val] of Object.entries(fieldMap)) {
+    if (MAIN_KEYS.includes(key)) {
+      main[key] = val;
+    } else if (TRACKING_KEYS.includes(key)) {
+      tracking[key] = val;
+    } else {
+      extras.push({ ameliaKey: key, elementorId: val });
+    }
+  }
+  return { main, extras, tracking };
+}
+
+function mergeFieldMap(
+  main: Record<string, string>,
+  extras: ExtraField[],
+  tracking: Record<string, string>,
+): Record<string, string> {
+  const result: Record<string, string> = { ...main };
+  for (const e of extras) {
+    if (e.ameliaKey.trim()) result[e.ameliaKey.trim()] = e.elementorId;
+  }
+  for (const [k, v] of Object.entries(tracking)) {
+    if (v) result[k] = v;
+  }
+  return result;
+}
+
 export function ElementorIntegrationManager() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [newFormId, setNewFormId] = useState("");
   const [newEmpresa, setNewEmpresa] = useState("TOKENIZA");
   const [newFieldMap, setNewFieldMap] = useState<Record<string, string>>({ nome: "", email: "", telefone: "" });
+  const [newExtraFields, setNewExtraFields] = useState<ExtraField[]>([]);
+  const [newTrackingFields, setNewTrackingFields] = useState<Record<string, string>>({});
   const [newTags, setNewTags] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -94,12 +149,13 @@ export function ElementorIntegrationManager() {
 
   const createMutation = useMutation({
     mutationFn: async () => {
+      const fullFieldMap = mergeFieldMap(newFieldMap, newExtraFields, newTrackingFields);
       const { error } = await supabase.from("elementor_form_mappings").insert({
         form_id: newFormId.trim().toLowerCase().replace(/\s+/g, "-"),
         empresa: newEmpresa,
         pipeline_id: newPipelineId || null,
         stage_id: newStageId || null,
-        field_map: newFieldMap,
+        field_map: fullFieldMap,
         tags_auto: newTags ? newTags.split(",").map(t => t.trim()) : [],
       });
       if (error) throw error;
@@ -141,6 +197,8 @@ export function ElementorIntegrationManager() {
     setNewPipelineId("");
     setNewStageId("");
     setNewFieldMap({ nome: "", email: "", telefone: "" });
+    setNewExtraFields([]);
+    setNewTrackingFields({});
     setNewTags("");
   };
 
@@ -154,17 +212,29 @@ export function ElementorIntegrationManager() {
   const getWebhookUrl = (formId: string) =>
     `${SUPABASE_URL}/functions/v1/elementor-webhook?form_id=${formId}`;
 
-  const getPhpSnippet = (mapping: FormMapping) => `// Adicione ao functions.php do seu tema WordPress
+  const getPhpSnippet = (mapping: FormMapping) => {
+    const { extras, tracking } = splitFieldMap(mapping.field_map as Record<string, string>);
+    const hasTracking = Object.keys(tracking).length > 0;
+
+    return `// Adicione ao functions.php do seu tema WordPress
 add_action('elementor_pro/forms/new_record', function($record) {
-    $form_name = $record->get_form_settings('form_name');
-    
-    // Ajuste o nome do formulário conforme necessário
     $fields = $record->get('fields');
     $data = ['fields' => []];
     foreach ($fields as $id => $field) {
         $data['fields'][$id] = ['value' => $field['value']];
     }
-
+${hasTracking ? `
+    // Campos de rastreio (UTMs, click IDs)
+    $tracking_params = ['utm_source','utm_medium','utm_campaign','utm_content','utm_term','gclid','fbclid'];
+    foreach ($tracking_params as $param) {
+        if (!empty($_GET[$param])) {
+            $data[$param] = sanitize_text_field($_GET[$param]);
+        }
+    }
+    // Page URL e Referrer
+    $data['page_url'] = home_url(add_query_arg([], wp_get_referer() ?: ''));
+    $data['referrer'] = isset($_SERVER['HTTP_REFERER']) ? esc_url_raw($_SERVER['HTTP_REFERER']) : '';
+` : ''}
     wp_remote_post('${getWebhookUrl(mapping.form_id)}', [
         'headers' => [
             'Content-Type' => 'application/json',
@@ -174,10 +244,23 @@ add_action('elementor_pro/forms/new_record', function($record) {
         'timeout' => 10,
     ]);
 }, 10, 1);`;
+  };
 
   const filteredStages = newPipelineId
     ? stages.filter(s => s.pipeline_id === newPipelineId)
     : stages;
+
+  const addExtraField = () => {
+    setNewExtraFields(prev => [...prev, { ameliaKey: "", elementorId: "" }]);
+  };
+
+  const removeExtraField = (index: number) => {
+    setNewExtraFields(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const updateExtraField = (index: number, field: Partial<ExtraField>) => {
+    setNewExtraFields(prev => prev.map((f, i) => i === index ? { ...f, ...field } : f));
+  };
 
   return (
     <div className="space-y-4">
@@ -195,98 +278,174 @@ add_action('elementor_pro/forms/new_record', function($record) {
               Novo Mapeamento
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Novo Mapeamento Elementor</DialogTitle>
               <DialogDescription>
                 Configure como os campos do formulário Elementor serão mapeados para a Amélia.
               </DialogDescription>
             </DialogHeader>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>ID do Formulário</Label>
-                  <Input
-                    placeholder="oferta-publica-2025"
-                    value={newFormId}
-                    onChange={e => setNewFormId(e.target.value)}
-                  />
-                  <p className="mt-1 text-xs text-muted-foreground">Slug único para identificar o formulário</p>
-                </div>
-                <div>
-                  <Label>Empresa</Label>
-                  <Select value={newEmpresa} onValueChange={setNewEmpresa}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-                      <SelectItem value="BLUE">Blue</SelectItem>
-                      <SelectItem value="MPUPPE">MPuppe</SelectItem>
-                      <SelectItem value="AXIA">Axia</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Pipeline</Label>
-                  <Select value={newPipelineId} onValueChange={setNewPipelineId}>
-                    <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
-                      {pipelines.map(p => (
-                        <SelectItem key={p.id} value={p.id}>
-                          {p.nome} ({p.empresa})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div>
-                  <Label>Estágio</Label>
-                  <Select value={newStageId} onValueChange={setNewStageId}>
-                    <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
-                      {filteredStages.map(s => (
-                        <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div>
-                <Label className="mb-2 block">Mapeamento de Campos</Label>
-                <p className="mb-2 text-xs text-muted-foreground">
-                  Informe o ID do campo no Elementor para cada campo da Amélia
-                </p>
-                {AMELIA_FIELDS.map(f => (
-                  <div key={f.key} className="mb-2 flex items-center gap-2">
-                    <Label className="w-24 text-sm">
-                      {f.label}{f.required && <span className="text-destructive">*</span>}
-                    </Label>
+            <ScrollArea className="flex-1 pr-4">
+              <div className="space-y-5 pb-2">
+                {/* Basic info */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>ID do Formulário</Label>
                     <Input
-                      placeholder={`Ex: field_${f.key}`}
-                      value={newFieldMap[f.key] || ""}
-                      onChange={e => setNewFieldMap(prev => ({ ...prev, [f.key]: e.target.value }))}
-                      className="font-mono text-xs"
+                      placeholder="oferta-publica-2025"
+                      value={newFormId}
+                      onChange={e => setNewFormId(e.target.value)}
                     />
+                    <p className="mt-1 text-xs text-muted-foreground">Slug único para identificar o formulário</p>
                   </div>
-                ))}
-              </div>
+                  <div>
+                    <Label>Empresa</Label>
+                    <Select value={newEmpresa} onValueChange={setNewEmpresa}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                        <SelectItem value="BLUE">Blue</SelectItem>
+                        <SelectItem value="MPUPPE">MPuppe</SelectItem>
+                        <SelectItem value="AXIA">Axia</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
 
-              <div>
-                <Label>Tags automáticas</Label>
-                <Input
-                  placeholder="elementor, oferta-publica"
-                  value={newTags}
-                  onChange={e => setNewTags(e.target.value)}
-                />
-                <p className="mt-1 text-xs text-muted-foreground">Separadas por vírgula</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Pipeline</Label>
+                    <Select value={newPipelineId} onValueChange={setNewPipelineId}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                      <SelectContent>
+                        {pipelines.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.nome} ({p.empresa})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Estágio</Label>
+                    <Select value={newStageId} onValueChange={setNewStageId}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                      <SelectContent>
+                        {filteredStages.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <Separator />
+
+                {/* Main fields */}
+                <div>
+                  <Label className="mb-2 block text-sm font-semibold">Campos Principais</Label>
+                  <p className="mb-2 text-xs text-muted-foreground">
+                    Informe o ID do campo no Elementor para cada campo obrigatório
+                  </p>
+                  {AMELIA_FIELDS.map(f => (
+                    <div key={f.key} className="mb-2 flex items-center gap-2">
+                      <Label className="w-24 shrink-0 text-sm">
+                        {f.label}{f.required && <span className="text-destructive">*</span>}
+                      </Label>
+                      <Input
+                        placeholder={`Ex: field_${f.key}`}
+                        value={newFieldMap[f.key] || ""}
+                        onChange={e => setNewFieldMap(prev => ({ ...prev, [f.key]: e.target.value }))}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <Separator />
+
+                {/* Additional fields */}
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <div>
+                      <Label className="block text-sm font-semibold">Campos Adicionais</Label>
+                      <p className="text-xs text-muted-foreground">
+                        Mapeie campos extras do formulário (empresa, cargo, CPF, etc.)
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" size="sm" className="gap-1" onClick={addExtraField}>
+                      <Plus className="h-3 w-3" /> Adicionar
+                    </Button>
+                  </div>
+                  {newExtraFields.length === 0 && (
+                    <p className="text-xs text-muted-foreground italic">Nenhum campo adicional configurado</p>
+                  )}
+                  {newExtraFields.map((ef, i) => (
+                    <div key={i} className="mb-2 flex items-center gap-2">
+                      <Input
+                        placeholder="Nome do campo (ex: empresa)"
+                        value={ef.ameliaKey}
+                        onChange={e => updateExtraField(i, { ameliaKey: e.target.value })}
+                        className="text-xs"
+                      />
+                      <span className="shrink-0 text-xs text-muted-foreground">→</span>
+                      <Input
+                        placeholder="ID Elementor (ex: field_empresa)"
+                        value={ef.elementorId}
+                        onChange={e => updateExtraField(i, { elementorId: e.target.value })}
+                        className="font-mono text-xs"
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() => removeExtraField(i)}
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+
+                <Separator />
+
+                {/* Tracking / hidden fields */}
+                <div>
+                  <Label className="mb-1 block text-sm font-semibold">Campos Ocultos / Rastreio</Label>
+                  <p className="mb-3 text-xs text-muted-foreground">
+                    UTMs e campos de rastreio. Informe o ID do campo hidden no Elementor, ou deixe vazio
+                    para capturar automaticamente via query string.
+                  </p>
+                  <div className="space-y-2">
+                    {TRACKING_FIELDS.map(tf => (
+                      <div key={tf.key} className="flex items-center gap-2">
+                        <Label className="w-40 shrink-0 text-xs font-medium">{tf.label}</Label>
+                        <Input
+                          placeholder={`ID campo ou vazio (auto via ?${tf.key}=...)`}
+                          value={newTrackingFields[tf.key] || ""}
+                          onChange={e => setNewTrackingFields(prev => ({ ...prev, [tf.key]: e.target.value }))}
+                          className="font-mono text-xs"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div>
+                  <Label>Tags automáticas</Label>
+                  <Input
+                    placeholder="elementor, oferta-publica"
+                    value={newTags}
+                    onChange={e => setNewTags(e.target.value)}
+                  />
+                  <p className="mt-1 text-xs text-muted-foreground">Separadas por vírgula</p>
+                </div>
               </div>
-            </div>
-            <DialogFooter>
+            </ScrollArea>
+            <DialogFooter className="pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
               <Button
                 onClick={() => createMutation.mutate()}
@@ -312,104 +471,138 @@ add_action('elementor_pro/forms/new_record', function($record) {
       )}
 
       <Accordion type="single" collapsible className="space-y-2">
-        {mappings.map(mapping => (
-          <AccordionItem key={mapping.id} value={mapping.id} className="rounded-lg border">
-            <AccordionTrigger className="px-4 hover:no-underline">
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-sm font-medium">{mapping.form_id}</span>
-                <Badge variant="outline" className="text-xs">{mapping.empresa}</Badge>
-                <Badge variant={mapping.is_active ? "default" : "secondary"} className="text-xs">
-                  {mapping.is_active ? "Ativo" : "Inativo"}
-                </Badge>
-              </div>
-            </AccordionTrigger>
-            <AccordionContent className="space-y-4 px-4 pb-4">
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">URL do Webhook</Label>
-                <div className="flex items-center gap-2">
-                  <Input value={getWebhookUrl(mapping.form_id)} readOnly className="font-mono text-xs" />
-                  <Button
-                    variant="outline" size="icon"
-                    onClick={() => handleCopy(getWebhookUrl(mapping.form_id), `url-${mapping.id}`)}
-                  >
-                    {copiedId === `url-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  </Button>
+        {mappings.map(mapping => {
+          const { main, extras, tracking } = splitFieldMap(mapping.field_map as Record<string, string>);
+          return (
+            <AccordionItem key={mapping.id} value={mapping.id} className="rounded-lg border">
+              <AccordionTrigger className="px-4 hover:no-underline">
+                <div className="flex items-center gap-3">
+                  <span className="font-mono text-sm font-medium">{mapping.form_id}</span>
+                  <Badge variant="outline" className="text-xs">{mapping.empresa}</Badge>
+                  <Badge variant={mapping.is_active ? "default" : "secondary"} className="text-xs">
+                    {mapping.is_active ? "Ativo" : "Inativo"}
+                  </Badge>
                 </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Token de Autenticação</Label>
-                <div className="flex items-center gap-2">
-                  <Input value={mapping.token} readOnly className="font-mono text-xs" type="password" />
-                  <Button
-                    variant="outline" size="icon"
-                    onClick={() => handleCopy(mapping.token, `token-${mapping.id}`)}
-                  >
-                    {copiedId === `token-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
-                  </Button>
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4 px-4 pb-4">
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">URL do Webhook</Label>
+                  <div className="flex items-center gap-2">
+                    <Input value={getWebhookUrl(mapping.form_id)} readOnly className="font-mono text-xs" />
+                    <Button
+                      variant="outline" size="icon"
+                      onClick={() => handleCopy(getWebhookUrl(mapping.form_id), `url-${mapping.id}`)}
+                    >
+                      {copiedId === `url-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-xs text-muted-foreground">Enviar no header: <code className="rounded bg-muted px-1">X-Webhook-Token</code></p>
-              </div>
 
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Mapeamento de Campos</Label>
-                <div className="grid grid-cols-2 gap-1 text-xs">
-                  {Object.entries(mapping.field_map as Record<string, string>).map(([key, val]) => (
-                    <div key={key} className="flex gap-1">
-                      <span className="font-medium">{key}:</span>
-                      <span className="font-mono text-muted-foreground">{val || "—"}</span>
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Token de Autenticação</Label>
+                  <div className="flex items-center gap-2">
+                    <Input value={mapping.token} readOnly className="font-mono text-xs" type="password" />
+                    <Button
+                      variant="outline" size="icon"
+                      onClick={() => handleCopy(mapping.token, `token-${mapping.id}`)}
+                    >
+                      {copiedId === `token-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Enviar no header: <code className="rounded bg-muted px-1">X-Webhook-Token</code></p>
+                </div>
+
+                {/* Main fields */}
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Campos Principais</Label>
+                  <div className="grid grid-cols-2 gap-1 text-xs">
+                    {Object.entries(main).map(([key, val]) => (
+                      <div key={key} className="flex gap-1">
+                        <span className="font-medium">{key}:</span>
+                        <span className="font-mono text-muted-foreground">{val || "—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Additional fields */}
+                {extras.length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Campos Adicionais</Label>
+                    <div className="grid grid-cols-2 gap-1 text-xs">
+                      {extras.map(({ ameliaKey, elementorId }) => (
+                        <div key={ameliaKey} className="flex gap-1">
+                          <span className="font-medium">{ameliaKey}:</span>
+                          <span className="font-mono text-muted-foreground">{elementorId || "—"}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                )}
+
+                {/* Tracking fields */}
+                {Object.keys(tracking).length > 0 && (
+                  <div className="space-y-2">
+                    <Label className="text-xs font-medium">Campos de Rastreio</Label>
+                    <div className="grid grid-cols-2 gap-1 text-xs">
+                      {Object.entries(tracking).map(([key, val]) => (
+                        <div key={key} className="flex gap-1">
+                          <span className="font-medium">{key}:</span>
+                          <span className="font-mono text-muted-foreground">{val || "auto"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {mapping.tags_auto?.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {mapping.tags_auto.map(tag => (
+                      <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
+                    ))}
+                  </div>
+                )}
+
+                <Separator />
+
+                <div className="space-y-2">
+                  <Label className="text-xs font-medium">Snippet PHP (WordPress)</Label>
+                  <div className="relative">
+                    <pre className="max-h-48 overflow-auto rounded bg-muted p-3 text-xs">
+                      {getPhpSnippet(mapping)}
+                    </pre>
+                    <Button
+                      variant="outline" size="sm"
+                      className="absolute right-2 top-2 gap-1"
+                      onClick={() => handleCopy(getPhpSnippet(mapping), `php-${mapping.id}`)}
+                    >
+                      {copiedId === `php-${mapping.id}` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+                      Copiar
+                    </Button>
+                  </div>
                 </div>
-              </div>
 
-              {mapping.tags_auto?.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {mapping.tags_auto.map(tag => (
-                    <Badge key={tag} variant="secondary" className="text-xs">{tag}</Badge>
-                  ))}
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label className="text-xs font-medium">Snippet PHP (WordPress)</Label>
-                <div className="relative">
-                  <pre className="max-h-48 overflow-auto rounded bg-muted p-3 text-xs">
-                    {getPhpSnippet(mapping)}
-                  </pre>
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Switch
+                      checked={mapping.is_active}
+                      onCheckedChange={checked => toggleMutation.mutate({ id: mapping.id, is_active: checked })}
+                    />
+                    <span className="text-xs text-muted-foreground">{mapping.is_active ? "Ativo" : "Inativo"}</span>
+                  </div>
                   <Button
-                    variant="outline" size="sm"
-                    className="absolute right-2 top-2 gap-1"
-                    onClick={() => handleCopy(getPhpSnippet(mapping), `php-${mapping.id}`)}
+                    variant="destructive" size="sm"
+                    onClick={() => {
+                      if (confirm("Remover este mapeamento?")) deleteMutation.mutate(mapping.id);
+                    }}
                   >
-                    {copiedId === `php-${mapping.id}` ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
-                    Copiar
+                    <Trash2 className="mr-1 h-3 w-3" /> Remover
                   </Button>
                 </div>
-              </div>
-
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Switch
-                    checked={mapping.is_active}
-                    onCheckedChange={checked => toggleMutation.mutate({ id: mapping.id, is_active: checked })}
-                  />
-                  <span className="text-xs text-muted-foreground">{mapping.is_active ? "Ativo" : "Inativo"}</span>
-                </div>
-                <Button
-                  variant="destructive" size="sm"
-                  onClick={() => {
-                    if (confirm("Remover este mapeamento?")) deleteMutation.mutate(mapping.id);
-                  }}
-                >
-                  <Trash2 className="mr-1 h-3 w-3" /> Remover
-                </Button>
-              </div>
-            </AccordionContent>
-          </AccordionItem>
-        ))}
+              </AccordionContent>
+            </AccordionItem>
+          );
+        })}
       </Accordion>
     </div>
   );
