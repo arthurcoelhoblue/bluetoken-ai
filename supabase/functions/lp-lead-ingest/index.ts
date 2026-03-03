@@ -6,13 +6,14 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
 import { normalizePhoneE164 } from "../_shared/phone-utils.ts";
+import { validateApiKey } from "../_shared/api-key-utils.ts";
 
-const corsHeaders = getWebhookCorsHeaders();
+const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
-// IDs fixos
+// IDs fixos (fallback quando não vem via body)
 const DEFAULT_PIPELINE_ID = "5bbac98b-5ae9-4b31-9b7f-896d7b732a2c"; // Ofertas Públicas
 const DEFAULT_STAGE_ID = "da80e912-b462-401d-b367-1b6a9b2ec4da"; // Lead
 
@@ -50,12 +51,17 @@ interface IngestRequest {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return handleWebhookCorsOptions();
+    return handleWebhookCorsOptions("x-api-key");
   }
 
   try {
+    // Authenticate via X-API-Key header (optional, falls back to body.empresa)
+    const apiKeyRecord = await validateApiKey(req, "lead:write");
+
     const body: IngestRequest = await req.json();
-    const empresa = body.empresa || "TOKENIZA";
+
+    // API key scopes empresa; body.empresa is ignored when using API key
+    const empresa = apiKeyRecord?.empresa || body.empresa || "TOKENIZA";
     const pipelineId = body.pipeline_id || DEFAULT_PIPELINE_ID;
     const stageId = body.stage_id || DEFAULT_STAGE_ID;
 
