@@ -1,25 +1,18 @@
 
 
-## Plano: Resolver "Failed to fetch dynamically imported module" definitivamente
+## Problema
 
-### Causa raiz
+A duplicação de template falha porque existe uma constraint `UNIQUE(empresa, codigo)` na tabela `message_templates`. Ao clonar, a função `handleClone` copia o `codigo` original sem alterá-lo, causando violação de chave duplicada.
 
-O app usa `lazy()` em 70+ páginas. Quando o Vite reconstrói (após edição ou deploy), os hashes dos chunks JS mudam. Se o navegador ainda tem referência aos chunks antigos em memória, o import falha com "Failed to fetch dynamically imported module". Isso acontece tanto no preview de desenvolvimento quanto no app publicado após um novo deploy.
+## Solução
 
-### Solução
+Modificar a função `handleClone` em `src/pages/TemplatesPage.tsx` para gerar um `codigo` diferente ao duplicar. A abordagem mais simples é adicionar o sufixo do `connection_id` (primeiros 4 caracteres) ao `codigo` original, garantindo unicidade.
 
-Adicionar um **error handler global** no `App.tsx` que intercepta erros de carregamento de chunk e faz reload automático da página (uma única vez, para evitar loops infinitos).
+## Mudança
 
-### Mudança
+| Arquivo | Alteração |
+|---------|-----------|
+| `src/pages/TemplatesPage.tsx` | Na função `handleClone`, gerar um novo `codigo` com sufixo baseado no `connection_id` destino (ex: `codigo_original_ab12`) para evitar conflito de chave única |
 
-**`src/App.tsx`** -- Envolver o `<Suspense>` com um `ErrorBoundary` que detecta erros de chunk e recarrega:
-
-- Criar um componente `ChunkErrorBoundary` (ou reutilizar o `ErrorBoundary` existente) que, ao capturar um erro cujo `message` contém "Failed to fetch dynamically imported module" ou "Loading chunk", executa `window.location.reload()` automaticamente
-- Usar `sessionStorage` com uma flag para evitar loop infinito de reloads (máximo 1 reload por erro)
-
-| Arquivo | Mudança |
-|---------|---------|
-| `src/App.tsx` | Adicionar `ChunkErrorBoundary` em torno do `Suspense` que faz auto-reload em chunk errors |
-
-Isso resolve o problema tanto no preview quanto em produção, sem afetar a experiência do usuário (o reload é instantâneo e transparente).
+O `codigo` clonado ficaria algo como: `meu_template_ab12` onde `ab12` são os primeiros 4 chars do connection_id destino.
 
