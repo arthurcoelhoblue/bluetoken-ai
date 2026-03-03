@@ -16,6 +16,7 @@ import { loadFullContext, type ParsedContext } from "./message-parser.ts";
 import { classifyIntent, type ClassifierResult } from "./intent-classifier.ts";
 import { sanitizeResponse, generateResponse } from "./response-generator.ts";
 import { executeActions } from "./action-executor.ts";
+import { checkSchedulingState, handleSchedulingResponse, proposeMeetingSlots } from "./meeting-scheduler.ts";
 
 const corsHeaders = getWebhookCorsHeaders();
 const log = createLogger('sdr-ia-interpret');
@@ -25,6 +26,7 @@ const VALID_ACOES = new Set([
   'NENHUMA', 'ENVIAR_RESPOSTA_AUTOMATICA', 'CRIAR_TAREFA_CLOSER',
   'ESCALAR_HUMANO', 'PAUSAR_CADENCIA', 'CANCELAR_CADENCIA',
   'RETOMAR_CADENCIA', 'AJUSTAR_TEMPERATURA', 'MARCAR_OPT_OUT', 'HANDOFF_EMPRESA',
+  'AGENDAR_REUNIAO_CALENDAR',
 ]);
 
 const ACAO_MAP: Record<string, string> = {
@@ -37,6 +39,8 @@ const ACAO_MAP: Record<string, string> = {
   AGUARDAR_ESCOLHA_DEPARTAMENTO: 'ESCALAR_HUMANO',
   RESPONDER_DEPARTAMENTO_COMERCIAL: 'ESCALAR_HUMANO',
   QUEBRAR_LOOP_AUTOMATICO: 'PAUSAR_CADENCIA',
+  AGENDAR_REUNIAO: 'AGENDAR_REUNIAO_CALENDAR',
+  PROPOR_REUNIAO: 'AGENDAR_REUNIAO_CALENDAR',
 };
 
 function normalizarAcao(acao: string | undefined): string {
@@ -240,6 +244,71 @@ serve(async (req) => {
     }
 
     const acao = classifierResult.acao || classifierResult.acao_recomendada || 'NENHUMA';
+
+    // ========================================
+    // 5.MEETING: Check if lead is in scheduling flow or if CTA_REUNIAO triggered
+    // ========================================
+    let meetingHandled = false;
+    const schedulingState = await checkSchedulingState(supabase, msg.lead_id || '', msg.empresa);
+    
+    if (schedulingState.active && schedulingState.stateId && schedulingState.slots) {
+      // Lead is in active scheduling flow — handle their response
+      log.info('Meeting scheduling: active state detected, handling response', { stateId: schedulingState.stateId });
+      const leadEmail = (parsedContext.contato as Record<string, unknown>)?.email as string || undefined;
+      const leadTelefone = parsedContext.telefone || undefined;
+      const vendedorId = await getLeadVendedorId(supabase, msg.lead_id, msg.empresa);
+      
+      if (vendedorId) {
+        const schedResult = await handleSchedulingResponse(supabase, {
+          leadId: msg.lead_id || '',
+          empresa: msg.empresa,
+          vendedorId,
+          leadNome: parsedContext.leadNome || undefined,
+          leadEmail,
+          leadTelefone,
+          dealId: parsedContext.pipedriveDealeId || undefined,
+          mensagem: msg.conteudo,
+        }, schedulingState.stateId, schedulingState.slots);
+        
+        if (schedResult.success) {
+          respostaTexto = schedResult.resposta;
+          classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+          classifierResult.deve_responder = true;
+          meetingHandled = true;
+          log.info('Meeting scheduling: response handled', { resposta: respostaTexto?.substring(0, 100) });
+        }
+      }
+    } else if (
+      (classifierResult.intent === 'AGENDAMENTO_REUNIAO' || acao === 'AGENDAR_REUNIAO_CALENDAR') &&
+      !meetingHandled
+    ) {
+      // CTA_REUNIAO or AGENDAMENTO_REUNIAO intent — propose meeting slots
+      log.info('Meeting scheduling: proposing slots', { intent: classifierResult.intent, acao });
+      const leadEmail = (parsedContext.contato as Record<string, unknown>)?.email as string || undefined;
+      const leadTelefone = parsedContext.telefone || undefined;
+      const vendedorId = await getLeadVendedorId(supabase, msg.lead_id, msg.empresa);
+      
+      if (vendedorId) {
+        const propResult = await proposeMeetingSlots(supabase, {
+          leadId: msg.lead_id || '',
+          empresa: msg.empresa,
+          vendedorId,
+          leadNome: parsedContext.leadNome || undefined,
+          leadEmail,
+          leadTelefone,
+          dealId: parsedContext.pipedriveDealeId || undefined,
+          mensagem: msg.conteudo,
+        });
+        
+        if (propResult.success) {
+          respostaTexto = propResult.resposta;
+          classifierResult.acao = 'ENVIAR_RESPOSTA_AUTOMATICA';
+          classifierResult.deve_responder = true;
+          meetingHandled = true;
+          log.info('Meeting scheduling: slots proposed', { resposta: respostaTexto?.substring(0, 100) });
+        }
+      }
+    }
 
     // Anti-limbo patches — usar ia_null_count com threshold de 3
     const frameworkData = (parsedContext.conversationState as Record<string, unknown>)?.framework_data as Record<string, unknown> || {};
@@ -561,6 +630,48 @@ async function autoClassifyPreviousFeedback(
 // ========================================
 // SAVE INTERPRETATION
 // ========================================
+// ========================================
+// HELPER: Get vendedor assigned to a lead
+// ========================================
+async function getLeadVendedorId(supabase: SupabaseClient, leadId: string | null, empresa: string): Promise<string | null> {
+  if (!leadId) return null;
+  try {
+    // First check if lead has a deal with an assigned vendedor
+    const { data: deal } = await supabase
+      .from('deals')
+      .select('responsavel_id')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa)
+      .not('responsavel_id', 'is', null)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (deal?.responsavel_id) return deal.responsavel_id as string;
+
+    // Fallback: check lead_contacts for assigned user
+    const { data: contact } = await supabase
+      .from('lead_contacts')
+      .select('responsavel_id')
+      .eq('lead_id', leadId)
+      .eq('empresa', empresa)
+      .maybeSingle();
+    if (contact?.responsavel_id) return contact.responsavel_id as string;
+
+    // Fallback: get any admin/vendedor for this empresa
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('empresa', empresa)
+      .eq('ativo', true)
+      .limit(1)
+      .single();
+    return (profile?.id as string) || null;
+  } catch (e) {
+    log.error('getLeadVendedorId error', { error: e instanceof Error ? e.message : String(e) });
+    return null;
+  }
+}
+
 async function saveInterpretation(
   supabase: SupabaseClient,
   message: MessageRow,
