@@ -1,65 +1,71 @@
 
 
-## Integração Elementor → Amélia (com mapeamento configurável)
+## Mapeamento Elementor Completo -- Campos Adicionais e Ocultos
 
-### Contexto
+### Problema Atual
 
-O Elementor Pro envia webhooks no formato `{"fields": {"field_id": {"value": "..."}}}` ou via hooks PHP customizados. O endpoint `lp-lead-ingest` espera `{"lead": {"nome": "...", "email": "..."}}`. Precisamos de uma camada intermediária que faça essa tradução de forma configurável por formulário.
+O formulario de mapeamento so permite 3 campos fixos (nome, email, telefone). Na pratica, formularios Elementor tem campos adicionais (empresa, cargo, CPF, interesse) e campos ocultos (UTMs, page URL, referrer). Nao ha como mapear esses dados extras hoje.
 
-### Arquitetura
+### Solucao
+
+Expandir o `field_map` para suportar 3 categorias de campos, e atualizar o backend para processar todos eles.
+
+**Categorias de campos:**
 
 ```text
-Elementor Form Submit
-  → POST /functions/v1/elementor-webhook?form_id=abc123
-    → Edge function lê mapeamento do DB
-    → Converte campos do Elementor → formato LeadPayload
-    → Chama lp-lead-ingest internamente (reutiliza lógica existente)
-    → Retorna 200 ao Elementor
+1. Campos Principais (fixos): nome*, email*, telefone
+2. Campos Adicionais (dinamicos): usuario adiciona pares "nome do campo" <-> "ID Elementor"
+   Ex: empresa, cargo, cpf, interesse, cidade
+3. Campos Ocultos (pre-definidos): UTMs + campos de rastreio
+   utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+   page_url, referrer, gclid, fbclid
 ```
 
-### O que será construído
+### Mudancas
 
-**1. Tabela `elementor_form_mappings`** (migration)
+**1. Frontend -- `ElementorIntegrationManager.tsx`**
 
-Armazena a configuração de mapeamento por formulário:
-- `id`, `form_id` (slug único, ex: "oferta-publica-2025")
-- `empresa`, `pipeline_id`, `stage_id` (destino do lead)
-- `field_map` (JSONB): mapeia campo do Elementor → campo do lead. Ex: `{"nome": "field_abc", "email": "field_def", "telefone": "field_ghi"}`
-- `tags_auto` (text[]): tags automáticas aplicadas
-- `token` (text): token de autenticação único por formulário
-- `is_active` (boolean)
-- RLS: acesso via service_role apenas (edge function)
+- Manter secao "Campos Principais" (nome, email, telefone) como esta
+- Adicionar secao **"Campos Adicionais"** com botao "+ Adicionar Campo":
+  - Cada linha: Input "Nome do campo na Amelia" + Input "ID do campo no Elementor" + botao remover
+  - Permite mapear qualquer campo extra do formulario (ex: `empresa` -> `field_empresa`)
+- Adicionar secao **"Campos Ocultos / Rastreio"** com toggles e inputs:
+  - Lista pre-definida de campos UTM (utm_source, utm_medium, utm_campaign, utm_content, utm_term)
+  - Campos extras: page_url, referrer, gclid, fbclid
+  - Para cada um: toggle ativo + input do ID do campo no Elementor (caso venha como campo hidden no form)
+- Todos os campos extras sao gravados no mesmo `field_map` JSONB existente (nao precisa de migration)
+- Atualizar o snippet PHP gerado para incluir captura de UTMs via `$_GET` e campos hidden
 
-**2. Edge function `elementor-webhook`** (`supabase/functions/elementor-webhook/index.ts`)
+**2. Backend -- `elementor-webhook/index.ts`**
 
-- Recebe POST com query param `?form_id=xxx`
-- Autentica via header `X-Webhook-Token` comparando com o token do mapeamento
-- Busca o mapeamento no DB pelo `form_id`
-- Converte os campos recebidos para o formato `LeadPayload` usando o `field_map`
-- Chama internamente a lógica do `lp-lead-ingest` (via fetch interno ou reutilizando a lógica extraída)
-- Suporta tanto o formato nativo do Elementor (`fields.field_id.value`) quanto formato flat (`{"nome": "...", "email": "..."}`)
-- Rate limiting via `webhook-rate-limit.ts`
+- O backend ja itera sobre todo o `field_map` e ja extrai UTMs do body/query params
+- Ajuste: enviar campos adicionais mapeados dentro de `campos_extras` no payload do `lp-lead-ingest`
+- Ajuste: extrair `page_url`, `referrer`, `gclid`, `fbclid` do body e incluir nos `campos_extras`
 
-**3. Tela de configuração na UI** (`src/components/settings/ElementorIntegrationManager.tsx`)
+**3. Snippet PHP atualizado**
 
-Dentro da aba Webhooks ou como seção dedicada:
-- Listar mapeamentos existentes
-- Criar novo mapeamento: selecionar empresa, pipeline, estágio, definir tags, gerar token
-- Editor de mapeamento de campos (campo Amélia → ID do campo no Elementor)
-- Gerar snippet pronto para colar no WordPress: URL + token + exemplo de hook PHP
-- Botão "Testar webhook" que envia um payload de teste
+- Gerar snippet que tambem captura `$_GET['utm_source']` etc. e campos hidden do formulario
+- Incluir `page_url` via `$_SERVER['HTTP_REFERER']`
 
-**4. Registrar na lista de webhooks** (`src/types/settings.ts`)
+### Nao precisa de migration
 
-Adicionar `elementor-webhook` ao array `WEBHOOKS`.
+O `field_map` ja e JSONB livre -- campos adicionais e ocultos cabem na mesma estrutura:
+```json
+{
+  "nome": "field_name",
+  "email": "field_email",
+  "telefone": "field_phone",
+  "empresa": "field_company",
+  "cargo": "field_role",
+  "utm_source": "field_utm_source",
+  "page_url": "field_page_url"
+}
+```
 
-### Arquivos
+### Arquivos a modificar
 
-| Arquivo | Ação |
-|---------|------|
-| Migration SQL | Criar tabela `elementor_form_mappings` |
-| `supabase/functions/elementor-webhook/index.ts` | Criar — endpoint de recepção |
-| `src/components/settings/ElementorIntegrationManager.tsx` | Criar — UI de configuração e mapeamento |
-| `src/components/settings/WebhooksTab.tsx` | Modificar — adicionar seção Elementor |
-| `src/types/settings.ts` | Modificar — adicionar webhook à lista |
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/settings/ElementorIntegrationManager.tsx` | Adicionar secoes de campos adicionais e ocultos no dialog + exibicao no accordion |
+| `supabase/functions/elementor-webhook/index.ts` | Passar campos extras mapeados para `campos_extras`; extrair gclid/fbclid/page_url |
 
