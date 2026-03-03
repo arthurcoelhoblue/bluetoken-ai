@@ -3146,7 +3146,7 @@ export type Database = {
           pipeline_id: string | null
           stage_id: string | null
           tags_auto: string[]
-          token: string
+          token: string | null
           updated_at: string
         }
         Insert: {
@@ -3159,7 +3159,7 @@ export type Database = {
           pipeline_id?: string | null
           stage_id?: string | null
           tags_auto?: string[]
-          token?: string
+          token?: string | null
           updated_at?: string
         }
         Update: {
@@ -3172,7 +3172,7 @@ export type Database = {
           pipeline_id?: string | null
           stage_id?: string | null
           tags_auto?: string[]
-          token?: string
+          token?: string | null
           updated_at?: string
         }
         Relationships: [
