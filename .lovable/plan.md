@@ -1,66 +1,85 @@
 
 
-## Integração LP com IA → Amélia CRM
+## Avaliacao da PR #3 — 4 Patches Pipeline
 
-### Conceito
+### Resumo da PR
 
-Criar um sistema de **API Keys** na Amélia que gera tokens seguros por empresa. O LP com IA recebe esse token e, ao configurá-lo como automação no editor de fluxos, consegue buscar dinamicamente os pipelines e etapas disponíveis via API, sem precisar digitar IDs manualmente.
+A branch `feature/4-patches-pipeline` (PR #3) foi criada pelo Manus AI e contém 4 commits com +804/-258 linhas em 9 arquivos. Avaliacao por patch:
 
-```text
-┌─────────────────┐         ┌──────────────────────┐
-│   LP com IA     │         │     Amélia CRM       │
-│                 │         │                      │
-│ AutomationNode  │──GET───▶│ /api-keys/meta       │
-│ (tipo: amelia)  │         │ (pipelines, stages)  │
-│                 │         │                      │
-│ Form Conversion │──POST──▶│ /lp-lead-ingest      │
-│                 │         │ (com api_key header)  │
-└─────────────────┘         └──────────────────────┘
-```
+---
 
-### O que muda em cada projeto
+### Patch 1: Atividades Obrigatórias no Deal — APROVADO com ajustes
 
-**Amélia (este projeto):**
+**O que faz:** Ao fechar o DealDetailSheet, se o deal está aberto e nao tem atividade futura pendente, exibe um dialog obrigatório para agendar próximo passo. Permite "Pular desta vez".
 
-1. **Nova tabela `api_keys`** — armazena tokens gerados, vinculados a empresa, com label, permissões e data de expiração opcional
-2. **Nova edge function `api-keys-manage`** — CRUD de API keys (gerar, listar, revogar) para admins autenticados
-3. **Nova edge function `api-keys-meta`** — endpoint público (autenticado via API key) que retorna pipelines e stages da empresa vinculada ao token. Isso permite que o LP com IA popule selects dinâmicos
-4. **Atualizar `lp-lead-ingest`** — aceitar autenticação via header `X-API-Key` além do Bearer token atual. Validar a key contra a tabela, resolver empresa/pipeline automaticamente
-5. **UI em /admin/settings** — nova seção "API Keys" na aba de integrações para gerar e gerenciar tokens. Exibe o token uma vez, depois só mostra parcialmente
+**Arquivos:** `ScheduleActivityDialog.tsx` (novo), `DealDetailSheet.tsx` (modificado)
 
-**LP com IA (outro projeto):**
+**Problemas identificados (2):**
+1. **Bug de tipo no filtro** (P2): O `hasFutureActivity()` só verifica `tipo === 'TAREFA'`, mas o dialog permite agendar LIGACAO, EMAIL, REUNIAO. Se o usuário agendar uma ligação, na próxima vez que fechar o sheet, o dialog reaparece. **Correção**: verificar se o tipo está em `['TAREFA', 'LIGACAO', 'EMAIL', 'REUNIAO']`.
+2. **Bug de comparação de data** (P2): Compara `tarefa_prazo` contra `new Date()` (com hora), mas o dialog agenda apenas com `date.toISOString()` (meia-noite). Atividades agendadas "para hoje" são consideradas passadas após 00:00. **Correção**: comparar apenas a data (sem hora).
 
-6. **Novo tipo de automação "Amélia CRM"** no `AutomationNodeProperties` — campo para colar o API Key, selects dinâmicos de empresa (se multi-tenant), pipeline e etapa, buscados via `api-keys-meta`
-7. **Executor do fluxo** — ao processar nó do tipo "amelia", faz POST para o endpoint `lp-lead-ingest` com o header `X-API-Key`
+**Veredito:** Bom conceito, precisa dos 2 ajustes acima.
 
-### Segurança
+---
 
-- Tokens são UUIDs v4 com hash SHA-256 armazenado no banco (o valor original só é mostrado uma vez na geração)
-- Cada key tem scope de empresa — não é possível enviar leads para empresa diferente da vinculada
-- Keys podem ser revogadas instantaneamente
-- Rate limiting via tabela existente `rate_limit_log`
-- RLS na tabela `api_keys` restrito a admins
+### Patch 2: Cadastro de Produtos no Deal — APROVADO com ajustes críticos
 
-### Tabela `api_keys`
+**O que faz:** Novas tabelas `catalog_products` e `deal_products` (com subtotal GENERATED ALWAYS), hook `useDealProducts`, componente `DealProductsTab`, nova aba "Produtos" no DealDetailSheet.
 
-| Coluna | Tipo | Descrição |
-|--------|------|-----------|
-| id | uuid PK | ID |
-| empresa | empresa_tipo | Empresa vinculada |
-| label | text | Nome descritivo |
-| key_hash | text | SHA-256 do token |
-| key_preview | text | Últimos 8 chars para identificação |
-| permissions | text[] | Ex: ['lead:write', 'meta:read'] |
-| created_by | uuid FK profiles | Quem gerou |
-| expires_at | timestamptz | Expiração opcional |
-| is_active | boolean | Revogar sem deletar |
-| last_used_at | timestamptz | Auditoria |
-| created_at | timestamptz | |
+**Arquivos:** `DealProductsTab.tsx` (novo), `useDealProducts.ts` (novo), migration SQL (novo), `DealDetailSheet.tsx` (modificado)
 
-### Ordem de implementação
+**Problemas identificados (3):**
+1. **CRITICO - RLS completamente aberta** (P1): Todas as policies usam `USING (true)` e `WITH CHECK (true)`. Qualquer usuário autenticado pode ler/editar/deletar produtos de qualquer empresa. **Correção**: restringir policies por empresa via join com deals/pipelines, igual ao padrão do restante do sistema.
+2. **Type hack no Supabase client**: Usa `from('deal_products' as 'deals')` para contornar tipos. Funciona mas é frágil. **Correção**: após a migration rodar, os tipos serão atualizados automaticamente e o cast não será mais necessário. Vou implementar sem o hack.
+3. **`catalog_products.empresa` é TEXT em vez de `empresa_tipo`**: Inconsistente com o restante do schema. **Correção**: usar `empresa_tipo`.
 
-1. Criar tabela + RLS + edge functions (Amélia)
-2. UI de gerenciamento de API Keys (Amélia)
-3. Atualizar lp-lead-ingest para aceitar X-API-Key (Amélia)
-4. Adicionar tipo "Amélia" no editor de fluxos (LP com IA)
+**Veredito:** Funcionalidade excelente, mas a RLS precisa ser corrigida antes de ir para produção.
+
+---
+
+### Patch 3: Mover Ganhar/Perder para Dentro do Card — APROVADO
+
+**O que faz:** Remove os botões Trophy (Ganhar) e XCircle (Perder) do DealCard no Kanban, junto com o dialog de perda e toda a lógica associada (checkMinTime, handleWin, handleLoseClick, handleConfirmLoss). As ações ficam disponíveis apenas dentro do DealDetailSheet.
+
+**Arquivos:** `DealCard.tsx` (modificado, -173 linhas)
+
+**Problemas:** Nenhum. Simplificação limpa. O card fica mais compacto e as ações destrutivas (ganhar/perder) ficam centralizadas no DealDetailSheet onde já existem.
+
+**Veredito:** Aprovado sem ajustes.
+
+---
+
+### Patch 4: Formato de Telefone +55 (DDD) XXXXX-XXXX — APROVADO com ajuste menor
+
+**O que faz:** Nova utility `formatPhoneBR()` em `src/lib/formatPhone.ts`. Aplica no ZadarmaPhoneWidget e ClickToCallButton.
+
+**Arquivos:** `formatPhone.ts` (novo), `ZadarmaPhoneWidget.tsx` (modificado), `ClickToCallButton.tsx` (modificado)
+
+**Problemas identificados (1):**
+1. **Bug no input do widget**: O input exibe `formatPhoneBR(number)` como value, mas o onChange faz `setNumber(e.target.value.replace(/\D/g, ''))`. Isso cria um loop onde o usuário digita, o número é formatado para exibição, e depois os não-dígitos são removidos. Pode causar posição do cursor inconsistente. **Correção**: manter o raw value no input e exibir a versão formatada apenas como placeholder ou label.
+
+**Veredito:** Boa utility, ajuste menor no input.
+
+---
+
+### Plano de Execução
+
+Vou implementar os 4 patches nesta ordem, já com todas as correções:
+
+**Passo 1 — Migration SQL (Patch 2)**
+- Criar tabelas `catalog_products` (com `empresa_tipo`) e `deal_products`
+- RLS restritiva: policies scoped por empresa via join com deals/pipelines
+- Subtotal como GENERATED ALWAYS
+
+**Passo 2 — Novos arquivos (Patches 1, 2, 4)**
+- `src/lib/formatPhone.ts` — utility de formatação BR
+- `src/hooks/useDealProducts.ts` — hook sem type hacks
+- `src/components/deals/ScheduleActivityDialog.tsx` — com reset correto
+- `src/components/deals/DealProductsTab.tsx` — aba de produtos
+
+**Passo 3 — Modificações em arquivos existentes (Patches 1, 2, 3, 4)**
+- `DealDetailSheet.tsx` — interceptação de fechamento (com fix de tipo e data), nova aba Produtos
+- `DealCard.tsx` — remoção dos botões Ganhar/Perder e lógica associada
+- `ZadarmaPhoneWidget.tsx` — formatação de telefone (com fix no input)
+- `ClickToCallButton.tsx` — formatação de telefone no tooltip
 
