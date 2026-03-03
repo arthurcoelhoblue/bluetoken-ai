@@ -111,9 +111,12 @@ export default function TemplatesPage() {
 
   function handleClone() {
     if (!cloneTemplate || !cloneConnectionId) return;
-    const { id, created_at, updated_at, meta_template_id, meta_status, meta_rejected_reason, connection_id, ...rest } = cloneTemplate;
+    const { id, created_at, updated_at, meta_template_id, meta_status, meta_rejected_reason, connection_id, codigo, ...rest } = cloneTemplate;
+    const suffix = cloneConnectionId.replace(/-/g, '').slice(0, 4);
+    const newCodigo = `${codigo}_${suffix}`;
     createMutation.mutate({
       ...rest,
+      codigo: newCodigo,
       connection_id: cloneConnectionId,
       meta_status: 'LOCAL',
       meta_template_id: null,
