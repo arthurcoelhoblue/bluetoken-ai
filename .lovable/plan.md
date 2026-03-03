@@ -1,41 +1,51 @@
 
 
-## Diagnóstico: Controle de números WhatsApp não funciona na Tokeniza
+## Diagnóstico: Mensagens enviadas mas não entregues para 556198317422
 
-### Situação atual no banco
+### O que os dados mostram
 
-| Conexão | phone_number_id | is_default | is_active |
-|---------|-----------------|------------|-----------|
-| *(sem label)* | 1009376255595711 | **true** | **false** |
-| Comercial - Tokeniza BR | 1054747871049688 | false | true |
+| Horário | Direção | from_phone_number_id | Estado | Conteúdo |
+|---------|---------|---------------------|--------|----------|
+| 11:44 | OUT (template) | **1009376255595711** (antigo) | ENVIADO | tkn_followup_1 |
+| 11:45 | IN | — | RECEBIDO | "Oi" (resposta ao template acima) |
+| 11:45 | OUT (auto-reply) | **1054747871049688** (Comercial) | ENVIADO | Resposta da Amélia |
+| 12:12 | OUT (manual) | **1054747871049688** (Comercial) | ENVIADO | "Ola" |
+| 12:14 | OUT (manual) | **1054747871049688** (Comercial) | ENVIADO | "alo" |
 
-### Problemas identificados
+As mensagens anteriores (2 de março) do número **1009376255595711** chegaram como **ENTREGUE**. As de hoje do **1054747871049688** ficaram apenas como **ENVIADO**.
 
-1. **ConnectionPicker esconde com ≤1 conexão ativa**: A query filtra `is_active = true`, retorna só 1 resultado, e o picker desaparece (`connections.length <= 1 → return null`). O usuário não vê qual número está ativo nem pode confirmar a seleção.
+### Causa raiz: janela de conversa por número
 
-2. **Conexão inativa ainda marcada como `is_default = true`**: No backend (`channel-resolver.ts`), o fallback sem `connectionId` busca `is_default = true AND is_active = true` → não encontra nada → cai para "any active" → funciona por sorte, mas semanticamente o `is_default` está errado.
+Na API Cloud da Meta, a **janela de 24h é POR número de telefone comercial**. O Arthur Coelho recebeu o template pelo número antigo (`1009376255595711`) e respondeu a ELE. A conversa aberta é com esse número.
 
-3. **Sem feedback visual de qual número está sendo usado**: Mesmo quando o picker está oculto, o usuário não sabe por qual número a mensagem está saindo.
+Quando o sistema responde pelo número **diferente** (`1054747871049688` — Comercial Tokeniza BR), a Meta aceita o request (retorna `wamid`), mas **não entrega** a mensagem porque não há janela de conversa aberta entre o Arthur e esse segundo número.
 
-### Solução
+### Isso NÃO é bug de código
 
-#### 1. ConnectionPicker: mostrar mesmo com 1 conexão (modo informativo)
-Em vez de `return null` quando há ≤1 conexão, exibir um badge/chip com o número ativo (não-interativo, apenas informativo). Isso dá visibilidade ao usuário sobre qual número está sendo usado. Manter a lógica de `Select` para 2+.
+O `whatsapp-send` está funcionando corretamente — ele envia pelo número ativo selecionado e a Meta aceita. O problema é de regra de negócio da API Meta: cada phone_number_id tem sua própria janela de conversa independente.
 
-#### 2. Limpar `is_default` da conexão inativa
-Quando uma conexão é desativada (`is_active = false`), o `is_default` deveria ser removido e transferido para outra conexão ativa. Duas opções:
-- **Opção A**: Trigger no banco que ao setar `is_active = false`, move `is_default = true` para a próxima conexão ativa da mesma empresa.
-- **Opção B**: Corrigir no admin settings (UI) ao desativar — atualizar `is_default` automaticamente.
+### Solução imediata (manual)
 
-Vou implementar a **Opção A** (trigger), pois cobre todos os cenários (admin, API direta, etc.).
+Para o Arthur receber mensagens do número Comercial Tokeniza BR, é preciso enviar um **template** (não mensagem livre) por esse número. Templates podem ser enviados fora da janela de 24h e abrem uma nova conversa.
 
-#### 3. Correção imediata dos dados
-Executar SQL para transferir `is_default` da conexão inativa para a ativa na Tokeniza.
+### Solução sistêmica (código)
 
-### Arquivos a alterar
+Duas melhorias possíveis:
+
+1. **Rastrear `from_phone_number_id` nas mensagens inbound** — quando chega um inbound, gravar de qual número comercial ele veio, e usar esse mesmo número para responder (auto-reply da Amélia e mensagens manuais).
+
+2. **Bloquear envio de texto livre para número sem janela aberta** — no `whatsapp-send`, verificar se existe mensagem INBOUND recente (últimas 24h) vinda do mesmo `phone_number_id` que será usado para enviar. Se não houver, forçar uso de template ou alertar o usuário.
+
+### Arquivos envolvidos
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/conversas/ConnectionPicker.tsx` | Mostrar chip informativo quando há 1 conexão em vez de esconder |
-| Migração SQL | Trigger para auto-transferir `is_default` ao desativar; fix data Tokeniza |
+| `supabase/functions/whatsapp-send/index.ts` | Validar janela de conversa antes de enviar texto livre; sugerir template se não houver janela |
+| `supabase/functions/whatsapp-inbound/index.ts` | Gravar `from_phone_number_id` nas mensagens inbound para rastrear qual número comercial recebeu |
+| `src/components/conversas/ManualMessageInput.tsx` | Mostrar aviso ao usuário quando não há janela aberta para o número selecionado |
 
+### Recomendação
+
+Implementar a **solução 1** (rastrear inbound phone e responder pelo mesmo número) é a mais importante, pois evita que a Amélia responda automaticamente pelo número errado. A solução 2 (bloquear texto livre sem janela) é um complemento de UX.
+
+Quer que eu implemente essas correções?
