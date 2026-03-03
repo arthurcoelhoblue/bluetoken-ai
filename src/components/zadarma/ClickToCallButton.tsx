@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Phone, DollarSign, Loader2 } from 'lucide-react';
+import { formatPhoneBR } from '@/lib/formatPhone';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -74,7 +75,7 @@ export function ClickToCallButton({ phone, contactName, dealId, customerId, size
               {size === 'sm' && <span className="ml-1.5">Ligar</span>}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Ligar para {contactName || phone}</TooltipContent>
+          <TooltipContent>Ligar para {contactName || formatPhoneBR(phone)}</TooltipContent>
         </Tooltip>
 
         <Tooltip>

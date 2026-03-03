@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { formatPhoneBR } from '@/lib/formatPhone';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -270,8 +271,8 @@ export function ZadarmaPhoneWidget() {
   const CallInfo = () => (
     <>
       <div className="text-center">
-        <p className="text-lg font-semibold">{contactName || number}</p>
-        {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
+        <p className="text-lg font-semibold">{contactName || formatPhoneBR(number) || number}</p>
+        {contactName && <p className="text-sm text-muted-foreground">{formatPhoneBR(number)}</p>}
         {dealId && <p className="text-xs text-muted-foreground mt-1">Deal vinculado</p>}
       </div>
       {onHold && (
