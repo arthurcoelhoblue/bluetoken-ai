@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -13,6 +13,7 @@ import { CopilotInsightCard } from './CopilotInsightCard';
 import type { CopilotContextType } from '@/types/conversas';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
 import { useQuery } from '@tanstack/react-query';
+import ReactMarkdown from 'react-markdown';
 
 interface CopilotContext {
   type: CopilotContextType;
@@ -75,6 +76,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
   const [isLoading, setIsLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const isSendingRef = useRef(false);
 
   const {
     messages, isLoading: historyLoading, saveMessage, saveMessageQuiet, clearHistory,
@@ -130,40 +132,44 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
   const suggestions = QUICK_SUGGESTIONS[context.type] || QUICK_SUGGESTIONS.GERAL;
 
-  const sendMessage = async (content: string) => {
-    if (!content.trim()) return;
+  const sendMessage = useCallback(async (content: string) => {
+    if (!content.trim() || isSendingRef.current) return;
+    isSendingRef.current = true;
     const trimmed = content.trim();
     setInput('');
     setIsLoading(true);
 
     await saveMessage('user', trimmed);
 
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const allMsgs = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: trimmed }];
+    const payload = {
+      messages: allMsgs,
+      contextType: context.type,
+      contextId: context.id,
+      empresa: context.empresa,
+    };
+    const url = `${supabaseUrl}/functions/v1/copilot-chat`;
+    const headers = {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${supabaseKey}`,
+    };
+
+    let didFallback = false;
+
     try {
-      const allMsgs = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: trimmed }];
-
-      const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-      const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
-
       const controller = new AbortController();
       abortRef.current = controller;
 
-      // Timeout de 25s para iniciar o stream
       const streamStartTimeout = setTimeout(() => {
         controller.abort();
       }, 25000);
 
-      const resp = await fetch(`${supabaseUrl}/functions/v1/copilot-chat`, {
+      const resp = await fetch(url, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabaseKey}`,
-        },
-        body: JSON.stringify({
-          messages: allMsgs,
-          contextType: context.type,
-          contextId: context.id,
-          empresa: context.empresa,
-        }),
+        headers,
+        body: JSON.stringify(payload),
         signal: controller.signal,
       });
 
@@ -180,7 +186,6 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
       if (!resp.body) throw new Error('No response body');
 
-      // Create placeholder assistant message
       addLocalMessage('assistant', '');
       let assistantContent = '';
       let metaData: { model?: string; tokens_input?: number; tokens_output?: number; latency_ms?: number } = {};
@@ -189,8 +194,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
       const decoder = new TextDecoder();
       let buffer = '';
 
-      // Watchdog: 15s inactivity timeout during streaming
-      const INACTIVITY_TIMEOUT_MS = 15_000;
+      const INACTIVITY_TIMEOUT_MS = 30_000;
       let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
       const resetInactivityTimer = () => {
         if (inactivityTimer) clearTimeout(inactivityTimer);
@@ -204,10 +208,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
-
-          // Data received — reset watchdog
           resetInactivityTimer();
-
           buffer += decoder.decode(value, { stream: true });
 
           let newlineIndex: number;
@@ -216,11 +217,9 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
             buffer = buffer.slice(newlineIndex + 1);
             if (line.endsWith('\r')) line = line.slice(0, -1);
             if (!line.startsWith('data: ')) continue;
-
             const jsonStr = line.slice(6).trim();
             if (jsonStr === '[DONE]') break;
             if (!jsonStr) continue;
-
             try {
               const parsed = JSON.parse(jsonStr);
               const delta = parsed.choices?.[0]?.delta?.content;
@@ -228,19 +227,14 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
                 assistantContent += delta;
                 updateLastMessage(assistantContent);
               }
-              if (parsed.meta) {
-                metaData = parsed.meta;
-              }
-            } catch {
-              // Incomplete JSON, skip
-            }
+              if (parsed.meta) metaData = parsed.meta;
+            } catch { /* skip */ }
           }
         }
       } finally {
         if (inactivityTimer) clearTimeout(inactivityTimer);
       }
 
-      // Save final assistant message to DB (quiet — placeholder already in state)
       if (assistantContent) {
         await saveMessageQuiet('assistant', assistantContent, {
           model_used: metaData.model,
@@ -252,14 +246,46 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
       trackFeatureUse('copilot_message_sent', { context: context.type, model: metaData.model });
     } catch (err) {
-      const isTimeout = err instanceof DOMException && err.name === 'AbortError';
-      addLocalMessage('assistant', isTimeout
-        ? '⏱️ A Amélia demorou demais para responder. Tente novamente em alguns instantes.'
-        : '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+
+      // Auto-retry non-streaming on abort (timeout/watchdog)
+      if (isAbort && !didFallback) {
+        didFallback = true;
+        try {
+          addLocalMessage('assistant', '');
+          const fallbackResp = await fetch(url, {
+            method: 'POST',
+            headers,
+            body: JSON.stringify({ ...payload, stream: false }),
+          });
+          if (fallbackResp.ok) {
+            const fallbackData = await fallbackResp.json();
+            const fallbackContent = fallbackData.choices?.[0]?.message?.content || fallbackData.content || '';
+            if (fallbackContent) {
+              updateLastMessage(fallbackContent);
+              await saveMessageQuiet('assistant', fallbackContent, {
+                model_used: fallbackData.meta?.model,
+                tokens_input: fallbackData.meta?.tokens_input,
+                tokens_output: fallbackData.meta?.tokens_output,
+                latency_ms: fallbackData.meta?.latency_ms,
+              });
+              trackFeatureUse('copilot_message_sent', { context: context.type, fallback: true });
+              return; // success via fallback
+            }
+          }
+        } catch { /* fallback also failed, show error below */ }
+      }
+
+      if (!didFallback || true) {
+        addLocalMessage('assistant', isAbort
+          ? '⏱️ A Amélia demorou demais para responder. Tente novamente em alguns instantes.'
+          : '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
+      }
     } finally {
       setIsLoading(false);
+      isSendingRef.current = false;
     }
-  };
+  }, [messages, context, saveMessage, addLocalMessage, updateLastMessage, saveMessageQuiet, trackFeatureUse]);
 
   const trigger = variant === 'icon' ? (
     <Button variant="ghost" size="icon" className="h-8 w-8 relative">
@@ -358,13 +384,19 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
                   )}
                   <div className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                     <div
-                      className={`max-w-[85%] p-3 rounded-lg text-sm whitespace-pre-wrap break-words ${
+                      className={`max-w-[85%] p-3 rounded-lg text-sm break-words ${
                         msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground rounded-br-none'
+                          ? 'bg-primary text-primary-foreground rounded-br-none whitespace-pre-wrap'
                           : 'bg-muted rounded-bl-none'
                       }`}
                     >
-                      {msg.content}
+                      {msg.role === 'user' ? (
+                        msg.content
+                      ) : (
+                        <div className="prose prose-sm dark:prose-invert max-w-none [&>p]:my-1 [&>ul]:my-1 [&>ol]:my-1">
+                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
