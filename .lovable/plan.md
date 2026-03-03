@@ -1,36 +1,65 @@
 
 
-## Diagnóstico: Copilot trava no meio da resposta
+## Integração Elementor → Amélia (com mapeamento configurável)
 
-### Causa raiz (3 problemas)
+### Contexto
 
-**1. Backend: Sem timeout de leitura no stream Anthropic**
-O timeout de 20s (`anthropicAbort`) é cancelado assim que o `fetch` retorna headers (linha 291). Se o Anthropic **começa** a responder mas **para no meio** (throttling, rede instável), o `reader.read()` fica pendurado para sempre — a edge function morre no timeout de 30s do Deno e o stream é cortado sem `[DONE]`.
+O Elementor Pro envia webhooks no formato `{"fields": {"field_id": {"value": "..."}}}` ou via hooks PHP customizados. O endpoint `lp-lead-ingest` espera `{"lead": {"nome": "...", "email": "..."}}`. Precisamos de uma camada intermediária que faça essa tradução de forma configurável por formulário.
 
-**2. Backend: Parsing SSE quebrado entre chunks**
-Anthropic envia SSE multi-linha (`event: ...\ndata: ...\n\n`). O código no `pull()` do `ReadableStream` (linhas 325-356) faz `chunk.split('\n')` por chunk individual, sem manter um buffer entre chamadas. Se um evento SSE é dividido entre dois chunks TCP, o `JSON.parse` falha silenciosamente e o delta de texto é perdido — resultado: a resposta "congela" embora dados ainda cheguem.
+### Arquitetura
 
-**3. Frontend: Sem timeout de inatividade no stream**
-O timeout de 25s protege apenas o **início** do stream (é cancelado na linha 170 após receber headers). Se dados param de chegar **durante** o streaming, o `reader.read()` fica preso indefinidamente — o usuário vê a resposta parcial congelada sem nenhum feedback.
+```text
+Elementor Form Submit
+  → POST /functions/v1/elementor-webhook?form_id=abc123
+    → Edge function lê mapeamento do DB
+    → Converte campos do Elementor → formato LeadPayload
+    → Chama lp-lead-ingest internamente (reutiliza lógica existente)
+    → Retorna 200 ao Elementor
+```
 
-### Plano de correção
+### O que será construído
 
-**1. Backend: Buffer SSE persistente entre pulls** (`supabase/functions/copilot-chat/index.ts`)
+**1. Tabela `elementor_form_mappings`** (migration)
 
-Manter uma variável `sseBuffer` fora do `pull()` para acumular fragmentos incompletos entre chamadas. Processar apenas linhas completas (terminadas em `\n`).
+Armazena a configuração de mapeamento por formulário:
+- `id`, `form_id` (slug único, ex: "oferta-publica-2025")
+- `empresa`, `pipeline_id`, `stage_id` (destino do lead)
+- `field_map` (JSONB): mapeia campo do Elementor → campo do lead. Ex: `{"nome": "field_abc", "email": "field_def", "telefone": "field_ghi"}`
+- `tags_auto` (text[]): tags automáticas aplicadas
+- `token` (text): token de autenticação único por formulário
+- `is_active` (boolean)
+- RLS: acesso via service_role apenas (edge function)
 
-**2. Backend: Timeout de leitura por chunk** (`supabase/functions/copilot-chat/index.ts`)
+**2. Edge function `elementor-webhook`** (`supabase/functions/elementor-webhook/index.ts`)
 
-Dentro do `pull()`, envolver o `reader.read()` com um `Promise.race` contra um timeout de 10s. Se nenhum dado chegar em 10s, emitir `[DONE]` e fechar o stream graciosamente.
+- Recebe POST com query param `?form_id=xxx`
+- Autentica via header `X-Webhook-Token` comparando com o token do mapeamento
+- Busca o mapeamento no DB pelo `form_id`
+- Converte os campos recebidos para o formato `LeadPayload` usando o `field_map`
+- Chama internamente a lógica do `lp-lead-ingest` (via fetch interno ou reutilizando a lógica extraída)
+- Suporta tanto o formato nativo do Elementor (`fields.field_id.value`) quanto formato flat (`{"nome": "...", "email": "..."}`)
+- Rate limiting via `webhook-rate-limit.ts`
 
-**3. Frontend: Watchdog de inatividade** (`src/components/copilot/CopilotPanel.tsx`)
+**3. Tela de configuração na UI** (`src/components/settings/ElementorIntegrationManager.tsx`)
 
-Após cada `reader.read()` com dados, resetar um timer de 15s. Se 15s passam sem novos dados (e `done` não é true), abortar o controller — o catch mostrará a mensagem de timeout ao usuário.
+Dentro da aba Webhooks ou como seção dedicada:
+- Listar mapeamentos existentes
+- Criar novo mapeamento: selecionar empresa, pipeline, estágio, definir tags, gerar token
+- Editor de mapeamento de campos (campo Amélia → ID do campo no Elementor)
+- Gerar snippet pronto para colar no WordPress: URL + token + exemplo de hook PHP
+- Botão "Testar webhook" que envia um payload de teste
 
-### Arquivos a modificar
+**4. Registrar na lista de webhooks** (`src/types/settings.ts`)
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/copilot-chat/index.ts` | Buffer SSE persistente + timeout de 10s por read no stream |
-| `src/components/copilot/CopilotPanel.tsx` | Watchdog de inatividade de 15s durante streaming |
+Adicionar `elementor-webhook` ao array `WEBHOOKS`.
+
+### Arquivos
+
+| Arquivo | Ação |
+|---------|------|
+| Migration SQL | Criar tabela `elementor_form_mappings` |
+| `supabase/functions/elementor-webhook/index.ts` | Criar — endpoint de recepção |
+| `src/components/settings/ElementorIntegrationManager.tsx` | Criar — UI de configuração e mapeamento |
+| `src/components/settings/WebhooksTab.tsx` | Modificar — adicionar seção Elementor |
+| `src/types/settings.ts` | Modificar — adicionar webhook à lista |
 
