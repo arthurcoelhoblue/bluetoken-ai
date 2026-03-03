@@ -36,11 +36,11 @@ export function useCalendarConfig(userId?: string) {
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('user_availability' as any)
+        .from('user_availability')
         .select('*')
         .eq('user_id', userId!);
       if (error) throw error;
-      return (data || []) as unknown as AvailabilitySlot[];
+      return (data || []) as AvailabilitySlot[];
     },
   });
 
@@ -49,12 +49,12 @@ export function useCalendarConfig(userId?: string) {
     enabled: !!userId,
     queryFn: async () => {
       const { data, error } = await supabase
-        .from('user_meeting_config' as any)
+        .from('user_meeting_config')
         .select('*')
         .eq('user_id', userId!)
         .maybeSingle();
       if (error) throw error;
-      return (data as unknown as MeetingConfig) || DEFAULT_CONFIG;
+      return (data as MeetingConfig) || DEFAULT_CONFIG;
     },
   });
 
@@ -75,9 +75,9 @@ export function useCalendarConfig(userId?: string) {
     mutationFn: async (slots: AvailabilitySlot[]) => {
       if (!userId) throw new Error('No user');
       // Delete existing and re-insert
-      await supabase.from('user_availability' as any).delete().eq('user_id', userId);
+      await supabase.from('user_availability').delete().eq('user_id', userId);
       if (slots.length > 0) {
-        const { error } = await supabase.from('user_availability' as any).insert(
+        const { error } = await supabase.from('user_availability').insert(
           slots.map(s => ({ user_id: userId, ...s }))
         );
         if (error) throw error;
@@ -93,7 +93,7 @@ export function useCalendarConfig(userId?: string) {
   const saveConfig = useMutation({
     mutationFn: async (cfg: Partial<MeetingConfig>) => {
       if (!userId) throw new Error('No user');
-      const { error } = await supabase.from('user_meeting_config' as any).upsert(
+      const { error } = await supabase.from('user_meeting_config').upsert(
         { user_id: userId, ...cfg },
         { onConflict: 'user_id' }
       );

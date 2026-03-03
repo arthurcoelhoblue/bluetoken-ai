@@ -118,6 +118,7 @@ export function CalendarConfigPanel({ userId }: Props) {
     await supabase.functions.invoke('google-calendar-auth', {
       body: { action: 'disconnect' },
     });
+    queryClient.invalidateQueries({ queryKey: ['google-calendar-status'] });
     toast.success('Google Calendar desconectado');
   };
 
