@@ -7,6 +7,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Badge } from '@/components/ui/badge';
 import { Phone } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
@@ -51,8 +52,21 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
     }
   }, [isLoading, defaultConn, value, onChange]);
 
-  // If only 1 connection, don't render picker UI
-  if (!isLoading && connections.length <= 1) {
+  // If only 1 connection, show informative badge (no selector)
+  if (!isLoading && connections.length === 1) {
+    const conn = connections[0];
+    return (
+      <div className={className}>
+        <Badge variant="outline" className="h-7 text-xs font-normal gap-1.5 px-2.5">
+          <Phone className="h-3 w-3 text-muted-foreground" />
+          {conn.label || conn.display_phone || conn.verified_name || 'WhatsApp'}
+        </Badge>
+      </div>
+    );
+  }
+
+  // No connections at all
+  if (!isLoading && connections.length === 0) {
     return null;
   }
 
