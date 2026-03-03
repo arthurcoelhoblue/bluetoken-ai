@@ -37,6 +37,8 @@ import { useAuth } from '@/contexts/AuthContext';
   AlertCircle,
   Shield,
   Tag,
+  Mail,
+  TrendingUp,
 } from 'lucide-react';
 import {
   Sidebar,
@@ -94,6 +96,7 @@ const navGroups: NavGroup[] = [
       { title: 'Cockpit', url: '/cockpit', icon: Gauge, screenKey: 'cockpit' },
       { title: 'Relatórios', url: '/relatorios', icon: BarChart3, screenKey: 'relatorios' },
       { title: 'Leads Quentes', url: '/admin/leads-quentes', icon: Flame, screenKey: 'leads_quentes' },
+      { title: 'Ofertas Tokeniza', url: '/tokeniza/offers', icon: TrendingUp, screenKey: 'tokeniza_offers' },
     ],
   },
   {
@@ -130,6 +133,7 @@ const navGroups: NavGroup[] = [
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
       { title: 'Campos', url: '/settings/custom-fields', icon: SlidersHorizontal, screenKey: 'campos_config' },
       { title: 'Importação', url: '/importacao', icon: Upload, screenKey: 'importacao' },
+      { title: 'E-mail SMTP', url: '/admin/email-smtp', icon: Mail, screenKey: 'email_smtp' },
       { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
       { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
       { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },

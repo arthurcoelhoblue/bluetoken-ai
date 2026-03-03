@@ -20,7 +20,7 @@ const Me = lazy(() => import("./pages/Me"));
 const Unauthorized = lazy(() => import("./pages/Unauthorized"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 const MonitorSgtEvents = lazy(() => import("./pages/MonitorSgtEvents"));
-const LeadsList = lazy(() => import("./pages/LeadsList"));
+
 const LeadDetail = lazy(() => import("./pages/LeadDetail"));
 const CadencesList = lazy(() => import("./pages/CadencesList"));
 const CadenceDetail = lazy(() => import("./pages/CadenceDetail"));
@@ -109,7 +109,7 @@ const App = () => (
                 {/* Protected routes */}
                 <Route path="/" element={<Index />} />
                 <Route path="/meu-dia" element={<ProtectedRoute><WorkbenchPage /></ProtectedRoute>} />
-                <Route path="/me" element={<ProtectedRoute><Me /></ProtectedRoute>} />
+                <Route path="/me" element={<ProtectedRoute><ErrorBoundary><Me /></ErrorBoundary></ProtectedRoute>} />
                 
                 {/* Pipeline & Deals — isolated ErrorBoundary */}
                 <Route path="/pipeline" element={<ProtectedRoute><ErrorBoundary><PipelinePage /></ErrorBoundary></ProtectedRoute>} />
@@ -131,28 +131,27 @@ const App = () => (
                 <Route path="/templates" element={<ProtectedRoute requiredRoles={['ADMIN', 'MARKETING']}><ErrorBoundary><TemplatesPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/integracoes" element={<Navigate to="/admin/settings" replace />} />
                 <Route path="/cadencias-crm" element={<Navigate to="/cadences" replace />} />
-                <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormsPage /></ProtectedRoute>} />
-                <Route path="/capture-forms/:id/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CaptureFormBuilderPage /></ProtectedRoute>} />
+                <Route path="/capture-forms" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CaptureFormsPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/capture-forms/:id/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CaptureFormBuilderPage /></ErrorBoundary></ProtectedRoute>} />
                 
                 {/* Admin/Auditor — isolated ErrorBoundary */}
                 <Route path="/monitor/sgt-events" element={<ProtectedRoute requiredRoles={['ADMIN', 'AUDITOR']}><ErrorBoundary><MonitorSgtEvents /></ErrorBoundary></ProtectedRoute>} />
                 
                 {/* Leads routes */}
                 <Route path="/leads" element={<Navigate to="/contatos" replace />} />
-                <Route path="/leads/:leadId/:empresa" element={<ProtectedRoute><LeadDetail /></ProtectedRoute>} />
+                <Route path="/leads/:leadId/:empresa" element={<ProtectedRoute><ErrorBoundary><LeadDetail /></ErrorBoundary></ProtectedRoute>} />
                 
                 {/* Cadences routes */}
-                <Route path="/cadences/new" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenceEditor /></ProtectedRoute>} />
-                <Route path="/cadences/:cadenceId/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><CadenceEditor /></ProtectedRoute>} />
-                <Route path="/cadences/runs/:runId" element={<ProtectedRoute><CadenceRunDetail /></ProtectedRoute>} />
-                <Route path="/cadences/runs" element={<ProtectedRoute><CadenceRunsList /></ProtectedRoute>} />
-                <Route path="/cadences/next-actions" element={<ProtectedRoute><CadenceNextActions /></ProtectedRoute>} />
-                <Route path="/cadences/:cadenceId" element={<ProtectedRoute><CadenceDetail /></ProtectedRoute>} />
-                <Route path="/cadences" element={<ProtectedRoute><CadencesList /></ProtectedRoute>} />
+                <Route path="/cadences/new" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CadenceEditor /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences/:cadenceId/edit" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CadenceEditor /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences/runs/:runId" element={<ProtectedRoute><ErrorBoundary><CadenceRunDetail /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences/runs" element={<ProtectedRoute><ErrorBoundary><CadenceRunsList /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences/next-actions" element={<ProtectedRoute><ErrorBoundary><CadenceNextActions /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences/:cadenceId" element={<ProtectedRoute><ErrorBoundary><CadenceDetail /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/cadences" element={<ProtectedRoute><ErrorBoundary><CadencesList /></ErrorBoundary></ProtectedRoute>} />
                 
                 {/* Tokeniza */}
-                <Route path="/tokeniza/offers" element={<ProtectedRoute><TokenizaOffers /></ProtectedRoute>} />
-                
+                <Route path="/tokeniza/offers" element={<ProtectedRoute><ErrorBoundary><TokenizaOffers /></ErrorBoundary></ProtectedRoute>} />
                 {/* Admin routes — isolated ErrorBoundary */}
                 <Route path="/admin/produtos" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ProductKnowledgeList /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/admin/produtos/:productId" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><ProductKnowledgeEditor /></ErrorBoundary></ProtectedRoute>} />
@@ -181,7 +180,7 @@ const App = () => (
                 <Route path="/cs/admin/ofertas" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CSOfertasPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Wiki */}
-                <Route path="/wiki" element={<ProtectedRoute><WikiPage /></ProtectedRoute>} />
+                <Route path="/wiki" element={<ProtectedRoute><ErrorBoundary><WikiPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Catch-all */}
                 <Route path="*" element={<NotFound />} />
