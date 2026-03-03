@@ -79,28 +79,40 @@ Deno.serve(async (req) => {
     const contentType = req.headers.get("content-type") || "";
     let body: Record<string, unknown>;
 
+    // Helper: parse URL-encoded nested keys like fields[name][value] into nested objects
+    function parseFormData(text: string): Record<string, unknown> {
+      const params = new URLSearchParams(text);
+      const result: Record<string, unknown> = {};
+      for (const [key, value] of params.entries()) {
+        const keys = key.replace(/\]/g, "").split("[");
+        let current: Record<string, unknown> = result;
+        for (let i = 0; i < keys.length - 1; i++) {
+          if (!current[keys[i]] || typeof current[keys[i]] !== "object") {
+            current[keys[i]] = {};
+          }
+          current = current[keys[i]] as Record<string, unknown>;
+        }
+        current[keys[keys.length - 1]] = value;
+      }
+      return result;
+    }
+
     if (contentType.includes("application/json")) {
       body = await req.json();
     } else if (contentType.includes("application/x-www-form-urlencoded")) {
-      const text = await req.text();
-      const params = new URLSearchParams(text);
-      body = {};
-      for (const [key, value] of params.entries()) {
-        // Handle nested keys like form[id] or fields[field_name][value]
-        body[key] = value;
-      }
+      body = parseFormData(await req.text());
     } else {
       // Try JSON as fallback
       try {
         body = await req.json();
       } catch {
-        const text = await req.text();
-        const params = new URLSearchParams(text);
-        body = {};
-        for (const [key, value] of params.entries()) {
-          body[key] = value;
-        }
+        body = parseFormData(await req.text());
       }
+    }
+
+    console.log("[elementor-webhook] Parsed body keys:", JSON.stringify(Object.keys(body)));
+    if (body.fields) {
+      console.log("[elementor-webhook] Fields keys:", JSON.stringify(Object.keys(body.fields as Record<string, unknown>)));
     }
 
     // Extract field values — support both Elementor native format and flat format
