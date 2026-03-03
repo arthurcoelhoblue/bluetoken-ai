@@ -124,7 +124,7 @@ const navGroups: NavGroup[] = [
     label: 'Configuração',
     items: [
       { title: 'Base de Conhecimento', url: '/admin/produtos', icon: BookOpen, screenKey: 'knowledge_base' },
-      { title: 'Integrações', url: '/integracoes', icon: Plug, screenKey: 'integracoes' },
+      { title: 'Integrações', url: '/admin/settings', icon: Plug, screenKey: 'integracoes' },
       { title: 'Benchmark IA', url: '/admin/ai-benchmark', icon: FlaskConical, screenKey: 'benchmark_ia' },
       { title: 'Custos IA', url: '/admin/ai-costs', icon: DollarSign, screenKey: 'custos_ia' },
       { title: 'Funis', url: '/settings/pipelines', icon: Kanban, screenKey: 'funis_config' },
@@ -135,7 +135,6 @@ const navGroups: NavGroup[] = [
       { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },
       { title: 'Controle de Acesso', url: '/admin/access-control', icon: Shield, screenKey: 'controle_acesso' },
       { title: 'Empresas', url: '/admin/empresas', icon: Building2, screenKey: 'empresas_admin' },
-      { title: 'Configurações', url: '/admin/settings', icon: Settings, screenKey: 'configuracoes' },
     ],
   },
 ];
