@@ -299,11 +299,27 @@ serve(async (req) => {
           let tokensOutput = 0;
           let fullContent = '';
 
+          // Persistent SSE buffer across pull() calls to handle split chunks
+          let sseBuffer = '';
+          const READ_TIMEOUT_MS = 10_000; // 10s per-read timeout
+
           const stream = new ReadableStream({
             async pull(controller) {
               try {
-                const { done, value } = await reader.read();
+                // Race reader.read() against a 10s timeout
+                const readResult = await Promise.race([
+                  reader.read(),
+                  new Promise<{ done: true; value: undefined }>((resolve) =>
+                    setTimeout(() => resolve({ done: true, value: undefined }), READ_TIMEOUT_MS)
+                  ),
+                ]);
+
+                const { done, value } = readResult;
                 if (done) {
+                  // Process any remaining buffer before closing
+                  if (sseBuffer.trim()) {
+                    processSSELines(sseBuffer, controller, encoder);
+                  }
                   // Send final [DONE] event
                   controller.enqueue(encoder.encode('data: [DONE]\n\n'));
                   controller.close();
@@ -322,10 +338,14 @@ serve(async (req) => {
                   return;
                 }
 
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
+                sseBuffer += decoder.decode(value, { stream: true });
 
-                for (const line of lines) {
+                // Process only complete lines (ending with \n)
+                let newlineIndex: number;
+                while ((newlineIndex = sseBuffer.indexOf('\n')) !== -1) {
+                  const line = sseBuffer.slice(0, newlineIndex).replace(/\r$/, '');
+                  sseBuffer = sseBuffer.slice(newlineIndex + 1);
+
                   if (!line.startsWith('data: ')) continue;
                   const jsonStr = line.slice(6).trim();
                   if (!jsonStr || jsonStr === '[DONE]') continue;
@@ -351,7 +371,10 @@ serve(async (req) => {
                       tokensInput = event.message.usage.input_tokens || 0;
                     }
                   } catch {
-                    // Incomplete JSON, skip
+                    // Incomplete JSON line — will be completed in next chunk
+                    // Put it back in buffer
+                    sseBuffer = 'data: ' + jsonStr + sseBuffer;
+                    break;
                   }
                 }
               } catch (err) {
@@ -359,6 +382,30 @@ serve(async (req) => {
               }
             },
           });
+
+          // Helper to process remaining SSE lines in buffer
+          function processSSELines(buf: string, controller: ReadableStreamDefaultController, enc: TextEncoder) {
+            const lines = buf.split('\n');
+            for (const line of lines) {
+              const trimmed = line.replace(/\r$/, '');
+              if (!trimmed.startsWith('data: ')) continue;
+              const jsonStr = trimmed.slice(6).trim();
+              if (!jsonStr || jsonStr === '[DONE]') continue;
+              try {
+                const event = JSON.parse(jsonStr);
+                if (event.type === 'content_block_delta' && event.delta?.text) {
+                  fullContent += event.delta.text;
+                  controller.enqueue(enc.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: event.delta.text } }] })}\n\n`));
+                }
+                if (event.type === 'message_delta' && event.usage) {
+                  tokensOutput = event.usage.output_tokens || tokensOutput;
+                }
+                if (event.type === 'message_start' && event.message?.usage) {
+                  tokensInput = event.message.usage.input_tokens || 0;
+                }
+              } catch { /* skip */ }
+            }
+          }
 
           return new Response(stream, {
             headers: { ...corsHeaders, 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' },

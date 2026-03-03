@@ -189,36 +189,55 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
       const decoder = new TextDecoder();
       let buffer = '';
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
+      // Watchdog: 15s inactivity timeout during streaming
+      const INACTIVITY_TIMEOUT_MS = 15_000;
+      let inactivityTimer: ReturnType<typeof setTimeout> | null = null;
+      const resetInactivityTimer = () => {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
+        inactivityTimer = setTimeout(() => {
+          controller.abort();
+        }, INACTIVITY_TIMEOUT_MS);
+      };
+      resetInactivityTimer();
 
-        let newlineIndex: number;
-        while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
-          let line = buffer.slice(0, newlineIndex);
-          buffer = buffer.slice(newlineIndex + 1);
-          if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (!line.startsWith('data: ')) continue;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-          const jsonStr = line.slice(6).trim();
-          if (jsonStr === '[DONE]') break;
-          if (!jsonStr) continue;
+          // Data received — reset watchdog
+          resetInactivityTimer();
 
-          try {
-            const parsed = JSON.parse(jsonStr);
-            const delta = parsed.choices?.[0]?.delta?.content;
-            if (delta) {
-              assistantContent += delta;
-              updateLastMessage(assistantContent);
+          buffer += decoder.decode(value, { stream: true });
+
+          let newlineIndex: number;
+          while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
+            let line = buffer.slice(0, newlineIndex);
+            buffer = buffer.slice(newlineIndex + 1);
+            if (line.endsWith('\r')) line = line.slice(0, -1);
+            if (!line.startsWith('data: ')) continue;
+
+            const jsonStr = line.slice(6).trim();
+            if (jsonStr === '[DONE]') break;
+            if (!jsonStr) continue;
+
+            try {
+              const parsed = JSON.parse(jsonStr);
+              const delta = parsed.choices?.[0]?.delta?.content;
+              if (delta) {
+                assistantContent += delta;
+                updateLastMessage(assistantContent);
+              }
+              if (parsed.meta) {
+                metaData = parsed.meta;
+              }
+            } catch {
+              // Incomplete JSON, skip
             }
-            if (parsed.meta) {
-              metaData = parsed.meta;
-            }
-          } catch {
-            // Incomplete JSON, skip
           }
         }
+      } finally {
+        if (inactivityTimer) clearTimeout(inactivityTimer);
       }
 
       // Save final assistant message to DB (quiet — placeholder already in state)
