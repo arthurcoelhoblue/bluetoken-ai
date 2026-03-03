@@ -1,31 +1,27 @@
 
 
-## Plano: Permitir edição de perfis e garantir Super Admin com acesso total
+## Problema
 
-### Problemas identificados
+O hook `useScreenPermissions.ts` busca a atribuição do usuário com `.maybeSingle()`:
 
-1. **AccessProfileEditor**: a variável `isReadOnly = profile?.is_system` bloqueia edição de todos os perfis de sistema — como todos os perfis atuais são `is_system`, nenhum pode ser editado
-2. **Douglas Chaves** não tem nenhuma atribuição de acesso (nem perfil Super Admin)
-3. O hook `useScreenPermissions` só bypassa para role ADMIN; quem tem perfil "Super Admin" via `access_profiles` não recebe bypass automático
+```typescript
+const { data: assignment } = await supabase
+  .from('user_access_assignments')
+  .select('access_profile_id, permissions_override')
+  .eq('user_id', user!.id)
+  .maybeSingle();
+```
 
-### Mudanças
+Douglas tem 3 linhas em `user_access_assignments` (uma por empresa). O `.maybeSingle()` retorna erro quando há mais de 1 resultado, fazendo `assignment = null`. Como sua role é READONLY (não ADMIN), ele cai no fallback legado que só libera `dashboard:read`.
 
-**1. `src/components/settings/AccessProfileEditor.tsx`**
-- Remover bloqueio `isReadOnly` para perfis `is_system` — permitir que admins editem as permissões
-- Manter apenas o nome e descrição bloqueados para o perfil "Super Admin" (para proteger o perfil raiz)
-- Permissões do Super Admin também editáveis? Não — Super Admin deve ser sempre 100%, então manter as permissões bloqueadas apenas para esse perfil específico
+## Correção
 
-**2. `src/hooks/useScreenPermissions.ts`**
-- Adicionar verificação: se o `access_profile_id` do usuário é o Super Admin (`d82ee44c-...`), conceder acesso total (view+edit em todas as telas), sem depender da role ADMIN
+**`src/hooks/useScreenPermissions.ts`**: trocar `.maybeSingle()` por `.limit(1).maybeSingle()` para pegar a primeira atribuição válida.
 
-**3. Dados: atribuir Super Admin a Douglas**
-- Inserir `user_access_assignments` para Douglas com perfil Super Admin em todas as empresas que ele precisa acessar
-
-### Detalhes
+Além disso, seria prudente também alterar a role do Douglas de READONLY para ADMIN no banco, já que ele é super administrador. Mas a correção do `.limit(1)` resolve o problema imediato para qualquer usuário com múltiplas empresas.
 
 | Arquivo | Mudança |
 |---------|---------|
-| `AccessProfileEditor.tsx` | `isReadOnly` só bloqueia o perfil "Super Admin" (nome=Super Admin), outros `is_system` ficam editáveis |
-| `useScreenPermissions.ts` | Checar se profile assignment é Super Admin → full access |
-| Dados (insert) | Atribuir Douglas ao perfil Super Admin |
+| `useScreenPermissions.ts` | Adicionar `.limit(1)` antes de `.maybeSingle()` |
+| Banco (SQL) | Atualizar role do Douglas de READONLY para ADMIN |
 
