@@ -1,33 +1,31 @@
 
 
-## Correções: Templates por número dentro da empresa
+## Plano: Permitir edição de perfis e garantir Super Admin com acesso total
 
 ### Problemas identificados
 
-1. **TemplateFormDialog**: Quando troca a empresa, o `connectionId` não é resetado — pode mostrar número da Blue ao criar template da Tokeniza
-2. **TemplatesPage**: O filtro de conexão usa `activeCompanies[0]` fixo, não respeita a empresa específica dos templates na lista
-3. Não há ação para "submeter template aprovado para outro número" na mesma empresa
-4. Não há coluna "Número" na tabela para identificar a qual conexão o template pertence
+1. **AccessProfileEditor**: a variável `isReadOnly = profile?.is_system` bloqueia edição de todos os perfis de sistema — como todos os perfis atuais são `is_system`, nenhum pode ser editado
+2. **Douglas Chaves** não tem nenhuma atribuição de acesso (nem perfil Super Admin)
+3. O hook `useScreenPermissions` só bypassa para role ADMIN; quem tem perfil "Super Admin" via `access_profiles` não recebe bypass automático
 
 ### Mudanças
 
-**1. `TemplateFormDialog.tsx`**
-- Resetar `connectionId` quando `empresa` muda (via `useEffect` observando `empresa`)
-- Carregar empresas da tabela `empresas` dinamicamente (substituir hardcoded BLUE/TOKENIZA/MPUPPE/AXIA)
+**1. `src/components/settings/AccessProfileEditor.tsx`**
+- Remover bloqueio `isReadOnly` para perfis `is_system` — permitir que admins editem as permissões
+- Manter apenas o nome e descrição bloqueados para o perfil "Super Admin" (para proteger o perfil raiz)
+- Permissões do Super Admin também editáveis? Não — Super Admin deve ser sempre 100%, então manter as permissões bloqueadas apenas para esse perfil específico
 
-**2. `TemplatesPage.tsx`**
-- O filtro de conexão deve usar a empresa ativa do contexto do CompanyContext (já funciona com `activeCompanies[0]`)
-- Adicionar coluna "Número" na tabela que mostra o label/phone da conexão vinculada ao template
-- Adicionar ação "Duplicar para outro número" em templates APPROVED + WhatsApp: abre um mini-dialog com ConnectionPicker da mesma empresa, cria cópia LOCAL com o novo `connection_id`
-- Para resolver o label do número na tabela, fazer um lookup das connections por empresa
+**2. `src/hooks/useScreenPermissions.ts`**
+- Adicionar verificação: se o `access_profile_id` do usuário é o Super Admin (`d82ee44c-...`), conceder acesso total (view+edit em todas as telas), sem depender da role ADMIN
 
-**3. `useTemplates.ts`**
-- Nenhuma mudança estrutural necessária — já filtra por `connectionId` e `activeCompanies`
+**3. Dados: atribuir Super Admin a Douglas**
+- Inserir `user_access_assignments` para Douglas com perfil Super Admin em todas as empresas que ele precisa acessar
 
-### Arquivos a alterar
+### Detalhes
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/templates/TemplateFormDialog.tsx` | Reset connectionId ao trocar empresa; empresas dinâmicas |
-| `src/pages/TemplatesPage.tsx` | Coluna "Número"; ação "Duplicar para outro número"; lookup de connections |
+| `AccessProfileEditor.tsx` | `isReadOnly` só bloqueia o perfil "Super Admin" (nome=Super Admin), outros `is_system` ficam editáveis |
+| `useScreenPermissions.ts` | Checar se profile assignment é Super Admin → full access |
+| Dados (insert) | Atribuir Douglas ao perfil Super Admin |
 
