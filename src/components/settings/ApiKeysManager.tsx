@@ -40,7 +40,7 @@ interface ApiKeyItem {
 }
 
 export function ApiKeysManager() {
-  const { activeCompany } = useCompany();
+  const { activeCompany, empresaRecords } = useCompany();
   const qc = useQueryClient();
   const [showCreate, setShowCreate] = useState(false);
   const [newLabel, setNewLabel] = useState("");
@@ -237,11 +237,16 @@ export function ApiKeysManager() {
             </div>
             <div>
               <Label>Empresa</Label>
-              <Input
-                value={newEmpresa}
-                onChange={(e) => setNewEmpresa(e.target.value)}
-                placeholder="TOKENIZA, BLUE, etc."
-              />
+              <Select value={newEmpresa} onValueChange={setNewEmpresa}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a empresa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {empresaRecords.filter(e => e.is_active).map((e) => (
+                    <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
           <DialogFooter>
