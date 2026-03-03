@@ -1,42 +1,41 @@
 
 
-## Corrigir bug do redirect_uri na edge function google-calendar-auth
+## Correções: Loop infinito + Redirect URI do Google Calendar
 
-### Problema
-O cliente envia `redirect_uri` no body do POST:
-```json
-{"action":"get_auth_url","redirect_uri":"https://...lovableproject.com/settings"}
-```
+### Problema 1: Loop infinito no CalendarConfigPanel
+O `useEffect` na linha 43-47 observa o objeto `config` como dependência. Como o React Query retorna um novo objeto a cada render (mesmo com os mesmos valores), o `useEffect` dispara → chama `setState` → causa re-render → `config` é novo objeto → `useEffect` dispara novamente → loop infinito.
 
-Mas o código consome o body uma vez para extrair `action`, e depois tenta ler `redirect_uri` de `url.searchParams` (query string), onde ele não existe. Resultado: o Google OAuth recebe um redirect_uri errado e rejeita a requisição.
+**Correção**: Observar os campos individuais do `config` em vez do objeto inteiro.
 
-### Solução
-Refatorar o início da edge function para parsear o body **uma única vez** e reutilizar o objeto em todas as ações:
-
-1. **`supabase/functions/google-calendar-auth/index.ts`** — Parsear body uma vez no início, usar esse objeto para `action`, `redirect_uri`, `code`, etc. em todas as branches.
-
-Mudança principal (linhas ~22-30):
 ```typescript
-// Parse body once
-let body: Record<string, unknown> = {};
-if (req.method === "POST") {
-  body = await req.json();
-}
-const action = url.searchParams.get("action") || (body.action as string);
+// ANTES (linha 43-47):
+useEffect(() => {
+  setDuracao(config.duracao_minutos);
+  setBuffer(config.buffer_minutos);
+  setMaxDia(config.max_por_dia);
+  setMeetEnabled(config.google_meet_enabled);
+}, [config]);
+
+// DEPOIS:
+useEffect(() => {
+  setDuracao(config.duracao_minutos);
+  setBuffer(config.buffer_minutos);
+  setMaxDia(config.max_por_dia);
+  setMeetEnabled(config.google_meet_enabled);
+}, [config.duracao_minutos, config.buffer_minutos, config.max_por_dia, config.google_meet_enabled]);
 ```
 
-E na branch `get_auth_url`:
-```typescript
-const redirectUri = url.searchParams.get("redirect_uri") 
-  || (body.redirect_uri as string) 
-  || `${url.origin}/google-calendar-auth?action=callback`;
-```
+Mesma correção para o `useEffect` de `availability` (linha 34-42) — usar `availability.length` como dependência estável.
 
-Mesma correção na branch `callback` para `code` e `redirect_uri`.
+### Problema 2: Redirect URI
+O código atual envia `window.location.origin + '/settings'` como redirect_uri. Se o usuário acessa pelo preview (`lovableproject.com`), essa é a URL enviada ao Google. Mas no Google Cloud Console, provavelmente só está cadastrada `amelia.com.br` ou `sdrgrupobue.lovable.app`.
 
-### Nota importante
-O `redirect_uri` usado no callback do Google precisa estar cadastrado nas **Authorized redirect URIs** do Google Cloud Console. O usuário precisará adicionar a URL do app publicado (ex: `https://sdrgrupobue.lovable.app/settings`) lá.
+**Ação necessária do usuário**: No Google Cloud Console → Credentials → OAuth Client, adicionar **todas** as URLs de onde os vendedores vão acessar:
+- `https://sdrgrupobue.lovable.app/settings`
+- `https://amelia.com.br/settings` (se usar domínio customizado)
+
+Sem alteração de código necessária para isso — o código já usa `window.location.origin` corretamente.
 
 ### Arquivos alterados
-- `supabase/functions/google-calendar-auth/index.ts` (1 arquivo)
+- `src/components/calendar/CalendarConfigPanel.tsx` (corrigir dependências dos useEffects)
 
