@@ -1,38 +1,41 @@
 
 
-## Problema
+## Diagnóstico: Controle de números WhatsApp não funciona na Tokeniza
 
-O `connectionId` selecionado no `ConnectionPicker` não está sendo passado corretamente para o backend. Existem dois bugs:
+### Situação atual no banco
 
-1. **ConnectionPicker não notifica o pai quando há 2+ conexões**: O componente calcula `selectedId` internamente como fallback, mas só chama `onChange` automaticamente quando há exatamente 1 conexão. Com 2+ conexões (caso da Tokeniza), o estado `connectionId` no `ManualMessageInput` permanece `''`, e o backend usa a conexão `is_default = true` (o número errado).
+| Conexão | phone_number_id | is_default | is_active |
+|---------|-----------------|------------|-----------|
+| *(sem label)* | 1009376255595711 | **true** | **false** |
+| Comercial - Tokeniza BR | 1054747871049688 | false | true |
 
-2. **TemplatePickerDialog tem seu próprio `connectionId` independente**: Mesmo que o usuário selecione o número no input principal, ao abrir o Template Picker, ele tem seu próprio estado `connectionId` começando vazio, ignorando a seleção anterior.
+### Problemas identificados
 
-### Conexões Tokeniza
-| Label | phone_number_id | is_default |
-|-------|-----------------|------------|
-| *(sem label)* | 1009376255595711 | **true** |
-| Comercial - Tokeniza BR | 1054747871049688 | false |
+1. **ConnectionPicker esconde com ≤1 conexão ativa**: A query filtra `is_active = true`, retorna só 1 resultado, e o picker desaparece (`connections.length <= 1 → return null`). O usuário não vê qual número está ativo nem pode confirmar a seleção.
 
-Quando `connectionId` vai vazio, o backend sempre usa `is_default = true` → número errado.
+2. **Conexão inativa ainda marcada como `is_default = true`**: No backend (`channel-resolver.ts`), o fallback sem `connectionId` busca `is_default = true AND is_active = true` → não encontra nada → cai para "any active" → funciona por sorte, mas semanticamente o `is_default` está errado.
 
----
+3. **Sem feedback visual de qual número está sendo usado**: Mesmo quando o picker está oculto, o usuário não sabe por qual número a mensagem está saindo.
 
-## Solução
+### Solução
 
-### 1. ConnectionPicker: auto-notificar o pai ao montar com 2+ conexões
+#### 1. ConnectionPicker: mostrar mesmo com 1 conexão (modo informativo)
+Em vez de `return null` quando há ≤1 conexão, exibir um badge/chip com o número ativo (não-interativo, apenas informativo). Isso dá visibilidade ao usuário sobre qual número está sendo usado. Manter a lógica de `Select` para 2+.
 
-No `ConnectionPicker`, adicionar um `useEffect` que chama `onChange(defaultConn.id)` quando o componente monta e o pai ainda não tem valor selecionado. Isso garante que o `connectionId` do pai seja preenchido com a conexão padrão imediatamente.
+#### 2. Limpar `is_default` da conexão inativa
+Quando uma conexão é desativada (`is_active = false`), o `is_default` deveria ser removido e transferido para outra conexão ativa. Duas opções:
+- **Opção A**: Trigger no banco que ao setar `is_active = false`, move `is_default = true` para a próxima conexão ativa da mesma empresa.
+- **Opção B**: Corrigir no admin settings (UI) ao desativar — atualizar `is_default` automaticamente.
 
-### 2. ManualMessageInput: passar connectionId para o TemplatePickerDialog
+Vou implementar a **Opção A** (trigger), pois cobre todos os cenários (admin, API direta, etc.).
 
-Adicionar prop `connectionId` ao `TemplatePickerDialog` e usá-lo como valor inicial do estado interno do picker, para que a seleção do número principal seja respeitada ao abrir templates.
+#### 3. Correção imediata dos dados
+Executar SQL para transferir `is_default` da conexão inativa para a ativa na Tokeniza.
 
 ### Arquivos a alterar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/conversas/ConnectionPicker.tsx` | Adicionar `useEffect` para chamar `onChange` com o default ao montar |
-| `src/components/conversas/TemplatePickerDialog.tsx` | Aceitar prop `initialConnectionId` e usar como valor inicial |
-| `src/components/conversas/ManualMessageInput.tsx` | Passar `connectionId` para `TemplatePickerDialog` |
+| `src/components/conversas/ConnectionPicker.tsx` | Mostrar chip informativo quando há 1 conexão em vez de esconder |
+| Migração SQL | Trigger para auto-transferir `is_default` ao desativar; fix data Tokeniza |
 
