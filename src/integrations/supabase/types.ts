@@ -1212,6 +1212,42 @@ export type Database = {
           },
         ]
       }
+      catalog_products: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          nome: string
+          preco_unitario: number
+          unidade: string
+          updated_at: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome: string
+          preco_unitario?: number
+          unidade?: string
+          updated_at?: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome?: string
+          preco_unitario?: number
+          unidade?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       closer_notifications: {
         Row: {
           closer_email: string | null
@@ -2676,6 +2712,71 @@ export type Database = {
           posicao?: number
         }
         Relationships: []
+      }
+      deal_products: {
+        Row: {
+          created_at: string
+          deal_id: string
+          desconto: number
+          id: string
+          nome: string
+          preco_unitario: number
+          product_id: string | null
+          quantidade: number
+          subtotal: number | null
+        }
+        Insert: {
+          created_at?: string
+          deal_id: string
+          desconto?: number
+          id?: string
+          nome: string
+          preco_unitario?: number
+          product_id?: string | null
+          quantidade?: number
+          subtotal?: number | null
+        }
+        Update: {
+          created_at?: string
+          deal_id?: string
+          desconto?: number
+          id?: string
+          nome?: string
+          preco_unitario?: number
+          product_id?: string | null
+          quantidade?: number
+          subtotal?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_products_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_products_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_products_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deal_products_product_id_fkey"
+            columns: ["product_id"]
+            isOneToOne: false
+            referencedRelation: "catalog_products"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       deal_stage_history: {
         Row: {
