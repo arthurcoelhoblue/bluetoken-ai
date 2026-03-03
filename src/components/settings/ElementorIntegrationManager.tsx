@@ -278,7 +278,7 @@ ${hasTracking ? `
               Novo Mapeamento
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col">
+          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
             <DialogHeader>
               <DialogTitle>Novo Mapeamento Elementor</DialogTitle>
               <DialogDescription>
