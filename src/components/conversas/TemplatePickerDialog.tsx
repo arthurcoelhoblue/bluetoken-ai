@@ -57,7 +57,7 @@ export function TemplatePickerDialog({
         .eq('meta_status', 'APPROVED')
         .eq('ativo', true);
       if (connectionId) {
-        q = q.or(`connection_id.eq.${connectionId},connection_id.is.null`);
+        q = q.eq('connection_id', connectionId);
       }
       const { data, error } = await q.order('nome');
       if (error) throw error;
