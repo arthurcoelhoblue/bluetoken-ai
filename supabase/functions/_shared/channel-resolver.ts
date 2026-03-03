@@ -13,6 +13,7 @@ export interface ChannelConfig {
   metaPhoneNumberId?: string;
   metaAccessToken?: string;
   metaBusinessAccountId?: string;
+  connectionId?: string;
 }
 
 /**
@@ -47,12 +48,12 @@ export async function resolveMetaCloudConfig(
   empresa: string,
   connectionId?: string,
 ): Promise<ChannelConfig> {
-  let conn: { phone_number_id: string; business_account_id: string | null; access_token: string | null; app_secret: string | null } | null = null;
+  let conn: { id: string; phone_number_id: string; business_account_id: string | null; access_token: string | null; app_secret: string | null } | null = null;
 
   if (connectionId) {
     const { data } = await supabase
       .from('whatsapp_connections')
-      .select('phone_number_id, business_account_id, access_token, app_secret')
+      .select('id, phone_number_id, business_account_id, access_token, app_secret')
       .eq('id', connectionId)
       .eq('is_active', true)
       .maybeSingle();
@@ -61,7 +62,7 @@ export async function resolveMetaCloudConfig(
     // Try default first, then any active
     const { data: defaultConn } = await supabase
       .from('whatsapp_connections')
-      .select('phone_number_id, business_account_id, access_token, app_secret')
+      .select('id, phone_number_id, business_account_id, access_token, app_secret')
       .eq('empresa', empresa)
       .eq('is_active', true)
       .eq('is_default', true)
@@ -70,7 +71,7 @@ export async function resolveMetaCloudConfig(
     if (!conn) {
       const { data: anyConn } = await supabase
         .from('whatsapp_connections')
-        .select('phone_number_id, business_account_id, access_token, app_secret')
+        .select('id, phone_number_id, business_account_id, access_token, app_secret')
         .eq('empresa', empresa)
         .eq('is_active', true)
         .limit(1)
@@ -108,6 +109,7 @@ export async function resolveMetaCloudConfig(
     metaPhoneNumberId: conn.phone_number_id,
     metaAccessToken: accessToken,
     metaBusinessAccountId: conn.business_account_id,
+    connectionId: conn.id,
   };
 }
 
