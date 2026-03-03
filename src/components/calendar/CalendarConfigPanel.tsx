@@ -33,11 +33,12 @@ export function CalendarConfigPanel({ userId }: Props) {
     window.history.replaceState({}, '', window.location.pathname);
 
     setIsProcessingCallback(true);
+    const callbackRedirectUri = `${window.location.origin}/me`;
     supabase.functions.invoke('google-calendar-auth', {
       body: {
         action: 'callback',
         code,
-        redirect_uri: 'https://ameliacrm.com.br/me',
+        redirect_uri: callbackRedirectUri,
       },
     }).then(resp => {
       if (resp.data?.success) {
@@ -103,7 +104,7 @@ export function CalendarConfigPanel({ userId }: Props) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { toast.error('Faça login primeiro'); return; }
 
-    const redirectUri = 'https://ameliacrm.com.br/me';
+    const redirectUri = `${window.location.origin}/me`;
     const resp = await supabase.functions.invoke('google-calendar-auth', {
       body: { action: 'get_auth_url', redirect_uri: redirectUri },
     });
