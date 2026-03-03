@@ -570,7 +570,8 @@ async function handleMessage(
   supabase: ReturnType<typeof createServiceClient>,
   msg: Record<string, unknown>,
   resolvedEmpresa: EmpresaTipo,
-  profileName: string | null
+  profileName: string | null,
+  phoneNumberId?: string | null
 ): Promise<{ success: boolean; messageId?: string; status: string }> {
   const from = msg.from as string;
   const wamid = msg.id as string;
@@ -693,6 +694,7 @@ async function handleMessage(
       media_filename: mediaInfo.media_filename || null,
       media_caption: mediaInfo.media_caption || null,
       media_meta_id: mediaInfo.media_meta_id || null,
+      from_phone_number_id: phoneNumberId || null,
     })
     .select("id")
     .single();
@@ -947,7 +949,7 @@ serve(async (req) => {
           type: msg.type,
           empresa: resolvedEmpresa,
         });
-        const res = await handleMessage(supabase, msg, resolvedEmpresa, profileName);
+        const res = await handleMessage(supabase, msg, resolvedEmpresa, profileName, phoneNumberId);
         results.push({ type: "message", result: res });
       }
 
