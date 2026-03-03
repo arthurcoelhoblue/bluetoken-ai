@@ -177,41 +177,41 @@ serve(async (req) => {
     }
 
     // ========================================
-    // ENRIQUECIMENTO DE CONTEXTO
+    // ENRIQUECIMENTO + COACHING EM PARALELO
     // ========================================
-    let contextBlock = '';
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
 
-    try {
-      switch (contextType) {
-        case 'LEAD':
-          contextBlock = await enrichLeadContext(supabase, contextId, empresa);
-          break;
-        case 'DEAL':
-          contextBlock = await enrichDealContext(supabase, contextId);
-          break;
-        case 'PIPELINE':
-          contextBlock = await enrichPipelineContext(supabase, empresa);
-          break;
-        case 'GERAL':
-          contextBlock = await enrichGeralContext(supabase, empresa, isAdmin, userPermissions, userId);
-          break;
-        case 'CUSTOMER':
-          contextBlock = await enrichCustomerContext(supabase, contextId);
-          break;
+    // Run enrichment and coaching RAG in parallel to reduce TTFT
+    const enrichmentPromise = (async (): Promise<string> => {
+      try {
+        switch (contextType) {
+          case 'LEAD':
+            return await enrichLeadContext(supabase, contextId, empresa);
+          case 'DEAL':
+            return await enrichDealContext(supabase, contextId);
+          case 'PIPELINE':
+            return await enrichPipelineContext(supabase, empresa);
+          case 'GERAL':
+            return await enrichGeralContext(supabase, empresa, isAdmin, userPermissions, userId);
+          case 'CUSTOMER':
+            return await enrichCustomerContext(supabase, contextId);
+          default:
+            return '';
+        }
+      } catch (enrichError) {
+        log.warn('Erro no enriquecimento', { error: String(enrichError) });
+        return '⚠️ Não foi possível carregar dados do CRM para este contexto.';
       }
-    } catch (enrichError) {
-      log.warn('Erro no enriquecimento', { error: String(enrichError) });
-      contextBlock = '⚠️ Não foi possível carregar dados do CRM para este contexto.';
-    }
+    })();
 
-    // ========================================
-    // COACHING TÁTICO — Busca RAG behavioral
-    // ========================================
-    let coachingBlock = '';
-    try {
-      const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-      if (lastUserMsg) {
+    const coachingPromise = (async (): Promise<string> => {
+      if (!lastUserMsg) return '';
+      try {
         const knowledgeSearchUrl = `${envConfig.SUPABASE_URL}/functions/v1/knowledge-search`;
+        // Timeout de 4s para knowledge-search (graceful degradation)
+        const coachAbort = new AbortController();
+        const coachTimeout = setTimeout(() => coachAbort.abort(), 4000);
+
         const searchResp = await fetch(knowledgeSearchUrl, {
           method: 'POST',
           headers: {
@@ -224,7 +224,9 @@ serve(async (req) => {
             source_type_filter: 'behavioral',
             top_k: 5,
           }),
+          signal: coachAbort.signal,
         });
+        clearTimeout(coachTimeout);
 
         if (searchResp.ok) {
           const searchResult = await searchResp.json();
@@ -232,16 +234,20 @@ serve(async (req) => {
             const chunks = searchResult.results
               .map((r: { content: string; similarity: number }) => r.content)
               .join('\n---\n');
-            coachingBlock = `\n\n## COACHING TÁTICO — Metodologia de Vendas\nAplique as técnicas abaixo de forma prática nas suas recomendações ao vendedor. NÃO cite nomes de livros ou autores. Traduza os conceitos em dicas acionáveis de abordagem, timing, perguntas estratégicas e técnicas de negociação.\n\n${chunks}`;
             log.info('Coaching behavioral injetado', { chunks: searchResult.results.length });
+            return `\n\n## COACHING TÁTICO — Metodologia de Vendas\nAplique as técnicas abaixo de forma prática nas suas recomendações ao vendedor. NÃO cite nomes de livros ou autores. Traduza os conceitos em dicas acionáveis de abordagem, timing, perguntas estratégicas e técnicas de negociação.\n\n${chunks}`;
           }
         } else {
           log.warn('knowledge-search returned non-OK', { status: searchResp.status });
         }
+        return '';
+      } catch (coachErr) {
+        log.warn('Coaching RAG timeout/error (continuing without)', { error: String(coachErr) });
+        return '';
       }
-    } catch (coachErr) {
-      log.warn('Erro ao buscar coaching behavioral', { error: String(coachErr) });
-    }
+    })();
+
+    const [contextBlock, coachingBlock] = await Promise.all([enrichmentPromise, coachingPromise]);
 
     const systemContent = contextBlock
       ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}${coachingBlock}`
@@ -261,6 +267,10 @@ serve(async (req) => {
     if (ANTHROPIC_KEY) {
       try {
         const startTime = Date.now();
+        // Timeout de 20s para Anthropic API
+        const anthropicAbort = new AbortController();
+        const anthropicTimeout = setTimeout(() => anthropicAbort.abort(), 20000);
+
         const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
           headers: {
@@ -276,7 +286,9 @@ serve(async (req) => {
             messages: allMessages,
             stream: true,
           }),
+          signal: anthropicAbort.signal,
         });
+        clearTimeout(anthropicTimeout);
 
         if (anthropicResp.ok && anthropicResp.body) {
           // Transform Anthropic SSE → OpenAI-compatible SSE for the frontend

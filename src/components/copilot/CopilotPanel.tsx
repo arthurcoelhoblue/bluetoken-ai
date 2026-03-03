@@ -147,6 +147,11 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
       const controller = new AbortController();
       abortRef.current = controller;
 
+      // Timeout de 25s para iniciar o stream
+      const streamStartTimeout = setTimeout(() => {
+        controller.abort();
+      }, 25000);
+
       const resp = await fetch(`${supabaseUrl}/functions/v1/copilot-chat`, {
         method: 'POST',
         headers: {
@@ -161,6 +166,8 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
         }),
         signal: controller.signal,
       });
+
+      clearTimeout(streamStartTimeout);
 
       if (!resp.ok) {
         if (resp.status === 429) {
@@ -225,8 +232,11 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
       }
 
       trackFeatureUse('copilot_message_sent', { context: context.type, model: metaData.model });
-    } catch (_err) {
-      addLocalMessage('assistant', '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
+    } catch (err) {
+      const isTimeout = err instanceof DOMException && err.name === 'AbortError';
+      addLocalMessage('assistant', isTimeout
+        ? '⏱️ A Amélia demorou demais para responder. Tente novamente em alguns instantes.'
+        : '⚠️ Não foi possível obter resposta da Amélia. Tente novamente.');
     } finally {
       setIsLoading(false);
     }
