@@ -65,11 +65,11 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       ref={overlay ? undefined : setNodeRef}
       style={overlay ? undefined : style}
       {...(overlay ? {} : { ...attributes, ...listeners })}
-      className={`p-3 cursor-grab active:cursor-grabbing space-y-2 hover:shadow-md transition-shadow border-border/60 border-l-4 ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
+      className={`p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
       onClick={() => onDealClick?.(deal.id)}
     >
       <div className="flex items-start justify-between gap-2">
-        <span className="font-medium text-sm leading-tight line-clamp-2">{deal.titulo}</span>
+        <span className="font-medium text-xs leading-tight line-clamp-1">{deal.titulo}</span>
         <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
           {deal.etiqueta && (
             <Badge variant="outline" className={`text-[10px] px-1.5 py-0 ${
@@ -94,10 +94,10 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       </div>
 
       {deal.contacts && (
-        <p className="text-xs text-muted-foreground truncate">{deal.contacts.nome}</p>
+        <p className="text-[11px] text-muted-foreground truncate">{deal.contacts.nome}</p>
       )}
 
-      <div className="flex items-center justify-between text-xs">
+      <div className="flex items-center justify-between text-[11px]">
         <span className="flex items-center gap-1 font-semibold text-foreground">
           <DollarSign className="h-3 w-3" />
           {formatBRL(deal.valor ?? 0)}
@@ -128,14 +128,14 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       </div>
 
       {deal.owner && (
-        <div className="flex items-center gap-1.5 pt-1 border-t border-border/40">
-          <Avatar className="h-5 w-5">
+        <div className="flex items-center gap-1 pt-0.5 border-t border-border/40">
+          <Avatar className="h-4 w-4">
             <AvatarImage src={deal.owner.avatar_url ?? ''} />
-            <AvatarFallback className="text-[9px]">
+            <AvatarFallback className="text-[8px]">
               {(deal.owner.nome ?? deal.owner.email)?.[0]?.toUpperCase()}
             </AvatarFallback>
           </Avatar>
-          <span className="text-[11px] text-muted-foreground truncate">
+          <span className="text-[10px] text-muted-foreground truncate">
             {deal.owner.nome ?? deal.owner.email}
           </span>
         </div>
@@ -143,8 +143,8 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
 
       {/* Proxima acao sugerida footer */}
       {proximaAcao && !isClosed && (
-        <div className="pt-1 border-t border-border/40">
-          <p className="text-[11px] italic text-muted-foreground line-clamp-2 flex items-center gap-1">
+        <div className="pt-0.5 border-t border-border/40">
+          <p className="text-[10px] italic text-muted-foreground line-clamp-1 flex items-center gap-1">
             <Sparkles className="h-3 w-3 text-primary shrink-0" />
             {proximaAcao}
           </p>
