@@ -1,18 +1,11 @@
 
 
-## Situação Atual
+## Adicionar secrets do Google Calendar
 
-O componente `CalendarConfigPanel` foi criado em `src/components/calendar/CalendarConfigPanel.tsx` mas **não está sendo usado em nenhuma página**. Ele não aparece em nenhuma rota — o vendedor não tem como acessá-lo.
+Os dois secrets necessários para o OAuth do Google Calendar não foram encontrados na configuração. Preciso usar a ferramenta `add_secret` para solicitar os valores ao usuário:
 
-O local mais natural para colocá-lo é na página **Meu Perfil** (`/me` → `src/pages/Me.tsx`), que é onde o vendedor já está agora. Vou adicionar uma nova seção "Google Calendar" nessa página.
+1. `GOOGLE_CALENDAR_CLIENT_ID` — Client ID do OAuth 2.0 do Google Cloud Console
+2. `GOOGLE_CALENDAR_CLIENT_SECRET` — Client Secret do OAuth 2.0
 
-## Plano
-
-**Modificar `src/pages/Me.tsx`:**
-- Importar `CalendarConfigPanel`
-- Adicionar uma nova `Card` entre "Alterar Senha" e "Informações da Sessão" com título "Calendário & Reuniões" e ícone `Calendar`
-- Renderizar `<CalendarConfigPanel userId={user?.id} />` dentro dela
-- O componente já tem toda a lógica de conectar Google, configurar disponibilidade e preferências de reunião
-
-Alteração em **1 arquivo**, ~10 linhas adicionadas.
+Após adicionados, a edge function `google-calendar-auth` parará de retornar erro 500.
 
