@@ -3135,6 +3135,105 @@ export type Database = {
           },
         ]
       }
+      elementor_form_mappings: {
+        Row: {
+          created_at: string
+          empresa: string
+          field_map: Json
+          form_id: string
+          id: string
+          is_active: boolean
+          pipeline_id: string | null
+          stage_id: string | null
+          tags_auto: string[]
+          token: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          empresa?: string
+          field_map?: Json
+          form_id: string
+          id?: string
+          is_active?: boolean
+          pipeline_id?: string | null
+          stage_id?: string | null
+          tags_auto?: string[]
+          token?: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          field_map?: Json
+          form_id?: string
+          id?: string
+          is_active?: boolean
+          pipeline_id?: string | null
+          stage_id?: string | null
+          tags_auto?: string[]
+          token?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "elementor_form_mappings_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funil_visual"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_funnel"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stage_projection"
+            referencedColumns: ["stage_id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "pipeline_stages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "elementor_form_mappings_stage_id_fkey"
+            columns: ["stage_id"]
+            isOneToOne: false
+            referencedRelation: "stage_conversion_rates"
+            referencedColumns: ["stage_id"]
+          },
+        ]
+      }
       empresas: {
         Row: {
           color: string

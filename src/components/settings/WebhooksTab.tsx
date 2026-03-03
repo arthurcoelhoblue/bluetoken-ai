@@ -1,6 +1,8 @@
 import { WebhookCard } from "./WebhookCard";
+import { ElementorIntegrationManager } from "./ElementorIntegrationManager";
 import { WEBHOOKS } from "@/types/settings";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import { Info } from "lucide-react";
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || "";
@@ -25,6 +27,10 @@ export function WebhooksTab() {
           />
         ))}
       </div>
+
+      <Separator />
+
+      <ElementorIntegrationManager />
     </div>
   );
 }
