@@ -65,7 +65,11 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
     onSave({ nome: nome.trim(), descricao: descricao.trim() || undefined, permissions });
   };
 
-  const isReadOnly = profile?.is_system ?? false;
+  const SUPER_ADMIN_PROFILE_ID = 'd82ee44c-2c33-4a05-99be-2cf5451018d4';
+  const isSuperAdminProfile = profile?.id === SUPER_ADMIN_PROFILE_ID;
+  // Super Admin profile is fully locked; other system profiles allow permission editing
+  const isNameReadOnly = isSuperAdminProfile;
+  const isPermReadOnly = isSuperAdminProfile;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,7 +87,7 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
                 value={nome}
                 onChange={e => setNome(e.target.value)}
                 placeholder="Ex: Closer Senior"
-                disabled={isReadOnly}
+                disabled={isNameReadOnly}
               />
             </div>
             <div className="space-y-2">
@@ -94,7 +98,7 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
                 onChange={e => setDescricao(e.target.value)}
                 placeholder="Descrição opcional"
                 rows={1}
-                disabled={isReadOnly}
+                disabled={isNameReadOnly}
               />
             </div>
           </div>
@@ -120,7 +124,7 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
                       size="sm"
                       className="h-5 text-[10px] px-1"
                       onClick={() => handleSelectAll(group, true)}
-                      disabled={isReadOnly}
+                      disabled={isPermReadOnly}
                     >
                       Todos
                     </Button>
@@ -131,7 +135,7 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
                       size="sm"
                       className="h-5 text-[10px] px-1"
                       onClick={() => handleSelectAll(group, false)}
-                      disabled={isReadOnly}
+                      disabled={isPermReadOnly}
                     >
                       Limpar
                     </Button>
@@ -151,14 +155,14 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
                       <Checkbox
                         checked={permissions[screen.key]?.view ?? false}
                         onCheckedChange={(c) => handleViewChange(screen.key, !!c)}
-                        disabled={isReadOnly}
+                        disabled={isPermReadOnly}
                       />
                     </div>
                     <div className="flex justify-center items-center">
                       <Checkbox
                         checked={permissions[screen.key]?.edit ?? false}
                         onCheckedChange={(c) => handleEditChange(screen.key, !!c)}
-                        disabled={isReadOnly}
+                        disabled={isPermReadOnly}
                       />
                     </div>
                   </div>
@@ -172,7 +176,7 @@ export function AccessProfileEditor({ open, onOpenChange, profile, onSave, isSav
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancelar
           </Button>
-          <Button onClick={handleSubmit} disabled={isSaving || isReadOnly || !nome.trim()}>
+          <Button onClick={handleSubmit} disabled={isSaving || isPermReadOnly || !nome.trim()}>
             {isSaving ? 'Salvando...' : 'Salvar'}
           </Button>
         </DialogFooter>
