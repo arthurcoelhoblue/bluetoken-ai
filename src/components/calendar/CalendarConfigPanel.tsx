@@ -27,7 +27,6 @@ export function CalendarConfigPanel({ userId }: Props) {
     if (availability.length > 0) {
       setSlots(availability);
     } else {
-      // Default: Mon-Fri 9-18
       setSlots([1, 2, 3, 4, 5].map(d => ({
         dia_semana: d,
         hora_inicio: '09:00',
@@ -35,14 +34,15 @@ export function CalendarConfigPanel({ userId }: Props) {
         ativo: true,
       })));
     }
-  }, [availability]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [availability.length]);
 
   useEffect(() => {
     setDuracao(config.duracao_minutos);
     setBuffer(config.buffer_minutos);
     setMaxDia(config.max_por_dia);
     setMeetEnabled(config.google_meet_enabled);
-  }, [config]);
+  }, [config.duracao_minutos, config.buffer_minutos, config.max_por_dia, config.google_meet_enabled]);
 
   const toggleDay = (dow: number) => {
     setSlots(prev => {
