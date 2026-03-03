@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Calendar, Check, Unlink } from 'lucide-react';
+import { Calendar, Check, Unlink, Loader2 } from 'lucide-react';
 import { useCalendarConfig, type AvailabilitySlot } from '@/hooks/useCalendarConfig';
+import { useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 
@@ -15,7 +16,42 @@ interface Props {
 }
 
 export function CalendarConfigPanel({ userId }: Props) {
+  const queryClient = useQueryClient();
   const { availability, config, googleStatus, isLoading, saveAvailability, saveConfig, DAYS } = useCalendarConfig(userId);
+  const [isProcessingCallback, setIsProcessingCallback] = useState(false);
+  const callbackProcessed = useRef(false);
+
+  // Handle Google OAuth callback
+  useEffect(() => {
+    if (callbackProcessed.current) return;
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    if (!code) return;
+    callbackProcessed.current = true;
+
+    // Clean URL immediately
+    window.history.replaceState({}, '', window.location.pathname);
+
+    setIsProcessingCallback(true);
+    supabase.functions.invoke('google-calendar-auth', {
+      body: {
+        action: 'callback',
+        code,
+        redirect_uri: window.location.origin + '/me',
+      },
+    }).then(resp => {
+      if (resp.data?.success) {
+        toast.success('Google Calendar conectado com sucesso!');
+        queryClient.invalidateQueries({ queryKey: ['google-calendar-status'] });
+      } else {
+        toast.error('Erro ao conectar Google Calendar: ' + (resp.data?.error || 'Tente novamente'));
+      }
+    }).catch(() => {
+      toast.error('Erro ao conectar Google Calendar');
+    }).finally(() => {
+      setIsProcessingCallback(false);
+    });
+  }, [queryClient]);
 
   const [slots, setSlots] = useState<AvailabilitySlot[]>([]);
   const [duracao, setDuracao] = useState(config.duracao_minutos);
@@ -67,7 +103,7 @@ export function CalendarConfigPanel({ userId }: Props) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { toast.error('Faça login primeiro'); return; }
 
-    const redirectUri = `${window.location.origin}/settings`;
+    const redirectUri = `${window.location.origin}/me`;
     const resp = await supabase.functions.invoke('google-calendar-auth', {
       body: { action: 'get_auth_url', redirect_uri: redirectUri },
     });
@@ -98,7 +134,12 @@ export function CalendarConfigPanel({ userId }: Props) {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          {googleStatus?.connected ? (
+          {isProcessingCallback ? (
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <span className="text-sm">Conectando Google Calendar...</span>
+            </div>
+          ) : googleStatus?.connected ? (
             <div className="flex items-center justify-between">
               <Badge variant="secondary" className="gap-1">
                 <Check className="h-3 w-3" /> Conectado
