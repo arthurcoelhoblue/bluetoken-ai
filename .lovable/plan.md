@@ -1,49 +1,36 @@
 
 
-## Diagnóstico: Copilot "Travando"
+## Diagnóstico: Copilot trava no meio da resposta
 
-### Causa Raiz Identificada
+### Causa raiz (3 problemas)
 
-O travamento acontece porque **todas as operações antes do streaming são sequenciais** e bloqueiam o envio do primeiro byte ao cliente:
+**1. Backend: Sem timeout de leitura no stream Anthropic**
+O timeout de 20s (`anthropicAbort`) é cancelado assim que o `fetch` retorna headers (linha 291). Se o Anthropic **começa** a responder mas **para no meio** (throttling, rede instável), o `reader.read()` fica pendurado para sempre — a edge function morre no timeout de 30s do Deno e o stream é cortado sem `[DONE]`.
 
-```text
-Auth check (1-2s)
-  → Prompt versions lookup (0.5s)
-    → Enrichment context (2-5s, múltiplas queries DB)
-      → knowledge-search fetch (3-10s, cold start de outra edge function)
-        → Anthropic API first token (3-8s)
-```
+**2. Backend: Parsing SSE quebrado entre chunks**
+Anthropic envia SSE multi-linha (`event: ...\ndata: ...\n\n`). O código no `pull()` do `ReadableStream` (linhas 325-356) faz `chunk.split('\n')` por chunk individual, sem manter um buffer entre chamadas. Se um evento SSE é dividido entre dois chunks TCP, o `JSON.parse` falha silenciosamente e o delta de texto é perdido — resultado: a resposta "congela" embora dados ainda cheguem.
 
-**Tempo total antes do primeiro token: 10-25s.** Durante esse tempo, o usuário vê apenas os dots de loading sem nenhum conteúdo. Se qualquer etapa demorar mais, a edge function atinge o timeout de 30s e morre — resultando em "travamento" sem resposta.
+**3. Frontend: Sem timeout de inatividade no stream**
+O timeout de 25s protege apenas o **início** do stream (é cancelado na linha 170 após receber headers). Se dados param de chegar **durante** o streaming, o `reader.read()` fica preso indefinidamente — o usuário vê a resposta parcial congelada sem nenhum feedback.
 
-Problemas adicionais:
-1. `knowledge-search` é chamado via HTTP para outra edge function (cold start duplo)
-2. Enrichment e coaching RAG são sequenciais (poderiam ser paralelos)
-3. Nenhum timeout no fetch ao `knowledge-search` — se travar, trava tudo
-4. Nenhum timeout no fetch ao Anthropic
+### Plano de correção
 
-### Plano de Correção
+**1. Backend: Buffer SSE persistente entre pulls** (`supabase/functions/copilot-chat/index.ts`)
 
-**1. Paralelizar enrichment + coaching RAG** (`supabase/functions/copilot-chat/index.ts`)
+Manter uma variável `sseBuffer` fora do `pull()` para acumular fragmentos incompletos entre chamadas. Processar apenas linhas completas (terminadas em `\n`).
 
-Executar `enrichment` e `knowledge-search` em paralelo com `Promise.all()`, em vez de sequencialmente. Isso economiza 3-10s.
+**2. Backend: Timeout de leitura por chunk** (`supabase/functions/copilot-chat/index.ts`)
 
-**2. Adicionar timeout ao knowledge-search** (`supabase/functions/copilot-chat/index.ts`)
+Dentro do `pull()`, envolver o `reader.read()` com um `Promise.race` contra um timeout de 10s. Se nenhum dado chegar em 10s, emitir `[DONE]` e fechar o stream graciosamente.
 
-Adicionar `AbortController` com timeout de 4s no fetch ao `knowledge-search`. Se demorar, segue sem coaching (graceful degradation).
+**3. Frontend: Watchdog de inatividade** (`src/components/copilot/CopilotPanel.tsx`)
 
-**3. Adicionar timeout ao Anthropic fetch** (`supabase/functions/copilot-chat/index.ts`)
-
-Adicionar timeout de 20s para a chamada ao Anthropic. Se expirar, cai no fallback `callAI`.
-
-**4. Frontend: timeout de segurança** (`src/components/copilot/CopilotPanel.tsx`)
-
-Adicionar timeout de 25s no frontend. Se o stream não iniciar (nenhum dado recebido) em 25s, abortar e mostrar mensagem de erro ao usuário em vez de ficar travado indefinidamente.
+Após cada `reader.read()` com dados, resetar um timer de 15s. Se 15s passam sem novos dados (e `done` não é true), abortar o controller — o catch mostrará a mensagem de timeout ao usuário.
 
 ### Arquivos a modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/copilot-chat/index.ts` | Paralelizar enrichment+RAG; timeouts no knowledge-search (4s) e Anthropic (20s) |
-| `src/components/copilot/CopilotPanel.tsx` | Timeout de segurança de 25s no streaming |
+| `supabase/functions/copilot-chat/index.ts` | Buffer SSE persistente + timeout de 10s por read no stream |
+| `src/components/copilot/CopilotPanel.tsx` | Watchdog de inatividade de 15s durante streaming |
 
