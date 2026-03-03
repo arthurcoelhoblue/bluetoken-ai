@@ -1,50 +1,33 @@
 
 
-## Templates por Número WhatsApp
+## Correções: Templates por número dentro da empresa
 
-### Contexto
+### Problemas identificados
 
-Hoje a tabela `message_templates` vincula templates apenas à `empresa`. Na API oficial da Meta, templates são registrados por **WABA (WhatsApp Business Account)**, que está associado a um `phone_number_id` específico. Com múltiplos números por empresa (ex: Tokeniza tem 2), é necessário saber qual número possui qual template aprovado.
-
-### Solução
-
-Adicionar um campo `connection_id` (FK para `whatsapp_connections`) na tabela `message_templates`, permitindo vincular templates a números específicos.
+1. **TemplateFormDialog**: Quando troca a empresa, o `connectionId` não é resetado — pode mostrar número da Blue ao criar template da Tokeniza
+2. **TemplatesPage**: O filtro de conexão usa `activeCompanies[0]` fixo, não respeita a empresa específica dos templates na lista
+3. Não há ação para "submeter template aprovado para outro número" na mesma empresa
+4. Não há coluna "Número" na tabela para identificar a qual conexão o template pertence
 
 ### Mudanças
 
-**1. Migração SQL**
-- Adicionar coluna `connection_id UUID REFERENCES whatsapp_connections(id) ON DELETE SET NULL` (nullable para manter compatibilidade com templates existentes e templates de EMAIL)
+**1. `TemplateFormDialog.tsx`**
+- Resetar `connectionId` quando `empresa` muda (via `useEffect` observando `empresa`)
+- Carregar empresas da tabela `empresas` dinamicamente (substituir hardcoded BLUE/TOKENIZA/MPUPPE/AXIA)
 
-**2. `src/components/templates/TemplateFormDialog.tsx`**
-- Quando `canal = WHATSAPP`, exibir um `ConnectionPicker` filtrado pela empresa selecionada para o usuário escolher o número
-- Salvar o `connection_id` no payload
+**2. `TemplatesPage.tsx`**
+- O filtro de conexão deve usar a empresa ativa do contexto do CompanyContext (já funciona com `activeCompanies[0]`)
+- Adicionar coluna "Número" na tabela que mostra o label/phone da conexão vinculada ao template
+- Adicionar ação "Duplicar para outro número" em templates APPROVED + WhatsApp: abre um mini-dialog com ConnectionPicker da mesma empresa, cria cópia LOCAL com o novo `connection_id`
+- Para resolver o label do número na tabela, fazer um lookup das connections por empresa
 
-**3. `src/hooks/useTemplates.ts`**
-- Adicionar `connection_id` ao tipo `MessageTemplate`
-- Nos hooks de sync e submit, passar `connectionId` ao edge function
-
-**4. `src/pages/TemplatesPage.tsx`**
-- Adicionar filtro por conexão (número) na listagem
-- Exibir o número/label na coluna da tabela
-
-**5. `src/components/conversas/TemplatePickerDialog.tsx`**
-- Filtrar templates aprovados pelo `connection_id` da conexão selecionada (além de empresa)
-- Quando o usuário seleciona uma conexão, mostrar apenas templates daquele número
-
-**6. `supabase/functions/whatsapp-template-manager/index.ts`**
-- Aceitar `connectionId` como parâmetro (além de `empresa`)
-- Resolver credenciais Meta pela conexão específica em vez de pela empresa
-- No sync (PATCH), vincular os templates importados ao `connection_id` correto
-- No batch-submit, filtrar por `connection_id`
+**3. `useTemplates.ts`**
+- Nenhuma mudança estrutural necessária — já filtra por `connectionId` e `activeCompanies`
 
 ### Arquivos a alterar
 
 | Arquivo | Mudança |
 |---------|---------|
-| Migração SQL | Adicionar `connection_id` à `message_templates` |
-| `src/hooks/useTemplates.ts` | Tipo + filtro por connectionId |
-| `src/components/templates/TemplateFormDialog.tsx` | ConnectionPicker no form |
-| `src/pages/TemplatesPage.tsx` | Filtro e coluna de número |
-| `src/components/conversas/TemplatePickerDialog.tsx` | Filtrar templates pela conexão selecionada |
-| `supabase/functions/whatsapp-template-manager/index.ts` | Resolver credenciais por conexão |
+| `src/components/templates/TemplateFormDialog.tsx` | Reset connectionId ao trocar empresa; empresas dinâmicas |
+| `src/pages/TemplatesPage.tsx` | Coluna "Número"; ação "Duplicar para outro número"; lookup de connections |
 
