@@ -22,7 +22,11 @@ serve(async (req) => {
     if (authErr || !user) return json({ error: "Unauthorized" }, 401);
 
     const url = new URL(req.url);
-    const action = url.searchParams.get("action") || (req.method === "POST" ? (await req.json()).action : null);
+    let body: Record<string, unknown> = {};
+    if (req.method === "POST") {
+      body = await req.json();
+    }
+    const action = url.searchParams.get("action") || (body.action as string);
 
     if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
       return json({ error: "Google Calendar credentials not configured" }, 500);
@@ -30,7 +34,7 @@ serve(async (req) => {
 
     // ========== GET AUTH URL ==========
     if (action === "get_auth_url") {
-      const redirectUri = url.searchParams.get("redirect_uri") || `${url.origin}/google-calendar-auth?action=callback`;
+      const redirectUri = url.searchParams.get("redirect_uri") || (body.redirect_uri as string) || `${url.origin}/google-calendar-auth?action=callback`;
       const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
         `client_id=${encodeURIComponent(GOOGLE_CLIENT_ID)}` +
         `&redirect_uri=${encodeURIComponent(redirectUri)}` +
@@ -44,9 +48,8 @@ serve(async (req) => {
 
     // ========== CALLBACK ==========
     if (action === "callback") {
-      const body = req.method === "POST" ? await req.json() : {};
-      const code = url.searchParams.get("code") || body.code;
-      const redirectUri = url.searchParams.get("redirect_uri") || body.redirect_uri;
+      const code = url.searchParams.get("code") || (body.code as string);
+      const redirectUri = url.searchParams.get("redirect_uri") || (body.redirect_uri as string);
       if (!code || !redirectUri) return json({ error: "Missing code or redirect_uri" }, 400);
 
       const tokenResp = await fetch("https://oauth2.googleapis.com/token", {
