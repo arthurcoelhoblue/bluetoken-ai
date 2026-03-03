@@ -1,38 +1,49 @@
 
 
-## Diagnóstico: Templates indisponíveis para +34664572190
+## Diagnóstico: Copilot "Travando"
 
-### Situação atual
+### Causa Raiz Identificada
 
-| Conexão | Número | Templates sincronizados | Aprovados |
-|---------|--------|------------------------|-----------|
-| Comercial BR | +5561995262818 | 1 (clonado) | 1 |
-| Comercial EUR | +34664572190 | **0** | **0** |
-| Sem conexão (legado) | — | 14 | 6 |
+O travamento acontece porque **todas as operações antes do streaming são sequenciais** e bloqueiam o envio do primeiro byte ao cliente:
 
-O problema tem duas camadas:
+```text
+Auth check (1-2s)
+  → Prompt versions lookup (0.5s)
+    → Enrichment context (2-5s, múltiplas queries DB)
+      → knowledge-search fetch (3-10s, cold start de outra edge function)
+        → Anthropic API first token (3-8s)
+```
 
-1. **Nenhum template foi sincronizado** para a conexão EUR (`53aeb5e8`). Os 6 templates aprovados da TOKENIZA estão "órfãos" (sem `connection_id`), pertencendo à WABA antiga.
+**Tempo total antes do primeiro token: 10-25s.** Durante esse tempo, o usuário vê apenas os dots de loading sem nenhum conteúdo. Se qualquer etapa demorar mais, a edge function atinge o timeout de 30s e morre — resultando em "travamento" sem resposta.
 
-2. **O filtro atual é muito restritivo**: após a correção anterior, o `TemplatePickerDialog` filtra estritamente por `connection_id`, então ao selecionar o número EUR, aparece "Nenhum template aprovado encontrado".
+Problemas adicionais:
+1. `knowledge-search` é chamado via HTTP para outra edge function (cold start duplo)
+2. Enrichment e coaching RAG são sequenciais (poderiam ser paralelos)
+3. Nenhum timeout no fetch ao `knowledge-search` — se travar, trava tudo
+4. Nenhum timeout no fetch ao Anthropic
 
-### Solução
+### Plano de Correção
 
-**1. Incluir templates legados como fallback na UI**
+**1. Paralelizar enrichment + coaching RAG** (`supabase/functions/copilot-chat/index.ts`)
 
-No `TemplatePickerDialog`, quando uma conexão está selecionada mas não tem templates, também mostrar templates legados (sem `connection_id`) com um badge visual indicando que precisam ser sincronizados/clonados para aquela WABA. Isso permite ao usuário ver o que está disponível e decidir.
+Executar `enrichment` e `knowledge-search` em paralelo com `Promise.all()`, em vez de sequencialmente. Isso economiza 3-10s.
 
-Alterar a query para: se `connectionId` está definido, buscar `connection_id = connectionId OR connection_id IS NULL`, mas marcar visualmente quais são legados.
+**2. Adicionar timeout ao knowledge-search** (`supabase/functions/copilot-chat/index.ts`)
 
-**2. Sincronizar templates no envio**
+Adicionar `AbortController` com timeout de 4s no fetch ao `knowledge-search`. Se demorar, segue sem coaching (graceful degradation).
 
-No `whatsapp-send`, quando recebe um template legado (sem `connection_id`) para enviar por uma conexão específica, tentar enviar com o `codigo` do template. Se a Meta retornar erro 132001 (template não existe), retornar uma mensagem clara: "Este template não foi registrado na WABA deste número. Sincronize os templates primeiro."
+**3. Adicionar timeout ao Anthropic fetch** (`supabase/functions/copilot-chat/index.ts`)
+
+Adicionar timeout de 20s para a chamada ao Anthropic. Se expirar, cai no fallback `callAI`.
+
+**4. Frontend: timeout de segurança** (`src/components/copilot/CopilotPanel.tsx`)
+
+Adicionar timeout de 25s no frontend. Se o stream não iniciar (nenhum dado recebido) em 25s, abortar e mostrar mensagem de erro ao usuário em vez de ficar travado indefinidamente.
 
 ### Arquivos a modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/components/conversas/TemplatePickerDialog.tsx` | Query inclui templates legados como fallback; badge "Não sincronizado" nos legados |
-
-Essa abordagem permite testar o envio de texto livre por ambos os números imediatamente, e para templates, mostra quais estão disponíveis e quais precisam ser sincronizados na WABA do número EUR via Meta Business Manager.
+| `supabase/functions/copilot-chat/index.ts` | Paralelizar enrichment+RAG; timeouts no knowledge-search (4s) e Anthropic (20s) |
+| `src/components/copilot/CopilotPanel.tsx` | Timeout de segurança de 25s no streaming |
 
