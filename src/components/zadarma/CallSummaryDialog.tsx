@@ -62,7 +62,7 @@ export function CallSummaryDialog({
       ].filter(Boolean).join('\n');
 
       if (dealId) {
-        await supabase.from('deal_notes' as any).insert({
+        await supabase.from('deal_notes').insert({
           deal_id: dealId,
           conteudo: noteContent,
           created_by: user?.id,
