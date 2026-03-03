@@ -12,6 +12,12 @@ const corsHeaders = getWebhookCorsHeaders("x-webhook-token");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 
+const MAIN_FIELDS = ["nome", "email", "telefone"];
+const TRACKING_FIELDS = [
+  "utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term",
+  "page_url", "referrer", "gclid", "fbclid",
+];
+
 interface ElementorFields {
   [fieldId: string]: { id?: string; value: string; type?: string; raw_value?: string };
 }
@@ -74,9 +80,9 @@ Deno.serve(async (req) => {
 
     // Extract field values — support both Elementor native format and flat format
     const fieldMap = mapping.field_map as Record<string, string>;
-    const leadPayload: Record<string, string> = {};
+    const mainPayload: Record<string, string> = {};
+    const camposExtras: Record<string, string> = {};
 
-    // Elementor native: { "fields": { "field_abc": { "value": "..." } } }
     const elementorFields = body.fields as ElementorFields | undefined;
 
     for (const [ameliaField, elementorFieldId] of Object.entries(fieldMap)) {
@@ -85,22 +91,31 @@ Deno.serve(async (req) => {
       let value: string | undefined;
 
       if (elementorFields && elementorFields[elementorFieldId]) {
-        // Elementor native format
         value = elementorFields[elementorFieldId].value;
       } else if (body[elementorFieldId] !== undefined) {
-        // Flat format: { "field_abc": "value" }
         value = String(body[elementorFieldId]);
       } else if (body[ameliaField] !== undefined) {
-        // Direct format: { "nome": "value", "email": "value" }
         value = String(body[ameliaField]);
       }
 
       if (value) {
-        leadPayload[ameliaField] = value;
+        if (MAIN_FIELDS.includes(ameliaField)) {
+          mainPayload[ameliaField] = value;
+        } else {
+          camposExtras[ameliaField] = value;
+        }
       }
     }
 
-    if (!leadPayload.email && !leadPayload.nome) {
+    // Auto-capture tracking fields from body or query params (even if not in field_map)
+    for (const tf of TRACKING_FIELDS) {
+      if (!camposExtras[tf]) {
+        const val = body[tf] || url.searchParams.get(tf);
+        if (val) camposExtras[tf] = val;
+      }
+    }
+
+    if (!mainPayload.email && !mainPayload.nome) {
       return new Response(JSON.stringify({
         error: "Could not extract lead data. Check field_map configuration.",
         received_keys: Object.keys(body),
@@ -111,29 +126,25 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Build UTM data from body or query params
-    const utmFields = ["utm_source", "utm_medium", "utm_campaign", "utm_content", "utm_term"];
-    const utmData: Record<string, string> = {};
-    for (const utm of utmFields) {
-      const val = body[utm] || url.searchParams.get(utm);
-      if (val) utmData[utm] = val;
-    }
-
     // Call lp-lead-ingest internally
     const ingestPayload = {
       empresa: mapping.empresa || "TOKENIZA",
       pipeline_id: mapping.pipeline_id,
       stage_id: mapping.stage_id,
       lead: {
-        nome: leadPayload.nome || "",
-        email: leadPayload.email || "",
-        telefone: leadPayload.telefone || undefined,
+        nome: mainPayload.nome || "",
+        email: mainPayload.email || "",
+        telefone: mainPayload.telefone || undefined,
         tags: mapping.tags_auto || [],
-        ...utmData,
+        ...(camposExtras.utm_source && { utm_source: camposExtras.utm_source }),
+        ...(camposExtras.utm_medium && { utm_medium: camposExtras.utm_medium }),
+        ...(camposExtras.utm_campaign && { utm_campaign: camposExtras.utm_campaign }),
+        ...(camposExtras.utm_content && { utm_content: camposExtras.utm_content }),
+        ...(camposExtras.utm_term && { utm_term: camposExtras.utm_term }),
         campos_extras: {
           source: "elementor",
           form_id: formId,
-          ...leadPayload,
+          ...camposExtras,
         },
       },
     };
