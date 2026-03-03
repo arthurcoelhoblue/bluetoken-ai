@@ -11,6 +11,7 @@ import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useZadarmaWebRTC } from '@/hooks/useZadarmaWebRTC';
 import { CoachingSidebar } from './CoachingSidebar';
+import { formatPhoneBR } from '@/lib/formatPhone';
 import type { EmpresaTipo } from '@/types/telephony';
 import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
@@ -270,8 +271,8 @@ export function ZadarmaPhoneWidget() {
   const CallInfo = () => (
     <>
       <div className="text-center">
-        <p className="text-lg font-semibold">{contactName || number}</p>
-        {contactName && <p className="text-sm text-muted-foreground">{number}</p>}
+        <p className="text-lg font-semibold">{contactName || formatPhoneBR(number)}</p>
+        {contactName && <p className="text-sm text-muted-foreground">{formatPhoneBR(number)}</p>}
         {dealId && <p className="text-xs text-muted-foreground mt-1">Deal vinculado</p>}
       </div>
       {onHold && (
@@ -383,9 +384,9 @@ export function ZadarmaPhoneWidget() {
             </p>
           )}
           <Input
-            value={number}
-            onChange={e => setNumber(e.target.value)}
-            placeholder="Número de telefone"
+            value={formatPhoneBR(number) || number}
+            onChange={e => setNumber(e.target.value.replace(/\D/g, ''))}
+            placeholder="+55 (DDD) XXXXX-XXXX"
             className="text-center text-lg font-mono"
           />
           <div className="grid grid-cols-3 gap-1.5">
