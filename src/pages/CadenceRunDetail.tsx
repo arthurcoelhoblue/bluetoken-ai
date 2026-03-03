@@ -5,6 +5,7 @@
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   useCadenceRunDetail,
   useCadenceEvents,
@@ -53,6 +54,7 @@ function CadenceRunDetailContent() {
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
   const { hasRole } = useAuth();
+  const isAdmin = useIsAdmin();
 
   const { data: run, isLoading, error } = useCadenceRunDetail(runId);
   const { data: events } = useCadenceEvents(runId);
@@ -62,7 +64,7 @@ function CadenceRunDetailContent() {
   });
   const updateStatus = useUpdateCadenceRunStatus();
 
-  const canManage = hasRole('ADMIN') || hasRole('CLOSER');
+  const canManage = isAdmin || hasRole('CLOSER');
 
   const handleStatusChange = async (
     newStatus: 'ATIVA' | 'PAUSADA' | 'CANCELADA'

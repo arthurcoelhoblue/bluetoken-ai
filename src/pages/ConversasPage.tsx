@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect, useCallback } from 'react';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useAtendimentos, type Atendimento } from '@/hooks/useAtendimentos';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useCompany } from '@/contexts/CompanyContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -64,8 +65,8 @@ function isIntencaoCompra(a: Atendimento): boolean {
 
 function ConversasContent() {
   const { activeCompanies } = useCompany();
-  const { user, hasRole } = useAuth();
-  const isAdmin = hasRole('ADMIN');
+  const { user } = useAuth();
+  const isAdmin = useIsAdmin();
   const [viewMode, setViewMode] = useState<ViewMode>('lista');
   const [smartFilter, setSmartFilter] = useState<SmartFilter>('TODOS');
   const [aiSortActive, setAiSortActive] = useState(false);

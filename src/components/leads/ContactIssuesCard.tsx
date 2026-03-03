@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import {
   LeadContactIssue,
   ISSUE_TIPO_LABELS,
@@ -21,10 +22,11 @@ interface ContactIssuesCardProps {
 
 export function ContactIssuesCard({ issues, isLoading, leadId, empresa }: ContactIssuesCardProps) {
   const { user, hasRole } = useAuth();
+  const isAdmin = useIsAdmin();
   const { resolveIssue } = useResolveContactIssue();
   const queryClient = useQueryClient();
 
-  const canResolve = hasRole('ADMIN') || hasRole('CLOSER');
+  const canResolve = isAdmin || hasRole('CLOSER');
 
   const handleResolve = async (issueId: string) => {
     if (!user?.id) return;

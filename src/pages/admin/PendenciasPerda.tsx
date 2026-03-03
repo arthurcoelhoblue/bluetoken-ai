@@ -19,6 +19,7 @@ import { useCSOfertasSemNome, useUpdateOfertaNome, type CSOfertaSemNome } from '
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import type { KnowledgeFaq } from '@/types/knowledge';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 
@@ -307,7 +308,7 @@ export default function PendenciasPerda() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   // CSM puro: is_csm=true e não é ADMIN — vê apenas pendências de CS
-  const isAdmin = hasRole('ADMIN');
+  const isAdmin = useIsAdmin();
   const isCsmPuro = !!(profile as any)?.is_csm && !isAdmin;
 
   const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas;
