@@ -1,85 +1,126 @@
 
 
-## Avaliacao da PR #3 — 4 Patches Pipeline
+## Avaliacao da PR #4 — Sistema de Agendamento Google Calendar + Reunioes
 
-### Resumo da PR
+### Resumo
 
-A branch `feature/4-patches-pipeline` (PR #3) foi criada pelo Manus AI e contém 4 commits com +804/-258 linhas em 9 arquivos. Avaliacao por patch:
+Branch `feature/google-calendar-meetings` (PR #4) com 8 commits, +2.896/-1 linhas em 12 arquivos. Sistema completo de agendamento de reunioes via Google Calendar integrado ao SDR IA.
 
----
-
-### Patch 1: Atividades Obrigatórias no Deal — APROVADO com ajustes
-
-**O que faz:** Ao fechar o DealDetailSheet, se o deal está aberto e nao tem atividade futura pendente, exibe um dialog obrigatório para agendar próximo passo. Permite "Pular desta vez".
-
-**Arquivos:** `ScheduleActivityDialog.tsx` (novo), `DealDetailSheet.tsx` (modificado)
-
-**Problemas identificados (2):**
-1. **Bug de tipo no filtro** (P2): O `hasFutureActivity()` só verifica `tipo === 'TAREFA'`, mas o dialog permite agendar LIGACAO, EMAIL, REUNIAO. Se o usuário agendar uma ligação, na próxima vez que fechar o sheet, o dialog reaparece. **Correção**: verificar se o tipo está em `['TAREFA', 'LIGACAO', 'EMAIL', 'REUNIAO']`.
-2. **Bug de comparação de data** (P2): Compara `tarefa_prazo` contra `new Date()` (com hora), mas o dialog agenda apenas com `date.toISOString()` (meia-noite). Atividades agendadas "para hoje" são consideradas passadas após 00:00. **Correção**: comparar apenas a data (sem hora).
-
-**Veredito:** Bom conceito, precisa dos 2 ajustes acima.
+**Arquivos:**
+- 1 migration SQL
+- 4 edge functions novas (`google-calendar-auth`, `calendar-slots`, `calendar-book`, `meeting-transcription`)
+- 1 modificacao em edge function existente (`sdr-ia-interpret/index.ts`)
+- 2 hooks (`useCalendarConfig.ts`, `useMeetings.ts`)
+- 2 componentes (`CalendarConfigPanel.tsx`, `DealMeetingsTab.tsx`)
+- 1 modificacao em componente existente (`DealDetailSheet.tsx`)
 
 ---
 
-### Patch 2: Cadastro de Produtos no Deal — APROVADO com ajustes críticos
+### Patch 1: Migration SQL — APROVADO com ajustes criticos
 
-**O que faz:** Novas tabelas `catalog_products` e `deal_products` (com subtotal GENERATED ALWAYS), hook `useDealProducts`, componente `DealProductsTab`, nova aba "Produtos" no DealDetailSheet.
-
-**Arquivos:** `DealProductsTab.tsx` (novo), `useDealProducts.ts` (novo), migration SQL (novo), `DealDetailSheet.tsx` (modificado)
+**Tabelas criadas:** `user_google_tokens`, `user_availability`, `user_meeting_config`, `meetings`, `meeting_transcripts`, `meeting_scheduling_state`
 
 **Problemas identificados (3):**
-1. **CRITICO - RLS completamente aberta** (P1): Todas as policies usam `USING (true)` e `WITH CHECK (true)`. Qualquer usuário autenticado pode ler/editar/deletar produtos de qualquer empresa. **Correção**: restringir policies por empresa via join com deals/pipelines, igual ao padrão do restante do sistema.
-2. **Type hack no Supabase client**: Usa `from('deal_products' as 'deals')` para contornar tipos. Funciona mas é frágil. **Correção**: após a migration rodar, os tipos serão atualizados automaticamente e o cast não será mais necessário. Vou implementar sem o hack.
-3. **`catalog_products.empresa` é TEXT em vez de `empresa_tipo`**: Inconsistente com o restante do schema. **Correção**: usar `empresa_tipo`.
 
-**Veredito:** Funcionalidade excelente, mas a RLS precisa ser corrigida antes de ir para produção.
+1. **CRITICO — Schema mismatch na `meetings`** (P1): A migration cria uma tabela `meeting_transcripts` separada, mas a edge function `meeting-transcription` escreve diretamente em `meetings.transcricao_metadata`, `transcricao_processada` e `transcricao_processada_em`. Essas colunas nao existem na tabela `meetings`. **Correcao**: eliminar `meeting_transcripts` e adicionar as colunas de transcricao diretamente na tabela `meetings`.
 
----
+2. **CRITICO — UNIQUE constraint bloqueante** (P1): `UNIQUE(lead_id, empresa, status)` na `meeting_scheduling_state` impede multiplos agendamentos para o mesmo lead/empresa com mesmo status (ex: dois ACEITO). **Correcao**: usar partial unique index `WHERE status = 'PENDENTE'`.
 
-### Patch 3: Mover Ganhar/Perder para Dentro do Card — APROVADO
-
-**O que faz:** Remove os botões Trophy (Ganhar) e XCircle (Perder) do DealCard no Kanban, junto com o dialog de perda e toda a lógica associada (checkMinTime, handleWin, handleLoseClick, handleConfirmLoss). As ações ficam disponíveis apenas dentro do DealDetailSheet.
-
-**Arquivos:** `DealCard.tsx` (modificado, -173 linhas)
-
-**Problemas:** Nenhum. Simplificação limpa. O card fica mais compacto e as ações destrutivas (ganhar/perder) ficam centralizadas no DealDetailSheet onde já existem.
-
-**Veredito:** Aprovado sem ajustes.
+3. **RLS precisa ser verificada**: As policies devem restringir por empresa via `get_user_empresas()`, seguindo o padrao do projeto.
 
 ---
 
-### Patch 4: Formato de Telefone +55 (DDD) XXXXX-XXXX — APROVADO com ajuste menor
+### Patch 2: Google Calendar Auth — APROVADO com ajuste critico
 
-**O que faz:** Nova utility `formatPhoneBR()` em `src/lib/formatPhone.ts`. Aplica no ZadarmaPhoneWidget e ClickToCallButton.
-
-**Arquivos:** `formatPhone.ts` (novo), `ZadarmaPhoneWidget.tsx` (modificado), `ClickToCallButton.tsx` (modificado)
+**Edge function** com fluxo OAuth2 completo (get_auth_url, callback, refresh, disconnect, status).
 
 **Problemas identificados (1):**
-1. **Bug no input do widget**: O input exibe `formatPhoneBR(number)` como value, mas o onChange faz `setNumber(e.target.value.replace(/\D/g, ''))`. Isso cria um loop onde o usuário digita, o número é formatado para exibição, e depois os não-dígitos são removidos. Pode causar posição do cursor inconsistente. **Correção**: manter o raw value no input e exibir a versão formatada apenas como placeholder ou label.
 
-**Veredito:** Boa utility, ajuste menor no input.
+1. **CRITICO — Env vars inconsistentes** (P1): Esta funcao usa `GOOGLE_CALENDAR_CLIENT_ID/SECRET`, mas `calendar-book` usa `GOOGLE_CLIENT_ID/SECRET`. Em producao, configurar apenas um set de nomes faz metade do fluxo falhar. **Correcao**: padronizar para `GOOGLE_CALENDAR_CLIENT_ID/SECRET` em todas as funcoes.
 
 ---
 
-### Plano de Execução
+### Patch 3: Configuracao de Disponibilidade — APROVADO
 
-Vou implementar os 4 patches nesta ordem, já com todas as correções:
+**Hook** `useCalendarConfig` e **componente** `CalendarConfigPanel` para configurar horarios, duracao e Google Meet.
 
-**Passo 1 — Migration SQL (Patch 2)**
-- Criar tabelas `catalog_products` (com `empresa_tipo`) e `deal_products`
-- RLS restritiva: policies scoped por empresa via join com deals/pipelines
-- Subtotal como GENERATED ALWAYS
+**Problemas:** Nenhum significativo. Codigo limpo, permissoes admin/proprio usuario bem tratadas.
 
-**Passo 2 — Novos arquivos (Patches 1, 2, 4)**
-- `src/lib/formatPhone.ts` — utility de formatação BR
-- `src/hooks/useDealProducts.ts` — hook sem type hacks
-- `src/components/deals/ScheduleActivityDialog.tsx` — com reset correto
-- `src/components/deals/DealProductsTab.tsx` — aba de produtos
+---
 
-**Passo 3 — Modificações em arquivos existentes (Patches 1, 2, 3, 4)**
-- `DealDetailSheet.tsx` — interceptação de fechamento (com fix de tipo e data), nova aba Produtos
-- `DealCard.tsx` — remoção dos botões Ganhar/Perder e lógica associada
-- `ZadarmaPhoneWidget.tsx` — formatação de telefone (com fix no input)
-- `ClickToCallButton.tsx` — formatação de telefone no tooltip
+### Patch 4: Calendar Slots — APROVADO
+
+**Edge function** que cruza disponibilidade configurada + Google FreeBusy API + meetings existentes. Retorna 3 horarios livres com labels em pt-BR.
+
+**Problemas:** Nenhum significativo. Logica de diversidade de dias e tratamento de timezone esta boa.
+
+---
+
+### Patch 5: Meeting Scheduler no SDR — APROVADO com ajuste critico
+
+**Modulo** `meeting-scheduler.ts` integrado ao `sdr-ia-interpret`.
+
+**Problemas identificados (1):**
+
+1. **CRITICO — dealId usa Pipedrive ID** (P1): Atribui `parsedContext.pipedriveDealeId` (identificador externo) ao `dealId` que e persistido como UUID foreign key em `meetings.deal_id`. Causa erro de FK/UUID invalido. **Correcao**: usar o deal interno (`parsedContext.dealId` ou resolver via contact).
+
+---
+
+### Patch 6: Calendar Book — APROVADO com ajuste
+
+**Edge function** que cria evento no Google Calendar com Meet link.
+
+**Problemas identificados (1):**
+1. **Env vars inconsistentes** (P1 — mesmo que Patch 2): Usa `GOOGLE_CLIENT_ID/SECRET` em vez de `GOOGLE_CALENDAR_CLIENT_ID/SECRET`. **Correcao**: padronizar.
+2. **deal_activities insert usa campos inexistentes** (P2): Insere `titulo`, `data_agendada`, `status`, `criado_por` que provavelmente nao existem na tabela `deal_activities`. **Correcao**: usar os campos corretos (`tipo`, `descricao`, `metadata`, `user_id`).
+
+---
+
+### Patch 7: Meeting Transcription — APROVADO com ajustes
+
+**Edge function** que extrai metadados de transcricoes via LLM.
+
+**Problemas identificados (2):**
+
+1. **CRITICO — Colunas inexistentes** (P1, mesmo que Patch 1): Escreve em `meetings.transcricao_metadata/processada/processada_em` que nao existem no schema original. **Correcao**: resolver no Patch 1.
+
+2. **API callAI incompativel** (P2): O PR usa `callAI({ model, messages, temperature, max_tokens })` no estilo OpenAI, mas o `callAI` real usa `{ system, prompt, functionName, supabase, temperatura, maxTokens }`. **Correcao**: adaptar para a assinatura real.
+
+---
+
+### Patch 8: UI — APROVADO
+
+**Componentes** `DealMeetingsTab` e alteracao no `DealDetailSheet` (nova aba "Reunioes").
+
+**Problemas:** Hook `useMeetings` usa type casts (`as Meeting[]`) que serao resolvidos automaticamente apos migration. Restante e limpo.
+
+---
+
+### Plano de Execucao
+
+Implementarei os 8 patches consolidados com todas as correcoes, nesta ordem:
+
+**Passo 1 — Migration SQL**
+- Tabelas: `user_google_tokens`, `user_availability`, `user_meeting_config`, `meetings` (COM colunas de transcricao inline), `meeting_scheduling_state`
+- Eliminar tabela `meeting_transcripts` separada
+- Partial unique index `WHERE status = 'PENDENTE'` na scheduling state
+- RLS restritiva por empresa via `get_user_empresas()`
+- Triggers de `updated_at`
+
+**Passo 2 — Edge Functions (4 novas)**
+- `google-calendar-auth/index.ts` — OAuth2 flow (env vars padronizadas)
+- `calendar-slots/index.ts` — buscar horarios livres
+- `calendar-book/index.ts` — criar evento (env vars corrigidas, deal_activities corrigido)
+- `meeting-transcription/index.ts` — extrai metadados (callAI adaptado para assinatura real)
+
+**Passo 3 — Hooks e Componentes UI (4 novos)**
+- `src/hooks/useCalendarConfig.ts`
+- `src/hooks/useMeetings.ts`
+- `src/components/calendar/CalendarConfigPanel.tsx`
+- `src/components/deals/DealMeetingsTab.tsx`
+
+**Passo 4 — Modificacao em arquivo existente**
+- `DealDetailSheet.tsx` — nova aba "Reunioes" com icone Video
+
+**Nota: Patch 5 (meeting-scheduler no SDR) sera implementado como arquivo separado** dentro de `sdr-ia-interpret/`, mas a integracao no `index.ts` sera feita com cuidado para nao quebrar o fluxo existente, corrigindo o bug do `dealId`.
 
