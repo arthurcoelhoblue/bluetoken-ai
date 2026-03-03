@@ -37,6 +37,7 @@ import { useAuth } from '@/contexts/AuthContext';
   AlertCircle,
   Shield,
   Tag,
+  ListChecks,
   Mail,
   TrendingUp,
 } from 'lucide-react';
@@ -136,6 +137,7 @@ const navGroups: NavGroup[] = [
       { title: 'E-mail SMTP', url: '/admin/email-smtp', icon: Mail, screenKey: 'email_smtp' },
       { title: 'Telefonia', url: '/admin/zadarma', icon: PhoneCall, screenKey: 'telefonia_zadarma' },
       { title: 'Saúde Operacional', url: '/admin/operational-health', icon: Activity, screenKey: 'saude_operacional' },
+      { title: 'Listas Marketing', url: '/marketing/listas', icon: ListChecks, screenKey: 'marketing_listas' },
       { title: 'Wiki', url: '/wiki', icon: BookOpen, screenKey: 'wiki' },
       { title: 'Controle de Acesso', url: '/admin/access-control', icon: Shield, screenKey: 'controle_acesso' },
       { title: 'Empresas', url: '/admin/empresas', icon: Building2, screenKey: 'empresas_admin' },

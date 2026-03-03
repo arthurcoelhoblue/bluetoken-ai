@@ -73,6 +73,7 @@ const OperationalHealthPage = lazy(() => import("./pages/admin/OperationalHealth
 const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
 const AdminEmpresas = lazy(() => import("./pages/AdminEmpresas"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
+const MarketingListsPage = lazy(() => import("./pages/MarketingListsPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -180,6 +181,7 @@ const App = () => (
                 <Route path="/cs/admin/ofertas" element={<ProtectedRoute requiredRoles={['ADMIN']}><ErrorBoundary><CSOfertasPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Wiki */}
+                <Route path="/marketing/listas" element={<ProtectedRoute><ErrorBoundary><MarketingListsPage /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/wiki" element={<ProtectedRoute><ErrorBoundary><WikiPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Catch-all */}

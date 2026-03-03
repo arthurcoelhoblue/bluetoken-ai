@@ -96,14 +96,14 @@ export function NotificationBell() {
             <ToggleGroupItem value="DEALS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground">📊 Deals{groupCounts.DEALS > 0 ? ` (${groupCounts.DEALS})` : ''}</ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <ScrollArea className="h-80">
+        <ScrollArea className="max-h-[420px] overflow-y-auto">
           {filteredNotifications && filteredNotifications.length > 0 ? (
             <div className="divide-y">
               {filteredNotifications.map(n => (
                 <button
                   key={n.id}
                   onClick={() => handleClick(n)}
-                  className={`w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${!n.lida ? 'bg-primary/5' : ''}`}
+                  className={`relative w-full text-left px-4 py-3 hover:bg-muted/50 transition-colors ${!n.lida ? 'bg-primary/5' : ''}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex-1 min-w-0">

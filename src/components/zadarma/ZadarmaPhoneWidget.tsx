@@ -12,6 +12,7 @@ import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
 import { useSpeechRecognition } from '@/hooks/useSpeechRecognition';
 import { useZadarmaWebRTC } from '@/hooks/useZadarmaWebRTC';
 import { CoachingSidebar } from './CoachingSidebar';
+import { CallSummaryDialog } from './CallSummaryDialog';
 import type { EmpresaTipo } from '@/types/telephony';
 import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
@@ -43,6 +44,11 @@ export function ZadarmaPhoneWidget() {
   const [onHold, setOnHold] = useState(false);
   const [callTimer, setCallTimer] = useState(0);
   const [transcriptionChunk, setTranscriptionChunk] = useState('');
+  const [showCallSummary, setShowCallSummary] = useState(false);
+  const [lastCallDuration, setLastCallDuration] = useState(0);
+  const [lastCallContact, setLastCallContact] = useState('');
+  const [lastCallNumber, setLastCallNumber] = useState('');
+  const [lastCallDealId, setLastCallDealId] = useState<string | undefined>();
 
   const proxy = useZadarmaProxy();
   // autoDialRef removed — dial is now called directly from event handler
@@ -188,6 +194,11 @@ export function ZadarmaPhoneWidget() {
     if (isWebRTCMode) {
       webrtc.hangup();
     }
+    // Salvar dados da chamada para o dialog de resumo
+    setLastCallDuration(callTimer);
+    setLastCallContact(contactName);
+    setLastCallNumber(number);
+    setLastCallDealId(dealId);
     setPhoneState('ended');
     setOnHold(false);
     setMaximized(false);
@@ -197,6 +208,10 @@ export function ZadarmaPhoneWidget() {
       setNumber('');
       setContactName('');
       setDealId(undefined);
+      // Show call summary dialog after call ends
+      if (callTimer > 5) {
+        setShowCallSummary(true);
+      }
     }, 2000);
   }, [isWebRTCMode, webrtc]);
 

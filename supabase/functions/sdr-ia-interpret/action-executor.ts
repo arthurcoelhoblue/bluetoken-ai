@@ -136,13 +136,38 @@ async function applyAction(
             });
           }
 
-          // Progressão de deal: se QUENTE, criar/mover deal
-          if (isQuente && escContact?.id) {
+          // Progressão de deal: SEMPRE criar deal na escalação (independente de temperatura)
+          if (escContact?.id) {
             const contactId = escContact.id as string;
             const { data: existingDeal } = await supabase.from('deals').select('id, pipeline_id, stage_id').eq('contact_id', contactId).eq('status', 'ABERTO').order('updated_at', { ascending: false }).limit(1).maybeSingle();
+            
             if (!existingDeal) {
               // Criar deal automaticamente
-              await autoCreateDeal(supabase, leadId, empresa, detalhes);
+              const newDealId = await autoCreateDeal(supabase, leadId, empresa, detalhes);
+              
+              // Notificação específica de deal criado no sininho
+              if (notifyUserId && newDealId) {
+                const leadNome = escContact?.nome || 'Lead';
+                await supabase.from('notifications').insert({
+                  user_id: notifyUserId, empresa,
+                  tipo: 'DEAL_AUTO_CRIADO',
+                  titulo: `Deal criado automaticamente: ${leadNome}`,
+                  mensagem: `Um deal foi criado e designado a você após escalação da Amélia. Temperatura: ${escTemperatura}.`,
+                  link: `/pipeline`, entity_id: newDealId, entity_type: 'deal',
+                });
+              }
+            } else {
+              // Deal já existe, notificar que a conversa foi escalada
+              if (notifyUserId) {
+                const leadNome = escContact?.nome || 'Lead';
+                await supabase.from('notifications').insert({
+                  user_id: notifyUserId, empresa,
+                  tipo: 'DEAL_NOVO_PRIORITARIO',
+                  titulo: `Conversa escalada no deal: ${leadNome}`,
+                  mensagem: `A Amélia escalou a conversa deste lead. O deal já existe no funil.`,
+                  link: `/pipeline`, entity_id: existingDeal.id, entity_type: 'deal',
+                });
+              }
             }
           }
         } catch (escErr) {
@@ -197,22 +222,22 @@ async function applyAction(
 // AUTO-CREATE DEAL
 // ========================================
 
-async function autoCreateDeal(supabase: SupabaseClient, leadId: string, empresa: string, detalhes?: Record<string, unknown>) {
+async function autoCreateDeal(supabase: SupabaseClient, leadId: string, empresa: string, detalhes?: Record<string, unknown>): Promise<string | null> {
   try {
     const { data: contact } = await supabase.from('contacts').select('id, nome').eq('legacy_lead_id', leadId).maybeSingle();
-    if (!contact) return;
+    if (!contact) return null;
 
     const { data: pipeline } = await supabase.from('pipelines').select('id').eq('empresa', empresa).eq('is_default', true).eq('ativo', true).maybeSingle();
-    if (!pipeline) return;
+    if (!pipeline) return null;
 
     const contactId = (contact as Record<string, unknown>).id as string;
     const pipelineId = (pipeline as Record<string, unknown>).id as string;
 
     const { data: existingDeal } = await supabase.from('deals').select('id').eq('contact_id', contactId).eq('pipeline_id', pipelineId).eq('status', 'ABERTO').maybeSingle();
-    if (existingDeal) return;
+    if (existingDeal) return (existingDeal as Record<string, unknown>).id as string;
 
     const { data: firstStage } = await supabase.from('pipeline_stages').select('id').eq('pipeline_id', pipelineId).eq('is_won', false).eq('is_lost', false).order('posicao', { ascending: true }).limit(1).maybeSingle();
-    if (!firstStage) return;
+    if (!firstStage) return null;
 
     const valorMencionado = (detalhes as Record<string, unknown> | undefined)?.valor_mencionado as number | undefined;
     const necessidade = (detalhes as Record<string, unknown> | undefined)?.necessidade_principal as string | undefined;
@@ -229,8 +254,10 @@ async function autoCreateDeal(supabase: SupabaseClient, leadId: string, empresa:
       const dealId = (newDeal as Record<string, unknown>).id as string;
       await supabase.from('deal_activities').insert({ deal_id: dealId, tipo: 'CRIACAO', descricao: 'Deal criado automaticamente pela SDR IA', metadata: { origem: 'SDR_IA', lead_id: leadId } });
       log.info('Deal criado', { dealId });
+      return dealId;
     }
-  } catch (err) { log.error('AutoDeal Error', { error: err instanceof Error ? err.message : String(err) }); }
+    return null;
+  } catch (err) { log.error('AutoDeal Error', { error: err instanceof Error ? err.message : String(err) }); return null; }
 }
 
 // ========================================
