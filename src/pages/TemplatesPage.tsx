@@ -15,6 +15,7 @@ import {
 } from '@/hooks/useTemplates';
 import { useCompany } from '@/contexts/CompanyContext';
 import { TemplateFormDialog } from '@/components/templates/TemplateFormDialog';
+import { ConnectionPicker } from '@/components/conversas/ConnectionPicker';
 import { MetaStatusBadge } from '@/components/templates/MetaStatusBadge';
 import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
@@ -26,13 +27,14 @@ export default function TemplatesPage() {
   const [canalFilter, setCanalFilter] = useState<'WHATSAPP' | 'EMAIL' | null>(null);
   const [ativoFilter, setAtivoFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [metaStatusFilter, setMetaStatusFilter] = useState<MetaStatus | null>(null);
+  const [connectionFilter, setConnectionFilter] = useState<string | null>(null);
   const [page, setPage] = useState(0);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<MessageTemplate | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
   const { activeCompanies } = useCompany();
-  const { data, isLoading } = useTemplates(canalFilter, page, metaStatusFilter);
+  const { data, isLoading } = useTemplates(canalFilter, page, metaStatusFilter, connectionFilter);
   const createMutation = useCreateTemplate();
   const updateMutation = useUpdateTemplate();
   const deleteMutation = useDeleteTemplate();
@@ -69,7 +71,7 @@ export default function TemplatesPage() {
 
   function handleSync() {
     if (activeCompanies.length > 0) {
-      syncMutation.mutate(activeCompanies[0]);
+      syncMutation.mutate({ empresa: activeCompanies[0], connectionId: connectionFilter || undefined });
     }
   }
 
@@ -85,6 +87,7 @@ export default function TemplatesPage() {
       category: t.meta_category,
       language: t.meta_language || 'pt_BR',
       components,
+      connectionId: t.connection_id || undefined,
     });
   }
 
@@ -141,6 +144,14 @@ export default function TemplatesPage() {
               <SelectItem value="REJECTED">Rejeitado</SelectItem>
             </SelectContent>
           </Select>
+
+          {canalFilter === 'WHATSAPP' && activeCompanies.length > 0 && (
+            <ConnectionPicker
+              empresa={activeCompanies[0]}
+              value={connectionFilter || undefined}
+              onChange={(id) => { setConnectionFilter(id); setPage(0); }}
+            />
+          )}
 
           <span className="text-sm text-muted-foreground ml-auto">{totalCount} templates</span>
         </div>
