@@ -5032,6 +5032,249 @@ export type Database = {
           },
         ]
       }
+      meeting_scheduling_state: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          deal_id: string | null
+          empresa: string
+          id: string
+          lead_id: string
+          meeting_id: string | null
+          owner_id: string | null
+          slot_escolhido: Json | null
+          slots_oferecidos: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          empresa: string
+          id?: string
+          lead_id: string
+          meeting_id?: string | null
+          owner_id?: string | null
+          slot_escolhido?: Json | null
+          slots_oferecidos?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          deal_id?: string | null
+          empresa?: string
+          id?: string
+          lead_id?: string
+          meeting_id?: string | null
+          owner_id?: string | null
+          slot_escolhido?: Json | null
+          slots_oferecidos?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meeting_scheduling_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_meeting_id_fkey"
+            columns: ["meeting_id"]
+            isOneToOne: false
+            referencedRelation: "meetings"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meeting_scheduling_state_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      meetings: {
+        Row: {
+          contact_id: string | null
+          created_at: string
+          data_fim: string
+          data_inicio: string
+          deal_id: string | null
+          descricao: string | null
+          empresa: string
+          google_event_id: string | null
+          google_meet_link: string | null
+          id: string
+          notas: string | null
+          owner_id: string
+          status: string
+          titulo: string
+          transcricao_metadata: Json | null
+          transcricao_processada: boolean | null
+          transcricao_processada_em: string | null
+          updated_at: string
+        }
+        Insert: {
+          contact_id?: string | null
+          created_at?: string
+          data_fim: string
+          data_inicio: string
+          deal_id?: string | null
+          descricao?: string | null
+          empresa: string
+          google_event_id?: string | null
+          google_meet_link?: string | null
+          id?: string
+          notas?: string | null
+          owner_id: string
+          status?: string
+          titulo: string
+          transcricao_metadata?: Json | null
+          transcricao_processada?: boolean | null
+          transcricao_processada_em?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contact_id?: string | null
+          created_at?: string
+          data_fim?: string
+          data_inicio?: string
+          deal_id?: string | null
+          descricao?: string | null
+          empresa?: string
+          google_event_id?: string | null
+          google_meet_link?: string | null
+          id?: string
+          notas?: string | null
+          owner_id?: string
+          status?: string
+          titulo?: string
+          transcricao_metadata?: Json | null
+          transcricao_processada?: boolean | null
+          transcricao_processada_em?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "meetings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "meetings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "meetings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "meetings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "meetings_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       message_templates: {
         Row: {
           assunto_template: string | null
@@ -6342,6 +6585,195 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_availability: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          dia_semana: number
+          hora_fim: string
+          hora_inicio: string
+          id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana: number
+          hora_fim: string
+          hora_inicio: string
+          id?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          dia_semana?: number
+          hora_fim?: string
+          hora_inicio?: string
+          id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_availability_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_availability_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_availability_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_availability_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      user_google_tokens: {
+        Row: {
+          access_token: string
+          created_at: string
+          id: string
+          refresh_token: string
+          scope: string | null
+          token_expiry: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          access_token: string
+          created_at?: string
+          id?: string
+          refresh_token: string
+          scope?: string | null
+          token_expiry: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          access_token?: string
+          created_at?: string
+          id?: string
+          refresh_token?: string
+          scope?: string | null
+          token_expiry?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_google_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_google_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_google_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_google_tokens_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      user_meeting_config: {
+        Row: {
+          buffer_minutos: number
+          created_at: string
+          duracao_minutos: number
+          google_meet_enabled: boolean
+          id: string
+          max_por_dia: number
+          timezone: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          buffer_minutos?: number
+          created_at?: string
+          duracao_minutos?: number
+          google_meet_enabled?: boolean
+          id?: string
+          max_por_dia?: number
+          timezone?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          buffer_minutos?: number
+          created_at?: string
+          duracao_minutos?: number
+          google_meet_enabled?: boolean
+          id?: string
+          max_por_dia?: number
+          timezone?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_meeting_config_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_meeting_config_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "user_meeting_config_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_meeting_config_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
