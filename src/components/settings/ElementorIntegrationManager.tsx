@@ -285,7 +285,7 @@ ${hasTracking ? `
                 Configure como os campos do formulário Elementor serão mapeados para a Amélia.
               </DialogDescription>
             </DialogHeader>
-            <ScrollArea className="flex-1 pr-4">
+            <div className="flex-1 overflow-y-auto pr-2">
               <div className="space-y-5 pb-2">
                 {/* Basic info */}
                 <div className="grid grid-cols-2 gap-4">
@@ -444,7 +444,7 @@ ${hasTracking ? `
                   <p className="mt-1 text-xs text-muted-foreground">Separadas por vírgula</p>
                 </div>
               </div>
-            </ScrollArea>
+            </div>
             <DialogFooter className="pt-2">
               <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
               <Button
