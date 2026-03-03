@@ -162,6 +162,12 @@ verify_jwt = false
 [functions.deal-reconciler]
 verify_jwt = false
 
+[functions.api-keys-manage]
+verify_jwt = false
+
+[functions.api-keys-meta]
+verify_jwt = false
+
 [functions.lp-lead-ingest]
 verify_jwt = false
 

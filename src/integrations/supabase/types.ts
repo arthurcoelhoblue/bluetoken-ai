@@ -470,6 +470,80 @@ export type Database = {
           },
         ]
       }
+      api_keys: {
+        Row: {
+          created_at: string
+          created_by: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          expires_at: string | null
+          id: string
+          is_active: boolean
+          key_hash: string
+          key_preview: string
+          label: string
+          last_used_at: string | null
+          permissions: string[]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          key_hash: string
+          key_preview: string
+          label: string
+          last_used_at?: string | null
+          permissions?: string[]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          expires_at?: string | null
+          id?: string
+          is_active?: boolean
+          key_hash?: string
+          key_preview?: string
+          label?: string
+          last_used_at?: string | null
+          permissions?: string[]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_keys_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       behavioral_knowledge: {
         Row: {
           arquivado: boolean
