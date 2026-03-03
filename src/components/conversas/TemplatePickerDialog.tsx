@@ -49,15 +49,22 @@ export function TemplatePickerDialog({
     queryKey: ['approved-templates', empresa, connectionId],
     enabled: open,
     queryFn: async () => {
+      const baseFilter = {
+        empresa,
+        canal: 'WHATSAPP',
+        meta_status: 'APPROVED',
+        ativo: true,
+      };
       let q = supabase
         .from('message_templates' as any)
         .select('*')
-        .eq('empresa', empresa)
-        .eq('canal', 'WHATSAPP')
-        .eq('meta_status', 'APPROVED')
-        .eq('ativo', true);
+        .eq('empresa', baseFilter.empresa)
+        .eq('canal', baseFilter.canal)
+        .eq('meta_status', baseFilter.meta_status)
+        .eq('ativo', baseFilter.ativo);
       if (connectionId) {
-        q = q.eq('connection_id', connectionId);
+        // Include templates for this connection OR legacy (no connection_id)
+        q = q.or(`connection_id.eq.${connectionId},connection_id.is.null`);
       }
       const { data, error } = await q.order('nome');
       if (error) throw error;
@@ -198,9 +205,16 @@ export function TemplatePickerDialog({
                     >
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-medium text-sm">{t.nome}</span>
-                        <Badge variant="secondary" className="text-xs">
-                          {t.meta_category || 'UTILITY'}
-                        </Badge>
+                        <div className="flex items-center gap-1">
+                          {connectionId && !(t as any).connection_id && (
+                            <Badge variant="outline" className="text-xs text-orange-600 border-orange-300">
+                              Não sincronizado
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="text-xs">
+                            {t.meta_category || 'UTILITY'}
+                          </Badge>
+                        </div>
                       </div>
                       <p className="text-xs text-muted-foreground line-clamp-2">{t.conteudo}</p>
                     </button>
