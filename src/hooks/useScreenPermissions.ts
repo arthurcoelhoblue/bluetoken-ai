@@ -25,6 +25,7 @@ export function useScreenPermissions() {
         .from('user_access_assignments')
         .select('access_profile_id, permissions_override')
         .eq('user_id', user!.id)
+        .limit(1)
         .maybeSingle();
 
       // ADMIN role or Super Admin profile → full access
