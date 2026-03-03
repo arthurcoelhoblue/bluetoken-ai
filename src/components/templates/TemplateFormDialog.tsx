@@ -17,11 +17,12 @@ import { MetaComponentsEditor, type MetaComponent } from './MetaComponentsEditor
 import type { MessageTemplate, TemplateInsert, TemplateUpdate } from '@/hooks/useTemplates';
 import { useState } from 'react';
 import { ConnectionPicker } from '@/components/conversas/ConnectionPicker';
+import { useCompany } from '@/contexts/CompanyContext';
 
 const schema = z.object({
   nome: z.string().min(2, 'Nome obrigatório'),
   codigo: z.string().min(2, 'Código obrigatório').regex(/^[a-z0-9_]+$/, 'Apenas letras minúsculas, números e _'),
-  empresa: z.enum(['BLUE', 'TOKENIZA', 'MPUPPE', 'AXIA']),
+  empresa: z.string().min(1, 'Empresa obrigatória'),
   canal: z.enum(['WHATSAPP', 'EMAIL']),
   conteudo: z.string().min(5, 'Conteúdo obrigatório'),
   descricao: z.string().optional(),
@@ -45,11 +46,14 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
   const isEditing = !!template;
   const [metaComponents, setMetaComponents] = useState<MetaComponent[]>([]);
   const [connectionId, setConnectionId] = useState<string | null>(null);
+  const { empresaRecords, activeCompany } = useCompany();
+
+  const activeEmpresas = empresaRecords.filter(e => e.is_active);
 
   const form = useForm<FormValues>({
     resolver: zodResolver(schema),
     defaultValues: {
-      nome: '', codigo: '', empresa: 'BLUE', canal: 'WHATSAPP',
+      nome: '', codigo: '', empresa: activeCompany || '', canal: 'WHATSAPP',
       conteudo: '', descricao: '', assunto_template: '', ativo: true,
       meta_category: '', meta_language: 'pt_BR',
     },
@@ -73,7 +77,7 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
       setConnectionId(template.connection_id ?? null);
     } else {
       form.reset({
-        nome: '', codigo: '', empresa: 'BLUE', canal: 'WHATSAPP',
+        nome: '', codigo: '', empresa: activeCompany || '', canal: 'WHATSAPP',
         conteudo: '', descricao: '', assunto_template: '', ativo: true,
         meta_category: '', meta_language: 'pt_BR',
       });
@@ -86,11 +90,18 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
   const empresa = form.watch('empresa');
   const conteudo = form.watch('conteudo');
 
+  // Reset connectionId when empresa changes (prevents cross-tenant leak)
+  useEffect(() => {
+    if (!template) {
+      setConnectionId(null);
+    }
+  }, [empresa]);
+
   function handleSubmit(values: FormValues) {
     const payload: TemplateInsert | TemplateUpdate = {
       nome: values.nome,
       codigo: values.codigo,
-      empresa: values.empresa,
+      empresa: values.empresa as any,
       canal: values.canal,
       conteudo: values.conteudo,
       descricao: values.descricao || null,
@@ -153,10 +164,9 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
                   <Select value={field.value} onValueChange={field.onChange}>
                     <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
                     <SelectContent>
-                      <SelectItem value="BLUE">Blue</SelectItem>
-                      <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-                      <SelectItem value="MPUPPE">MPuppe</SelectItem>
-                      <SelectItem value="AXIA">Axia</SelectItem>
+                      {activeEmpresas.map((emp) => (
+                        <SelectItem key={emp.id} value={emp.id}>{emp.label}</SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                   <FormMessage />
@@ -186,8 +196,8 @@ export function TemplateFormDialog({ open, onOpenChange, template, onSave, isSav
               )} />
             </div>
 
-            {/* Connection picker for WhatsApp */}
-            {canal === 'WHATSAPP' && (
+            {/* Connection picker for WhatsApp — scoped to selected empresa */}
+            {canal === 'WHATSAPP' && empresa && (
               <div className="space-y-1">
                 <Label className="text-sm font-medium">Número WhatsApp</Label>
                 <ConnectionPicker
