@@ -134,7 +134,9 @@ export function useSyncMetaTemplates() {
   return useMutation({
     mutationFn: async ({ empresa, connectionId }: { empresa: string; connectionId?: string }) => {
       const projectId = import.meta.env.VITE_SUPABASE_PROJECT_ID;
-      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?empresa=${empresa}&connectionId=${connectionId}`;
+      const params = new URLSearchParams({ empresa });
+      if (connectionId) params.set('connectionId', connectionId);
+      const url = `https://${projectId}.supabase.co/functions/v1/whatsapp-template-manager?${params.toString()}`;
       const session = await supabase.auth.getSession();
       const token = session.data.session?.access_token;
 
