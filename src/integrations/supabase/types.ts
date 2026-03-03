@@ -2713,6 +2713,83 @@ export type Database = {
         }
         Relationships: []
       }
+      deal_notes: {
+        Row: {
+          conteudo: string
+          created_at: string
+          created_by: string | null
+          deal_id: string
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          conteudo: string
+          created_at?: string
+          created_by?: string | null
+          deal_id: string
+          id?: string
+          updated_at?: string
+        }
+        Update: {
+          conteudo?: string
+          created_at?: string
+          created_by?: string | null
+          deal_id?: string
+          id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_notes_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_notes_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_notes_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_notes_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+        ]
+      }
       deal_products: {
         Row: {
           created_at: string
@@ -4833,6 +4910,129 @@ export type Database = {
           {
             foreignKeyName: "lead_messages_sender_id_fkey"
             columns: ["sender_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      marketing_list_members: {
+        Row: {
+          added_at: string
+          contact_id: string | null
+          contatado_at: string | null
+          id: string
+          legacy_lead_id: string | null
+          list_id: string
+          notas: string | null
+          status: string
+        }
+        Insert: {
+          added_at?: string
+          contact_id?: string | null
+          contatado_at?: string | null
+          id?: string
+          legacy_lead_id?: string | null
+          list_id: string
+          notas?: string | null
+          status?: string
+        }
+        Update: {
+          added_at?: string
+          contact_id?: string | null
+          contatado_at?: string | null
+          id?: string
+          legacy_lead_id?: string | null
+          list_id?: string
+          notas?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_list_members_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_list_members_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_list_members_list_id_fkey"
+            columns: ["list_id"]
+            isOneToOne: false
+            referencedRelation: "marketing_lists"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      marketing_lists: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          empresa: string
+          id: string
+          is_active: boolean
+          nome: string
+          tipo: string
+          total_leads: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa: string
+          id?: string
+          is_active?: boolean
+          nome: string
+          tipo?: string
+          total_leads?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa?: string
+          id?: string
+          is_active?: boolean
+          nome?: string
+          tipo?: string
+          total_leads?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "marketing_lists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "marketing_lists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "marketing_lists_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "marketing_lists_created_by_fkey"
+            columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "seller_leaderboard"
             referencedColumns: ["user_id"]
