@@ -19,7 +19,7 @@ import {
 import {
   Accordion, AccordionContent, AccordionItem, AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Plus, Copy, Check, Trash2, Code, X } from "lucide-react";
+import { Plus, Copy, Check, Trash2, Code, X, Pencil } from "lucide-react";
 import { toast } from "sonner";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
@@ -51,7 +51,7 @@ interface FormMapping {
   stage_id: string | null;
   field_map: Record<string, string>;
   tags_auto: string[];
-  token: string;
+  token: string | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -100,12 +100,14 @@ function mergeFieldMap(
 export function ElementorIntegrationManager() {
   const queryClient = useQueryClient();
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [newFormId, setNewFormId] = useState("");
   const [newEmpresa, setNewEmpresa] = useState("TOKENIZA");
   const [newFieldMap, setNewFieldMap] = useState<Record<string, string>>({ nome: "", email: "", telefone: "" });
   const [newExtraFields, setNewExtraFields] = useState<ExtraField[]>([]);
   const [newTrackingFields, setNewTrackingFields] = useState<Record<string, string>>({});
   const [newTags, setNewTags] = useState("");
+  const [newToken, setNewToken] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   const { data: mappings = [], isLoading } = useQuery({
@@ -157,12 +159,37 @@ export function ElementorIntegrationManager() {
         stage_id: newStageId || null,
         field_map: fullFieldMap,
         tags_auto: newTags ? newTags.split(",").map(t => t.trim()) : [],
+        token: newToken.trim() || null,
       });
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["elementor-form-mappings"] });
       toast.success("Mapeamento criado com sucesso");
+      setDialogOpen(false);
+      resetForm();
+    },
+    onError: (err: Error) => toast.error(`Erro: ${err.message}`),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async () => {
+      if (!editingId) return;
+      const fullFieldMap = mergeFieldMap(newFieldMap, newExtraFields, newTrackingFields);
+      const { error } = await supabase.from("elementor_form_mappings").update({
+        form_id: newFormId.trim().toLowerCase().replace(/\s+/g, "-"),
+        empresa: newEmpresa,
+        pipeline_id: newPipelineId || null,
+        stage_id: newStageId || null,
+        field_map: fullFieldMap,
+        tags_auto: newTags ? newTags.split(",").map(t => t.trim()) : [],
+        token: newToken.trim() || null,
+      }).eq("id", editingId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["elementor-form-mappings"] });
+      toast.success("Mapeamento atualizado com sucesso");
       setDialogOpen(false);
       resetForm();
     },
@@ -192,6 +219,7 @@ export function ElementorIntegrationManager() {
   });
 
   const resetForm = () => {
+    setEditingId(null);
     setNewFormId("");
     setNewEmpresa("TOKENIZA");
     setNewPipelineId("");
@@ -200,6 +228,27 @@ export function ElementorIntegrationManager() {
     setNewExtraFields([]);
     setNewTrackingFields({});
     setNewTags("");
+    setNewToken("");
+  };
+
+  const openEditDialog = (mapping: FormMapping) => {
+    const { main, extras, tracking } = splitFieldMap(mapping.field_map as Record<string, string>);
+    setEditingId(mapping.id);
+    setNewFormId(mapping.form_id);
+    setNewEmpresa(mapping.empresa);
+    setNewPipelineId(mapping.pipeline_id || "");
+    setNewStageId(mapping.stage_id || "");
+    setNewFieldMap({ nome: main.nome || "", email: main.email || "", telefone: main.telefone || "" });
+    setNewExtraFields(extras);
+    setNewTrackingFields(tracking);
+    setNewTags(mapping.tags_auto?.join(", ") || "");
+    setNewToken(mapping.token || "");
+    setDialogOpen(true);
+  };
+
+  const openCreateDialog = () => {
+    resetForm();
+    setDialogOpen(true);
   };
 
   const handleCopy = async (text: string, id: string) => {
@@ -261,6 +310,9 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
     setNewExtraFields(prev => prev.map((f, i) => i === index ? { ...f, ...field } : f));
   };
 
+  const isEditing = editingId !== null;
+  const isSaving = createMutation.isPending || updateMutation.isPending;
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -270,192 +322,211 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
             Configure mapeamentos para receber leads de formulários WordPress/Elementor
           </p>
         </div>
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" className="gap-2">
-              <Plus className="h-4 w-4" />
-              Novo Mapeamento
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
-            <DialogHeader>
-              <DialogTitle>Novo Mapeamento Elementor</DialogTitle>
-              <DialogDescription>
-                Configure como os campos do formulário Elementor serão mapeados para a Amélia.
-              </DialogDescription>
-            </DialogHeader>
-            <div className="flex-1 overflow-y-auto pr-2">
-              <div className="space-y-5 pb-2">
-                {/* Basic info */}
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>ID do Formulário</Label>
-                    <Input
-                      placeholder="oferta-publica-2025"
-                      value={newFormId}
-                      onChange={e => setNewFormId(e.target.value)}
-                    />
-                    <p className="mt-1 text-xs text-muted-foreground">Slug único para identificar o formulário</p>
-                  </div>
-                  <div>
-                    <Label>Empresa</Label>
-                    <Select value={newEmpresa} onValueChange={setNewEmpresa}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
-                        <SelectItem value="BLUE">Blue</SelectItem>
-                        <SelectItem value="MPUPPE">MPuppe</SelectItem>
-                        <SelectItem value="AXIA">Axia</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
+        <Button size="sm" className="gap-2" onClick={openCreateDialog}>
+          <Plus className="h-4 w-4" />
+          Novo Mapeamento
+        </Button>
+      </div>
 
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label>Pipeline</Label>
-                    <Select value={newPipelineId} onValueChange={setNewPipelineId}>
-                      <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                      <SelectContent>
-                        {pipelines.map(p => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.nome} ({p.empresa})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Estágio</Label>
-                    <Select value={newStageId} onValueChange={setNewStageId}>
-                      <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                      <SelectContent>
-                        {filteredStages.map(s => (
-                          <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <Separator />
-
-                {/* Main fields */}
+      {/* Shared Dialog for Create/Edit */}
+      <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+          <DialogHeader>
+            <DialogTitle>{isEditing ? "Editar Mapeamento Elementor" : "Novo Mapeamento Elementor"}</DialogTitle>
+            <DialogDescription>
+              {isEditing
+                ? "Edite os campos do mapeamento. Deixe o token vazio para aceitar requisições sem autenticação."
+                : "Configure como os campos do formulário Elementor serão mapeados para a Amélia."}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-y-auto pr-2">
+            <div className="space-y-5 pb-2">
+              {/* Basic info */}
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label className="mb-2 block text-sm font-semibold">Campos Principais</Label>
-                  <p className="mb-2 text-xs text-muted-foreground">
-                    Informe o ID do campo no Elementor para cada campo obrigatório
-                  </p>
-                  {AMELIA_FIELDS.map(f => (
-                    <div key={f.key} className="mb-2 flex items-center gap-2">
-                      <Label className="w-24 shrink-0 text-sm">
-                        {f.label}{f.required && <span className="text-destructive">*</span>}
-                      </Label>
-                      <Input
-                        placeholder={`Ex: field_${f.key}`}
-                        value={newFieldMap[f.key] || ""}
-                        onChange={e => setNewFieldMap(prev => ({ ...prev, [f.key]: e.target.value }))}
-                        className="font-mono text-xs"
-                      />
-                    </div>
-                  ))}
-                </div>
-
-                <Separator />
-
-                {/* Additional fields */}
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <div>
-                      <Label className="block text-sm font-semibold">Campos Adicionais</Label>
-                      <p className="text-xs text-muted-foreground">
-                        Mapeie campos extras do formulário (empresa, cargo, CPF, etc.)
-                      </p>
-                    </div>
-                    <Button type="button" variant="outline" size="sm" className="gap-1" onClick={addExtraField}>
-                      <Plus className="h-3 w-3" /> Adicionar
-                    </Button>
-                  </div>
-                  {newExtraFields.length === 0 && (
-                    <p className="text-xs text-muted-foreground italic">Nenhum campo adicional configurado</p>
-                  )}
-                  {newExtraFields.map((ef, i) => (
-                    <div key={i} className="mb-2 flex items-center gap-2">
-                      <Input
-                        placeholder="Nome do campo (ex: empresa)"
-                        value={ef.ameliaKey}
-                        onChange={e => updateExtraField(i, { ameliaKey: e.target.value })}
-                        className="text-xs"
-                      />
-                      <span className="shrink-0 text-xs text-muted-foreground">→</span>
-                      <Input
-                        placeholder="ID Elementor (ex: field_empresa)"
-                        value={ef.elementorId}
-                        onChange={e => updateExtraField(i, { elementorId: e.target.value })}
-                        className="font-mono text-xs"
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="h-8 w-8 shrink-0"
-                        onClick={() => removeExtraField(i)}
-                      >
-                        <X className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-
-                <Separator />
-
-                {/* Tracking / hidden fields */}
-                <div>
-                  <Label className="mb-1 block text-sm font-semibold">Campos Ocultos / Rastreio</Label>
-                  <p className="mb-3 text-xs text-muted-foreground">
-                    UTMs e campos de rastreio. Informe o ID do campo hidden no Elementor, ou deixe vazio
-                    para capturar automaticamente via query string.
-                  </p>
-                  <div className="space-y-2">
-                    {TRACKING_FIELDS.map(tf => (
-                      <div key={tf.key} className="flex items-center gap-2">
-                        <Label className="w-40 shrink-0 text-xs font-medium">{tf.label}</Label>
-                        <Input
-                          placeholder={`ID campo ou vazio (auto via ?${tf.key}=...)`}
-                          value={newTrackingFields[tf.key] || ""}
-                          onChange={e => setNewTrackingFields(prev => ({ ...prev, [tf.key]: e.target.value }))}
-                          className="font-mono text-xs"
-                        />
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <Separator />
-
-                <div>
-                  <Label>Tags automáticas</Label>
+                  <Label>ID do Formulário</Label>
                   <Input
-                    placeholder="elementor, oferta-publica"
-                    value={newTags}
-                    onChange={e => setNewTags(e.target.value)}
+                    placeholder="oferta-publica-2025"
+                    value={newFormId}
+                    onChange={e => setNewFormId(e.target.value)}
+                    disabled={isEditing}
                   />
-                  <p className="mt-1 text-xs text-muted-foreground">Separadas por vírgula</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Slug único para identificar o formulário</p>
+                </div>
+                <div>
+                  <Label>Empresa</Label>
+                  <Select value={newEmpresa} onValueChange={setNewEmpresa}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="TOKENIZA">Tokeniza</SelectItem>
+                      <SelectItem value="BLUE">Blue</SelectItem>
+                      <SelectItem value="MPUPPE">MPuppe</SelectItem>
+                      <SelectItem value="AXIA">Axia</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Pipeline</Label>
+                  <Select value={newPipelineId} onValueChange={setNewPipelineId}>
+                    <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {pipelines.map(p => (
+                        <SelectItem key={p.id} value={p.id}>
+                          {p.nome} ({p.empresa})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Estágio</Label>
+                  <Select value={newStageId} onValueChange={setNewStageId}>
+                    <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
+                    <SelectContent>
+                      {filteredStages.map(s => (
+                        <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Separator />
+
+              {/* Token */}
+              <div>
+                <Label>Token de Autenticação (opcional)</Label>
+                <Input
+                  placeholder="Deixe vazio para aceitar sem autenticação"
+                  value={newToken}
+                  onChange={e => setNewToken(e.target.value)}
+                  className="font-mono text-xs"
+                />
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Se preenchido, o webhook exigirá o header <code className="rounded bg-muted px-1">X-Webhook-Token</code>
+                </p>
+              </div>
+
+              <Separator />
+
+              {/* Main fields */}
+              <div>
+                <Label className="mb-2 block text-sm font-semibold">Campos Principais</Label>
+                <p className="mb-2 text-xs text-muted-foreground">
+                  Informe o ID do campo no Elementor para cada campo obrigatório
+                </p>
+                {AMELIA_FIELDS.map(f => (
+                  <div key={f.key} className="mb-2 flex items-center gap-2">
+                    <Label className="w-24 shrink-0 text-sm">
+                      {f.label}{f.required && <span className="text-destructive">*</span>}
+                    </Label>
+                    <Input
+                      placeholder={`Ex: field_${f.key}`}
+                      value={newFieldMap[f.key] || ""}
+                      onChange={e => setNewFieldMap(prev => ({ ...prev, [f.key]: e.target.value }))}
+                      className="font-mono text-xs"
+                    />
+                  </div>
+                ))}
+              </div>
+
+              <Separator />
+
+              {/* Additional fields */}
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <div>
+                    <Label className="block text-sm font-semibold">Campos Adicionais</Label>
+                    <p className="text-xs text-muted-foreground">
+                      Mapeie campos extras do formulário (empresa, cargo, CPF, etc.)
+                    </p>
+                  </div>
+                  <Button type="button" variant="outline" size="sm" className="gap-1" onClick={addExtraField}>
+                    <Plus className="h-3 w-3" /> Adicionar
+                  </Button>
+                </div>
+                {newExtraFields.length === 0 && (
+                  <p className="text-xs text-muted-foreground italic">Nenhum campo adicional configurado</p>
+                )}
+                {newExtraFields.map((ef, i) => (
+                  <div key={i} className="mb-2 flex items-center gap-2">
+                    <Input
+                      placeholder="Nome do campo (ex: empresa)"
+                      value={ef.ameliaKey}
+                      onChange={e => updateExtraField(i, { ameliaKey: e.target.value })}
+                      className="text-xs"
+                    />
+                    <span className="shrink-0 text-xs text-muted-foreground">→</span>
+                    <Input
+                      placeholder="ID Elementor (ex: field_empresa)"
+                      value={ef.elementorId}
+                      onChange={e => updateExtraField(i, { elementorId: e.target.value })}
+                      className="font-mono text-xs"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => removeExtraField(i)}
+                    >
+                      <X className="h-3 w-3" />
+                    </Button>
+                  </div>
+                ))}
+              </div>
+
+              <Separator />
+
+              {/* Tracking / hidden fields */}
+              <div>
+                <Label className="mb-1 block text-sm font-semibold">Campos Ocultos / Rastreio</Label>
+                <p className="mb-3 text-xs text-muted-foreground">
+                  UTMs e campos de rastreio. Informe o ID do campo hidden no Elementor, ou deixe vazio
+                  para capturar automaticamente via query string.
+                </p>
+                <div className="space-y-2">
+                  {TRACKING_FIELDS.map(tf => (
+                    <div key={tf.key} className="flex items-center gap-2">
+                      <Label className="w-40 shrink-0 text-xs font-medium">{tf.label}</Label>
+                      <Input
+                        placeholder={`ID campo ou vazio (auto via ?${tf.key}=...)`}
+                        value={newTrackingFields[tf.key] || ""}
+                        onChange={e => setNewTrackingFields(prev => ({ ...prev, [tf.key]: e.target.value }))}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <Separator />
+
+              <div>
+                <Label>Tags automáticas</Label>
+                <Input
+                  placeholder="elementor, oferta-publica"
+                  value={newTags}
+                  onChange={e => setNewTags(e.target.value)}
+                />
+                <p className="mt-1 text-xs text-muted-foreground">Separadas por vírgula</p>
+              </div>
             </div>
-            <DialogFooter className="pt-2">
-              <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
-              <Button
-                onClick={() => createMutation.mutate()}
-                disabled={!newFormId || !newFieldMap.email || createMutation.isPending}
-              >
-                Criar Mapeamento
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </div>
+          </div>
+          <DialogFooter className="pt-2">
+            <Button variant="outline" onClick={() => setDialogOpen(false)}>Cancelar</Button>
+            <Button
+              onClick={() => isEditing ? updateMutation.mutate() : createMutation.mutate()}
+              disabled={!newFormId || !newFieldMap.email || isSaving}
+            >
+              {isEditing ? "Salvar Alterações" : "Criar Mapeamento"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {isLoading && <p className="text-sm text-muted-foreground">Carregando...</p>}
 
@@ -505,7 +576,7 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                         <Input value={mapping.token} readOnly className="font-mono text-xs" type="password" />
                         <Button
                           variant="outline" size="icon"
-                          onClick={() => handleCopy(mapping.token, `token-${mapping.id}`)}
+                          onClick={() => handleCopy(mapping.token!, `token-${mapping.id}`)}
                         >
                           {copiedId === `token-${mapping.id}` ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
                         </Button>
@@ -595,14 +666,22 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                     />
                     <span className="text-xs text-muted-foreground">{mapping.is_active ? "Ativo" : "Inativo"}</span>
                   </div>
-                  <Button
-                    variant="destructive" size="sm"
-                    onClick={() => {
-                      if (confirm("Remover este mapeamento?")) deleteMutation.mutate(mapping.id);
-                    }}
-                  >
-                    <Trash2 className="mr-1 h-3 w-3" /> Remover
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline" size="sm"
+                      onClick={() => openEditDialog(mapping)}
+                    >
+                      <Pencil className="mr-1 h-3 w-3" /> Editar
+                    </Button>
+                    <Button
+                      variant="destructive" size="sm"
+                      onClick={() => {
+                        if (confirm("Remover este mapeamento?")) deleteMutation.mutate(mapping.id);
+                      }}
+                    >
+                      <Trash2 className="mr-1 h-3 w-3" /> Remover
+                    </Button>
+                  </div>
                 </div>
               </AccordionContent>
             </AccordionItem>
