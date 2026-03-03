@@ -353,20 +353,43 @@ async function dispararMensagem(
         tmplQuery = tmplQuery.eq('connection_id', channelConfig.connectionId);
       }
 
-      // Try exact match first
+      // Try exact match first (e.g. tkn_carrinho_abandonado with this connection)
       let { data: tmpl } = await tmplQuery.eq('codigo', templateCodigo).maybeSingle();
 
-      // If not found with connection filter, try without (legacy templates)
+      // If not found, try variant with connection suffix (e.g. tkn_carrinho_abandonado_6fe0)
       if (!tmpl && channelConfig.connectionId) {
-        const { data: legacyTmpl } = await supabase
+        const connPrefix = channelConfig.connectionId.substring(0, 4);
+        const variantCodigo = `${templateCodigo}_${connPrefix}`;
+        const { data: variantTmpl } = await supabase
           .from('message_templates')
           .select('codigo, meta_template_id, meta_status, meta_language, meta_components')
           .eq('empresa', empresa)
-          .eq('codigo', templateCodigo)
+          .eq('connection_id', channelConfig.connectionId)
+          .eq('codigo', variantCodigo)
           .eq('ativo', true)
-          .is('connection_id', null)
           .maybeSingle();
-        tmpl = legacyTmpl;
+        tmpl = variantTmpl;
+        if (tmpl) {
+          log.info('Template variante encontrado para conexão', { variantCodigo, connectionId: channelConfig.connectionId });
+        }
+      }
+
+      // Last resort: search by LIKE pattern for any clone tied to this connection
+      if (!tmpl && channelConfig.connectionId) {
+        const { data: likeTmpl } = await supabase
+          .from('message_templates')
+          .select('codigo, meta_template_id, meta_status, meta_language, meta_components')
+          .eq('empresa', empresa)
+          .eq('connection_id', channelConfig.connectionId)
+          .like('codigo', `${templateCodigo}_%`)
+          .eq('ativo', true)
+          .eq('meta_status', 'APPROVED')
+          .limit(1)
+          .maybeSingle();
+        tmpl = likeTmpl;
+        if (tmpl) {
+          log.info('Template clone encontrado via LIKE', { originalCodigo: templateCodigo, foundCodigo: tmpl.codigo });
+        }
       }
 
       if (tmpl?.meta_template_id && tmpl?.meta_status === 'APPROVED') {
