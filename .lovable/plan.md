@@ -1,11 +1,13 @@
 
 
-## Adicionar secrets do Google Calendar
+## Adicionar os secrets do Google Calendar
 
-Os dois secrets necessários para o OAuth do Google Calendar não foram encontrados na configuração. Preciso usar a ferramenta `add_secret` para solicitar os valores ao usuário:
+O usuário confirmou que tem as credenciais OAuth prontas. Preciso usar a ferramenta `add_secret` para solicitar os dois valores:
 
-1. `GOOGLE_CALENDAR_CLIENT_ID` — Client ID do OAuth 2.0 do Google Cloud Console
-2. `GOOGLE_CALENDAR_CLIENT_SECRET` — Client Secret do OAuth 2.0
+1. **`GOOGLE_CALENDAR_CLIENT_ID`** — Client ID do OAuth 2.0
+2. **`GOOGLE_CALENDAR_CLIENT_SECRET`** — Client Secret do OAuth 2.0
 
-Após adicionados, a edge function `google-calendar-auth` parará de retornar erro 500.
+Após adicionados, a edge function `google-calendar-auth` funcionará e os vendedores poderão conectar seus calendários individuais.
+
+Alteração: **0 arquivos** — apenas configuração de secrets.
 
