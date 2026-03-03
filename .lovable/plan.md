@@ -1,51 +1,50 @@
 
 
-## Diagnóstico: Mensagens enviadas mas não entregues para 556198317422
+## Templates por Número WhatsApp
 
-### O que os dados mostram
+### Contexto
 
-| Horário | Direção | from_phone_number_id | Estado | Conteúdo |
-|---------|---------|---------------------|--------|----------|
-| 11:44 | OUT (template) | **1009376255595711** (antigo) | ENVIADO | tkn_followup_1 |
-| 11:45 | IN | — | RECEBIDO | "Oi" (resposta ao template acima) |
-| 11:45 | OUT (auto-reply) | **1054747871049688** (Comercial) | ENVIADO | Resposta da Amélia |
-| 12:12 | OUT (manual) | **1054747871049688** (Comercial) | ENVIADO | "Ola" |
-| 12:14 | OUT (manual) | **1054747871049688** (Comercial) | ENVIADO | "alo" |
+Hoje a tabela `message_templates` vincula templates apenas à `empresa`. Na API oficial da Meta, templates são registrados por **WABA (WhatsApp Business Account)**, que está associado a um `phone_number_id` específico. Com múltiplos números por empresa (ex: Tokeniza tem 2), é necessário saber qual número possui qual template aprovado.
 
-As mensagens anteriores (2 de março) do número **1009376255595711** chegaram como **ENTREGUE**. As de hoje do **1054747871049688** ficaram apenas como **ENVIADO**.
+### Solução
 
-### Causa raiz: janela de conversa por número
+Adicionar um campo `connection_id` (FK para `whatsapp_connections`) na tabela `message_templates`, permitindo vincular templates a números específicos.
 
-Na API Cloud da Meta, a **janela de 24h é POR número de telefone comercial**. O Arthur Coelho recebeu o template pelo número antigo (`1009376255595711`) e respondeu a ELE. A conversa aberta é com esse número.
+### Mudanças
 
-Quando o sistema responde pelo número **diferente** (`1054747871049688` — Comercial Tokeniza BR), a Meta aceita o request (retorna `wamid`), mas **não entrega** a mensagem porque não há janela de conversa aberta entre o Arthur e esse segundo número.
+**1. Migração SQL**
+- Adicionar coluna `connection_id UUID REFERENCES whatsapp_connections(id) ON DELETE SET NULL` (nullable para manter compatibilidade com templates existentes e templates de EMAIL)
 
-### Isso NÃO é bug de código
+**2. `src/components/templates/TemplateFormDialog.tsx`**
+- Quando `canal = WHATSAPP`, exibir um `ConnectionPicker` filtrado pela empresa selecionada para o usuário escolher o número
+- Salvar o `connection_id` no payload
 
-O `whatsapp-send` está funcionando corretamente — ele envia pelo número ativo selecionado e a Meta aceita. O problema é de regra de negócio da API Meta: cada phone_number_id tem sua própria janela de conversa independente.
+**3. `src/hooks/useTemplates.ts`**
+- Adicionar `connection_id` ao tipo `MessageTemplate`
+- Nos hooks de sync e submit, passar `connectionId` ao edge function
 
-### Solução imediata (manual)
+**4. `src/pages/TemplatesPage.tsx`**
+- Adicionar filtro por conexão (número) na listagem
+- Exibir o número/label na coluna da tabela
 
-Para o Arthur receber mensagens do número Comercial Tokeniza BR, é preciso enviar um **template** (não mensagem livre) por esse número. Templates podem ser enviados fora da janela de 24h e abrem uma nova conversa.
+**5. `src/components/conversas/TemplatePickerDialog.tsx`**
+- Filtrar templates aprovados pelo `connection_id` da conexão selecionada (além de empresa)
+- Quando o usuário seleciona uma conexão, mostrar apenas templates daquele número
 
-### Solução sistêmica (código)
+**6. `supabase/functions/whatsapp-template-manager/index.ts`**
+- Aceitar `connectionId` como parâmetro (além de `empresa`)
+- Resolver credenciais Meta pela conexão específica em vez de pela empresa
+- No sync (PATCH), vincular os templates importados ao `connection_id` correto
+- No batch-submit, filtrar por `connection_id`
 
-Duas melhorias possíveis:
-
-1. **Rastrear `from_phone_number_id` nas mensagens inbound** — quando chega um inbound, gravar de qual número comercial ele veio, e usar esse mesmo número para responder (auto-reply da Amélia e mensagens manuais).
-
-2. **Bloquear envio de texto livre para número sem janela aberta** — no `whatsapp-send`, verificar se existe mensagem INBOUND recente (últimas 24h) vinda do mesmo `phone_number_id` que será usado para enviar. Se não houver, forçar uso de template ou alertar o usuário.
-
-### Arquivos envolvidos
+### Arquivos a alterar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/whatsapp-send/index.ts` | Validar janela de conversa antes de enviar texto livre; sugerir template se não houver janela |
-| `supabase/functions/whatsapp-inbound/index.ts` | Gravar `from_phone_number_id` nas mensagens inbound para rastrear qual número comercial recebeu |
-| `src/components/conversas/ManualMessageInput.tsx` | Mostrar aviso ao usuário quando não há janela aberta para o número selecionado |
+| Migração SQL | Adicionar `connection_id` à `message_templates` |
+| `src/hooks/useTemplates.ts` | Tipo + filtro por connectionId |
+| `src/components/templates/TemplateFormDialog.tsx` | ConnectionPicker no form |
+| `src/pages/TemplatesPage.tsx` | Filtro e coluna de número |
+| `src/components/conversas/TemplatePickerDialog.tsx` | Filtrar templates pela conexão selecionada |
+| `supabase/functions/whatsapp-template-manager/index.ts` | Resolver credenciais por conexão |
 
-### Recomendação
-
-Implementar a **solução 1** (rastrear inbound phone e responder pelo mesmo número) é a mais importante, pois evita que a Amélia responda automaticamente pelo número errado. A solução 2 (bloquear texto livre sem janela) é um complemento de UX.
-
-Quer que eu implemente essas correções?
