@@ -1,44 +1,38 @@
 
 
-## Diagnóstico: Usuários "Administrador" ficando como somente leitura
+## Diagnóstico: Templates indisponíveis para +34664572190
 
-### Causa raiz
+### Situação atual
 
-Existe uma **desconexão entre o sistema novo de perfis de acesso e o sistema legado de roles**:
+| Conexão | Número | Templates sincronizados | Aprovados |
+|---------|--------|------------------------|-----------|
+| Comercial BR | +5561995262818 | 1 (clonado) | 1 |
+| Comercial EUR | +34664572190 | **0** | **0** |
+| Sem conexão (legado) | — | 14 | 6 |
 
-- Usuários como **Roney Gustavo**, **Tayara Araújo** e **Tiago Motta** têm o perfil de acesso **"Administrador"** (com view+edit em todas as telas), mas no `user_roles` estão com a role **READONLY**.
-- Várias páginas e componentes usam `hasRole('ADMIN')` diretamente (do sistema legado), que verifica a tabela `user_roles` — **não** o perfil de acesso.
-- Como esses usuários têm role `READONLY`, `hasRole('ADMIN')` retorna `false`, e eles ficam sem poder editar.
+O problema tem duas camadas:
 
-**Páginas afetadas** (usam `hasRole` para decidir edição):
-- `LeadDetail.tsx` → `canEdit = hasRole('ADMIN') || hasRole('CLOSER')`
-- `CadenceRunDetail.tsx` → `canManage = hasRole('ADMIN') || hasRole('CLOSER')`
-- `ContactIssuesCard.tsx` → `canResolve = hasRole('ADMIN') || hasRole('CLOSER')`
-- `MetasPage.tsx` → `isAdmin = hasRole('ADMIN')`
-- `ConversasPage.tsx` → `isAdmin = hasRole('ADMIN')`
-- `AmeliaMassActionPage.tsx` → `isAdmin = hasRole('ADMIN')`
-- `PendenciasPerda.tsx` → `isAdmin = hasRole('ADMIN')`
+1. **Nenhum template foi sincronizado** para a conexão EUR (`53aeb5e8`). Os 6 templates aprovados da TOKENIZA estão "órfãos" (sem `connection_id`), pertencendo à WABA antiga.
+
+2. **O filtro atual é muito restritivo**: após a correção anterior, o `TemplatePickerDialog` filtra estritamente por `connection_id`, então ao selecionar o número EUR, aparece "Nenhum template aprovado encontrado".
 
 ### Solução
 
-Criar um hook `useIsAdmin()` que verifica **ambos** os sistemas: a role legada `ADMIN` **ou** o perfil de acesso "Super Admin" / "Administrador" (que tem todas as permissões como edit:true). Depois, substituir todos os `hasRole('ADMIN')` por esse hook unificado.
+**1. Incluir templates legados como fallback na UI**
 
-Concretamente:
+No `TemplatePickerDialog`, quando uma conexão está selecionada mas não tem templates, também mostrar templates legados (sem `connection_id`) com um badge visual indicando que precisam ser sincronizados/clonados para aquela WABA. Isso permite ao usuário ver o que está disponível e decidir.
 
-1. **Criar `src/hooks/useIsAdmin.ts`** — hook que retorna `true` se o usuário tem role ADMIN **ou** se todas as permissões do perfil de acesso são `edit: true` (ou perfil é Super Admin).
+Alterar a query para: se `connectionId` está definido, buscar `connection_id = connectionId OR connection_id IS NULL`, mas marcar visualmente quais são legados.
 
-2. **Atualizar 7 arquivos** que usam `hasRole('ADMIN')` para controlar edição, substituindo por `useIsAdmin()`:
+**2. Sincronizar templates no envio**
+
+No `whatsapp-send`, quando recebe um template legado (sem `connection_id`) para enviar por uma conexão específica, tentar enviar com o `codigo` do template. Se a Meta retornar erro 132001 (template não existe), retornar uma mensagem clara: "Este template não foi registrado na WABA deste número. Sincronize os templates primeiro."
+
+### Arquivos a modificar
 
 | Arquivo | Mudança |
 |---------|---------|
-| `src/hooks/useIsAdmin.ts` | Novo hook que unifica verificação legada + perfil de acesso |
-| `src/pages/LeadDetail.tsx` | `canEdit` usa `useIsAdmin()` |
-| `src/pages/CadenceRunDetail.tsx` | `canManage` usa `useIsAdmin()` |
-| `src/components/leads/ContactIssuesCard.tsx` | `canResolve` usa `useIsAdmin()` |
-| `src/pages/MetasPage.tsx` | `isAdmin` usa `useIsAdmin()` |
-| `src/pages/ConversasPage.tsx` | `isAdmin` usa `useIsAdmin()` |
-| `src/pages/AmeliaMassActionPage.tsx` | `isAdmin` usa `useIsAdmin()` |
-| `src/pages/admin/PendenciasPerda.tsx` | `isAdmin` usa `useIsAdmin()` |
+| `src/components/conversas/TemplatePickerDialog.tsx` | Query inclui templates legados como fallback; badge "Não sincronizado" nos legados |
 
-O hook `useIsAdmin` reutilizará os dados já carregados por `useScreenPermissions` (cache de 5min), sem queries extras.
+Essa abordagem permite testar o envio de texto livre por ambos os números imediatamente, e para templates, mostra quais estão disponíveis e quais precisam ser sincronizados na WABA do número EUR via Meta Business Manager.
 
