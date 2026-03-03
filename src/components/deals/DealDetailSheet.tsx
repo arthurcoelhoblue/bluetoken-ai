@@ -1,9 +1,9 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageSquare, Sparkles, Package } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   useDealDetail,
@@ -26,7 +26,10 @@ import { DealDetailHeader } from '@/components/deals/DealDetailHeader';
 import { DealTimelineTab } from '@/components/deals/DealTimelineTab';
 import { DealDadosTab } from '@/components/deals/DealDadosTab';
 import { DealLossDialog } from '@/components/deals/DealLossDialog';
+import { ScheduleActivityDialog } from '@/components/deals/ScheduleActivityDialog';
+import { DealProductsTab } from '@/components/deals/DealProductsTab';
 import { ConversationPanel } from '@/components/conversas/ConversationPanel';
+import type { DealActivityType } from '@/types/dealDetail';
 
 interface Props {
   dealId: string | null;
@@ -75,11 +78,57 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
   const [lossOpen, setLossOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
+  const [scheduleOpen, setScheduleOpen] = useState(false);
 
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
   const orderedStages = (stages ?? []).filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
 
-  const tabCount = hasChat ? 5 : 4;
+  const tabCount = hasChat ? 6 : 5;
+
+  // Check if deal has a future scheduled activity (task with prazo in the future)
+  const hasFutureActivity = useCallback(() => {
+    if (!activities || activities.length === 0) return false;
+    const now = new Date();
+    return activities.some(a =>
+      a.tipo === 'TAREFA' &&
+      !a.tarefa_concluida &&
+      a.tarefa_prazo &&
+      new Date(a.tarefa_prazo) >= now
+    );
+  }, [activities]);
+
+  // Intercept sheet close — if deal is open and has no future activity, show dialog
+  const handleSheetOpenChange = useCallback((nextOpen: boolean) => {
+    if (nextOpen) {
+      onOpenChange(true);
+      return;
+    }
+    // Closing the sheet
+    if (deal && !isClosed && !hasFutureActivity()) {
+      setScheduleOpen(true);
+      return;
+    }
+    onOpenChange(false);
+  }, [deal, isClosed, hasFutureActivity, onOpenChange]);
+
+  const handleScheduleActivity = useCallback((tipo: DealActivityType, descricao: string, prazo: string) => {
+    if (!dealId) return;
+    addActivity.mutate(
+      { deal_id: dealId, tipo, descricao, tarefa_prazo: prazo },
+      {
+        onSuccess: () => {
+          toast.success('Próxima atividade agendada!');
+          setScheduleOpen(false);
+          onOpenChange(false);
+        },
+      }
+    );
+  }, [dealId, addActivity, onOpenChange]);
+
+  const handleSkipSchedule = useCallback(() => {
+    setScheduleOpen(false);
+    onOpenChange(false);
+  }, [onOpenChange]);
 
   const handleWin = () => {
     if (!deal) return;
@@ -104,7 +153,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
 
   return (
     <>
-      <Sheet open={open} onOpenChange={onOpenChange}>
+      <Sheet open={open} onOpenChange={handleSheetOpenChange}>
         <SheetContent className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0">
           {isLoading ? (
             <div className="space-y-4 p-6"><Skeleton className="h-16 w-full" /><Skeleton className="h-8 w-3/4" /><Skeleton className="h-48 w-full" /></div>
@@ -121,7 +170,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 legacyLeadId={contactBridge?.legacy_lead_id ?? null}
                 leadEmpresa={contactBridge?.empresa ?? null}
                 contactId={deal.contact_id ?? null}
-                onClose={() => onOpenChange(false)}
+                onClose={() => handleSheetOpenChange(false)}
               />
 
               <Tabs defaultValue="timeline" className="flex-1 flex flex-col">
@@ -134,6 +183,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                       Chat
                     </TabsTrigger>
                   )}
+                  <TabsTrigger value="produtos" className="gap-1">
+                    <Package className="h-3 w-3" />
+                    Produtos
+                  </TabsTrigger>
                   <TabsTrigger value="campos">Campos</TabsTrigger>
                   <TabsTrigger value="insights">
                     <Sparkles className="h-3 w-3 mr-1" />
@@ -176,6 +229,10 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                   </TabsContent>
                 )}
 
+                <TabsContent value="produtos">
+                  <DealProductsTab dealId={dealId!} empresa={deal.pipeline_empresa ?? null} />
+                </TabsContent>
+
                 <TabsContent value="campos" className="px-6 mt-3">
                   <CustomFieldsRenderer fields={resolvedFields} entityType="DEAL" entityId={dealId!} />
                 </TabsContent>
@@ -209,6 +266,15 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
           stageId={deal.stage_id}
           lossCategories={lossCategories}
           closeDeal={closeDeal}
+        />
+      )}
+
+      {deal && !isClosed && (
+        <ScheduleActivityDialog
+          open={scheduleOpen}
+          onSchedule={handleScheduleActivity}
+          onSkip={handleSkipSchedule}
+          dealTitulo={deal.titulo}
         />
       )}
     </>

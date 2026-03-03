@@ -5,6 +5,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useZadarmaProxy } from '@/hooks/useZadarma';
 import { useCompany } from '@/contexts/CompanyContext';
+import { formatPhoneBR } from '@/lib/formatPhone';
 import type { DialEvent, EmpresaTipo } from '@/types/telephony';
 
 interface Props {
@@ -74,7 +75,7 @@ export function ClickToCallButton({ phone, contactName, dealId, customerId, size
               {size === 'sm' && <span className="ml-1.5">Ligar</span>}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Ligar para {contactName || phone}</TooltipContent>
+          <TooltipContent>Ligar para {contactName || formatPhoneBR(phone)}</TooltipContent>
         </Tooltip>
 
         <Tooltip>
