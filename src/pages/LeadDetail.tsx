@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';
 import { useConversationMessages } from '@/hooks/useConversationMessages';
@@ -75,6 +76,7 @@ function LeadDetailContent() {
   const { leadId, empresa } = useParams<{ leadId: string; empresa: string }>();
   const navigate = useNavigate();
   const { hasRole } = useAuth();
+  const isAdmin = useIsAdmin();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
   const [createDealOpen, setCreateDealOpen] = useState(false);
@@ -150,7 +152,7 @@ function LeadDetailContent() {
   });
 
 
-  const canEdit = hasRole('ADMIN') || hasRole('CLOSER');
+  const canEdit = isAdmin || hasRole('CLOSER');
 
   if (isLoading) {
     return (

@@ -16,6 +16,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMetaProgresso, useComissaoRegras, useComissaoLancamentos, useUpdateComissaoStatus, useUpsertMeta } from '@/hooks/useMetas';
 import { MESES_LABEL, type ComissaoStatus, type MetaProgresso } from '@/types/metas';
@@ -34,7 +35,7 @@ export default function MetasPage() {
   const { hasRole, user } = useAuth();
   const { activeCompany } = useCompany();
   const empresa = activeCompany;
-  const isAdmin = hasRole('ADMIN');
+  const isAdmin = useIsAdmin();
 
   const { data: ranking = [], isLoading: loadingRanking } = useMetaProgresso(ano, mes);
   const { data: regras = [], isLoading: loadingRegras } = useComissaoRegras();

@@ -14,6 +14,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Bot, Send, ThumbsUp, ThumbsDown, Search, FileText, History, SlidersHorizontal, X, ChevronDown, ShieldCheck, XCircle, Clock, CheckCircle2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
@@ -209,7 +210,7 @@ export default function AmeliaMassActionPage() {
   const { data: jobs = [], isLoading: loadingJobs } = useMassActionJobs(empresa);
   const { data: userProfile } = useUserProfile(user?.id);
   const { data: isGestor } = useIsGestor(user?.id);
-  const isAdmin = hasRole('ADMIN');
+  const isAdmin = useIsAdmin();
   const canApprove = isAdmin || !!isGestor;
 
   // Pending approval jobs
