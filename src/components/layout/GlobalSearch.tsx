@@ -10,13 +10,15 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command';
-import { User, Briefcase, Building2, Search } from 'lucide-react';
+import { User, Briefcase, Building2, Search, StickyNote, CheckSquare, MessageSquare } from 'lucide-react';
+
+type ResultType = 'contact' | 'deal' | 'organization' | 'note' | 'activity' | 'message';
 
 interface SearchResult {
   id: string;
   label: string;
   sublabel?: string;
-  type: 'contact' | 'deal' | 'organization';
+  type: ResultType;
   path: string;
 }
 
@@ -51,15 +53,15 @@ export function GlobalSearch() {
       setIsSearching(true);
       const searchTerm = `%${query}%`;
 
-      // Build contacts query with empresa filter
+      // 1. Contacts — busca por nome, email E telefone
       let contactsQuery = supabase
         .from('contacts')
         .select('id, nome, email, telefone, empresa')
-        .ilike('nome', searchTerm)
+        .or(`nome.ilike.${searchTerm},email.ilike.${searchTerm},telefone.ilike.${searchTerm}`)
         .limit(5);
       contactsQuery = contactsQuery.in('empresa', activeCompanies);
 
-      // Build deals query — filter via pipeline join for empresa isolation
+      // 2. Deals — busca por título
       let dealsQuery = supabase
         .from('deals')
         .select('id, titulo, valor, pipelines!inner(empresa)')
@@ -67,7 +69,7 @@ export function GlobalSearch() {
         .limit(5);
       dealsQuery = dealsQuery.in('pipelines.empresa', activeCompanies);
 
-      // Build orgs query with empresa filter
+      // 3. Organizations — busca por nome
       let orgsQuery = supabase
         .from('organizations')
         .select('id, nome, empresa')
@@ -75,14 +77,40 @@ export function GlobalSearch() {
         .limit(5);
       orgsQuery = orgsQuery.in('empresa', activeCompanies);
 
-      const [contactsRes, dealsRes, orgsRes] = await Promise.all([
+      // 4. Deal Notes — busca por conteúdo das notas
+      const notesQuery = supabase
+        .from('deal_notes')
+        .select('id, conteudo, deal_id, deals!inner(titulo, pipelines!inner(empresa))')
+        .ilike('conteudo', searchTerm)
+        .limit(5);
+
+      // 5. Deal Activities (tarefas) — busca por descrição
+      const activitiesQuery = supabase
+        .from('deal_activities')
+        .select('id, descricao, tipo, deal_id, deals!inner(titulo, pipelines!inner(empresa))')
+        .ilike('descricao', searchTerm)
+        .limit(5);
+
+      // 6. Lead Messages — busca por conteúdo de mensagens
+      const messagesQuery = supabase
+        .from('lead_messages')
+        .select('id, conteudo, lead_id, remetente, empresa')
+        .ilike('conteudo', searchTerm)
+        .in('empresa', activeCompanies)
+        .limit(5);
+
+      const [contactsRes, dealsRes, orgsRes, notesRes, activitiesRes, messagesRes] = await Promise.all([
         contactsQuery,
         dealsQuery,
         orgsQuery,
+        notesQuery,
+        activitiesQuery,
+        messagesQuery,
       ]);
 
       const items: SearchResult[] = [];
 
+      // Contacts
       contactsRes.data?.forEach((c) => {
         items.push({
           id: c.id,
@@ -93,6 +121,7 @@ export function GlobalSearch() {
         });
       });
 
+      // Deals
       dealsRes.data?.forEach((d) => {
         const dealData = d as unknown as { id: string; titulo: string; valor: number | null };
         items.push({
@@ -104,12 +133,51 @@ export function GlobalSearch() {
         });
       });
 
+      // Organizations
       orgsRes.data?.forEach((o) => {
         items.push({
           id: o.id,
           label: o.nome,
           type: 'organization',
           path: `/organizacoes?open=${o.id}`,
+        });
+      });
+
+      // Notes
+      notesRes.data?.forEach((n) => {
+        const noteData = n as unknown as { id: string; conteudo: string; deal_id: string; deals: { titulo: string } };
+        const preview = noteData.conteudo?.substring(0, 80) + (noteData.conteudo?.length > 80 ? '...' : '');
+        items.push({
+          id: noteData.id,
+          label: preview,
+          sublabel: `Nota em: ${noteData.deals?.titulo || 'Deal'}`,
+          type: 'note',
+          path: `/pipeline?deal=${noteData.deal_id}`,
+        });
+      });
+
+      // Activities (tarefas)
+      activitiesRes.data?.forEach((a) => {
+        const actData = a as unknown as { id: string; descricao: string; tipo: string; deal_id: string; deals: { titulo: string } };
+        items.push({
+          id: actData.id,
+          label: actData.descricao?.substring(0, 80) || actData.tipo,
+          sublabel: `Tarefa em: ${actData.deals?.titulo || 'Deal'}`,
+          type: 'activity',
+          path: `/pipeline?deal=${actData.deal_id}`,
+        });
+      });
+
+      // Messages
+      messagesRes.data?.forEach((m) => {
+        const msgData = m as unknown as { id: string; conteudo: string; lead_id: string; remetente: string };
+        const preview = msgData.conteudo?.substring(0, 80) + (msgData.conteudo?.length > 80 ? '...' : '');
+        items.push({
+          id: msgData.id,
+          label: preview,
+          sublabel: `Mensagem de: ${msgData.remetente === 'LEAD' ? 'Lead' : 'Sistema'}`,
+          type: 'message',
+          path: `/conversas?lead=${msgData.lead_id}`,
         });
       });
 
@@ -129,16 +197,22 @@ export function GlobalSearch() {
     [navigate]
   );
 
-  const iconMap = {
+  const iconMap: Record<ResultType, typeof User> = {
     contact: User,
     deal: Briefcase,
     organization: Building2,
+    note: StickyNote,
+    activity: CheckSquare,
+    message: MessageSquare,
   };
 
-  const groupLabel = {
+  const groupLabel: Record<ResultType, string> = {
     contact: 'Contatos',
     deal: 'Deals',
     organization: 'Organizações',
+    note: 'Notas',
+    activity: 'Tarefas',
+    message: 'Mensagens',
   };
 
   const grouped = results.reduce<Record<string, SearchResult[]>>((acc, r) => {
@@ -154,7 +228,7 @@ export function GlobalSearch() {
         className="hidden md:flex items-center gap-2 bg-muted rounded-lg px-3 py-1.5 text-sm text-muted-foreground w-56 hover:bg-muted/80 transition-colors"
       >
         <Search className="h-4 w-4" />
-        <span className="flex-1 text-left">Buscar...</span>
+        <span className="flex-1 text-left">Buscar tudo...</span>
         <kbd className="pointer-events-none hidden h-5 select-none items-center gap-1 rounded border bg-muted px-1.5 font-mono text-[10px] font-medium opacity-100 sm:flex">
           <span className="text-xs">⌘</span>K
         </kbd>
@@ -162,7 +236,7 @@ export function GlobalSearch() {
 
       <CommandDialog open={open} onOpenChange={setOpen}>
         <CommandInput
-          placeholder="Buscar contatos, deals, organizações..."
+          placeholder="Buscar contatos, deals, notas, tarefas, mensagens..."
           value={query}
           onValueChange={setQuery}
         />
@@ -181,21 +255,21 @@ export function GlobalSearch() {
             </div>
           )}
           {Object.entries(grouped).map(([type, items]) => {
-            const Icon = iconMap[type as keyof typeof iconMap];
+            const Icon = iconMap[type as ResultType];
             return (
-              <CommandGroup key={type} heading={groupLabel[type as keyof typeof groupLabel]}>
+              <CommandGroup key={type} heading={groupLabel[type as ResultType]}>
                 {items.map((item) => (
                   <CommandItem
                     key={item.id}
-                    value={item.label}
+                    value={`${item.label} ${item.sublabel || ''}`}
                     onSelect={() => handleSelect(item)}
                     className="cursor-pointer"
                   >
                     <Icon className="mr-2 h-4 w-4 shrink-0 text-muted-foreground" />
-                    <div className="flex flex-col">
-                      <span>{item.label}</span>
+                    <div className="flex flex-col min-w-0">
+                      <span className="truncate">{item.label}</span>
                       {item.sublabel && (
-                        <span className="text-xs text-muted-foreground">{item.sublabel}</span>
+                        <span className="text-xs text-muted-foreground truncate">{item.sublabel}</span>
                       )}
                     </div>
                   </CommandItem>
