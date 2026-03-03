@@ -10,6 +10,8 @@ import type { PermissionsMap, ScreenPermission } from '@/types/accessControl';
  * Priority: access_profiles assignment > legacy role fallback > deny all.
  * ADMIN role always gets full access (hardcoded).
  */
+const SUPER_ADMIN_PROFILE_ID = 'd82ee44c-2c33-4a05-99be-2cf5451018d4';
+
 export function useScreenPermissions() {
   const { user, roles } = useAuth();
   const isAdmin = roles.includes('ADMIN');
@@ -18,20 +20,21 @@ export function useScreenPermissions() {
     queryKey: ['screen-permissions', user?.id, isAdmin],
     enabled: !!user,
     queryFn: async (): Promise<PermissionsMap> => {
-      // ADMIN bypass
-      if (isAdmin) {
-        return SCREEN_REGISTRY.reduce((acc, s) => {
-          acc[s.key] = { view: true, edit: true };
-          return acc;
-        }, {} as PermissionsMap);
-      }
-
       // Try access_profiles assignment (with override)
       const { data: assignment } = await supabase
         .from('user_access_assignments')
         .select('access_profile_id, permissions_override')
         .eq('user_id', user!.id)
         .maybeSingle();
+
+      // ADMIN role or Super Admin profile → full access
+      const isSuperAdmin = assignment?.access_profile_id === SUPER_ADMIN_PROFILE_ID;
+      if (isAdmin || isSuperAdmin) {
+        return SCREEN_REGISTRY.reduce((acc, s) => {
+          acc[s.key] = { view: true, edit: true };
+          return acc;
+        }, {} as PermissionsMap);
+      }
 
       const overrideMap = (assignment?.permissions_override as unknown as PermissionsMap) ?? null;
 
