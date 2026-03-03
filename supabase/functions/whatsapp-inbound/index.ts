@@ -802,7 +802,8 @@ async function saveInboundMessage(
   activeRun: LeadCadenceRun | null,
   crmContactId?: string | null,
   crmEmpresa?: EmpresaTipo | null,
-  targetEmpresa?: string | null
+  targetEmpresa?: string | null,
+  fromPhoneNumberId?: string | null
 ): Promise<InboundResult> {
   if (await isDuplicate(supabase, payload.message_id)) {
     log.info('Mensagem duplicada', { messageId: payload.message_id });
@@ -875,6 +876,7 @@ async function saveInboundMessage(
     estado: isMatched ? 'RECEBIDO' : 'UNMATCHED',
     whatsapp_message_id: payload.message_id,
     recebido_em: payload.timestamp,
+    from_phone_number_id: fromPhoneNumberId || null,
   };
   
   if (crmContactId) {
@@ -1186,12 +1188,37 @@ serve(async (req) => {
     if (finalLeadContact) {
       activeRun = await findActiveRun(supabase, finalLeadContact.lead_id, finalLeadContact.empresa);
     }
+
+    // Resolve from_phone_number_id for the mensageria inbound path
+    // (meta-webhook handles this separately — this is for the mensageria gateway)
+    let fromPhoneNumberId: string | null = null;
+    const resolvedEmpresa = matchedEmpresa || targetEmpresa;
+    if (resolvedEmpresa) {
+      const { data: defaultConn } = await supabase
+        .from('whatsapp_connections')
+        .select('phone_number_id')
+        .eq('empresa', resolvedEmpresa)
+        .eq('is_active', true)
+        .eq('is_default', true)
+        .maybeSingle();
+      fromPhoneNumberId = defaultConn?.phone_number_id || null;
+      if (!fromPhoneNumberId) {
+        const { data: anyConn } = await supabase
+          .from('whatsapp_connections')
+          .select('phone_number_id')
+          .eq('empresa', resolvedEmpresa)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+        fromPhoneNumberId = anyConn?.phone_number_id || null;
+      }
+    }
     
     // EMPRESA-FIRST: passa targetEmpresa como fallback para garantir empresa correta em UNMATCHED
     const result = await saveInboundMessage(
       supabase, payload, finalLeadContact, activeRun, 
       finalCrmContact?.id, finalCrmContact?.empresa,
-      targetEmpresa
+      targetEmpresa, fromPhoneNumberId
     );
     
     if (handoffInfo) {

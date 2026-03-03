@@ -461,31 +461,48 @@ serve(async (req) => {
         }
         sendResult = metaResult;
       } else if (isMediaSend) {
-        // ── MEDIA SEND (requires 24h window) ──
-        const { data: convState2 } = await supabase
-          .from('lead_conversation_state')
-          .select('last_inbound_at, ultimo_contato_em')
-          .eq('lead_id', leadId)
-          .eq('empresa', empresa)
-          .maybeSingle();
-        const lastInbound2 = convState2?.last_inbound_at || convState2?.ultimo_contato_em;
-        // Fallback: if both are NULL, check lead_messages directly
-        let hoursAgo2: number;
-        if (lastInbound2) {
-          hoursAgo2 = (Date.now() - new Date(lastInbound2).getTime()) / (1000 * 60 * 60);
-        } else {
-          const { data: lastMsg } = await supabase
+        // ── MEDIA SEND (requires 24h window from SAME phone_number_id) ──
+        let hoursAgo2: number = Infinity;
+
+        // Primary: check lead_messages for INBOUND from the same phone_number_id
+        if (metaConfig.metaPhoneNumberId) {
+          const { data: lastInboundSamePhone } = await supabase
             .from('lead_messages')
             .select('created_at')
             .eq('lead_id', leadId)
             .eq('empresa', empresa)
             .eq('direcao', 'INBOUND')
+            .eq('from_phone_number_id', metaConfig.metaPhoneNumberId)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          hoursAgo2 = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
-          if (lastMsg?.created_at) {
-            log.warn('last_inbound_at NULL, used lead_messages fallback', { leadId, hoursAgo: hoursAgo2 });
+          if (lastInboundSamePhone?.created_at) {
+            hoursAgo2 = (Date.now() - new Date(lastInboundSamePhone.created_at).getTime()) / (1000 * 60 * 60);
+          }
+        }
+
+        // Fallback: legacy check
+        if (hoursAgo2 === Infinity) {
+          const { data: convState2 } = await supabase
+            .from('lead_conversation_state')
+            .select('last_inbound_at, ultimo_contato_em')
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa)
+            .maybeSingle();
+          const lastInbound2 = convState2?.last_inbound_at || convState2?.ultimo_contato_em;
+          if (lastInbound2) {
+            hoursAgo2 = (Date.now() - new Date(lastInbound2).getTime()) / (1000 * 60 * 60);
+          } else {
+            const { data: lastMsg } = await supabase
+              .from('lead_messages')
+              .select('created_at')
+              .eq('lead_id', leadId)
+              .eq('empresa', empresa)
+              .eq('direcao', 'INBOUND')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            hoursAgo2 = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
           }
         }
 
@@ -528,38 +545,61 @@ serve(async (req) => {
           sendResult = metaMediaResult;
         }
       } else {
-        // ── FREE TEXT SEND (requires 24h window) ──
-        // Check 24h window
-        const { data: convState } = await supabase
-          .from('lead_conversation_state')
-          .select('last_inbound_at, ultimo_contato_em')
-          .eq('lead_id', leadId)
-          .eq('empresa', empresa)
-          .maybeSingle();
+        // ── FREE TEXT SEND (requires 24h window from SAME phone_number_id) ──
+        // Check 24h window — must have inbound from SAME business number
+        let hoursAgo: number = Infinity;
 
-        const lastInbound = convState?.last_inbound_at || convState?.ultimo_contato_em;
-        let hoursAgo: number;
-        if (lastInbound) {
-          hoursAgo = (Date.now() - new Date(lastInbound).getTime()) / (1000 * 60 * 60);
-        } else {
-          // Fallback: query lead_messages directly when conversation state has no timestamp
-          const { data: lastMsg } = await supabase
+        // Primary: check lead_messages for INBOUND from the same phone_number_id
+        if (metaConfig.metaPhoneNumberId) {
+          const { data: lastInboundSamePhone } = await supabase
             .from('lead_messages')
             .select('created_at')
             .eq('lead_id', leadId)
             .eq('empresa', empresa)
             .eq('direcao', 'INBOUND')
+            .eq('from_phone_number_id', metaConfig.metaPhoneNumberId)
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          hoursAgo = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
-          if (lastMsg?.created_at) {
-            log.warn('last_inbound_at NULL, used lead_messages fallback', { leadId, hoursAgo });
+
+          if (lastInboundSamePhone?.created_at) {
+            hoursAgo = (Date.now() - new Date(lastInboundSamePhone.created_at).getTime()) / (1000 * 60 * 60);
+            log.info('24h window check (same phone_number_id)', { hoursAgo, phoneNumberId: metaConfig.metaPhoneNumberId });
+          }
+        }
+
+        // Fallback: legacy check via conversation_state (any inbound)
+        if (hoursAgo === Infinity) {
+          const { data: convState } = await supabase
+            .from('lead_conversation_state')
+            .select('last_inbound_at, ultimo_contato_em')
+            .eq('lead_id', leadId)
+            .eq('empresa', empresa)
+            .maybeSingle();
+          const lastInbound = convState?.last_inbound_at || convState?.ultimo_contato_em;
+          if (lastInbound) {
+            hoursAgo = (Date.now() - new Date(lastInbound).getTime()) / (1000 * 60 * 60);
+          } else {
+            const { data: lastMsg } = await supabase
+              .from('lead_messages')
+              .select('created_at')
+              .eq('lead_id', leadId)
+              .eq('empresa', empresa)
+              .eq('direcao', 'INBOUND')
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            hoursAgo = lastMsg?.created_at ? (Date.now() - new Date(lastMsg.created_at).getTime()) / (1000 * 60 * 60) : Infinity;
+          }
+          if (hoursAgo <= 24) {
+            log.warn('24h window open via legacy check but NOT confirmed for this phone_number_id — message may not be delivered', {
+              phoneNumberId: metaConfig.metaPhoneNumberId, hoursAgo,
+            });
           }
         }
 
         if (hoursAgo > 24) {
-          log.warn('Fora da janela 24h Meta Cloud', { hoursAgo, leadId });
+          log.warn('Fora da janela 24h Meta Cloud', { hoursAgo, leadId, phoneNumberId: metaConfig.metaPhoneNumberId });
           await supabase.from('lead_messages').update({
             estado: 'ERRO',
             erro_detalhe: 'Fora da janela de 24h do Meta Cloud. Use um template aprovado para iniciar a conversa.',
