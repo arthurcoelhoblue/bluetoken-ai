@@ -1,27 +1,25 @@
 
 
-## Problema
+## Plano: Resolver "Failed to fetch dynamically imported module" definitivamente
 
-O hook `useScreenPermissions.ts` busca a atribuição do usuário com `.maybeSingle()`:
+### Causa raiz
 
-```typescript
-const { data: assignment } = await supabase
-  .from('user_access_assignments')
-  .select('access_profile_id, permissions_override')
-  .eq('user_id', user!.id)
-  .maybeSingle();
-```
+O app usa `lazy()` em 70+ páginas. Quando o Vite reconstrói (após edição ou deploy), os hashes dos chunks JS mudam. Se o navegador ainda tem referência aos chunks antigos em memória, o import falha com "Failed to fetch dynamically imported module". Isso acontece tanto no preview de desenvolvimento quanto no app publicado após um novo deploy.
 
-Douglas tem 3 linhas em `user_access_assignments` (uma por empresa). O `.maybeSingle()` retorna erro quando há mais de 1 resultado, fazendo `assignment = null`. Como sua role é READONLY (não ADMIN), ele cai no fallback legado que só libera `dashboard:read`.
+### Solução
 
-## Correção
+Adicionar um **error handler global** no `App.tsx` que intercepta erros de carregamento de chunk e faz reload automático da página (uma única vez, para evitar loops infinitos).
 
-**`src/hooks/useScreenPermissions.ts`**: trocar `.maybeSingle()` por `.limit(1).maybeSingle()` para pegar a primeira atribuição válida.
+### Mudança
 
-Além disso, seria prudente também alterar a role do Douglas de READONLY para ADMIN no banco, já que ele é super administrador. Mas a correção do `.limit(1)` resolve o problema imediato para qualquer usuário com múltiplas empresas.
+**`src/App.tsx`** -- Envolver o `<Suspense>` com um `ErrorBoundary` que detecta erros de chunk e recarrega:
+
+- Criar um componente `ChunkErrorBoundary` (ou reutilizar o `ErrorBoundary` existente) que, ao capturar um erro cujo `message` contém "Failed to fetch dynamically imported module" ou "Loading chunk", executa `window.location.reload()` automaticamente
+- Usar `sessionStorage` com uma flag para evitar loop infinito de reloads (máximo 1 reload por erro)
 
 | Arquivo | Mudança |
 |---------|---------|
-| `useScreenPermissions.ts` | Adicionar `.limit(1)` antes de `.maybeSingle()` |
-| Banco (SQL) | Atualizar role do Douglas de READONLY para ADMIN |
+| `src/App.tsx` | Adicionar `ChunkErrorBoundary` em torno do `Suspense` que faz auto-reload em chunk errors |
+
+Isso resolve o problema tanto no preview quanto em produção, sem afetar a experiência do usuário (o reload é instantâneo e transparente).
 
