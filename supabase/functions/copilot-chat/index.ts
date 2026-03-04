@@ -245,7 +245,18 @@ serve(async (req) => {
       }
     })();
 
-    const [contextBlock, coachingBlock] = await Promise.all([enrichmentPromise, coachingPromise]);
+    // Wrap enrichment in 8s timeout to prevent hanging
+    const enrichmentWithTimeout = Promise.race([
+      enrichmentPromise,
+      new Promise<string>((resolve) =>
+        setTimeout(() => {
+          log.warn('enrichment timeout (8s), continuing with partial context');
+          resolve('⚠️ Contexto parcial: tempo limite excedido ao carregar dados do CRM.');
+        }, 8000)
+      ),
+    ]);
+
+    const [contextBlock, coachingBlock] = await Promise.all([enrichmentWithTimeout, coachingPromise]);
 
     const systemContent = contextBlock
       ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}${coachingBlock}`
