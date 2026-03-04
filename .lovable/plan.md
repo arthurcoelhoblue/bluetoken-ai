@@ -1,42 +1,40 @@
 
 
-## Problema
+## Diagnóstico
 
-O `useGrabScroll` já existe mas está sendo bloqueado porque a exclusão `[data-sortable]` e `.deal-card` cobre praticamente toda a superfície visível do board. Na prática, só funciona em pequenos espaços entre colunas. O usuário quer poder clicar **em qualquer lugar** do board e arrastar horizontalmente para navegar o carrossel.
+O problema é que o `useSortable` do dnd-kit espalha `{...listeners}` diretamente no Card (linha 67 do DealCard.tsx). Esses listeners capturam `pointerdown` no card e ativam o sensor do dnd-kit, que então toma controle total do ponteiro via `setPointerCapture`. Isso impede que o `onMouseMove` do grab scroll receba os eventos subsequentes -- o dnd-kit "rouba" o ponteiro antes do hook ter chance de detectar o eixo horizontal.
+
+O `onMouseDown` do hook até dispara (porque mousedown e pointerdown são eventos separados), mas o `onMouseMove` no window nunca recebe os movimentos porque o dnd-kit capturou o ponteiro.
 
 ## Solução
 
-Permitir que o grab scroll funcione **em toda a superfície do board**, inclusive sobre cards, diferenciando a intenção do usuário pelo **eixo de movimento**:
+Precisamos interceptar **antes** do dnd-kit capturar o ponteiro. A abordagem:
 
-- **Movimento horizontal** (dx > dy) → scroll do carrossel (grab scroll)
-- **Movimento vertical ou sobre card** → dnd-kit drag (mover deal entre colunas)
+1. **No `useGrabScroll.ts`**: Adicionar listener de `pointerdown` e `pointermove` (em capture phase) além dos mouse events. No `pointermove` em capture, quando o eixo horizontal for detectado, chamar `e.stopPropagation()` e `e.preventDefault()` para impedir o dnd-kit de ativar.
 
-### Alterações
+2. **No `DealCard.tsx`**: Não precisa mudar -- os listeners do dnd-kit são `onPointerDown`. O hook intercepta no nível do container em capture phase, que executa antes dos handlers dos filhos.
 
-**1. `src/hooks/useGrabScroll.ts`**
+### Alteração principal: `src/hooks/useGrabScroll.ts`
 
-- Remover `.deal-card` e `[data-sortable]` da lista de exclusão (manter apenas `button, a, input, textarea, select, [role="button"]`)
-- Adicionar lógica de "lock de eixo": nos primeiros pixels de movimento, determinar se a intenção é horizontal (scroll) ou vertical (ignorar e deixar dnd-kit assumir)
-- Quando o eixo horizontal é detectado, chamar `e.preventDefault()` e `e.stopPropagation()` para impedir que o dnd-kit interprete como drag de card
+- Trocar de `mousedown/mousemove/mouseup` para `pointerdown/pointermove/pointerup`
+- Registrar `pointerdown` no elemento scroll container em **capture phase**
+- Registrar `pointermove` no **window em capture phase** 
+- Quando eixo horizontal for detectado no `pointermove`, chamar `e.stopImmediatePropagation()` para impedir o dnd-kit de processar o evento
+- Manter touch handlers como fallback para dispositivos que não suportam pointer events
 
-**2. `src/components/pipeline/KanbanBoard.tsx`**
-
-- Aumentar o `distance` do `PointerSensor` de 5 para 8px, dando mais margem para o grab scroll "ganhar" a corrida de ativação
-- Passar o `scrollRef` para o hook com configuração de threshold (ex: 8px) para determinar o eixo
-
-### Lógica de detecção de eixo
+### Detalhe técnico
 
 ```text
-mousedown → registra posição inicial
-mousemove (primeiros 8px):
-  ├─ |dx| > |dy| → LOCK horizontal → grab scroll ativo, bloqueia dnd-kit
-  └─ |dy| >= |dx| → RELEASE → para de interceptar, dnd-kit assume normalmente
+pointerdown (capture, container) → registra posição
+pointermove (capture, window):
+  ├─ primeiros 8px: detecta eixo
+  │   ├─ horizontal → lock, stopImmediatePropagation, scrollLeft
+  │   └─ vertical → release, não interfere
+  └─ após lock horizontal → scroll + block propagation
+pointerup → reset
 ```
-
-Isso permite que o usuário arraste horizontalmente de qualquer ponto do board para navegar, e arraste verticalmente (ou sobre um card) para mover deals entre colunas.
 
 | Arquivo | Ação |
 |---------|------|
-| `src/hooks/useGrabScroll.ts` | Remover exclusões de cards, adicionar lock de eixo horizontal |
-| `src/components/pipeline/KanbanBoard.tsx` | Aumentar distance do PointerSensor para 8px |
+| `src/hooks/useGrabScroll.ts` | Migrar para pointer events em capture phase para interceptar antes do dnd-kit |
 
