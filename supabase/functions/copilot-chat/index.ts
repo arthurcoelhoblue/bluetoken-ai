@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
