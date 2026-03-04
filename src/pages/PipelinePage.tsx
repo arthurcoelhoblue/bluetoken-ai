@@ -6,6 +6,7 @@ import { usePipelines } from '@/hooks/usePipelines';
 import { useDeals, useKanbanData } from '@/hooks/useDeals';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
@@ -58,8 +59,8 @@ function PipelineContent() {
   }, [trackPageView]);
 
   const { activeCompany } = useCompany();
-  const { user, roles } = useAuth();
-  const isAdmin = roles.includes('ADMIN');
+  const { user } = useAuth();
+  const isAdmin = useIsAdmin();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
   const { data: owners = [] } = useOwnerOptions();

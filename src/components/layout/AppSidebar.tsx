@@ -60,6 +60,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/auth/RoleBadge';
 import { CompanySwitcher } from './CompanySwitcher';
 import { useScreenPermissions } from '@/hooks/useScreenPermissions';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import type { UserRole } from '@/types/auth';
 
 interface NavItem {
@@ -152,7 +153,7 @@ export function AppSidebar() {
   const { profile, roles, signOut } = useAuth();
   const { data: permissions } = useScreenPermissions();
   const collapsed = state === 'collapsed';
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';

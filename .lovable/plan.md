@@ -1,41 +1,87 @@
 
 
-## Diagnóstico
+## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
 
-O problema é claro: existem **dois sistemas de permissão** no código, e eles estão em conflito.
+Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
 
-1. **Sistema legado** — tabela `user_roles` com roles como `READONLY`, `CLOSER`, `ADMIN`
-2. **Sistema novo** — tabela `access_profiles` + `user_access_assignments` (os "grupos" que você configurou)
+### O Que Está Acontecendo
 
-O hook `useScreenPermissions` usa corretamente o sistema novo (perfis de acesso). Porém, **vários componentes ainda verificam o sistema legado** diretamente com `hasRole('CLOSER')` ou `roles.includes('ADMIN')`.
+1. Usuário clica em "Qual o gargalo atual do pipeline?"
+2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
+3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
+4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
+5. O streaming funciona por ~1 segundo, depois **para por 15s**
+6. O **watchdog de inatividade de 15s** aborta a conexão
+7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
 
-Resultado: mesmo que o Rodrigo esteja no grupo "Closer" com todas as permissões liberadas, o código verifica `hasRole('CLOSER')` na tabela `user_roles` — onde ele tem `READONLY`. Isso torna ele somente leitura em várias telas.
+### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
 
-## Correção
+**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
 
-Substituir todas as verificações legadas (`hasRole('CLOSER')`, `roles.includes('ADMIN')`) pelas funções do sistema novo de perfis de acesso.
+Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
 
-### Arquivos afetados
+**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
+```typescript
+const isSendingRef = useRef(false);
 
-**Críticos (causam o comportamento "somente leitura"):**
+const sendMessage = async (content: string) => {
+  if (!content.trim() || isSendingRef.current) return;
+  isSendingRef.current = true;
+  // ... resto da lógica
+  // no finally:
+  isSendingRef.current = false;
+};
+```
 
-| Arquivo | Código atual | Substituição |
-|---------|-------------|-------------|
-| `src/pages/LeadDetail.tsx` | `isAdmin \|\| hasRole('CLOSER')` | `useCanEdit('contatos')` |
-| `src/pages/CadenceRunDetail.tsx` | `isAdmin \|\| hasRole('CLOSER')` | `useCanEdit('leads_cadencia')` |
-| `src/components/leads/ContactIssuesCard.tsx` | `isAdmin \|\| hasRole('CLOSER')` | `useCanEdit('contatos')` |
+### Bug 2: ALTO — Watchdog de 15s muito agressivo
 
-**Alinhamento admin (usar `useIsAdmin()` unificado):**
+**Arquivo:** `CopilotPanel.tsx`, linha 193
 
-| Arquivo | Código atual | Substituição |
-|---------|-------------|-------------|
-| `src/pages/PipelinePage.tsx` | `roles.includes('ADMIN')` | `useIsAdmin()` |
-| `src/pages/CadencesList.tsx` | `roles.includes('ADMIN')` | `useIsAdmin()` |
-| `src/pages/CadenceDetail.tsx` | `roles.includes('ADMIN')` | `useIsAdmin()` |
-| `src/components/layout/AppSidebar.tsx` | `roles.includes('ADMIN')` | `useIsAdmin()` |
-| `src/components/settings/EditUserDialog.tsx` | `roles.includes('ADMIN')` | `useIsAdmin()` |
+O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
 
-### Resultado esperado
+**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
 
-Após a mudança, as permissões do usuário serão determinadas **exclusivamente pelo perfil de acesso atribuído** (o grupo). Se o Rodrigo está no grupo "Closer" com edição liberada em Pipeline, Contatos, Cadências etc., ele terá acesso de edição nessas telas — independente do que está na tabela `user_roles`.
+```typescript
+const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
+```
+
+E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+
+```typescript
+catch (err) {
+  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
+    // Auto-retry sem streaming
+    const fallbackResp = await fetch(url, { 
+      body: JSON.stringify({ ...payload, stream: false }) 
+    });
+    // processar resposta completa
+  }
+}
+```
+
+### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
+
+**Arquivo:** `CopilotPanel.tsx`, linha 367
+
+As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
+
+**Correção:** Usar `react-markdown` (já instalado no projeto):
+```tsx
+import ReactMarkdown from 'react-markdown';
+// ...
+<div className="prose prose-sm dark:prose-invert max-w-none">
+  <ReactMarkdown>{msg.content}</ReactMarkdown>
+</div>
+```
+
+### Plano de Correção
+
+| # | Arquivo | Mudança |
+|---|---------|---------|
+| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
+| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
+| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
+| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
+
+Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
 

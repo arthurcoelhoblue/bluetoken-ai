@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { editUserSchema, type EditUserFormData } from '@/schemas/users';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 interface Props {
   open: boolean;
@@ -30,7 +31,7 @@ export function EditUserDialog({
   currentIsVendedor, currentIsActive, currentGestorId, currentRamal,
 }: Props) {
   const { roles } = useAuth();
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],

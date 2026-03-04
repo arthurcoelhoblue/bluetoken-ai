@@ -59,13 +59,14 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useDealPipelineStages } from '@/hooks/useDealDetail';
 import { toast } from 'sonner';
 
 function CadencesListContent() {
   const navigate = useNavigate();
-  const { roles } = useAuth();
+  const isAdmin = useIsAdmin();
   const [filters, setFilters] = useState<CadencesFilters>({});
   const [searchInput, setSearchInput] = useState('');
   const [showFilters, setShowFilters] = useState(false);
@@ -98,7 +99,7 @@ function CadencesListContent() {
     filters.ativo !== undefined ||
     filters.searchTerm;
 
-  const isAdmin = roles.includes('ADMIN');
+  // isAdmin is now from useIsAdmin() above
 
   return (
     <div className="container mx-auto px-4 py-6">
