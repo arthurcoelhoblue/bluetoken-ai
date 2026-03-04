@@ -1,87 +1,85 @@
 
 
-## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
+# Avaliação da Auditoria — O que faz sentido e o que não faz
 
-Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
+## Itens já corrigidos (não precisam de ação)
 
-### O Que Está Acontecendo
+**#1 CORS** — Já corrigido nesta sessão. O `ameliacrm.com.br` já está no `ALLOWED_ORIGINS` e todas as funções foram redeployadas.
 
-1. Usuário clica em "Qual o gargalo atual do pipeline?"
-2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
-3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
-4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
-5. O streaming funciona por ~1 segundo, depois **para por 15s**
-6. O **watchdog de inatividade de 15s** aborta a conexão
-7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
+**#9 SENTRY_DSN_EDGE** — Já está configurado nos secrets. A auditoria está errada neste ponto.
 
-### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
+**#3 ZADARMA_API_KEY** — Não está nos secrets, mas isso é esperado se a telefonia não está ativa para todos os tenants. Não é um erro crítico, é uma configuração pendente. Não vou mexer nisso.
 
-**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
+---
 
-Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
+## Itens que NÃO fazem sentido
 
-**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
-```typescript
-const isSendingRef = useRef(false);
+**#2 verify_jwt = true** — A auditoria está **incorreta** aqui. O projeto usa signing-keys do Supabase Cloud, e `verify_jwt = true` **não funciona** com signing-keys (conforme documentação). O padrão correto é exatamente o que está implementado: `verify_jwt = false` no config.toml + validação manual via `getUser()` ou `getClaims()` dentro do código. Mudar para `true` quebraria TODAS as funções.
 
-const sendMessage = async (content: string) => {
-  if (!content.trim() || isSendingRef.current) return;
-  isSendingRef.current = true;
-  // ... resto da lógica
-  // no finally:
-  isSendingRef.current = false;
-};
-```
+**#6 gemini-3-pro-preview "inexistente"** — A auditoria está **incorreta**. O modelo `gemini-3-pro-preview` existe e é um modelo válido da Google (é o preview do Gemini 3 Pro). O código está correto.
 
-### Bug 2: ALTO — Watchdog de 15s muito agressivo
+**#13 retry: 2 mascarando erros** — Isso é comportamento padrão e saudável. Queries de rede falham por razões transitórias. Remover retry pioraria a experiência do usuário. Não faz sentido mexer.
 
-**Arquivo:** `CopilotPanel.tsx`, linha 193
+**#18 .env commitado** — O `.env` é gerenciado automaticamente pelo Lovable Cloud e não contém secrets. Contém apenas URLs públicas e a anon key (que é pública por design). Não é um problema de segurança.
 
-O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
+**#11 Redirects legados** — Não é um problema funcional. São redirects de migração que funcionam corretamente. Baixa prioridade, não vale o esforço agora.
 
-**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
+**#14 Google Calendar env sem fallback** — O erro 500 é retornado corretamente quando as variáveis não estão configuradas. Não é um problema real — as variáveis estão nos secrets.
 
-```typescript
-const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
-```
+---
 
-E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+## Itens que FAZEM sentido — Plano de implementação
 
-```typescript
-catch (err) {
-  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
-    // Auto-retry sem streaming
-    const fallbackResp = await fetch(url, { 
-      body: JSON.stringify({ ...payload, stream: false }) 
-    });
-    // processar resposta completa
-  }
-}
-```
+### Fase 1: Quick wins (baixo risco, alto impacto)
 
-### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
+**#4 — Cliente Supabase duplicado no cadence-runner**
+- Arquivo: `supabase/functions/cadence-runner/index.ts` linha 449
+- Substituir `const supabaseCheck = createServiceClient()` por usar o parâmetro `supabase` já passado à função `dispararMensagem`
 
-**Arquivo:** `CopilotPanel.tsx`, linha 367
+**#8 — FALLBACK_ORIGIN apontando para domínio legado**
+- Arquivo: `supabase/functions/_shared/cors.ts` linha 6
+- Mudar `FALLBACK_ORIGIN` de `"https://sdrgrupobue.lovable.app"` para `"https://ameliacrm.com.br"` (o domínio de produção real)
 
-As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
+**#12 — Dois Toasters simultâneos**
+- Remover `<Toaster />` (Radix) do `App.tsx`, manter apenas `<Sonner />`
+- Migrar os 3 arquivos que ainda usam `useToast` (Radix) para `toast()` do Sonner:
+  - `src/components/whatsapp/WhatsAppTestButton.tsx`
+  - `src/pages/MonitorSgtEvents.tsx`
+  - `src/hooks/useCadenceEditor.ts`
 
-**Correção:** Usar `react-markdown` (já instalado no projeto):
-```tsx
-import ReactMarkdown from 'react-markdown';
-// ...
-<div className="prose prose-sm dark:prose-invert max-w-none">
-  <ReactMarkdown>{msg.content}</ReactMarkdown>
-</div>
-```
+### Fase 2: Resiliência (médio esforço)
 
-### Plano de Correção
+**#7 — COST_TABLE duplicada no copilot-chat**
+- O `copilot-chat/index.ts` tem sua própria `COST_TABLE` local. Importar a do `_shared/ai-provider.ts` em vez de duplicar. (Porém, o copilot-chat faz streaming próprio com Claude Haiku direto, sem usar `callAI`, então a COST_TABLE local serve um propósito — vou consolidar exportando do shared.)
 
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
-| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
-| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
-| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
+**#16 — enrichGeralContext sem timeout**
+- Envolver o `enrichmentPromise` em `Promise.race` com timeout de 8s no `copilot-chat/index.ts`, similar ao que já é feito com `coachingPromise` (4s)
 
-Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
+**#17 — Lock otimista de 5 min no cadence-runner**
+- Aumentar o lock de 5 para 10 minutos e adicionar um guard no início da execução que verifica se a run já foi processada (idempotency check)
+
+### Fase 3: UX (baixo impacto)
+
+**#10 — SMS como código morto**
+- Adicionar aviso visual no editor de cadências quando o canal SMS é selecionado, informando que não está disponível
+
+**#15 — copilot-chat sem validação de auth**
+- A função já faz `getUser()` mas prossegue com `userId = undefined` se falhar. Adicionar retorno 401 explícito quando o token é inválido.
+
+---
+
+## Resumo: 9 itens para implementar, 7 descartados
+
+| # | Item | Ação | Esforço |
+|---|------|------|---------|
+| 4 | Supabase client duplicado | Remover instanciação extra | 2 min |
+| 8 | FALLBACK_ORIGIN legado | Atualizar para ameliacrm.com.br | 1 min |
+| 12 | Dois Toasters | Remover Radix, migrar 3 arquivos para Sonner | 10 min |
+| 7 | COST_TABLE duplicada | Exportar do shared, importar no copilot-chat | 5 min |
+| 16 | enrichment sem timeout | Adicionar Promise.race 8s | 3 min |
+| 17 | Lock otimista curto | Aumentar para 10min + idempotency check | 5 min |
+| 10 | SMS código morto | Aviso no editor de cadências | 5 min |
+| 15 | copilot-chat sem auth guard | Retornar 401 em token inválido | 2 min |
+
+Todas as edge functions modificadas serão redeployadas ao final.
 
