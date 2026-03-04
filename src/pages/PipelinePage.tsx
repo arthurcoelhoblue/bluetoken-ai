@@ -180,8 +180,16 @@ function PipelineContent() {
               wonLost={wonLost}
               isLoading={dealsLoading}
               onDealClick={handleDealClick}
+              onTransferClick={() => setShowTransfer(true)}
             />
           </div>
+
+          <TransferDealsDialog
+            open={showTransfer}
+            onOpenChange={setShowTransfer}
+            deals={deals ?? []}
+            owners={owners}
+          />
 
           <DealDetailSheet
             dealId={selectedDealId}
