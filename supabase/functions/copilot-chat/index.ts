@@ -264,7 +264,7 @@ serve(async (req) => {
     // STREAMING — Claude Haiku via SSE
     // ========================================
     const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (ANTHROPIC_KEY) {
+    if (ANTHROPIC_KEY && streamRequested !== false) {
       try {
         const startTime = Date.now();
         // Timeout de 20s para Anthropic API
