@@ -66,7 +66,7 @@ import { toast } from 'sonner';
 
 function CadencesListContent() {
   const navigate = useNavigate();
-  const { roles } = useAuth();
+  const isAdmin = useIsAdmin();
   const [filters, setFilters] = useState<CadencesFilters>({});
   const [searchInput, setSearchInput] = useState('');
   const [showFilters, setShowFilters] = useState(false);
