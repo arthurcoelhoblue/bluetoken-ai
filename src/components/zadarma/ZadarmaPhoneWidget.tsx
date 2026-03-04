@@ -279,7 +279,7 @@ export function ZadarmaPhoneWidget() {
     );
   }
 
-  const isInCall = phoneState === 'dialing' || phoneState === 'active' || phoneState === 'ended';
+  const isInCall = phoneState === 'dialing' || phoneState === 'ringing' || phoneState === 'active' || phoneState === 'ended';
   const showCoaching = maximized && phoneState === 'active';
 
   // Call info shared between compact and maximized
