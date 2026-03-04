@@ -446,9 +446,7 @@ async function dispararMensagem(
       return { success: false, error: error instanceof Error ? error.message : 'Erro desconhecido' };
     }
   } else if (canal === 'EMAIL') {
-    const supabaseCheck = createServiceClient();
-    
-    const { data: emailSetting } = await supabaseCheck
+    const { data: emailSetting } = await supabase
       .from('system_settings')
       .select('value')
       .eq('category', 'integrations')
