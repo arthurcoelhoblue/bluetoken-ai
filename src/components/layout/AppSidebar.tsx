@@ -153,6 +153,7 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { profile, roles, signOut } = useAuth();
   const { data: permissions } = useScreenPermissions();
+  const { data: accessProfileName } = useUserAccessProfile();
   const collapsed = state === 'collapsed';
   const isAdmin = useIsAdmin();
 
