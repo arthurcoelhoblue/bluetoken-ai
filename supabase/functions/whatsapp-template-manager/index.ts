@@ -152,11 +152,43 @@ serve(async (req) => {
         return json({ error: 'name, category, components required' }, 400);
       }
 
+      // Normalize components: convert named variables to numbered format
+      const normalizedComponents = (components as Array<Record<string, unknown>>).map((comp: Record<string, unknown>) => {
+        if (comp.type !== 'BODY' || typeof comp.text !== 'string') return comp;
+
+        let rawText = comp.text as string;
+
+        // Meta doesn't allow variables at the very start or end
+        if (/^\{\{/.test(rawText)) {
+          rawText = 'Olá ' + rawText;
+        }
+        if (/\{\{[^}]+\}\}\s*$/.test(rawText)) {
+          rawText = rawText.trimEnd() + '.';
+        }
+
+        const varMap: Record<string, number> = {};
+        let varCounter = 0;
+        const bodyText = rawText.replace(
+          /\{\{(\w+)\}\}/g,
+          (_m: string, varName: string) => {
+            // If already numeric, keep as-is but track
+            if (!(varName in varMap)) { varCounter++; varMap[varName] = varCounter; }
+            return `{{${varMap[varName]}}}`;
+          }
+        );
+        const exampleValues = Array(varCounter).fill('Cliente');
+        return {
+          ...comp,
+          text: bodyText,
+          ...(varCounter > 0 ? { example: { body_text: [exampleValues] } } : {}),
+        };
+      });
+
       const metaPayload = {
         name,
         category,
         language: language || 'pt_BR',
-        components,
+        components: normalizedComponents,
       };
 
       const res = await fetch(
