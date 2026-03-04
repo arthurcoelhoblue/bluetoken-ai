@@ -1,23 +1,30 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
-import { UserRole } from '@/types/auth';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
+import { useScreenPermissions } from '@/hooks/useScreenPermissions';
 import { Loader2 } from 'lucide-react';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRoles?: UserRole[];
+  /** Screen key from SCREEN_REGISTRY — used to check view permission */
+  screenKey?: string;
+  /** @deprecated Use screenKey instead. Kept only for backward compat. */
+  requiredRoles?: string[];
   requiredPermission?: string;
 }
 
 export function ProtectedRoute({ 
   children, 
-  requiredRoles, 
+  screenKey,
+  requiredRoles,
   requiredPermission 
 }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, hasRole, hasPermission, profile } = useAuth();
+  const { isAuthenticated, isLoading, hasPermission, profile } = useAuth();
   const location = useLocation();
+  const isAdmin = useIsAdmin();
+  const { data: permissions, isLoading: permissionsLoading } = useScreenPermissions();
 
-  if (isLoading) {
+  if (isLoading || permissionsLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
@@ -46,15 +53,19 @@ export function ProtectedRoute({
     );
   }
 
-  // Verifica papéis requeridos
-  if (requiredRoles && requiredRoles.length > 0) {
-    const hasRequiredRole = requiredRoles.some(role => hasRole(role));
-    if (!hasRequiredRole) {
+  // Admin always has full access
+  if (isAdmin) {
+    return <>{children}</>;
+  }
+
+  // Check screen-level permission from access profiles
+  if (screenKey && permissions) {
+    if (!permissions[screenKey]?.view) {
       return <Navigate to="/unauthorized" replace />;
     }
   }
 
-  // Verifica permissão requerida
+  // Verifica permissão requerida (legacy)
   if (requiredPermission && !hasPermission(requiredPermission)) {
     return <Navigate to="/unauthorized" replace />;
   }

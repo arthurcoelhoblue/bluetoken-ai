@@ -37,10 +37,8 @@ import { useIsAdmin } from '@/hooks/useIsAdmin';
 function CadenceDetailContent() {
   const { cadenceId } = useParams<{ cadenceId: string }>();
   const navigate = useNavigate();
-  const { roles } = useAuth();
-
   const { cadence, steps, metrics, isLoading, error } = useCadence(cadenceId);
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   if (isLoading) {
     return (
