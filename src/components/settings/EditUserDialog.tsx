@@ -12,6 +12,7 @@ import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { editUserSchema, type EditUserFormData } from '@/schemas/users';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 interface Props {
   open: boolean;
