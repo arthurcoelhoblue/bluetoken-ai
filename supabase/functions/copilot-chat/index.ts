@@ -147,10 +147,16 @@ serve(async (req) => {
     }
 
     const token = authHeader.replace('Bearer ', '');
-    const { data: userData } = await supabase.auth.getUser(token);
-    userId = userData?.user?.id;
+    
+    // Use user-scoped client with getClaims for signing-keys compatibility
+    const userSupabase = createClient(envConfig.SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || envConfig.SUPABASE_SERVICE_ROLE_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
+    userId = claimsData?.claims?.sub as string | undefined;
 
-    if (!userId) {
+    if (claimsError || !userId) {
+      log.warn('Token inválido', { error: String(claimsError) });
       return new Response(
         JSON.stringify({ error: 'Token inválido ou expirado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
