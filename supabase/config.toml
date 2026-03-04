@@ -171,3 +171,6 @@ verify_jwt = false
 [functions.lp-lead-ingest]
 verify_jwt = false
 
+[functions.google-calendar-auth]
+verify_jwt = false
+
