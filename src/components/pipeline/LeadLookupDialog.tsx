@@ -207,14 +207,14 @@ export function LeadLookupDialog({ open, onOpenChange, dealId, onContinueToDeal 
           </div>
         ) : null}
 
-        <DialogFooter className="flex-col gap-2 sm:flex-col">
+        <DialogFooter className="flex-col items-center gap-3 sm:flex-col pt-2">
           {result?.hasConversation ? (
             <>
-              <Button onClick={handleGoToConversation} className="w-full gap-2">
+              <Button onClick={handleGoToConversation} className="w-full max-w-xs gap-2">
                 <ExternalLink className="h-4 w-4" />
                 Ir para Conversa
               </Button>
-              <Button variant="outline" onClick={() => { onOpenChange(false); onContinueToDeal(); }} className="w-full">
+              <Button variant="outline" onClick={() => { onOpenChange(false); onContinueToDeal(); }} className="w-full max-w-xs">
                 Abrir Deal
               </Button>
             </>
@@ -223,7 +223,7 @@ export function LeadLookupDialog({ open, onOpenChange, dealId, onContinueToDeal 
               <Button
                 onClick={handleTriggerAmelia}
                 disabled={triggeringAmelia || !result?.contactTelefone}
-                className="w-full gap-2"
+                className="w-full max-w-xs gap-2"
               >
                 {triggeringAmelia ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -232,7 +232,7 @@ export function LeadLookupDialog({ open, onOpenChange, dealId, onContinueToDeal 
                 )}
                 Amélia Iniciar Qualificação
               </Button>
-              <Button variant="outline" onClick={() => { onOpenChange(false); onContinueToDeal(); }} className="w-full">
+              <Button variant="outline" onClick={() => { onOpenChange(false); onContinueToDeal(); }} className="w-full max-w-xs">
                 Abrir Deal Direto
               </Button>
             </>
