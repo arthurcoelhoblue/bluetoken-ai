@@ -1,40 +1,69 @@
 
 
-## Diagnóstico
+## Diagnóstico Completo
 
-O problema é que o `useSortable` do dnd-kit espalha `{...listeners}` diretamente no Card (linha 67 do DealCard.tsx). Esses listeners capturam `pointerdown` no card e ativam o sensor do dnd-kit, que então toma controle total do ponteiro via `setPointerCapture`. Isso impede que o `onMouseMove` do grab scroll receba os eventos subsequentes -- o dnd-kit "rouba" o ponteiro antes do hook ter chance de detectar o eixo horizontal.
+Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
 
-O `onMouseDown` do hook até dispara (porque mousedown e pointerdown são eventos separados), mas o `onMouseMove` no window nunca recebe os movimentos porque o dnd-kit capturou o ponteiro.
+### Problema 1: Scroll horizontal da pagina
+
+A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
+
+```text
+AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
+  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
+       └─ flex-1 min-h-0 overflow-hidden  ← ok
+            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
+                 └─ scrollRef: overflow-auto  ← scroll interno ok
+                      └─ flex gap-4 minWidth:max-content  ← expande largura
+```
+
+O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
+
+### Problema 2: Grab scroll não funciona
+
+O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
+
+O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
 
 ## Solução
 
-Precisamos interceptar **antes** do dnd-kit capturar o ponteiro. A abordagem:
+### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
 
-1. **No `useGrabScroll.ts`**: Adicionar listener de `pointerdown` e `pointermove` (em capture phase) além dos mouse events. No `pointermove` em capture, quando o eixo horizontal for detectado, chamar `e.stopPropagation()` e `e.preventDefault()` para impedir o dnd-kit de ativar.
+- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
+- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
 
-2. **No `DealCard.tsx`**: Não precisa mudar -- os listeners do dnd-kit são `onPointerDown`. O hook intercepta no nível do container em capture phase, que executa antes dos handlers dos filhos.
+### Arquivo 2: `src/components/layout/AppLayout.tsx`
 
-### Alteração principal: `src/hooks/useGrabScroll.ts`
+- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
 
-- Trocar de `mousedown/mousemove/mouseup` para `pointerdown/pointermove/pointerup`
-- Registrar `pointerdown` no elemento scroll container em **capture phase**
-- Registrar `pointermove` no **window em capture phase** 
-- Quando eixo horizontal for detectado no `pointermove`, chamar `e.stopImmediatePropagation()` para impedir o dnd-kit de processar o evento
-- Manter touch handlers como fallback para dispositivos que não suportam pointer events
+### Arquivo 3: `src/hooks/useGrabScroll.ts`
 
-### Detalhe técnico
+- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
+- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
+- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
+- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
+
+A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
 
 ```text
-pointerdown (capture, container) → registra posição
+pointerdown (capture, container):
+  ├─ É sobre botão/link? → ignora
+  └─ Senão → stopPropagation + registra posição
+                (dnd-kit NÃO recebe pointerdown)
+
 pointermove (capture, window):
-  ├─ primeiros 8px: detecta eixo
-  │   ├─ horizontal → lock, stopImmediatePropagation, scrollLeft
-  │   └─ vertical → release, não interfere
-  └─ após lock horizontal → scroll + block propagation
-pointerup → reset
+  ├─ < 8px → aguarda
+  ├─ horizontal → lock, scroll, stopImmediatePropagation
+  └─ vertical → release, re-dispatch pointerdown sintético no target
+                  (dnd-kit AGORA recebe e pode iniciar drag)
+
+pointerup (capture, window):
+  └─ reset
 ```
 
-| Arquivo | Ação |
-|---------|------|
-| `src/hooks/useGrabScroll.ts` | Migrar para pointer events em capture phase para interceptar antes do dnd-kit |
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
+| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
+| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
 
