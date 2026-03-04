@@ -269,7 +269,7 @@ serve(async (req) => {
         const startTime = Date.now();
         // Timeout de 20s para Anthropic API
         const anthropicAbort = new AbortController();
-        const anthropicTimeout = setTimeout(() => anthropicAbort.abort(), 20000);
+        const anthropicTimeout = setTimeout(() => anthropicAbort.abort(), 18000);
 
         const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
