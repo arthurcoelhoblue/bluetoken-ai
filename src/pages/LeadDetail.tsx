@@ -1,7 +1,5 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
-import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useCanEdit } from '@/hooks/useScreenPermissions';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { useLeadDetail } from '@/hooks/useLeadDetail';

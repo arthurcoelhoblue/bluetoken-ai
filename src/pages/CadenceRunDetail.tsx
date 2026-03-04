@@ -4,7 +4,6 @@
 
 import { useParams, useNavigate } from 'react-router-dom';
 import { AppLayout } from '@/components/layout/AppLayout';
-import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { useCanEdit } from '@/hooks/useScreenPermissions';
 import {
   useCadenceRunDetail,
