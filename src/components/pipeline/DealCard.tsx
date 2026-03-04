@@ -4,7 +4,6 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { GlowingEffect } from '@/components/ui/glowing-effect';
 import { DollarSign, Clock, TrendingUp, Sparkles, Bot } from 'lucide-react';
 import type { DealWithRelations, PipelineStage } from '@/types/deal';
 
@@ -62,25 +61,14 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
   const proximaAcao = (deal as DealWithRelations & { proxima_acao_sugerida?: string }).proxima_acao_sugerida ?? null;
 
   return (
-    <div className="relative rounded-lg">
-      <GlowingEffect
-        spread={15}
-        glow
-        disabled={false}
-        proximity={80}
-        inactiveZone={0.5}
-        borderWidth={1.5}
-        blur={4}
-        movementDuration={1}
-      />
-      <Card
-        ref={overlay ? undefined : setNodeRef}
-        style={overlay ? undefined : style}
-        {...(overlay ? {} : { ...attributes, ...listeners })}
-        data-deal-card
-        className={`relative p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
-        onClick={() => onDealClick?.(deal.id)}
-      >
+    <Card
+      ref={overlay ? undefined : setNodeRef}
+      style={overlay ? undefined : style}
+      {...(overlay ? {} : { ...attributes, ...listeners })}
+      data-deal-card
+      className={`p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
+      onClick={() => onDealClick?.(deal.id)}
+    >
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium text-xs leading-tight line-clamp-1">{deal.titulo}</span>
         <div className="flex items-center gap-1 shrink-0 flex-wrap justify-end">
@@ -163,7 +151,6 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
           </p>
         </div>
       )}
-      </Card>
-    </div>
+    </Card>
   );
 }
