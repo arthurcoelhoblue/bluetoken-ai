@@ -39,7 +39,7 @@ export function EmpresaProductsCatalog({ empresaId }: Props) {
       const { data, error } = await supabase
         .from('catalog_products')
         .select('*')
-        .eq('empresa', empresaId)
+        .eq('empresa', empresaId as any)
         .order('nome');
       if (error) throw error;
       return data as CatalogProduct[];
