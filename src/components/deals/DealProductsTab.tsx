@@ -10,6 +10,10 @@ import { DealProposalGenerator } from './DealProposalGenerator';
 interface Props {
   dealId: string;
   pipelineEmpresa: string | null;
+  dealTitulo?: string;
+  contactNome?: string;
+  contactEmail?: string;
+  organizationNome?: string;
 }
 
 function formatBRL(value: number) {
