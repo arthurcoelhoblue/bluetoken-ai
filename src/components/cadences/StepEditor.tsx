@@ -140,6 +140,14 @@ export function StepEditor({
               ))}
             </SelectContent>
           </Select>
+          {step.canal === 'SMS' && (
+            <div className="flex items-start gap-2 p-2 rounded-md bg-warning/10 border border-warning/20 text-xs">
+              <AlertTriangle className="h-4 w-4 text-warning shrink-0 mt-0.5" />
+              <span className="text-muted-foreground">
+                Canal SMS não está disponível no momento. Steps com SMS serão marcados como erro durante a execução.
+              </span>
+            </div>
+          )}
         </div>
 
         {/* Template */}
