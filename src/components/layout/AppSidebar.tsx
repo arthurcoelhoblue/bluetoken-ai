@@ -58,6 +58,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/auth/RoleBadge';
+import { useUserAccessProfile } from '@/hooks/useUserAccessProfile';
 import { CompanySwitcher } from './CompanySwitcher';
 import { useScreenPermissions } from '@/hooks/useScreenPermissions';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
@@ -152,6 +153,7 @@ export function AppSidebar() {
   const navigate = useNavigate();
   const { profile, roles, signOut } = useAuth();
   const { data: permissions } = useScreenPermissions();
+  const { data: accessProfileName } = useUserAccessProfile();
   const collapsed = state === 'collapsed';
   const isAdmin = useIsAdmin();
 
@@ -302,9 +304,15 @@ export function AppSidebar() {
                   <div className="flex flex-col overflow-hidden flex-1 gap-2 ml-1">
                     <span className="text-sm font-semibold truncate leading-none">{profile?.nome || 'Usuário'}</span>
                     <div className="flex gap-1.5">
-                      {roles.slice(0, 2).map(role => (
-                        <RoleBadge key={role} role={role} size="sm" />
-                      ))}
+                      {accessProfileName ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium truncate">
+                          {accessProfileName}
+                        </span>
+                      ) : (
+                        roles.slice(0, 2).map(role => (
+                          <RoleBadge key={role} role={role} size="sm" />
+                        ))
+                      )}
                     </div>
                   </div>
                 )}

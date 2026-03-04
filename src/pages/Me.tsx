@@ -23,9 +23,11 @@ import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
+import { useUserAccessProfile } from '@/hooks/useUserAccessProfile';
 
 function MeContent() {
   const { profile, roles, user } = useAuth();
+  const { data: accessProfileName } = useUserAccessProfile();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -95,9 +97,15 @@ function MeContent() {
                   {profile.email}
                 </CardDescription>
                 <div className="flex flex-wrap gap-2 mt-3">
-                  {roles.map(role => (
-                    <RoleBadge key={role} role={role} size="sm" />
-                  ))}
+                  {accessProfileName ? (
+                    <span className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary font-medium">
+                      {accessProfileName}
+                    </span>
+                  ) : (
+                    roles.map(role => (
+                      <RoleBadge key={role} role={role} size="sm" />
+                    ))
+                  )}
                 </div>
               </div>
             </div>

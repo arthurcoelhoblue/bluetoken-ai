@@ -1,37 +1,87 @@
 
 
-## Problema: Badge "Somente Leitura" e sistema legado
+## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
 
-O Tiago tem `READONLY` na tabela `user_roles` (legada) mas perfil **Administrador** no sistema de access profiles. O badge "Somente Leitura" aparece na sidebar e na página de perfil porque o código exibe roles legadas diretamente.
+Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
 
-Além disso, o `useScreenPermissions` retorna as permissões corretas do perfil Administrador, e o `useIsAdmin()` detecta que ele é admin. A navegação e os botões de edição devem funcionar. O problema visível é o badge enganoso.
+### O Que Está Acontecendo
 
-### Correções
+1. Usuário clica em "Qual o gargalo atual do pipeline?"
+2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
+3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
+4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
+5. O streaming funciona por ~1 segundo, depois **para por 15s**
+6. O **watchdog de inatividade de 15s** aborta a conexão
+7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
 
-**1. Sidebar — Trocar RoleBadge legado por nome do perfil de acesso**
+### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
 
-**Arquivo:** `src/components/layout/AppSidebar.tsx`
-- Remover `RoleBadge` do footer
-- Exibir o nome do perfil de acesso (`Administrador`, `Closer`, etc.) obtido de uma query simples
-- Se não tem perfil, exibir a role legada como fallback
+**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
 
-**2. Página Me — Mostrar perfil de acesso**
+Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
 
-**Arquivo:** `src/pages/Me.tsx`
-- Substituir os `RoleBadge` legados pelo nome do perfil de acesso atribuído
-- Manter roles legadas apenas como informação secundária (ou remover)
+**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
+```typescript
+const isSendingRef = useRef(false);
 
-**3. Remover role READONLY do Tiago na tabela legada**
+const sendMessage = async (content: string) => {
+  if (!content.trim() || isSendingRef.current) return;
+  isSendingRef.current = true;
+  // ... resto da lógica
+  // no finally:
+  isSendingRef.current = false;
+};
+```
 
-Como o sistema migrou para access profiles, a role `READONLY` no `user_roles` é vestigial e causa confusão. Atualizar os dados para que todos os usuários com perfil de acesso atribuído tenham sua role legada alinhada (ou removida).
+### Bug 2: ALTO — Watchdog de 15s muito agressivo
 
-**Opção mais segura:** Usar o insert tool para deletar a role `READONLY` do Tiago (e outros usuários com perfis atribuídos), já que o `has_role` agora verifica `user_access_assignments`.
+**Arquivo:** `CopilotPanel.tsx`, linha 193
 
-### Arquivos envolvidos
+O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
 
-| Arquivo | Ação |
-|---------|------|
-| `src/components/layout/AppSidebar.tsx` | Editar — mostrar nome do perfil de acesso no footer |
-| `src/pages/Me.tsx` | Editar — mostrar perfil de acesso em vez de roles legadas |
-| Dados: `user_roles` | Limpar roles legadas de usuários com access profiles atribuídos |
+**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
+
+```typescript
+const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
+```
+
+E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+
+```typescript
+catch (err) {
+  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
+    // Auto-retry sem streaming
+    const fallbackResp = await fetch(url, { 
+      body: JSON.stringify({ ...payload, stream: false }) 
+    });
+    // processar resposta completa
+  }
+}
+```
+
+### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
+
+**Arquivo:** `CopilotPanel.tsx`, linha 367
+
+As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
+
+**Correção:** Usar `react-markdown` (já instalado no projeto):
+```tsx
+import ReactMarkdown from 'react-markdown';
+// ...
+<div className="prose prose-sm dark:prose-invert max-w-none">
+  <ReactMarkdown>{msg.content}</ReactMarkdown>
+</div>
+```
+
+### Plano de Correção
+
+| # | Arquivo | Mudança |
+|---|---------|---------|
+| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
+| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
+| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
+| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
+
+Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
 
