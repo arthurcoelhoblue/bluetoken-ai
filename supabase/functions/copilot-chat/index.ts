@@ -146,12 +146,11 @@ serve(async (req) => {
       );
     }
 
-    // Use user-scoped client with getUser for token validation
-    const userSupabase = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: claimsError } = await userSupabase.auth.getUser();
-    userId = user?.id;
+    // Validate JWT using getClaims (signing-keys compatible)
+    const anonClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY);
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
+    userId = claimsData?.claims?.sub as string | undefined;
 
     if (claimsError || !userId) {
       log.warn('Token inválido', { error: String(claimsError) });
