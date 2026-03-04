@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { SCREEN_REGISTRY } from '@/config/screenRegistry';
 import { ROLE_PERMISSIONS } from '@/types/auth';
 import type { PermissionsMap, ScreenPermission } from '@/types/accessControl';
@@ -101,14 +102,14 @@ function buildPermissionsFromRoles(userRoles: string[]): PermissionsMap {
 
 export function useCanView(screenKey: string): boolean {
   const { data: permissions } = useScreenPermissions();
-  const { roles } = useAuth();
-  if (roles.includes('ADMIN')) return true;
+  const isAdmin = useIsAdmin();
+  if (isAdmin) return true;
   return permissions?.[screenKey]?.view ?? false;
 }
 
 export function useCanEdit(screenKey: string): boolean {
   const { data: permissions } = useScreenPermissions();
-  const { roles } = useAuth();
-  if (roles.includes('ADMIN')) return true;
+  const isAdmin = useIsAdmin();
+  if (isAdmin) return true;
   return permissions?.[screenKey]?.edit ?? false;
 }
