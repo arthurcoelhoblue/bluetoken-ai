@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { SCREEN_REGISTRY } from '@/config/screenRegistry';
 import { ROLE_PERMISSIONS } from '@/types/auth';
 import type { PermissionsMap, ScreenPermission } from '@/types/accessControl';
