@@ -141,7 +141,7 @@ function PipelineContent() {
   const { columns, wonLost } = useKanbanData(deals, selectedPipeline?.pipeline_stages);
 
   return (
-    <div className="flex flex-col flex-1 h-full min-h-0 overflow-hidden p-4 md:p-6 gap-4 max-h-full">
+    <div className="flex flex-col flex-1 h-full min-h-0 overflow-x-hidden overflow-y-hidden p-4 md:p-6 gap-4 max-h-full">
       <div className="flex items-center gap-3">
         <Kanban className="h-6 w-6 text-primary" />
         <h1 className="text-2xl font-bold">Pipeline</h1>
