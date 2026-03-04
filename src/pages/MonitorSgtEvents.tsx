@@ -87,8 +87,6 @@ function EventoLabel({ evento }: { evento: string }) {
 }
 
 function MonitorSgtEventsContent() {
-  const { toast } = useToast();
-  
   const [filters, setFilters] = useState<SGTEventsFilters>({});
   const [page, setPage] = useState(1);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
