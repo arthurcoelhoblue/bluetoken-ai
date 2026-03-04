@@ -79,6 +79,7 @@ function PipelineContent() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
   const [lookupDealId, setLookupDealId] = useState<string | null>(null);
   const [showLookup, setShowLookup] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
 
   const handleDealClick = (dealId: string) => {
     if (dealFromUrl === dealId) {
