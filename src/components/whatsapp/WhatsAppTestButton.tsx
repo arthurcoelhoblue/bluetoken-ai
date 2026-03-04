@@ -60,18 +60,11 @@ export function WhatsAppTestButton({ leadId, empresa, telefone, nome }: WhatsApp
       setResult(data);
 
       if (data.success) {
-        toast({
-          title: 'Mensagem enviada!',
-          description: data.testMode 
-            ? 'Modo teste: mensagem enviada para número de teste.' 
-            : 'Mensagem enviada com sucesso.',
-        });
+        toast.success(data.testMode 
+          ? 'Modo teste: mensagem enviada para número de teste.' 
+          : 'Mensagem enviada com sucesso.');
       } else {
-        toast({
-          title: 'Erro no envio',
-          description: data.error || 'Falha ao enviar mensagem.',
-          variant: 'destructive',
-        });
+        toast.error(data.error || 'Falha ao enviar mensagem.');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
