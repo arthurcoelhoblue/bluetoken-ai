@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect, useDeferredValue } from 'react';
 import { useGrabScroll } from '@/hooks/useGrabScroll';
 import {
   DndContext,
@@ -45,13 +45,26 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
 
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [visibleRange, setVisibleRange] = useState<[number, number]>([0, 0]);
 
   const updateScrollState = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     setCanScrollLeft(el.scrollLeft > 0);
     setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
-  }, []);
+
+    // Calculate which columns are visible (w-64 = 256px + gap-4 = 16px)
+    const colWidth = 256 + 16;
+    const padding = 24; // px-6
+    const scrollPos = el.scrollLeft;
+    const viewWidth = el.clientWidth;
+    const firstVisible = Math.floor((scrollPos) / colWidth);
+    const lastVisible = Math.min(
+      Math.floor((scrollPos + viewWidth - padding) / colWidth),
+      columns.length - 1
+    );
+    setVisibleRange([Math.max(0, firstVisible), Math.max(0, lastVisible)]);
+  }, [columns.length]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -199,7 +212,34 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
           <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-[5] pointer-events-none" />
         )}
 
-        <div ref={scrollRef} className="overflow-auto h-full" data-grab-area>
+        {/* Column progress dots */}
+        {sortedColumns.length > 0 && (
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 bg-background/80 backdrop-blur-sm rounded-full px-2.5 py-1 border border-border/50 shadow-sm">
+            {sortedColumns.map((col, i) => {
+              const isVisible = i >= visibleRange[0] && i <= visibleRange[1];
+              return (
+                <button
+                  key={col.stage.id}
+                  onClick={() => {
+                    const el = scrollRef.current;
+                    if (!el) return;
+                    const colWidth = 256 + 16;
+                    el.scrollTo({ left: i * colWidth, behavior: 'smooth' });
+                  }}
+                  className={`rounded-full transition-all duration-200 ${
+                    isVisible
+                      ? 'w-4 h-1.5 bg-primary'
+                      : 'w-1.5 h-1.5 bg-muted-foreground/30 hover:bg-muted-foreground/50'
+                  }`}
+                  aria-label={col.stage.nome}
+                  title={col.stage.nome}
+                />
+              );
+            })}
+          </div>
+        )}
+
+        <div ref={scrollRef} className="overflow-auto h-full pb-6" data-grab-area>
           <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
             {sortedColumns.map(col => (
               <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
