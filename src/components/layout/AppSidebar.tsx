@@ -58,6 +58,7 @@ import {
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/auth/RoleBadge';
+import { useUserAccessProfile } from '@/hooks/useUserAccessProfile';
 import { CompanySwitcher } from './CompanySwitcher';
 import { useScreenPermissions } from '@/hooks/useScreenPermissions';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
