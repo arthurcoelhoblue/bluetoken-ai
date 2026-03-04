@@ -59,8 +59,8 @@ function PipelineContent() {
   }, [trackPageView]);
 
   const { activeCompany } = useCompany();
-  const { user, roles } = useAuth();
-  const isAdmin = roles.includes('ADMIN');
+  const { user } = useAuth();
+  const isAdmin = useIsAdmin();
   const [searchParams, setSearchParams] = useSearchParams();
   const { data: pipelines, isLoading: pipelinesLoading } = usePipelines();
   const { data: owners = [] } = useOwnerOptions();

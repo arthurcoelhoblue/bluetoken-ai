@@ -99,7 +99,7 @@ function CadencesListContent() {
     filters.ativo !== undefined ||
     filters.searchTerm;
 
-  const isAdmin = roles.includes('ADMIN');
+  // isAdmin is now from useIsAdmin() above
 
   return (
     <div className="container mx-auto px-4 py-6">

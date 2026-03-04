@@ -60,6 +60,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { RoleBadge } from '@/components/auth/RoleBadge';
 import { CompanySwitcher } from './CompanySwitcher';
 import { useScreenPermissions } from '@/hooks/useScreenPermissions';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import type { UserRole } from '@/types/auth';
 
 interface NavItem {
