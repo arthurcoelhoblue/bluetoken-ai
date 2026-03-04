@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient, SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { createClient, SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
@@ -146,12 +146,11 @@ serve(async (req) => {
       );
     }
 
-    // Use user-scoped client with getUser for token validation
-    const userSupabase = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY, {
-      global: { headers: { Authorization: authHeader } },
-    });
-    const { data: { user }, error: claimsError } = await userSupabase.auth.getUser();
-    userId = user?.id;
+    // Validate JWT using getClaims (signing-keys compatible)
+    const anonClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY);
+    const token = authHeader.replace('Bearer ', '');
+    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
+    userId = claimsData?.claims?.sub as string | undefined;
 
     if (claimsError || !userId) {
       log.warn('Token inválido', { error: String(claimsError) });
