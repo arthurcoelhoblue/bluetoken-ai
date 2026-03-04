@@ -24,6 +24,7 @@ interface KanbanBoardProps {
   wonLost: KanbanColumnType[];
   isLoading: boolean;
   onDealClick?: (dealId: string) => void;
+  onTransferClick?: () => void;
 }
 
 function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): number {
