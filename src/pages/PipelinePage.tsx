@@ -6,6 +6,7 @@ import { usePipelines } from '@/hooks/usePipelines';
 import { useDeals, useKanbanData } from '@/hooks/useDeals';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
