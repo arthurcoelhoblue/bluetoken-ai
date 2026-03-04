@@ -75,7 +75,7 @@ function TemperatureBadge({ temperatura }: { temperatura: Temperatura }) {
 function LeadDetailContent() {
   const { leadId, empresa } = useParams<{ leadId: string; empresa: string }>();
   const navigate = useNavigate();
-  const { hasRole } = useAuth();
+  const { } = useAuth();
   const isAdmin = useIsAdmin();
   const [editModalOpen, setEditModalOpen] = useState(false);
   const [editContactOpen, setEditContactOpen] = useState(false);
