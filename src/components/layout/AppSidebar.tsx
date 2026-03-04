@@ -152,7 +152,7 @@ export function AppSidebar() {
   const { profile, roles, signOut } = useAuth();
   const { data: permissions } = useScreenPermissions();
   const collapsed = state === 'collapsed';
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   const isActive = (path: string) => {
     if (path === '/') return location.pathname === '/';

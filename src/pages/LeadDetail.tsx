@@ -152,7 +152,7 @@ function LeadDetailContent() {
   });
 
 
-  const canEdit = isAdmin || hasRole('CLOSER');
+  const canEdit = useCanEdit('contatos');
 
   if (isLoading) {
     return (

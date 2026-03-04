@@ -31,7 +31,7 @@ export function EditUserDialog({
   currentIsVendedor, currentIsActive, currentGestorId, currentRamal,
 }: Props) {
   const { roles } = useAuth();
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],

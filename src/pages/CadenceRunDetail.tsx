@@ -63,7 +63,7 @@ function CadenceRunDetailContent() {
   });
   const updateStatus = useUpdateCadenceRunStatus();
 
-  const canManage = isAdmin || hasRole('CLOSER');
+  const canManage = useCanEdit('leads_cadencia');
 
   const handleStatusChange = async (
     newStatus: 'ATIVA' | 'PAUSADA' | 'CANCELADA'
