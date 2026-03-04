@@ -142,7 +142,13 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
     await saveMessage('user', trimmed);
 
     const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-    const supabaseKey = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      toast({ title: 'Sessão expirada', description: 'Faça login novamente.', variant: 'destructive' });
+      setIsLoading(false);
+      isSendingRef.current = false;
+      return;
+    }
     const allMsgs = [...messages.map(m => ({ role: m.role, content: m.content })), { role: 'user', content: trimmed }];
     const payload = {
       messages: allMsgs,
@@ -153,7 +159,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
     const url = `${supabaseUrl}/functions/v1/copilot-chat`;
     const headers = {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${supabaseKey}`,
+      'Authorization': `Bearer ${session.access_token}`,
     };
 
     let didFallback = false;
