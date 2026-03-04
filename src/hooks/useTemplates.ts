@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useCompany } from '@/contexts/CompanyContext';
-import { toast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 export type MetaStatus = 'LOCAL' | 'PENDING' | 'APPROVED' | 'REJECTED' | 'PAUSED' | 'DISABLED';
 
@@ -74,10 +74,10 @@ export function useCreateTemplate() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['message_templates'] });
-      toast({ title: 'Template criado com sucesso' });
+      toast.success('Template criado com sucesso');
     },
     onError: (e: Error) => {
-      toast({ title: 'Erro ao criar template', description: e.message, variant: 'destructive' });
+      toast.error('Erro ao criar template', { description: e.message });
     },
   });
 }
@@ -97,10 +97,10 @@ export function useUpdateTemplate() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['message_templates'] });
-      toast({ title: 'Template atualizado' });
+      toast.success('Template atualizado');
     },
     onError: (e: Error) => {
-      toast({ title: 'Erro ao atualizar template', description: e.message, variant: 'destructive' });
+      toast.error('Erro ao atualizar template', { description: e.message });
     },
   });
 }
@@ -117,10 +117,10 @@ export function useDeleteTemplate() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['message_templates'] });
-      toast({ title: 'Template removido' });
+      toast.success('Template removido');
     },
     onError: (e: Error) => {
-      toast({ title: 'Erro ao remover', description: e.message, variant: 'destructive' });
+      toast.error('Erro ao remover', { description: e.message });
     },
   });
 }
@@ -158,10 +158,10 @@ export function useSyncMetaTemplates() {
     },
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['message_templates'] });
-      toast({ title: 'Sincronização concluída', description: `${data.synced} templates atualizados` });
+      toast.success('Sincronização concluída', { description: `${data.synced} templates atualizados` });
     },
     onError: (e: Error) => {
-      toast({ title: 'Erro na sincronização', description: e.message, variant: 'destructive' });
+      toast.error('Erro na sincronização', { description: e.message });
     },
   });
 }
@@ -207,10 +207,10 @@ export function useSubmitTemplateToMeta() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['message_templates'] });
-      toast({ title: 'Template submetido à Meta', description: 'Aguardando aprovação' });
+      toast.success('Template submetido à Meta', { description: 'Aguardando aprovação' });
     },
     onError: (e: Error) => {
-      toast({ title: 'Erro ao submeter à Meta', description: e.message, variant: 'destructive' });
+      toast.error('Erro ao submeter à Meta', { description: e.message });
     },
   });
 }
