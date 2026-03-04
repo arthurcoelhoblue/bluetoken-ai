@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 import { useSgtEvents, useSgtEventDetails, type SGTEventsFilters, type SGTEventWithLogs } from '@/hooks/useSgtEvents';
