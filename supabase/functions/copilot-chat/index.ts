@@ -4,9 +4,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 
-const COST_TABLE: Record<string, { input: number; output: number }> = {
-  'claude-haiku-4-5': { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
-};
+import { COST_TABLE } from "../_shared/ai-provider.ts";
 
 const log = createLogger('copilot-chat');
 
@@ -141,37 +139,47 @@ serve(async (req) => {
     let userId: string | undefined;
 
     const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const { data: userData } = await supabase.auth.getUser(token);
-      userId = userData?.user?.id;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Token de autenticação ausente' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-      if (userId) {
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId);
+    const token = authHeader.replace('Bearer ', '');
+    const { data: userData } = await supabase.auth.getUser(token);
+    userId = userData?.user?.id;
 
-        isAdmin = roles?.some((r: RoleRow) => r.role === 'ADMIN') ?? false;
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: 'Token inválido ou expirado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-        if (!isAdmin) {
-          const { data: assignment } = await supabase
-            .from('user_access_assignments')
-            .select('access_profile_id')
-            .eq('user_id', userId)
-            .maybeSingle();
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId);
 
-          if ((assignment as UserAccessAssignment | null)?.access_profile_id) {
-            const { data: profile } = await supabase
-              .from('access_profiles')
-              .select('permissions')
-              .eq('id', (assignment as UserAccessAssignment).access_profile_id)
-              .single();
+    isAdmin = roles?.some((r: RoleRow) => r.role === 'ADMIN') ?? false;
 
-            if (profile?.permissions) {
-              userPermissions = profile.permissions as Record<string, { view: boolean; edit: boolean }>;
-            }
-          }
+    if (!isAdmin) {
+      const { data: assignment } = await supabase
+        .from('user_access_assignments')
+        .select('access_profile_id')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      if ((assignment as UserAccessAssignment | null)?.access_profile_id) {
+        const { data: profile } = await supabase
+          .from('access_profiles')
+          .select('permissions')
+          .eq('id', (assignment as UserAccessAssignment).access_profile_id)
+          .single();
+
+        if (profile?.permissions) {
+          userPermissions = profile.permissions as Record<string, { view: boolean; edit: boolean }>;
         }
       }
     }
@@ -247,7 +255,18 @@ serve(async (req) => {
       }
     })();
 
-    const [contextBlock, coachingBlock] = await Promise.all([enrichmentPromise, coachingPromise]);
+    // Wrap enrichment in 8s timeout to prevent hanging
+    const enrichmentWithTimeout = Promise.race([
+      enrichmentPromise,
+      new Promise<string>((resolve) =>
+        setTimeout(() => {
+          log.warn('enrichment timeout (8s), continuing with partial context');
+          resolve('⚠️ Contexto parcial: tempo limite excedido ao carregar dados do CRM.');
+        }, 8000)
+      ),
+    ]);
+
+    const [contextBlock, coachingBlock] = await Promise.all([enrichmentWithTimeout, coachingPromise]);
 
     const systemContent = contextBlock
       ? `${ACTIVE_SYSTEM_PROMPT}\n\n--- DADOS DO CRM ---\n${contextBlock}${coachingBlock}`

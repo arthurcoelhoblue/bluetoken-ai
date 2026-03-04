@@ -15,7 +15,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { DataTablePagination } from '@/components/ui/data-table-pagination';
 
 import { useSgtEvents, useSgtEventDetails, type SGTEventsFilters, type SGTEventWithLogs } from '@/hooks/useSgtEvents';
@@ -87,8 +87,6 @@ function EventoLabel({ evento }: { evento: string }) {
 }
 
 function MonitorSgtEventsContent() {
-  const { toast } = useToast();
-  
   const [filters, setFilters] = useState<SGTEventsFilters>({});
   const [page, setPage] = useState(1);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -126,10 +124,7 @@ function MonitorSgtEventsContent() {
 
   const handleRefresh = () => {
     refetch();
-    toast({
-      title: 'Atualizado',
-      description: 'Lista de eventos atualizada.',
-    });
+    toast.success('Lista de eventos atualizada.');
   };
 
   if (error) {

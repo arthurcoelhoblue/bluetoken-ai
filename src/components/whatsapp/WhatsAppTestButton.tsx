@@ -13,7 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { MessageSquare, Send, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { EmpresaTipo } from '@/types/sgt';
 
@@ -29,24 +29,14 @@ export function WhatsAppTestButton({ leadId, empresa, telefone, nome }: WhatsApp
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; error?: string; testMode?: boolean } | null>(null);
-  const { toast } = useToast();
-
   const handleSend = async () => {
     if (!message.trim()) {
-      toast({
-        title: 'Mensagem vazia',
-        description: 'Digite uma mensagem para enviar.',
-        variant: 'destructive',
-      });
+      toast.error('Digite uma mensagem para enviar.');
       return;
     }
 
     if (!telefone) {
-      toast({
-        title: 'Telefone não encontrado',
-        description: 'Este lead não possui telefone cadastrado.',
-        variant: 'destructive',
-      });
+      toast.error('Este lead não possui telefone cadastrado.');
       return;
     }
 
@@ -70,27 +60,16 @@ export function WhatsAppTestButton({ leadId, empresa, telefone, nome }: WhatsApp
       setResult(data);
 
       if (data.success) {
-        toast({
-          title: 'Mensagem enviada!',
-          description: data.testMode 
-            ? 'Modo teste: mensagem enviada para número de teste.' 
-            : 'Mensagem enviada com sucesso.',
-        });
+        toast.success(data.testMode 
+          ? 'Modo teste: mensagem enviada para número de teste.' 
+          : 'Mensagem enviada com sucesso.');
       } else {
-        toast({
-          title: 'Erro no envio',
-          description: data.error || 'Falha ao enviar mensagem.',
-          variant: 'destructive',
-        });
+        toast.error(data.error || 'Falha ao enviar mensagem.');
       }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       setResult({ success: false, error: errorMessage });
-      toast({
-        title: 'Erro',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

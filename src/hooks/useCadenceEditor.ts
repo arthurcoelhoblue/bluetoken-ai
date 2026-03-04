@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { CanalTipo, EmpresaTipo, CadenceStep } from '@/types/cadence';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 // Template para o select
 export interface TemplateOption {
@@ -95,7 +95,6 @@ export function useCadenceForEdit(cadenceId?: string) {
 // Hook para salvar cadência (criar ou atualizar)
 export function useSaveCadence() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
 
   return useMutation({
     mutationFn: async ({
@@ -192,19 +191,12 @@ export function useSaveCadence() {
       queryClient.invalidateQueries({ queryKey: ['cadences'] });
       queryClient.invalidateQueries({ queryKey: ['cadence', result.id] });
       queryClient.invalidateQueries({ queryKey: ['cadence-edit', result.id] });
-      toast({
-        title: result.isNew ? 'Cadência criada' : 'Cadência atualizada',
-        description: result.isNew
-          ? 'A nova cadência foi criada com sucesso.'
-          : 'As alterações foram salvas com sucesso.',
-      });
+      toast.success(result.isNew
+        ? 'A nova cadência foi criada com sucesso.'
+        : 'As alterações foram salvas com sucesso.');
     },
     onError: (error: Error) => {
-      toast({
-        title: 'Erro ao salvar',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast.error(error.message);
     },
   });
 }
