@@ -8,8 +8,10 @@ import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from 'sonner';
 import { Building2, Plus, Loader2, Pencil } from 'lucide-react';
+import { EmpresaProductsCatalog } from '@/components/admin/EmpresaProductsCatalog';
 
 interface Empresa {
   id: string;
@@ -219,48 +221,61 @@ export default function AdminEmpresas() {
 
         {/* Edit Dialog */}
         <Dialog open={!!editingEmpresa} onOpenChange={(open) => !open && setEditingEmpresa(null)}>
-          <DialogContent>
+          <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Editar {editingEmpresa?.label}</DialogTitle>
             </DialogHeader>
             {editingEmpresa && (
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>ID</Label>
-                  <Input value={editingEmpresa.id} disabled className="font-mono" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Nome de exibição</Label>
-                  <Input
-                    value={editingEmpresa.label}
-                    onChange={(e) => setEditingEmpresa(prev => prev ? { ...prev, label: e.target.value } : null)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cor</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {COLOR_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setEditingEmpresa(prev => prev ? { ...prev, color: opt.value } : null)}
-                        className={`h-8 w-8 rounded-full ${opt.value} ring-2 ring-offset-2 ring-offset-background ${editingEmpresa.color === opt.value ? 'ring-primary' : 'ring-transparent'} transition-all`}
-                        title={opt.label}
+              <Tabs defaultValue="dados" className="w-full">
+                <TabsList className="w-full">
+                  <TabsTrigger value="dados" className="flex-1">Dados</TabsTrigger>
+                  <TabsTrigger value="produtos" className="flex-1">Produtos</TabsTrigger>
+                </TabsList>
+                <TabsContent value="dados">
+                  <div className="space-y-4 py-4">
+                    <div className="space-y-2">
+                      <Label>ID</Label>
+                      <Input value={editingEmpresa.id} disabled className="font-mono" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Nome de exibição</Label>
+                      <Input
+                        value={editingEmpresa.label}
+                        onChange={(e) => setEditingEmpresa(prev => prev ? { ...prev, label: e.target.value } : null)}
                       />
-                    ))}
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Cor</Label>
+                      <div className="flex flex-wrap gap-2">
+                        {COLOR_OPTIONS.map(opt => (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => setEditingEmpresa(prev => prev ? { ...prev, color: opt.value } : null)}
+                            className={`h-8 w-8 rounded-full ${opt.value} ring-2 ring-offset-2 ring-offset-background ${editingEmpresa.color === opt.value ? 'ring-primary' : 'ring-transparent'} transition-all`}
+                            title={opt.label}
+                          />
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </div>
+                  <DialogFooter>
+                    <Button
+                      onClick={() => editingEmpresa && updateMutation.mutate(editingEmpresa)}
+                      disabled={updateMutation.isPending}
+                    >
+                      {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                      Salvar
+                    </Button>
+                  </DialogFooter>
+                </TabsContent>
+                <TabsContent value="produtos">
+                  <div className="py-4 max-h-[60vh] overflow-y-auto">
+                    <EmpresaProductsCatalog empresaId={editingEmpresa.id} />
+                  </div>
+                </TabsContent>
+              </Tabs>
             )}
-            <DialogFooter>
-              <Button
-                onClick={() => editingEmpresa && updateMutation.mutate(editingEmpresa)}
-                disabled={updateMutation.isPending}
-              >
-                {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                Salvar
-              </Button>
-            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>
