@@ -1,36 +1,42 @@
 
 
-## Diagnóstico
+## Problema
 
-O `useGrabScroll` já está implementado e conectado ao `scrollRef` do KanbanBoard. Porém, o problema é que o `dnd-kit` com `PointerSensor` (distance: 5) captura os eventos de mouse antes do grab scroll quando o clique acontece sobre qualquer área dentro de um droppable/sortable context — ou seja, praticamente toda a superfície do board. Isso torna o grab scroll inoperante na prática.
+O `useGrabScroll` já existe mas está sendo bloqueado porque a exclusão `[data-sortable]` e `.deal-card` cobre praticamente toda a superfície visível do board. Na prática, só funciona em pequenos espaços entre colunas. O usuário quer poder clicar **em qualquer lugar** do board e arrastar horizontalmente para navegar o carrossel.
 
-## Plano
+## Solução
 
-### 1. Adicionar botões de navegação horizontal (setas esquerda/direita)
+Permitir que o grab scroll funcione **em toda a superfície do board**, inclusive sobre cards, diferenciando a intenção do usuário pelo **eixo de movimento**:
 
-Adicionar dois botões de seta nas laterais do kanban board que permitem navegar horizontalmente com clique. Eles aparecem condicionalmente (só quando há conteúdo para scrollar naquela direção).
+- **Movimento horizontal** (dx > dy) → scroll do carrossel (grab scroll)
+- **Movimento vertical ou sobre card** → dnd-kit drag (mover deal entre colunas)
 
-**Arquivo:** `src/components/pipeline/KanbanBoard.tsx`
-- Adicionar botões `ChevronLeft` / `ChevronRight` posicionados nas bordas esquerda/direita do container
-- Scroll suave ao clicar (~300px por clique)
-- Mostrar/esconder baseado em `scrollLeft` e `scrollWidth`
+### Alterações
 
-### 2. Corrigir conflito entre grab scroll e dnd-kit
+**1. `src/hooks/useGrabScroll.ts`**
 
-**Arquivo:** `src/hooks/useGrabScroll.ts`
-- Expandir a lista de exclusão para ignorar mousedown em `[data-sortable]` e dentro de `.dnd-kit` droppable areas (deal cards)
-- Garantir que o grab scroll só ativa quando o mouse está no "fundo" do board (espaço entre colunas, header, área vazia)
+- Remover `.deal-card` e `[data-sortable]` da lista de exclusão (manter apenas `button, a, input, textarea, select, [role="button"]`)
+- Adicionar lógica de "lock de eixo": nos primeiros pixels de movimento, determinar se a intenção é horizontal (scroll) ou vertical (ignorar e deixar dnd-kit assumir)
+- Quando o eixo horizontal é detectado, chamar `e.preventDefault()` e `e.stopPropagation()` para impedir que o dnd-kit interprete como drag de card
 
-**Arquivo:** `src/components/pipeline/KanbanBoard.tsx`  
-- Adicionar `data-grab-area` no container principal para delimitar a área de grab
-- Garantir que o `scrollRef` div tenha `overflow-x: auto` explícito e `cursor: grab`
+**2. `src/components/pipeline/KanbanBoard.tsx`**
 
-### 3. Indicadores visuais de scroll
+- Aumentar o `distance` do `PointerSensor` de 5 para 8px, dando mais margem para o grab scroll "ganhar" a corrida de ativação
+- Passar o `scrollRef` para o hook com configuração de threshold (ex: 8px) para determinar o eixo
 
-- Gradiente suave nas bordas esquerda/direita quando há mais conteúdo para scrollar, indicando visualmente que o board é arrastável
+### Lógica de detecção de eixo
+
+```text
+mousedown → registra posição inicial
+mousemove (primeiros 8px):
+  ├─ |dx| > |dy| → LOCK horizontal → grab scroll ativo, bloqueia dnd-kit
+  └─ |dy| >= |dx| → RELEASE → para de interceptar, dnd-kit assume normalmente
+```
+
+Isso permite que o usuário arraste horizontalmente de qualquer ponto do board para navegar, e arraste verticalmente (ou sobre um card) para mover deals entre colunas.
 
 | Arquivo | Ação |
 |---------|------|
-| `src/components/pipeline/KanbanBoard.tsx` | Adicionar botões de seta + indicadores de scroll |
-| `src/hooks/useGrabScroll.ts` | Ajustar exclusões para coexistir com dnd-kit |
+| `src/hooks/useGrabScroll.ts` | Remover exclusões de cards, adicionar lock de eixo horizontal |
+| `src/components/pipeline/KanbanBoard.tsx` | Aumentar distance do PointerSensor para 8px |
 
