@@ -182,7 +182,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
       </div>
 
       {/* Carousel wrapper */}
-      <div className="relative flex-1 min-h-0">
+      <div className="relative flex-1 min-h-0 overflow-hidden">
         {/* Left arrow */}
         {canScrollLeft && (
           <button
@@ -212,7 +212,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
           <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-[5] pointer-events-none" />
         )}
 
-        <div ref={scrollRef} className="overflow-auto h-full" data-grab-area>
+        <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden h-full" data-grab-area>
           <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
             {sortedColumns.map(col => (
               <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
