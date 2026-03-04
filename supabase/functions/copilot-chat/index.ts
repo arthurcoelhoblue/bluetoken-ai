@@ -4,9 +4,7 @@ import { callAI } from "../_shared/ai-provider.ts";
 import { envConfig } from '../_shared/config.ts';
 import { createLogger } from '../_shared/logger.ts';
 
-const COST_TABLE: Record<string, { input: number; output: number }> = {
-  'claude-haiku-4-5': { input: 0.80 / 1_000_000, output: 4.0 / 1_000_000 },
-};
+import { COST_TABLE } from "../_shared/ai-provider.ts";
 
 const log = createLogger('copilot-chat');
 
