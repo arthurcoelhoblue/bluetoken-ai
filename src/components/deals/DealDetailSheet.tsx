@@ -227,7 +227,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                     dealTitulo={deal.titulo}
                     contactNome={deal.contact_nome}
                     contactEmail={deal.contact_email}
-                    organizationNome={deal.organization_nome}
+                    organizationNome={deal.org_nome}
                   />
                 </TabsContent>
 
