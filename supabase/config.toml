@@ -24,9 +24,6 @@ verify_jwt = false
 [functions.email-send]
 verify_jwt = false
 
-[functions.bluechat-inbound]
-verify_jwt = false
-
 [functions.integration-health-check]
 verify_jwt = false
 
@@ -55,24 +52,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.cs-health-calculator]
-verify_jwt = false
-
-[functions.cs-renewal-alerts]
-verify_jwt = false
-
-[functions.cs-incident-detector]
-verify_jwt = false
-
-[functions.cs-nps-auto]
-verify_jwt = false
-
-[functions.cs-daily-briefing]
-verify_jwt = false
-
-[functions.cs-churn-predictor]
-verify_jwt = false
-
-[functions.cs-trending-topics]
 verify_jwt = false
 
 [functions.cs-playbook-runner]
@@ -105,21 +84,6 @@ verify_jwt = false
 [functions.faq-auto-review]
 verify_jwt = false
 
-[functions.cs-suggest-note]
-verify_jwt = false
-
-[functions.sdr-message-parser]
-verify_jwt = false
-
-[functions.sdr-intent-classifier]
-verify_jwt = false
-
-[functions.sdr-response-generator]
-verify_jwt = false
-
-[functions.sdr-action-executor]
-verify_jwt = false
-
 [functions.reclassify-leads]
 verify_jwt = false
 
@@ -127,9 +91,6 @@ verify_jwt = false
 verify_jwt = false
 
 [functions.sgt-sync]
-verify_jwt = false
-
-[functions.bluechat-proxy]
 verify_jwt = false
 
 [functions.sdr-proactive-outreach]
@@ -174,3 +135,40 @@ verify_jwt = false
 [functions.google-calendar-auth]
 verify_jwt = false
 
+# --- 12 functions previously missing ---
+
+[functions.admin-create-user]
+verify_jwt = false
+
+[functions.admin-provision-tenant]
+verify_jwt = false
+
+[functions.calendar-book]
+verify_jwt = false
+
+[functions.calendar-slots]
+verify_jwt = false
+
+[functions.cs-ai-actions]
+verify_jwt = false
+
+[functions.cs-scheduled-jobs]
+verify_jwt = false
+
+[functions.elementor-webhook]
+verify_jwt = false
+
+[functions.follow-up-scheduler]
+verify_jwt = false
+
+[functions.icp-learner]
+verify_jwt = false
+
+[functions.meeting-transcription]
+verify_jwt = false
+
+[functions.notify-closer]
+verify_jwt = false
+
+[functions.sync-renewal-triggers]
+verify_jwt = false
