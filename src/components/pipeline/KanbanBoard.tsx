@@ -16,7 +16,7 @@ import { DealCard } from './DealCard';
 import { useMoveDeal } from '@/hooks/useDeals';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Sparkles, GripVertical } from 'lucide-react';
+import { Sparkles, GripVertical, ArrowRightLeft } from 'lucide-react';
 import type { KanbanColumn as KanbanColumnType, DealWithRelations } from '@/types/deal';
 
 interface KanbanBoardProps {
