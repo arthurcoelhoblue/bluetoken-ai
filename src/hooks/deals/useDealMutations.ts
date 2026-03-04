@@ -163,3 +163,29 @@ export function useReorderLossCategories() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['deal_loss_categories'] }),
   });
 }
+
+export function useTransferDeals() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ dealIds, toOwnerId }: { dealIds: string[]; toOwnerId: string }) => {
+      for (const id of dealIds) {
+        const { error } = await supabase.from('deals').update({ owner_id: toOwnerId }).eq('id', id);
+        if (error) throw error;
+      }
+      // Log activity for each deal
+      const { data: ownerProfile } = await supabase.from('profiles').select('nome').eq('id', toOwnerId).single();
+      const ownerName = ownerProfile?.nome || toOwnerId;
+      for (const id of dealIds) {
+        await supabase.from('deal_activities').insert({
+          deal_id: id,
+          tipo: 'NOTA',
+          descricao: `🔄 Transferido para ${ownerName}`,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-detail'] });
+    },
+  });
+}

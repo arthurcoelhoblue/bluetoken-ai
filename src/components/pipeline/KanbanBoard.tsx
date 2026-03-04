@@ -125,6 +125,12 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
     >
       {/* IA Sort toggle */}
       <div className="flex items-center justify-end mb-3 gap-2">
+        {onTransferClick && (
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={onTransferClick}>
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            Transferir em massa
+          </Button>
+        )}
         <Button
           variant={iaSort ? 'default' : 'outline'}
           size="sm"

@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
 import type { DealFullDetail } from '@/types/deal';
 import type { UseMutationResult } from '@tanstack/react-query';
@@ -12,15 +15,46 @@ interface DealDadosTabProps {
   updateField: UseMutationResult<unknown, Error, { dealId: string; field: string; value: unknown }>;
 }
 
+function useVendedores() {
+  return useQuery({
+    queryKey: ['vendedores-ativos'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, nome')
+        .eq('is_active', true)
+        .eq('is_vendedor', true)
+        .order('nome');
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export function DealDadosTab({ deal, updateField }: DealDadosTabProps) {
   const [editField, setEditField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const { data: vendedores = [] } = useVendedores();
 
   const startEdit = (field: string, value: string) => { setEditField(field); setEditValue(value || ''); };
   const saveEdit = () => {
     if (!editField) return;
     updateField.mutate({ dealId: deal.id, field: editField, value: editValue || null }, {
       onSuccess: () => { toast.success('Atualizado'); setEditField(null); },
+    });
+  };
+
+  const handleOwnerChange = (ownerId: string) => {
+    const ownerName = vendedores.find(v => v.id === ownerId)?.nome || ownerId;
+    updateField.mutate({ dealId: deal.id, field: 'owner_id', value: ownerId }, {
+      onSuccess: async () => {
+        toast.success(`Transferido para ${ownerName}`);
+        await supabase.from('deal_activities').insert({
+          deal_id: deal.id,
+          tipo: 'NOTA',
+          descricao: `🔄 Transferido para ${ownerName}`,
+        });
+      },
     });
   };
 
@@ -55,7 +89,24 @@ export function DealDadosTab({ deal, updateField }: DealDadosTabProps) {
       {renderInlineField('Valor', 'valor', String(deal.valor ?? 0))}
       {renderInlineField('Contato', 'contact_nome', deal.contact_nome)}
       {renderInlineField('Organização', 'org_nome', deal.org_nome)}
-      {renderInlineField('Responsável', 'owner_nome', deal.owner_nome)}
+
+      {/* Responsável — Select de vendedores */}
+      <div className="group flex items-center justify-between py-2 px-2 rounded-md hover:bg-muted/50">
+        <div className="flex-1 min-w-0">
+          <span className="text-xs text-muted-foreground">Responsável</span>
+          <Select value={deal.owner_id ?? ''} onValueChange={handleOwnerChange}>
+            <SelectTrigger className="h-7 text-sm mt-0.5">
+              <SelectValue placeholder="Selecionar vendedor" />
+            </SelectTrigger>
+            <SelectContent>
+              {vendedores.map(v => (
+                <SelectItem key={v.id} value={v.id}>{v.nome || v.id}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
       {renderInlineField('Temperatura', 'temperatura', deal.temperatura)}
       {renderInlineField('Canal de origem', 'canal_origem', deal.canal_origem)}
       {renderInlineField('Notas', 'notas', deal.notas)}
