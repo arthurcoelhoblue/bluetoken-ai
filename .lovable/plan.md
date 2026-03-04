@@ -1,87 +1,56 @@
 
 
-## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
+## Diagnóstico
 
-Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
+O problema é sistêmico: a edge function `admin-create-user` cria o `user_access_assignments` mas **nunca insere** uma role na tabela legada `user_roles`. Como as políticas RLS de dezenas de tabelas usam `has_role()`, usuários novos ficam bloqueados.
 
-### O Que Está Acontecendo
+A correção anterior (INSERT manual de `CLOSER`) resolveu apenas os usuários existentes naquele momento. Novos cadastros continuam sem role legada.
 
-1. Usuário clica em "Qual o gargalo atual do pipeline?"
-2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
-3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
-4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
-5. O streaming funciona por ~1 segundo, depois **para por 15s**
-6. O **watchdog de inatividade de 15s** aborta a conexão
-7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
+## Solução: Trigger automático no banco
 
-### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
+A abordagem mais robusta é um **trigger no banco** que insere automaticamente `CLOSER` em `user_roles` sempre que uma linha é inserida em `user_access_assignments` (e o usuário ainda não tem nenhuma role). Isso cobre:
 
-**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
+- ✅ Usuários existentes sem role (via INSERT retroativo)
+- ✅ Novos usuários criados pela edge function
+- ✅ Atribuições feitas manualmente pela UI de controle de acesso
+- ✅ Qualquer outro fluxo futuro
 
-Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
+### Alterações
 
-**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
-```typescript
-const isSendingRef = useRef(false);
+**1. Migration SQL — Trigger + backfill**
 
-const sendMessage = async (content: string) => {
-  if (!content.trim() || isSendingRef.current) return;
-  isSendingRef.current = true;
-  // ... resto da lógica
-  // no finally:
-  isSendingRef.current = false;
-};
+```sql
+-- Trigger function: auto-insert CLOSER when user gets access assignment
+CREATE OR REPLACE FUNCTION public.fn_ensure_legacy_role()
+RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER
+SET search_path TO 'public' AS $$
+BEGIN
+  INSERT INTO user_roles (user_id, role)
+  VALUES (NEW.user_id, 'CLOSER')
+  ON CONFLICT (user_id, role) DO NOTHING;
+  RETURN NEW;
+END;
+$$;
+
+-- Attach trigger
+CREATE TRIGGER trg_ensure_legacy_role
+AFTER INSERT ON user_access_assignments
+FOR EACH ROW EXECUTE FUNCTION fn_ensure_legacy_role();
+
+-- Backfill: ensure ALL existing assigned users have at least one role
+INSERT INTO user_roles (user_id, role)
+SELECT DISTINCT uaa.user_id, 'CLOSER'::user_role
+FROM user_access_assignments uaa
+WHERE NOT EXISTS (
+  SELECT 1 FROM user_roles ur WHERE ur.user_id = uaa.user_id
+)
+ON CONFLICT (user_id, role) DO NOTHING;
 ```
 
-### Bug 2: ALTO — Watchdog de 15s muito agressivo
+Isso garante cobertura 100% — presente, passado e futuro — sem depender de lógica no frontend ou na edge function.
 
-**Arquivo:** `CopilotPanel.tsx`, linha 193
-
-O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
-
-**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
-
-```typescript
-const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
-```
-
-E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
-
-```typescript
-catch (err) {
-  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
-    // Auto-retry sem streaming
-    const fallbackResp = await fetch(url, { 
-      body: JSON.stringify({ ...payload, stream: false }) 
-    });
-    // processar resposta completa
-  }
-}
-```
-
-### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
-
-**Arquivo:** `CopilotPanel.tsx`, linha 367
-
-As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
-
-**Correção:** Usar `react-markdown` (já instalado no projeto):
-```tsx
-import ReactMarkdown from 'react-markdown';
-// ...
-<div className="prose prose-sm dark:prose-invert max-w-none">
-  <ReactMarkdown>{msg.content}</ReactMarkdown>
-</div>
-```
-
-### Plano de Correção
-
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
-| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
-| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
-| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
-
-Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
+| Componente | Ação |
+|---|---|
+| Migration SQL | Criar trigger `fn_ensure_legacy_role` + backfill |
+| Nenhum arquivo de código | Sem alterações no frontend |
 
