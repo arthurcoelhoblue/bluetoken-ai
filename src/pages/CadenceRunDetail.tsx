@@ -53,7 +53,7 @@ import { toast } from 'sonner';
 function CadenceRunDetailContent() {
   const { runId } = useParams<{ runId: string }>();
   const navigate = useNavigate();
-  const isAdmin = useIsAdmin();
+  
 
   const { data: run, isLoading, error } = useCadenceRunDetail(runId);
   const { data: events } = useCadenceEvents(runId);
