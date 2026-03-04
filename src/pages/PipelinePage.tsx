@@ -174,9 +174,9 @@ function PipelineContent() {
             onEtiquetaIAChange={setEtiquetaIA}
           />
 
-          <div className="border-b border-border/50" />
+          <div className="border-b border-border/50 mt-2" />
 
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-4">
             <KanbanBoard
               columns={columns}
               wonLost={wonLost}

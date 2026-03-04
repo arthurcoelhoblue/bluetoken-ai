@@ -163,7 +163,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
       onDragEnd={handleDragEnd}
     >
       {/* IA Sort toggle */}
-      <div className="flex items-center justify-end mb-3 gap-2">
+      <div className="flex items-center justify-center mb-3 gap-2">
         {onTransferClick && (
           <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={onTransferClick}>
             <ArrowRightLeft className="h-3.5 w-3.5" />
