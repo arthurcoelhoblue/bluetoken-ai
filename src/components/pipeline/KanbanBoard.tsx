@@ -106,7 +106,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   }, [columns, iaSort]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
     useSensor(KeyboardSensor)
   );
 
@@ -263,7 +263,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
         </div>
       )}
 
-      <DragOverlay>
+      <DragOverlay dropAnimation={{ duration: 150, easing: 'ease-out' }}>
         {activeDeal ? <DealCard deal={activeDeal} overlay /> : null}
       </DragOverlay>
     </DndContext>
