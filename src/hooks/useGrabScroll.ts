@@ -8,15 +8,13 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
   const startY = useRef(0);
   const scrollLeftStart = useRef(0);
   const scrollTopStart = useRef(0);
-  // 'pending' = waiting to determine axis, 'horizontal' = locked to scroll, 'released' = let dnd-kit handle
   const axisLock = useRef<'pending' | 'horizontal' | 'released'>('pending');
 
-  const onMouseDown = useCallback((e: MouseEvent) => {
+  const onPointerDown = useCallback((e: PointerEvent) => {
     const el = scrollRef.current;
     if (!el) return;
 
     const target = e.target as HTMLElement;
-    // Only exclude truly interactive elements
     if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
 
     isDown.current = true;
@@ -27,7 +25,7 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     scrollTopStart.current = el.scrollTop;
   }, [scrollRef]);
 
-  const onMouseMove = useCallback((e: MouseEvent) => {
+  const onPointerMove = useCallback((e: PointerEvent) => {
     if (!isDown.current) return;
     const el = scrollRef.current;
     if (!el) return;
@@ -37,7 +35,6 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     const absDx = Math.abs(dx);
     const absDy = Math.abs(dy);
 
-    // Determine axis on first significant movement
     if (axisLock.current === 'pending') {
       if (absDx < AXIS_THRESHOLD && absDy < AXIS_THRESHOLD) return;
       if (absDx > absDy) {
@@ -52,13 +49,13 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
 
     if (axisLock.current === 'released') return;
 
-    // Horizontal scroll mode - block dnd-kit
+    // Block dnd-kit from processing this pointer event
     e.preventDefault();
-    e.stopPropagation();
+    e.stopImmediatePropagation();
     el.scrollLeft = scrollLeftStart.current - dx;
   }, [scrollRef]);
 
-  const onMouseUp = useCallback(() => {
+  const onPointerUp = useCallback(() => {
     if (!isDown.current) return;
     isDown.current = false;
     const el = scrollRef.current;
@@ -69,7 +66,7 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     axisLock.current = 'pending';
   }, [scrollRef]);
 
-  // --- Touch support ---
+  // --- Touch fallback ---
   const onTouchStart = useCallback((e: TouchEvent) => {
     const el = scrollRef.current;
     if (!el) return;
@@ -123,23 +120,23 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
 
     el.style.cursor = 'grab';
 
-    // Mouse
-    el.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove, { capture: true });
-    window.addEventListener('mouseup', onMouseUp);
+    // Pointer events in capture phase — intercepts before dnd-kit
+    el.addEventListener('pointerdown', onPointerDown, { capture: true });
+    window.addEventListener('pointermove', onPointerMove, { capture: true });
+    window.addEventListener('pointerup', onPointerUp, { capture: true });
 
-    // Touch
+    // Touch fallback
     el.addEventListener('touchstart', onTouchStart, { passive: true });
     el.addEventListener('touchmove', onTouchMove, { passive: false });
     el.addEventListener('touchend', onTouchEnd);
 
     return () => {
-      el.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove, { capture: true });
-      window.removeEventListener('mouseup', onMouseUp);
+      el.removeEventListener('pointerdown', onPointerDown, { capture: true });
+      window.removeEventListener('pointermove', onPointerMove, { capture: true });
+      window.removeEventListener('pointerup', onPointerUp, { capture: true });
       el.removeEventListener('touchstart', onTouchStart);
       el.removeEventListener('touchmove', onTouchMove);
       el.removeEventListener('touchend', onTouchEnd);
     };
-  }, [scrollRef, onMouseDown, onMouseMove, onMouseUp, onTouchStart, onTouchMove, onTouchEnd]);
+  }, [scrollRef, onPointerDown, onPointerMove, onPointerUp, onTouchStart, onTouchMove, onTouchEnd]);
 }
