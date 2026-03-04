@@ -94,7 +94,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, contextType, contextId, empresa } = await req.json() as CopilotRequest;
+    const { messages, contextType, contextId, empresa, stream: streamRequested = true } = await req.json() as CopilotRequest & { stream?: boolean };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
@@ -264,12 +264,12 @@ serve(async (req) => {
     // STREAMING — Claude Haiku via SSE
     // ========================================
     const ANTHROPIC_KEY = Deno.env.get('ANTHROPIC_API_KEY');
-    if (ANTHROPIC_KEY) {
+    if (ANTHROPIC_KEY && streamRequested !== false) {
       try {
         const startTime = Date.now();
         // Timeout de 20s para Anthropic API
         const anthropicAbort = new AbortController();
-        const anthropicTimeout = setTimeout(() => anthropicAbort.abort(), 20000);
+        const anthropicTimeout = setTimeout(() => anthropicAbort.abort(), 18000);
 
         const anthropicResp = await fetch('https://api.anthropic.com/v1/messages', {
           method: 'POST',
@@ -439,10 +439,21 @@ serve(async (req) => {
       content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
     }
 
+    const fallbackMeta = { model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs };
+
+    // When stream=false was requested, return plain JSON
+    if (streamRequested === false) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content } }],
+        meta: fallbackMeta,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Return as SSE stream for consistency (single event + DONE)
     const encoder = new TextEncoder();
     const fallbackChunk = { choices: [{ delta: { content } }], model: aiResult.model };
-    const fallbackMeta = { model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs };
     const body = `data: ${JSON.stringify(fallbackChunk)}\n\ndata: ${JSON.stringify({ meta: fallbackMeta })}\n\ndata: [DONE]\n\n`;
 
     return new Response(body, {

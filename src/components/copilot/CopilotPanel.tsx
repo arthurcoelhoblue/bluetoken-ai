@@ -164,7 +164,7 @@ export function CopilotPanel({ context, variant = 'button', externalOpen, onOpen
 
       const streamStartTimeout = setTimeout(() => {
         controller.abort();
-      }, 25000);
+      }, 20000);
 
       const resp = await fetch(url, {
         method: 'POST',
