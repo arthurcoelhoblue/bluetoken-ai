@@ -93,7 +93,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   }, [columns, iaSort]);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
     useSensor(KeyboardSensor)
   );
 

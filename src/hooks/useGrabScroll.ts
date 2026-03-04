@@ -1,29 +1,30 @@
 import { useEffect, useRef, useCallback } from 'react';
 
+const AXIS_THRESHOLD = 8;
+
 export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
   const isDown = useRef(false);
   const startX = useRef(0);
   const startY = useRef(0);
   const scrollLeftStart = useRef(0);
   const scrollTopStart = useRef(0);
-  const hasMoved = useRef(false);
+  // 'pending' = waiting to determine axis, 'horizontal' = locked to scroll, 'released' = let dnd-kit handle
+  const axisLock = useRef<'pending' | 'horizontal' | 'released'>('pending');
 
   const onMouseDown = useCallback((e: MouseEvent) => {
     const el = scrollRef.current;
     if (!el) return;
 
     const target = e.target as HTMLElement;
-    // Exclude interactive elements AND dnd-kit draggable cards
-    if (target.closest('[data-draggable], [data-sortable], [data-dnd-draggable], button, a, input, textarea, select, [role="button"], .deal-card')) return;
+    // Only exclude truly interactive elements
+    if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
 
     isDown.current = true;
-    hasMoved.current = false;
+    axisLock.current = 'pending';
     startX.current = e.pageX;
     startY.current = e.pageY;
     scrollLeftStart.current = el.scrollLeft;
     scrollTopStart.current = el.scrollTop;
-    el.style.cursor = 'grabbing';
-    el.style.userSelect = 'none';
   }, [scrollRef]);
 
   const onMouseMove = useCallback((e: MouseEvent) => {
@@ -33,13 +34,28 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
 
     const dx = e.pageX - startX.current;
     const dy = e.pageY - startY.current;
+    const absDx = Math.abs(dx);
+    const absDy = Math.abs(dy);
 
-    if (!hasMoved.current && Math.abs(dx) < 3 && Math.abs(dy) < 3) return;
-    hasMoved.current = true;
+    // Determine axis on first significant movement
+    if (axisLock.current === 'pending') {
+      if (absDx < AXIS_THRESHOLD && absDy < AXIS_THRESHOLD) return;
+      if (absDx > absDy) {
+        axisLock.current = 'horizontal';
+        el.style.cursor = 'grabbing';
+        el.style.userSelect = 'none';
+      } else {
+        axisLock.current = 'released';
+        return;
+      }
+    }
 
+    if (axisLock.current === 'released') return;
+
+    // Horizontal scroll mode - block dnd-kit
     e.preventDefault();
+    e.stopPropagation();
     el.scrollLeft = scrollLeftStart.current - dx;
-    el.scrollTop = scrollTopStart.current - dy;
   }, [scrollRef]);
 
   const onMouseUp = useCallback(() => {
@@ -50,6 +66,7 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
       el.style.cursor = 'grab';
       el.style.removeProperty('user-select');
     }
+    axisLock.current = 'pending';
   }, [scrollRef]);
 
   useEffect(() => {
@@ -58,12 +75,12 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
 
     el.style.cursor = 'grab';
     el.addEventListener('mousedown', onMouseDown);
-    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mousemove', onMouseMove, { capture: true });
     window.addEventListener('mouseup', onMouseUp);
 
     return () => {
       el.removeEventListener('mousedown', onMouseDown);
-      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mousemove', onMouseMove, { capture: true });
       window.removeEventListener('mouseup', onMouseUp);
     };
   }, [scrollRef, onMouseDown, onMouseMove, onMouseUp]);
