@@ -1,87 +1,60 @@
 
 
-## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
+## Diagnóstico: 3 lacunas de integração
 
-Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
+Atualmente o sistema tem **dois mundos separados** que não se falam:
 
-### O Que Está Acontecendo
+1. **`catalog_products`** — cadastro comercial (nome, preço, unidade, empresa). Usado apenas no `DealProductsTab` para montar itens de negócio. Não tem proposta comercial e não alimenta a IA.
 
-1. Usuário clica em "Qual o gargalo atual do pipeline?"
-2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
-3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
-4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
-5. O streaming funciona por ~1 segundo, depois **para por 15s**
-6. O **watchdog de inatividade de 15s** aborta a conexão
-7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
+2. **`product_knowledge`** — base de conhecimento da IA (produto_nome, descricao_curta, preco_texto, diferenciais). Usado pelo `sdr-ia-interpret` para a Amélia responder sobre produtos. Não está conectado ao catálogo comercial.
 
-### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
+3. **Proposta comercial** — não existe no sistema. Quando o usuário adiciona produtos ao deal, não há como gerar/visualizar uma proposta formatada.
 
-**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
+---
 
-Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
+## Plano
 
-**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
-```typescript
-const isSendingRef = useRef(false);
+### 1. Sincronizar catálogo comercial com a Amélia
 
-const sendMessage = async (content: string) => {
-  if (!content.trim() || isSendingRef.current) return;
-  isSendingRef.current = true;
-  // ... resto da lógica
-  // no finally:
-  isSendingRef.current = false;
-};
+Alterar o `response-generator.ts` e o `intent-classifier.ts` para, além de consultar `product_knowledge`, também carregar `catalog_products` ativos da empresa. Isso garante que a Amélia tenha acesso a preços reais, descrições e unidades do catálogo.
+
+No fallback de produtos do response-generator (linha ~308), adicionar query a `catalog_products` e mesclar com `product_knowledge`:
+
+```
+const { data: catalogItems } = await supabase.from('catalog_products')
+  .select('nome, descricao, preco_unitario, unidade')
+  .eq('empresa', empresa).eq('ativo', true);
 ```
 
-### Bug 2: ALTO — Watchdog de 15s muito agressivo
+E formatar para o prompt: `### {nome}\n{descricao}\nPreço: R$ {preco_unitario}/{unidade}`
 
-**Arquivo:** `CopilotPanel.tsx`, linha 193
+Mesma lógica no `intent-classifier.ts` na função `fetchProductKnowledge`.
 
-O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
+### 2. Vincular `catalog_products` ↔ `product_knowledge`
 
-**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
+Adicionar coluna `catalog_product_id` (FK opcional) na tabela `product_knowledge` via migração. Isso permite que ao cadastrar um produto no catálogo, ele possa ser referenciado pela base de conhecimento da IA, e vice-versa. A Amélia usa ambos: dados conceituais de `product_knowledge` + preços reais de `catalog_products`.
 
-```typescript
-const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
-```
+### 3. Gerar proposta comercial a partir do deal
 
-E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+Criar componente `DealProposalGenerator` que, dado um deal com produtos (`deal_products`), gera uma proposta formatada com:
+- Dados do contato/organização
+- Lista de produtos com preço, quantidade, desconto
+- Total
+- Botão para copiar/exportar (PDF via window.print ou clipboard)
 
-```typescript
-catch (err) {
-  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
-    // Auto-retry sem streaming
-    const fallbackResp = await fetch(url, { 
-      body: JSON.stringify({ ...payload, stream: false }) 
-    });
-    // processar resposta completa
-  }
-}
-```
+Integrar como botão "Gerar Proposta" na aba Produtos do `DealDetailSheet`.
 
-### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
+### Arquivos envolvidos
 
-**Arquivo:** `CopilotPanel.tsx`, linha 367
+| Arquivo | Ação |
+|---------|------|
+| `supabase/functions/sdr-ia-interpret/response-generator.ts` | Editar — adicionar query a `catalog_products` no fallback |
+| `supabase/functions/sdr-ia-interpret/intent-classifier.ts` | Editar — incluir `catalog_products` em `fetchProductKnowledge` |
+| `src/components/deals/DealProposalGenerator.tsx` | Novo — gerador de proposta comercial |
+| `src/components/deals/DealProductsTab.tsx` | Editar — adicionar botão "Gerar Proposta" |
+| Migração SQL | Adicionar `catalog_product_id` em `product_knowledge` (opcional) |
 
-As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
+### Sem migração obrigatória
 
-**Correção:** Usar `react-markdown` (já instalado no projeto):
-```tsx
-import ReactMarkdown from 'react-markdown';
-// ...
-<div className="prose prose-sm dark:prose-invert max-w-none">
-  <ReactMarkdown>{msg.content}</ReactMarkdown>
-</div>
-```
-
-### Plano de Correção
-
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
-| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
-| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
-| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
-
-Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
+A conexão IA ↔ catálogo pode funcionar sem FK, buscando ambas as tabelas por empresa. A FK é um refinamento opcional para quando o admin quiser vincular explicitamente um registro de conhecimento a um produto do catálogo.
 
