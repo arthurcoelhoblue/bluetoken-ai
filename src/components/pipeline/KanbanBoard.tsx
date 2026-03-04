@@ -236,7 +236,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
 
       {/* Column progress dots */}
       {sortedColumns.length > 0 && (
-        <div className="flex justify-center mt-[100px]">
+        <div className="flex justify-center pt-4">
           <div className="flex items-center gap-1.5 bg-background/80 backdrop-blur-sm rounded-full px-2.5 py-1 border border-border/50 shadow-sm">
             {sortedColumns.map((col, i) => {
               const isVisible = i >= visibleRange[0] && i <= visibleRange[1];
