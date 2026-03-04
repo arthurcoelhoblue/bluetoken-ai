@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import type { CanalTipo, EmpresaTipo, CadenceStep } from '@/types/cadence';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 
 // Template para o select
 export interface TemplateOption {
