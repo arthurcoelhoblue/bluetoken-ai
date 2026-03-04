@@ -346,7 +346,7 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
 
       {/* Shared Dialog for Create/Edit */}
       <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
-        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden">
+        <DialogContent className="max-w-2xl max-h-[85vh] flex flex-col overflow-hidden" onOpenAutoFocus={e => e.preventDefault()}>
           <DialogHeader>
             <DialogTitle>{isEditing ? "Editar Mapeamento Elementor" : "Novo Mapeamento Elementor"}</DialogTitle>
             <DialogDescription>
@@ -373,7 +373,7 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                   <Label>Empresa</Label>
                   <Select value={newEmpresa} onValueChange={setNewEmpresa}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[200]">
                       {empresaRecords.filter(e => e.is_active).map(e => (
                         <SelectItem key={e.id} value={e.id}>{e.label}</SelectItem>
                       ))}
@@ -387,7 +387,7 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                   <Label>Pipeline</Label>
                   <Select value={newPipelineId} onValueChange={setNewPipelineId}>
                     <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[200]">
                       {filteredPipelines.map(p => (
                         <SelectItem key={p.id} value={p.id}>
                           {p.nome}
@@ -400,7 +400,7 @@ ${mapping.token ? `    $headers['X-Webhook-Token'] = '${mapping.token}';` : '   
                   <Label>Estágio</Label>
                   <Select value={newStageId} onValueChange={setNewStageId}>
                     <SelectTrigger><SelectValue placeholder="Selecionar..." /></SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[200]">
                       {filteredStages.map(s => (
                         <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
                       ))}
