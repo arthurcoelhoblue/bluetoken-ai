@@ -221,7 +221,14 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 )}
 
                 <TabsContent value="produtos">
-                  <DealProductsTab dealId={dealId!} pipelineEmpresa={deal.pipeline_empresa} />
+                  <DealProductsTab
+                    dealId={dealId!}
+                    pipelineEmpresa={deal.pipeline_empresa}
+                    dealTitulo={deal.titulo}
+                    contactNome={deal.contact_nome}
+                    contactEmail={deal.contact_email}
+                    organizationNome={deal.organization_nome}
+                  />
                 </TabsContent>
 
                 <TabsContent value="reunioes">
