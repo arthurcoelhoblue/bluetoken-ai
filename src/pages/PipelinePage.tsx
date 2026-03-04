@@ -12,6 +12,7 @@ import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { LeadLookupDialog } from '@/components/pipeline/LeadLookupDialog';
+import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
@@ -78,6 +79,7 @@ function PipelineContent() {
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
   const [lookupDealId, setLookupDealId] = useState<string | null>(null);
   const [showLookup, setShowLookup] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
 
   const handleDealClick = (dealId: string) => {
     if (dealFromUrl === dealId) {
@@ -178,8 +180,16 @@ function PipelineContent() {
               wonLost={wonLost}
               isLoading={dealsLoading}
               onDealClick={handleDealClick}
+              onTransferClick={() => setShowTransfer(true)}
             />
           </div>
+
+          <TransferDealsDialog
+            open={showTransfer}
+            onOpenChange={setShowTransfer}
+            deals={deals ?? []}
+            owners={owners}
+          />
 
           <DealDetailSheet
             dealId={selectedDealId}

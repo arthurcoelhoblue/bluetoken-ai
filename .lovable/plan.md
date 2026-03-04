@@ -1,48 +1,87 @@
 
 
-## Transferir deals para outro vendedor (individual + em massa)
+## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
 
-### 1. Transferência individual — no DealDetailSheet (aba Dados)
+Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
 
-Atualmente o campo "Responsável" na `DealDadosTab` usa `renderInlineField` que edita texto livre. Isso precisa virar um **Select de vendedores** que atualiza `owner_id` (não `owner_nome`).
+### O Que Está Acontecendo
 
-**Arquivo:** `src/components/deals/DealDadosTab.tsx`
-- Substituir o campo "Responsável" por um Select que busca a lista de vendedores ativos (`profiles` com `is_vendedor=true`)
-- Ao selecionar, chamar `updateField` com `{ field: 'owner_id', value: selectedUserId }`
-- Registrar atividade de transferência via `deal_activities` (tipo `NOTA`, descricao "Transferido para {nome}")
+1. Usuário clica em "Qual o gargalo atual do pipeline?"
+2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
+3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
+4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
+5. O streaming funciona por ~1 segundo, depois **para por 15s**
+6. O **watchdog de inatividade de 15s** aborta a conexão
+7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
 
-### 2. Transferência em massa — na tela do Pipeline
+### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
 
-**Arquivo:** `src/components/pipeline/KanbanBoard.tsx` + novo componente
-- Adicionar botão "Transferir em massa" na barra de ações (ao lado do toggle IA Sort)
-- Ao clicar, abre um `Dialog` com:
-  - Select de vendedor de origem (opcional, para filtrar)
-  - Select de vendedor de destino (obrigatório)
-  - Checkbox: transferir todos os deals visíveis no Kanban ou selecionar individualmente
-- Executar `UPDATE deals SET owner_id = ? WHERE id IN (...)` via mutation
+**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
 
-**Novo arquivo:** `src/components/pipeline/TransferDealsDialog.tsx`
-- Props: `deals` (lista visível no kanban), `owners`, `open`, `onOpenChange`
-- Lista os deals com checkboxes para seleção
-- Select de destino (vendedor)
-- Botão confirmar que chama mutation em batch
+Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
 
-**Arquivo:** `src/pages/PipelinePage.tsx`
-- Passar `owners` e `deals` para o KanbanBoard (ou diretamente para o dialog)
-- Adicionar state para controlar abertura do dialog
+**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
+```typescript
+const isSendingRef = useRef(false);
 
-### 3. Hook de transferência
+const sendMessage = async (content: string) => {
+  if (!content.trim() || isSendingRef.current) return;
+  isSendingRef.current = true;
+  // ... resto da lógica
+  // no finally:
+  isSendingRef.current = false;
+};
+```
 
-**Arquivo:** `src/hooks/deals/useDealMutations.ts`
-- Adicionar `useTransferDeals` mutation que recebe `{ dealIds: string[], toOwnerId: string }` e atualiza todos em batch
+### Bug 2: ALTO — Watchdog de 15s muito agressivo
 
-### Arquivos envolvidos
+**Arquivo:** `CopilotPanel.tsx`, linha 193
 
-| Arquivo | Ação |
-|---------|------|
-| `src/components/deals/DealDadosTab.tsx` | Editar — campo Responsável vira Select com owner_id |
-| `src/components/pipeline/TransferDealsDialog.tsx` | Novo — dialog de transferência em massa |
-| `src/components/pipeline/KanbanBoard.tsx` | Editar — botão "Transferir" na barra |
-| `src/pages/PipelinePage.tsx` | Editar — passar owners e controlar dialog |
-| `src/hooks/deals/useDealMutations.ts` | Editar — adicionar useTransferDeals |
+O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
+
+**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
+
+```typescript
+const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
+```
+
+E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+
+```typescript
+catch (err) {
+  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
+    // Auto-retry sem streaming
+    const fallbackResp = await fetch(url, { 
+      body: JSON.stringify({ ...payload, stream: false }) 
+    });
+    // processar resposta completa
+  }
+}
+```
+
+### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
+
+**Arquivo:** `CopilotPanel.tsx`, linha 367
+
+As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
+
+**Correção:** Usar `react-markdown` (já instalado no projeto):
+```tsx
+import ReactMarkdown from 'react-markdown';
+// ...
+<div className="prose prose-sm dark:prose-invert max-w-none">
+  <ReactMarkdown>{msg.content}</ReactMarkdown>
+</div>
+```
+
+### Plano de Correção
+
+| # | Arquivo | Mudança |
+|---|---------|---------|
+| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
+| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
+| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
+| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
+
+Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
 

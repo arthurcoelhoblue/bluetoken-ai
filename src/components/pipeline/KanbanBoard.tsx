@@ -16,7 +16,7 @@ import { DealCard } from './DealCard';
 import { useMoveDeal } from '@/hooks/useDeals';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Sparkles, GripVertical } from 'lucide-react';
+import { Sparkles, GripVertical, ArrowRightLeft } from 'lucide-react';
 import type { KanbanColumn as KanbanColumnType, DealWithRelations } from '@/types/deal';
 
 interface KanbanBoardProps {
@@ -24,6 +24,7 @@ interface KanbanBoardProps {
   wonLost: KanbanColumnType[];
   isLoading: boolean;
   onDealClick?: (dealId: string) => void;
+  onTransferClick?: () => void;
 }
 
 function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): number {
@@ -36,7 +37,7 @@ function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): n
   return (100 - prob) * 0.4 + daysNorm * 0.3 + slaPct * 0.2 + valorNorm * 0.1;
 }
 
-export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: KanbanBoardProps) {
+export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransferClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
@@ -124,6 +125,12 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: Kanban
     >
       {/* IA Sort toggle */}
       <div className="flex items-center justify-end mb-3 gap-2">
+        {onTransferClick && (
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={onTransferClick}>
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            Transferir em massa
+          </Button>
+        )}
         <Button
           variant={iaSort ? 'default' : 'outline'}
           size="sm"
