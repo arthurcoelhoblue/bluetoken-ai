@@ -108,10 +108,18 @@ export function CalendarConfigPanel({ userId }: Props) {
     const resp = await supabase.functions.invoke('google-calendar-auth', {
       body: { action: 'get_auth_url', redirect_uri: redirectUri },
     });
+    
+    if (resp.error) {
+      console.error('Google Calendar auth error:', resp.error);
+      toast.error(`Erro ao conectar: ${resp.error.message || 'Erro desconhecido'}`);
+      return;
+    }
+    
     if (resp.data?.url) {
       window.location.href = resp.data.url;
     } else {
-      toast.error('Erro ao obter URL de autorização');
+      console.error('Google Calendar auth response sem URL:', resp.data);
+      toast.error('Erro ao obter URL de autorização. Verifique as credenciais do Google Calendar.');
     }
   };
 
