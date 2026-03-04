@@ -112,9 +112,19 @@ async function checkIntegration(integration: string): Promise<HealthCheckResult>
     case "anthropic": case "claude": case "lovable_ai": case "gemini": case "gpt": return await checkAnthropic();
     case "email": case "smtp": return await checkSMTP();
     case "zadarma": {
-      const zadarmaKey = getOptionalEnv("ZADARMA_API_KEY");
-      if (!zadarmaKey) return { status: "error", message: "ZADARMA_API_KEY não configurada" };
-      return { status: "online", message: "API Key configurada" };
+      const supabaseCheck = createServiceClient();
+      const { data: zConfig, error: zErr } = await supabaseCheck
+        .from('zadarma_config')
+        .select('api_key, empresas_ativas, webrtc_enabled')
+        .limit(1)
+        .maybeSingle();
+      if (zErr || !zConfig) return { status: "error", message: "Configuração Zadarma não encontrada no banco" };
+      if (!zConfig.api_key) return { status: "error", message: "API Key não configurada na tabela zadarma_config" };
+      return {
+        status: "online",
+        message: `Ativa para ${(zConfig.empresas_ativas || []).length} empresa(s)`,
+        details: { webrtc: zConfig.webrtc_enabled, empresas: zConfig.empresas_ativas },
+      };
     }
     case "sgt": return checkSGT();
     default: return { status: "error", message: `Integração desconhecida: ${integration}` };
