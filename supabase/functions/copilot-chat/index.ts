@@ -146,14 +146,12 @@ serve(async (req) => {
       );
     }
 
-    const token = authHeader.replace('Bearer ', '');
-    
-    // Use user-scoped client with getClaims for signing-keys compatibility
-    const userSupabase = createClient(envConfig.SUPABASE_URL, Deno.env.get('SUPABASE_ANON_KEY') || envConfig.SUPABASE_SERVICE_ROLE_KEY, {
+    // Use user-scoped client with getUser for token validation
+    const userSupabase = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY, {
       global: { headers: { Authorization: authHeader } },
     });
-    const { data: claimsData, error: claimsError } = await userSupabase.auth.getClaims(token);
-    userId = claimsData?.claims?.sub as string | undefined;
+    const { data: { user }, error: claimsError } = await userSupabase.auth.getUser();
+    userId = user?.id;
 
     if (claimsError || !userId) {
       log.warn('Token inválido', { error: String(claimsError) });
