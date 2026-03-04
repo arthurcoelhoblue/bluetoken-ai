@@ -8,8 +8,14 @@ const FALLBACK_ORIGIN = "https://sdrgrupobue.lovable.app";
 const BASE_HEADERS =
   "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version";
 
-/** Check if origin belongs to a Lovable domain (production or preview). */
+const ALLOWED_ORIGINS = [
+  "https://ameliacrm.com.br",
+  "https://www.ameliacrm.com.br",
+];
+
+/** Check if origin belongs to an allowed domain. */
 function isAllowedOrigin(origin: string): boolean {
+  if (ALLOWED_ORIGINS.includes(origin)) return true;
   return origin.endsWith('.lovable.app') || origin.endsWith('.lovableproject.com');
 }
 
