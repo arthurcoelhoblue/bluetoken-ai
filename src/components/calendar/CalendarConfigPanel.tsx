@@ -105,21 +105,28 @@ export function CalendarConfigPanel({ userId }: Props) {
     if (!session) { toast.error('Faça login primeiro'); return; }
 
     const redirectUri = `${window.location.origin}/me`;
-    const resp = await supabase.functions.invoke('google-calendar-auth', {
-      body: { action: 'get_auth_url', redirect_uri: redirectUri },
-    });
-    
-    if (resp.error) {
-      console.error('Google Calendar auth error:', resp.error);
-      toast.error(`Erro ao conectar: ${resp.error.message || 'Erro desconhecido'}`);
-      return;
-    }
-    
-    if (resp.data?.url) {
-      window.location.href = resp.data.url;
-    } else {
-      console.error('Google Calendar auth response sem URL:', resp.data);
-      toast.error('Erro ao obter URL de autorização. Verifique as credenciais do Google Calendar.');
+    try {
+      const resp = await supabase.functions.invoke('google-calendar-auth', {
+        body: { action: 'get_auth_url', redirect_uri: redirectUri },
+      });
+      
+      console.log('Google Calendar auth response:', { data: resp.data, error: resp.error });
+      
+      if (resp.error) {
+        console.error('Google Calendar auth error:', resp.error);
+        toast.error(`Erro ao conectar: ${resp.error.message || 'Erro desconhecido'}`);
+        return;
+      }
+      
+      if (resp.data?.url) {
+        window.location.href = resp.data.url;
+      } else {
+        console.error('Google Calendar auth response sem URL:', resp.data);
+        toast.error('Erro ao obter URL de autorização. Verifique as credenciais do Google Calendar.');
+      }
+    } catch (err) {
+      console.error('Google Calendar fetch exception:', err);
+      toast.error('Erro de rede ao conectar Google Calendar. Tente novamente.');
     }
   };
 
