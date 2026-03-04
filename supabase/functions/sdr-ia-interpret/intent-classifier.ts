@@ -356,20 +356,41 @@ async function fetchActiveTokenizaOffers(): Promise<TokenizaOffer[]> {
 
 async function fetchProductKnowledge(supabase: SupabaseClient, empresa: EmpresaTipo): Promise<string> {
   try {
-    const { data: products } = await supabase.from('product_knowledge').select('id, produto_nome, descricao_curta').eq('empresa', empresa).eq('ativo', true).limit(5);
-    if (!products || products.length === 0) return '';
-    const productIds = products.map((p: { id: string }) => p.id);
-    const { data: sections } = await supabase.from('knowledge_sections').select('product_knowledge_id, tipo, titulo, conteudo').in('product_knowledge_id', productIds).order('ordem');
+    const [productsRes, catalogRes] = await Promise.all([
+      supabase.from('product_knowledge').select('id, produto_nome, descricao_curta').eq('empresa', empresa).eq('ativo', true).limit(5),
+      supabase.from('catalog_products').select('nome, descricao, preco_unitario, unidade').eq('empresa', empresa).eq('ativo', true).order('nome'),
+    ]);
+    const products = productsRes.data;
+    const catalogItems = (catalogRes.data || []) as { nome: string; descricao: string | null; preco_unitario: number; unidade: string }[];
+
+    if ((!products || products.length === 0) && catalogItems.length === 0) return '';
+
     let text = '\n## CONHECIMENTO DOS PRODUTOS\n';
-    for (const p of products) {
-      const prod = p as { id: string; produto_nome: string; descricao_curta: string | null };
-      text += `### ${prod.produto_nome}\n${prod.descricao_curta || ''}\n`;
-      const ps = (sections || []).filter((s: { product_knowledge_id: string }) => s.product_knowledge_id === prod.id);
-      for (const s of ps) {
-        const sec = s as { titulo: string; conteudo: string };
-        text += `**${sec.titulo}**: ${sec.conteudo}\n`;
+
+    if (products && products.length > 0) {
+      const productIds = products.map((p: { id: string }) => p.id);
+      const { data: sections } = await supabase.from('knowledge_sections').select('product_knowledge_id, tipo, titulo, conteudo').in('product_knowledge_id', productIds).order('ordem');
+      for (const p of products) {
+        const prod = p as { id: string; produto_nome: string; descricao_curta: string | null };
+        text += `### ${prod.produto_nome}\n${prod.descricao_curta || ''}\n`;
+        const ps = (sections || []).filter((s: { product_knowledge_id: string }) => s.product_knowledge_id === prod.id);
+        for (const s of ps) {
+          const sec = s as { titulo: string; conteudo: string };
+          text += `**${sec.titulo}**: ${sec.conteudo}\n`;
+        }
       }
     }
+
+    // Append catalog_products (preços comerciais reais)
+    if (catalogItems.length > 0) {
+      text += '\n## CATÁLOGO COMERCIAL (preços vigentes)\n';
+      for (const c of catalogItems) {
+        text += `### ${c.nome}\n`;
+        if (c.descricao) text += `${c.descricao}\n`;
+        text += `Preço: R$ ${c.preco_unitario.toFixed(2)}/${c.unidade}\n\n`;
+      }
+    }
+
     return text;
   } catch { return ''; }
 }

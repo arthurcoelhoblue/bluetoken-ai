@@ -149,8 +149,21 @@ export function DealProductsTab({ dealId, pipelineEmpresa, dealTitulo, contactNo
             <span>Total</span>
             <span>{formatBRL(total)}</span>
           </div>
+          <Button variant="outline" size="sm" className="w-full mt-2 text-xs" onClick={() => setProposalOpen(true)}>
+            <FileText className="h-3.5 w-3.5 mr-1.5" /> Gerar Proposta
+          </Button>
         </div>
       )}
+
+      <DealProposalGenerator
+        open={proposalOpen}
+        onOpenChange={setProposalOpen}
+        products={products}
+        dealTitulo={dealTitulo}
+        contactNome={contactNome}
+        contactEmail={contactEmail}
+        organizationNome={organizationNome}
+      />
     </div>
   );
 }

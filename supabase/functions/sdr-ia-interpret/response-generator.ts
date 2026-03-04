@@ -306,39 +306,58 @@ export async function generateResponse(supabase: SupabaseClient, params: Generat
   }
 
   if (!productsText) {
-    // Fallback enriquecido: carregar products + knowledge_sections + knowledge_faq
-    const { data: products } = await supabase.from('product_knowledge').select('id, produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5);
-    const typedProducts = (products || []) as (ProductRow & { id: string })[];
+    // Fallback enriquecido: carregar products + knowledge_sections + knowledge_faq + catalog_products
+    const [productsRes, catalogRes] = await Promise.all([
+      supabase.from('product_knowledge').select('id, produto_nome, descricao_curta, preco_texto, diferenciais').eq('empresa', empresa).eq('ativo', true).limit(5),
+      supabase.from('catalog_products').select('nome, descricao, preco_unitario, unidade').eq('empresa', empresa).eq('ativo', true).order('nome'),
+    ]);
+    const typedProducts = (productsRes.data || []) as (ProductRow & { id: string })[];
+    const catalogItems = (catalogRes.data || []) as { nome: string; descricao: string | null; preco_unitario: number; unidade: string }[];
     
-    if (typedProducts.length > 0) {
-      const productIds = typedProducts.map(p => p.id);
+    if (typedProducts.length > 0 || catalogItems.length > 0) {
+      let parts: string[] = [];
+
+      if (typedProducts.length > 0) {
+        const productIds = typedProducts.map(p => p.id);
+        
+        // Carregar knowledge_sections associadas (top 3 por produto)
+        const { data: sections } = await supabase.from('knowledge_sections')
+          .select('product_knowledge_id, titulo, conteudo')
+          .in('product_knowledge_id', productIds)
+          .order('ordem')
+          .limit(15);
+        
+        for (const p of typedProducts) {
+          let line = `### ${p.produto_nome}\n${p.descricao_curta || ''}`;
+          if (p.preco_texto) line += `\nPreço: ${p.preco_texto}`;
+          if (p.diferenciais) line += `\nDiferenciais: ${p.diferenciais}`;
+          const productSections = (sections || []).filter((s: any) => s.product_knowledge_id === p.id);
+          for (const s of productSections) {
+            line += `\n**${(s as any).titulo}**: ${(s as any).conteudo}`;
+          }
+          parts.push(line);
+        }
+      }
+
+      // Append catalog_products (preços reais do catálogo comercial)
+      if (catalogItems.length > 0) {
+        parts.push('## CATÁLOGO COMERCIAL (preços vigentes)');
+        for (const c of catalogItems) {
+          let line = `### ${c.nome}`;
+          if (c.descricao) line += `\n${c.descricao}`;
+          line += `\nPreço: R$ ${c.preco_unitario.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}/${c.unidade}`;
+          parts.push(line);
+        }
+      }
+
+      productsText = parts.join('\n\n');
       
-      // Carregar knowledge_sections associadas (top 3 por produto)
-      const { data: sections } = await supabase.from('knowledge_sections')
-        .select('product_knowledge_id, titulo, conteudo')
-        .in('product_knowledge_id', productIds)
-        .order('ordem')
-        .limit(15);
-      
-      // Carregar knowledge_faq associados (top 5 por produto)
+      // Carregar knowledge_faq
       const { data: faqs } = await supabase.from('knowledge_faq')
         .select('pergunta, resposta')
         .eq('empresa', empresa)
         .limit(10);
-      
-      productsText = typedProducts.map((p) => {
-        let line = `### ${p.produto_nome}\n${p.descricao_curta || ''}`;
-        if (p.preco_texto) line += `\nPreço: ${p.preco_texto}`;
-        if (p.diferenciais) line += `\nDiferenciais: ${p.diferenciais}`;
-        // Append sections for this product
-        const productSections = (sections || []).filter((s: any) => s.product_knowledge_id === p.id);
-        for (const s of productSections) {
-          line += `\n**${(s as any).titulo}**: ${(s as any).conteudo}`;
-        }
-        return line;
-      }).join('\n\n');
-      
-      // Append FAQs
+
       if (faqs && faqs.length > 0) {
         productsText += '\n\n## PERGUNTAS FREQUENTES\n';
         for (const faq of faqs) {
