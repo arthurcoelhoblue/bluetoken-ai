@@ -439,10 +439,21 @@ serve(async (req) => {
       content = 'Desculpe, não foi possível processar sua solicitação no momento. Tente novamente em alguns instantes.';
     }
 
+    const fallbackMeta = { model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs };
+
+    // When stream=false was requested, return plain JSON
+    if (streamRequested === false) {
+      return new Response(JSON.stringify({
+        choices: [{ message: { content } }],
+        meta: fallbackMeta,
+      }), {
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
     // Return as SSE stream for consistency (single event + DONE)
     const encoder = new TextEncoder();
     const fallbackChunk = { choices: [{ delta: { content } }], model: aiResult.model };
-    const fallbackMeta = { model: aiResult.model, tokens_input: aiResult.tokensInput, tokens_output: aiResult.tokensOutput, latency_ms: aiResult.latencyMs };
     const body = `data: ${JSON.stringify(fallbackChunk)}\n\ndata: ${JSON.stringify({ meta: fallbackMeta })}\n\ndata: [DONE]\n\n`;
 
     return new Response(body, {
