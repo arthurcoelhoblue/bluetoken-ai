@@ -3,7 +3,7 @@
 // porque são chamados por servidores de terceiros que não enviam Origin.
 // Funções chamadas pelo frontend usam whitelist restritiva.
 
-const FALLBACK_ORIGIN = "https://sdrgrupobue.lovable.app";
+const FALLBACK_ORIGIN = "https://ameliacrm.com.br";
 
 const BASE_HEADERS =
   "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version";

@@ -139,10 +139,23 @@ serve(async (req) => {
     let userId: string | undefined;
 
     const authHeader = req.headers.get('Authorization');
-    if (authHeader) {
-      const token = authHeader.replace('Bearer ', '');
-      const { data: userData } = await supabase.auth.getUser(token);
-      userId = userData?.user?.id;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return new Response(
+        JSON.stringify({ error: 'Token de autenticação ausente' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    const { data: userData } = await supabase.auth.getUser(token);
+    userId = userData?.user?.id;
+
+    if (!userId) {
+      return new Response(
+        JSON.stringify({ error: 'Token inválido ou expirado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
       if (userId) {
         const { data: roles } = await supabase

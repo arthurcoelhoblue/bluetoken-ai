@@ -650,7 +650,7 @@ async function processarRun(supabase: SupabaseClient, run: LeadCadenceRun): Prom
     };
   }
 
-  const lockTime = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+  const lockTime = new Date(Date.now() + 10 * 60 * 1000).toISOString();
   const { data: locked, error: lockError } = await supabase
     .from('lead_cadence_runs')
     .update({ next_run_at: lockTime, updated_at: new Date().toISOString() })

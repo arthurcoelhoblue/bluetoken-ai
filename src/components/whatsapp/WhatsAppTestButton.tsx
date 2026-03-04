@@ -69,11 +69,7 @@ export function WhatsAppTestButton({ leadId, empresa, telefone, nome }: WhatsApp
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Erro desconhecido';
       setResult({ success: false, error: errorMessage });
-      toast({
-        title: 'Erro',
-        description: errorMessage,
-        variant: 'destructive',
-      });
+      toast.error(errorMessage);
     } finally {
       setIsLoading(false);
     }

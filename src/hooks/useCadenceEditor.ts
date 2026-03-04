@@ -191,19 +191,12 @@ export function useSaveCadence() {
       queryClient.invalidateQueries({ queryKey: ['cadences'] });
       queryClient.invalidateQueries({ queryKey: ['cadence', result.id] });
       queryClient.invalidateQueries({ queryKey: ['cadence-edit', result.id] });
-      toast({
-        title: result.isNew ? 'Cadência criada' : 'Cadência atualizada',
-        description: result.isNew
-          ? 'A nova cadência foi criada com sucesso.'
-          : 'As alterações foram salvas com sucesso.',
-      });
+      toast.success(result.isNew
+        ? 'A nova cadência foi criada com sucesso.'
+        : 'As alterações foram salvas com sucesso.');
     },
     onError: (error: Error) => {
-      toast({
-        title: 'Erro ao salvar',
-        description: error.message,
-        variant: 'destructive',
-      });
+      toast.error(error.message);
     },
   });
 }

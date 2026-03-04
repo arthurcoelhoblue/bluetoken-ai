@@ -124,10 +124,7 @@ function MonitorSgtEventsContent() {
 
   const handleRefresh = () => {
     refetch();
-    toast({
-      title: 'Atualizado',
-      description: 'Lista de eventos atualizada.',
-    });
+    toast.success('Lista de eventos atualizada.');
   };
 
   if (error) {
