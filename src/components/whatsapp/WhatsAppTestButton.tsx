@@ -13,7 +13,7 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import { useToast } from '@/hooks/use-toast';
+import { toast } from 'sonner';
 import { MessageSquare, Send, AlertTriangle, CheckCircle2 } from 'lucide-react';
 import type { EmpresaTipo } from '@/types/sgt';
 
