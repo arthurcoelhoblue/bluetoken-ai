@@ -17,9 +17,10 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     if (!el) return;
 
     const target = e.target as HTMLElement;
-    if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
+    // Skip interactive elements and dnd-kit draggable cards
+    if (target.closest('button, a, input, textarea, select, [role="button"], [data-deal-card]')) return;
 
-    // Block dnd-kit from receiving this pointerdown initially
+    // Only activate grab scroll in empty areas (headers, gaps, column backgrounds)
     e.stopPropagation();
 
     isDown.current = true;
@@ -50,26 +51,9 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
         el.style.cursor = 'grabbing';
         el.style.userSelect = 'none';
       } else {
-        // Vertical → release to dnd-kit by re-dispatching pointerdown
+        // Vertical → not a scroll gesture, release
         axisLock.current = 'released';
         isDown.current = false;
-
-        if (origTarget.current) {
-          const synth = new PointerEvent('pointerdown', {
-            bubbles: true,
-            cancelable: true,
-            pointerId: origPointerId.current ?? 1,
-            pointerType: e.pointerType as any,
-            clientX: startX.current - window.scrollX,
-            clientY: startY.current - window.scrollY,
-            screenX: e.screenX,
-            screenY: e.screenY,
-            button: 0,
-            buttons: 1,
-            isPrimary: true,
-          });
-          origTarget.current.dispatchEvent(synth);
-        }
         return;
       }
     }

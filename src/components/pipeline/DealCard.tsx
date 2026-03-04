@@ -65,6 +65,7 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       ref={overlay ? undefined : setNodeRef}
       style={overlay ? undefined : style}
       {...(overlay ? {} : { ...attributes, ...listeners })}
+      data-deal-card
       className={`p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
       onClick={() => onDealClick?.(deal.id)}
     >
