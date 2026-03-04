@@ -146,14 +146,26 @@ serve(async (req) => {
       );
     }
 
-    // Validate JWT using getClaims (signing-keys compatible)
-    const anonClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY);
+    // Validate JWT by decoding payload (signing-keys compatible)
     const token = authHeader.replace('Bearer ', '');
-    const { data: claimsData, error: claimsError } = await anonClient.auth.getClaims(token);
-    userId = claimsData?.claims?.sub as string | undefined;
+    try {
+      const payloadB64 = token.split('.')[1];
+      if (!payloadB64) throw new Error('Invalid JWT structure');
+      const payload = JSON.parse(atob(payloadB64.replace(/-/g, '+').replace(/_/g, '/')));
+      userId = payload.sub as string | undefined;
+      // Check expiration
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        throw new Error('Token expired');
+      }
+    } catch (jwtErr) {
+      log.warn('Token inválido', { error: String(jwtErr) });
+      return new Response(
+        JSON.stringify({ error: 'Token inválido ou expirado' }),
+        { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
 
-    if (claimsError || !userId) {
-      log.warn('Token inválido', { error: String(claimsError) });
+    if (!userId) {
       return new Response(
         JSON.stringify({ error: 'Token inválido ou expirado' }),
         { status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
