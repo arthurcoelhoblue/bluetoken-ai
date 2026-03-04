@@ -157,32 +157,29 @@ serve(async (req) => {
       );
     }
 
-      if (userId) {
-        const { data: roles } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId);
+    const { data: roles } = await supabase
+      .from('user_roles')
+      .select('role')
+      .eq('user_id', userId);
 
-        isAdmin = roles?.some((r: RoleRow) => r.role === 'ADMIN') ?? false;
+    isAdmin = roles?.some((r: RoleRow) => r.role === 'ADMIN') ?? false;
 
-        if (!isAdmin) {
-          const { data: assignment } = await supabase
-            .from('user_access_assignments')
-            .select('access_profile_id')
-            .eq('user_id', userId)
-            .maybeSingle();
+    if (!isAdmin) {
+      const { data: assignment } = await supabase
+        .from('user_access_assignments')
+        .select('access_profile_id')
+        .eq('user_id', userId)
+        .maybeSingle();
 
-          if ((assignment as UserAccessAssignment | null)?.access_profile_id) {
-            const { data: profile } = await supabase
-              .from('access_profiles')
-              .select('permissions')
-              .eq('id', (assignment as UserAccessAssignment).access_profile_id)
-              .single();
+      if ((assignment as UserAccessAssignment | null)?.access_profile_id) {
+        const { data: profile } = await supabase
+          .from('access_profiles')
+          .select('permissions')
+          .eq('id', (assignment as UserAccessAssignment).access_profile_id)
+          .single();
 
-            if (profile?.permissions) {
-              userPermissions = profile.permissions as Record<string, { view: boolean; edit: boolean }>;
-            }
-          }
+        if (profile?.permissions) {
+          userPermissions = profile.permissions as Record<string, { view: boolean; edit: boolean }>;
         }
       }
     }
