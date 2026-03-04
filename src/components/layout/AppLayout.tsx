@@ -38,7 +38,7 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
           <AppSidebar />
           <SidebarInset className="flex flex-col min-w-0 min-h-0 overflow-hidden">
             <TopBar />
-            <div className="flex-1 min-h-0 overflow-auto flex flex-col">
+            <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden flex flex-col">
               {children}
             </div>
           </SidebarInset>

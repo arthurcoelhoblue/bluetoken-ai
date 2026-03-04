@@ -9,6 +9,8 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
   const scrollLeftStart = useRef(0);
   const scrollTopStart = useRef(0);
   const axisLock = useRef<'pending' | 'horizontal' | 'released'>('pending');
+  const origTarget = useRef<HTMLElement | null>(null);
+  const origPointerId = useRef<number | null>(null);
 
   const onPointerDown = useCallback((e: PointerEvent) => {
     const el = scrollRef.current;
@@ -17,8 +19,13 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     const target = e.target as HTMLElement;
     if (target.closest('button, a, input, textarea, select, [role="button"]')) return;
 
+    // Block dnd-kit from receiving this pointerdown initially
+    e.stopPropagation();
+
     isDown.current = true;
     axisLock.current = 'pending';
+    origTarget.current = target;
+    origPointerId.current = e.pointerId;
     startX.current = e.pageX;
     startY.current = e.pageY;
     scrollLeftStart.current = el.scrollLeft;
@@ -38,25 +45,45 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
     if (axisLock.current === 'pending') {
       if (absDx < AXIS_THRESHOLD && absDy < AXIS_THRESHOLD) return;
       if (absDx > absDy) {
+        // Horizontal → grab scroll
         axisLock.current = 'horizontal';
         el.style.cursor = 'grabbing';
         el.style.userSelect = 'none';
       } else {
+        // Vertical → release to dnd-kit by re-dispatching pointerdown
         axisLock.current = 'released';
+        isDown.current = false;
+
+        if (origTarget.current) {
+          const synth = new PointerEvent('pointerdown', {
+            bubbles: true,
+            cancelable: true,
+            pointerId: origPointerId.current ?? 1,
+            pointerType: e.pointerType as any,
+            clientX: startX.current - window.scrollX,
+            clientY: startY.current - window.scrollY,
+            screenX: e.screenX,
+            screenY: e.screenY,
+            button: 0,
+            buttons: 1,
+            isPrimary: true,
+          });
+          origTarget.current.dispatchEvent(synth);
+        }
         return;
       }
     }
 
     if (axisLock.current === 'released') return;
 
-    // Block dnd-kit from processing this pointer event
+    // Horizontal grab scroll — block everything else
     e.preventDefault();
     e.stopImmediatePropagation();
     el.scrollLeft = scrollLeftStart.current - dx;
   }, [scrollRef]);
 
   const onPointerUp = useCallback(() => {
-    if (!isDown.current) return;
+    if (!isDown.current && axisLock.current !== 'horizontal') return;
     isDown.current = false;
     const el = scrollRef.current;
     if (el) {
@@ -64,6 +91,8 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
       el.style.removeProperty('user-select');
     }
     axisLock.current = 'pending';
+    origTarget.current = null;
+    origPointerId.current = null;
   }, [scrollRef]);
 
   // --- Touch fallback ---
