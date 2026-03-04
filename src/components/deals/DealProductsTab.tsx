@@ -3,19 +3,24 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Trash2, Plus, Package } from 'lucide-react';
+import { Trash2, Plus, Package, FileText } from 'lucide-react';
 import { useDealProducts, useCatalogProducts, useAddDealProduct, useRemoveDealProduct } from '@/hooks/useDealProducts';
+import { DealProposalGenerator } from './DealProposalGenerator';
 
 interface Props {
   dealId: string;
   pipelineEmpresa: string | null;
+  dealTitulo?: string;
+  contactNome?: string;
+  contactEmail?: string;
+  organizationNome?: string;
 }
 
 function formatBRL(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
-export function DealProductsTab({ dealId, pipelineEmpresa }: Props) {
+export function DealProductsTab({ dealId, pipelineEmpresa, dealTitulo, contactNome, contactEmail, organizationNome }: Props) {
   const { data: products = [], isLoading } = useDealProducts(dealId);
   const { data: catalog = [] } = useCatalogProducts(pipelineEmpresa);
   const addProduct = useAddDealProduct();
@@ -26,6 +31,7 @@ export function DealProductsTab({ dealId, pipelineEmpresa }: Props) {
   const [preco, setPreco] = useState('');
   const [quantidade, setQuantidade] = useState('1');
   const [desconto, setDesconto] = useState('0');
+  const [proposalOpen, setProposalOpen] = useState(false);
 
   const handleSelectCatalog = (catalogId: string) => {
     setSelectedCatalogId(catalogId);
@@ -143,8 +149,21 @@ export function DealProductsTab({ dealId, pipelineEmpresa }: Props) {
             <span>Total</span>
             <span>{formatBRL(total)}</span>
           </div>
+          <Button variant="outline" size="sm" className="w-full mt-2 text-xs" onClick={() => setProposalOpen(true)}>
+            <FileText className="h-3.5 w-3.5 mr-1.5" /> Gerar Proposta
+          </Button>
         </div>
       )}
+
+      <DealProposalGenerator
+        open={proposalOpen}
+        onOpenChange={setProposalOpen}
+        products={products}
+        dealTitulo={dealTitulo}
+        contactNome={contactNome}
+        contactEmail={contactEmail}
+        organizationNome={organizationNome}
+      />
     </div>
   );
 }
