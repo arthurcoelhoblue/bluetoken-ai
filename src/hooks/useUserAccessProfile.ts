@@ -12,7 +12,7 @@ export function useUserAccessProfile() {
 
       const { data, error } = await supabase
         .from('user_access_assignments')
-        .select('profile_id, access_profiles(nome)')
+        .select('access_profile_id, access_profiles(nome)')
         .eq('user_id', user.id)
         .limit(1)
         .maybeSingle();
