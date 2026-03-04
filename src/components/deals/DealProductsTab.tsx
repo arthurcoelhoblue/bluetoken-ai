@@ -20,7 +20,7 @@ function formatBRL(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 }
 
-export function DealProductsTab({ dealId, pipelineEmpresa }: Props) {
+export function DealProductsTab({ dealId, pipelineEmpresa, dealTitulo, contactNome, contactEmail, organizationNome }: Props) {
   const { data: products = [], isLoading } = useDealProducts(dealId);
   const { data: catalog = [] } = useCatalogProducts(pipelineEmpresa);
   const addProduct = useAddDealProduct();
@@ -31,6 +31,7 @@ export function DealProductsTab({ dealId, pipelineEmpresa }: Props) {
   const [preco, setPreco] = useState('');
   const [quantidade, setQuantidade] = useState('1');
   const [desconto, setDesconto] = useState('0');
+  const [proposalOpen, setProposalOpen] = useState(false);
 
   const handleSelectCatalog = (catalogId: string) => {
     setSelectedCatalogId(catalogId);
