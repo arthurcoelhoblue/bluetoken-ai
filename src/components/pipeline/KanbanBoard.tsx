@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useMemo } from 'react';
+import { useState, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useGrabScroll } from '@/hooks/useGrabScroll';
 import {
   DndContext,
@@ -16,7 +16,7 @@ import { DealCard } from './DealCard';
 import { useMoveDeal } from '@/hooks/useDeals';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Button } from '@/components/ui/button';
-import { Sparkles, GripVertical, ArrowRightLeft } from 'lucide-react';
+import { Sparkles, GripVertical, ArrowRightLeft, ChevronLeft, ChevronRight } from 'lucide-react';
 import type { KanbanColumn as KanbanColumnType, DealWithRelations } from '@/types/deal';
 
 interface KanbanBoardProps {
@@ -42,6 +42,33 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
   useGrabScroll(scrollRef);
+
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 2);
+  }, []);
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    updateScrollState();
+    el.addEventListener('scroll', updateScrollState, { passive: true });
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    return () => {
+      el.removeEventListener('scroll', updateScrollState);
+      ro.disconnect();
+    };
+  }, [updateScrollState, isLoading]);
+
+  const scrollBy = useCallback((dir: number) => {
+    scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
+  }, []);
 
   const [iaSort, setIaSort] = useState(() => {
     try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
@@ -71,7 +98,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   );
 
   const handleDragStart = useCallback((event: DragStartEvent) => {
-    if (iaSort) return; // Disable drag in IA sort mode
+    if (iaSort) return;
     const deal = event.active.data.current?.deal as DealWithRelations | undefined;
     if (deal) setActiveDeal(deal);
   }, [iaSort]);
@@ -79,14 +106,13 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   const handleDragEnd = useCallback(
     (event: DragEndEvent) => {
       setActiveDeal(null);
-      if (iaSort) return; // Disable drag in IA sort mode
+      if (iaSort) return;
       const { active, over } = event;
       if (!over) return;
 
       const dealId = active.id as string;
       const overId = over.id as string;
 
-      // Find the target stage - over could be a stage or another deal
       let toStageId = overId;
       const allDeals = columns.concat(wonLost).flatMap(c => c.deals);
       const overDeal = allDeals.find(d => d.id === overId);
@@ -142,25 +168,57 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
         </Button>
       </div>
 
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-auto">
-        <div className="flex gap-4 pb-4 min-h-[400px]" style={{ minWidth: 'max-content' }}>
-          {sortedColumns.map(col => (
-            <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-          ))}
-        </div>
-
-        {wonLost.some(c => c.deals.length > 0) && (
-          <>
-            <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-              Encerrados
-            </div>
-            <div className="flex gap-4 pb-4" style={{ minWidth: 'max-content' }}>
-              {wonLost.map(col => (
-                <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-              ))}
-            </div>
-          </>
+      {/* Carousel wrapper */}
+      <div className="relative flex-1 min-h-0">
+        {/* Left arrow */}
+        {canScrollLeft && (
+          <button
+            onClick={() => scrollBy(-1)}
+            className="absolute left-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-background/90 border border-border shadow-md hover:bg-accent transition-colors"
+            aria-label="Scroll left"
+          >
+            <ChevronLeft className="h-5 w-5 text-foreground" />
+          </button>
         )}
+        {/* Right arrow */}
+        {canScrollRight && (
+          <button
+            onClick={() => scrollBy(1)}
+            className="absolute right-0 top-1/2 -translate-y-1/2 z-10 h-10 w-10 flex items-center justify-center rounded-full bg-background/90 border border-border shadow-md hover:bg-accent transition-colors"
+            aria-label="Scroll right"
+          >
+            <ChevronRight className="h-5 w-5 text-foreground" />
+          </button>
+        )}
+
+        {/* Gradient indicators */}
+        {canScrollLeft && (
+          <div className="absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-background to-transparent z-[5] pointer-events-none" />
+        )}
+        {canScrollRight && (
+          <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-[5] pointer-events-none" />
+        )}
+
+        <div ref={scrollRef} className="overflow-auto h-full" data-grab-area>
+          <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
+            {sortedColumns.map(col => (
+              <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+            ))}
+          </div>
+
+          {wonLost.some(c => c.deals.length > 0) && (
+            <>
+              <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-6">
+                Encerrados
+              </div>
+              <div className="flex gap-4 pb-4 px-6" style={{ minWidth: 'max-content' }}>
+                {wonLost.map(col => (
+                  <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       <DragOverlay>
