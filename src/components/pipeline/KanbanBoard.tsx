@@ -212,9 +212,32 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
           <div className="absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-background to-transparent z-[5] pointer-events-none" />
         )}
 
-        {/* Column progress dots */}
-        {sortedColumns.length > 0 && (
-          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1.5 bg-background/80 backdrop-blur-sm rounded-full px-2.5 py-1 border border-border/50 shadow-sm">
+        <div ref={scrollRef} className="overflow-auto h-full" data-grab-area>
+          <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
+            {sortedColumns.map(col => (
+              <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+            ))}
+          </div>
+
+          {wonLost.some(c => c.deals.length > 0) && (
+            <>
+              <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-6">
+                Encerrados
+              </div>
+              <div className="flex gap-4 pb-4 px-6" style={{ minWidth: 'max-content' }}>
+                {wonLost.map(col => (
+                  <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* Column progress dots */}
+      {sortedColumns.length > 0 && (
+        <div className="flex justify-center mt-[100px]">
+          <div className="flex items-center gap-1.5 bg-background/80 backdrop-blur-sm rounded-full px-2.5 py-1 border border-border/50 shadow-sm">
             {sortedColumns.map((col, i) => {
               const isVisible = i >= visibleRange[0] && i <= visibleRange[1];
               return (
@@ -237,29 +260,8 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
               );
             })}
           </div>
-        )}
-
-        <div ref={scrollRef} className="overflow-auto h-full pb-6" data-grab-area>
-          <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
-            {sortedColumns.map(col => (
-              <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-            ))}
-          </div>
-
-          {wonLost.some(c => c.deals.length > 0) && (
-            <>
-              <div className="mt-6 mb-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider px-6">
-                Encerrados
-              </div>
-              <div className="flex gap-4 pb-4 px-6" style={{ minWidth: 'max-content' }}>
-                {wonLost.map(col => (
-                  <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
-                ))}
-              </div>
-            </>
-          )}
         </div>
-      </div>
+      )}
 
       <DragOverlay>
         {activeDeal ? <DealCard deal={activeDeal} overlay /> : null}
