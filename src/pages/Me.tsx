@@ -27,6 +27,7 @@ import { useUserAccessProfile } from '@/hooks/useUserAccessProfile';
 
 function MeContent() {
   const { profile, roles, user } = useAuth();
+  const { data: accessProfileName } = useUserAccessProfile();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
