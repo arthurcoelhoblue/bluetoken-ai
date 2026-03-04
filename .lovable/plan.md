@@ -1,87 +1,28 @@
 
 
-## Diagnóstico do Copilot — 3 Bugs Raiz Identificados
+## Diagnóstico
 
-Tracei o fluxo completo via session replay, network requests e edge function logs. Aqui está o que acontece:
-
-### O Que Está Acontecendo
-
-1. Usuário clica em "Qual o gargalo atual do pipeline?"
-2. **DUAS requisições POST** idênticas são disparadas para `copilot-chat` no mesmo instante (23:00:40)
-3. A primeira começa a fazer streaming (texto aparece: "Olha, analisando seus dados...")
-4. A segunda é abortada imediatamente ("BodyStreamBuffer was aborted")
-5. O streaming funciona por ~1 segundo, depois **para por 15s**
-6. O **watchdog de inatividade de 15s** aborta a conexão
-7. Mensagem de timeout aparece: "⏱️ A Amélia demorou demais"
-
-### Bug 1: CRÍTICO — Dupla Requisição (sem guard de concorrência)
-
-**Arquivo:** `CopilotPanel.tsx` → `sendMessage()`
-
-Não existe proteção contra chamadas concorrentes. O `isLoading` é setado via `setState` (assíncrono), então se o componente não re-renderizar a tempo, um segundo clique ou um re-render do React pode disparar `sendMessage` novamente antes de `isLoading=true` tomar efeito.
-
-**Correção:** Adicionar `useRef<boolean>` como guard síncrono:
-```typescript
-const isSendingRef = useRef(false);
-
-const sendMessage = async (content: string) => {
-  if (!content.trim() || isSendingRef.current) return;
-  isSendingRef.current = true;
-  // ... resto da lógica
-  // no finally:
-  isSendingRef.current = false;
-};
-```
-
-### Bug 2: ALTO — Watchdog de 15s muito agressivo
-
-**Arquivo:** `CopilotPanel.tsx`, linha 193
-
-O Claude Haiku pode pausar o stream por mais de 15s durante "thinking" ou quando o contexto é muito grande (system prompt + dados do CRM + coaching RAG). Isso causa abort prematuro mesmo quando a resposta está chegando normalmente.
-
-**Correção:** Aumentar para 30s e adicionar fallback non-streaming quando o watchdog dispara, em vez de simplesmente abortar:
+O bug está na linha 282 do `ZadarmaPhoneWidget.tsx`:
 
 ```typescript
-const INACTIVITY_TIMEOUT_MS = 30_000; // 30s ao invés de 15s
+const isInCall = phoneState === 'dialing' || phoneState === 'active' || phoneState === 'ended';
 ```
 
-E quando o watchdog ou qualquer timeout aborta, fazer auto-retry com `stream: false` para garantir entrega da resposta:
+O estado `'ringing'` **não está incluído** na verificação `isInCall`. O fluxo de chamada de saída é:
+
+1. Você clica "Ligar" → `phoneState = 'dialing'` → `isInCall = true` → mostra tela de chamada com botão desligar ✓
+2. O PBX Zadarma faz callback no seu ramal (WebRTC recebe incoming) → `webrtc.status = 'ringing'` → efeito de sync (linha 65) muda `phoneState = 'ringing'` → `isInCall = false` → **volta pro dialpad** ✗
+3. Auto-answer aceita → `webrtc.status = 'active'` → `phoneState = 'active'` → `isInCall = true` → volta pra tela de chamada ✓
+
+No passo 2, o widget volta para o dialpad porque `ringing` não é tratado como "em chamada". Se o auto-answer demora ou falha, o usuário fica preso no dialpad sem botão de desligar.
+
+## Correção
+
+Adicionar `'ringing'` à verificação `isInCall`:
 
 ```typescript
-catch (err) {
-  if (err instanceof DOMException && err.name === 'AbortError' && !retried) {
-    // Auto-retry sem streaming
-    const fallbackResp = await fetch(url, { 
-      body: JSON.stringify({ ...payload, stream: false }) 
-    });
-    // processar resposta completa
-  }
-}
+const isInCall = phoneState === 'dialing' || phoneState === 'ringing' || phoneState === 'active' || phoneState === 'ended';
 ```
 
-### Bug 3: MÉDIO — Mensagens renderizadas sem Markdown
-
-**Arquivo:** `CopilotPanel.tsx`, linha 367
-
-As respostas da Amélia usam **bold**, bullets e formatação markdown, mas o componente renderiza com `{msg.content}` puro + `whitespace-pre-wrap`. O texto fica com `**asteriscos**` visíveis ao invés de **negrito**.
-
-**Correção:** Usar `react-markdown` (já instalado no projeto):
-```tsx
-import ReactMarkdown from 'react-markdown';
-// ...
-<div className="prose prose-sm dark:prose-invert max-w-none">
-  <ReactMarkdown>{msg.content}</ReactMarkdown>
-</div>
-```
-
-### Plano de Correção
-
-| # | Arquivo | Mudança |
-|---|---------|---------|
-| 1 | `CopilotPanel.tsx` | Adicionar `isSendingRef` como guard síncrono contra dupla execução |
-| 2 | `CopilotPanel.tsx` | Aumentar watchdog de 15s → 30s |
-| 3 | `CopilotPanel.tsx` | Implementar auto-retry non-streaming no catch de AbortError |
-| 4 | `CopilotPanel.tsx` | Renderizar mensagens com `ReactMarkdown` + prose styling |
-
-Todas as mudanças são no mesmo arquivo. O backend (`copilot-chat/index.ts`) está correto — o problema é 100% no frontend.
+Uma linha. Isso garante que o widget mostra a tela de chamada (com informações do contato, timer e botão de desligar) durante todo o ciclo: discando → tocando → ativa → encerrada.
 
