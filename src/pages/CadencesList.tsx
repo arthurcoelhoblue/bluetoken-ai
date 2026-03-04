@@ -59,6 +59,7 @@ import {
   ArrowRightLeft,
 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { usePipelines } from '@/hooks/usePipelines';
 import { useDealPipelineStages } from '@/hooks/useDealDetail';
 import { toast } from 'sonner';
