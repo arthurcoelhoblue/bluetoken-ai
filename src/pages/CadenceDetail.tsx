@@ -31,16 +31,13 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 
 function CadenceDetailContent() {
   const { cadenceId } = useParams<{ cadenceId: string }>();
   const navigate = useNavigate();
-  const { roles } = useAuth();
-
   const { cadence, steps, metrics, isLoading, error } = useCadence(cadenceId);
-  const isAdmin = roles.includes('ADMIN');
+  const isAdmin = useIsAdmin();
 
   if (isLoading) {
     return (

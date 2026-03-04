@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { MessageSquare, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { AppLayout } from '@/components/layout/AppLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -14,8 +15,8 @@ const ATENDIMENTO_PAGE_SIZE = 25;
 
 export default function Atendimentos() {
   const { activeCompanies } = useCompany();
-  const { user, hasRole } = useAuth();
-  const isAdmin = hasRole('ADMIN');
+  const { user } = useAuth();
+  const isAdmin = useIsAdmin();
   const [page, setPage] = useState(0);
   const { data: atendimentos, isLoading, refetch, isFetching } = useAtendimentos({
     empresaFilter: activeCompanies,
