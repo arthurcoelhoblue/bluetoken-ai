@@ -95,7 +95,6 @@ export function useCadenceForEdit(cadenceId?: string) {
 // Hook para salvar cadência (criar ou atualizar)
 export function useSaveCadence() {
   const queryClient = useQueryClient();
-  const { toast } = useToast();
 
   return useMutation({
     mutationFn: async ({
