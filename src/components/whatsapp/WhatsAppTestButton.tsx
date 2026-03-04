@@ -29,24 +29,14 @@ export function WhatsAppTestButton({ leadId, empresa, telefone, nome }: WhatsApp
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [result, setResult] = useState<{ success: boolean; error?: string; testMode?: boolean } | null>(null);
-  const { toast } = useToast();
-
   const handleSend = async () => {
     if (!message.trim()) {
-      toast({
-        title: 'Mensagem vazia',
-        description: 'Digite uma mensagem para enviar.',
-        variant: 'destructive',
-      });
+      toast.error('Digite uma mensagem para enviar.');
       return;
     }
 
     if (!telefone) {
-      toast({
-        title: 'Telefone não encontrado',
-        description: 'Este lead não possui telefone cadastrado.',
-        variant: 'destructive',
-      });
+      toast.error('Este lead não possui telefone cadastrado.');
       return;
     }
 
