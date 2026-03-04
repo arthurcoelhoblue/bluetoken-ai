@@ -94,7 +94,7 @@ serve(async (req) => {
   }
 
   try {
-    const { messages, contextType, contextId, empresa } = await req.json() as CopilotRequest;
+    const { messages, contextType, contextId, empresa, stream: streamRequested = true } = await req.json() as CopilotRequest & { stream?: boolean };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
       return new Response(
