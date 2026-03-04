@@ -269,78 +269,141 @@ serve(async (req) => {
     // PATCH — Sync statuses from Meta to local
     // ========================================
     if (method === 'PATCH') {
-      log.info('PATCH sync started', { empresa });
-      
-      // Fetch all Meta templates with timeout
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 25000);
-      let res: Response;
-      try {
-        res = await fetch(
-          `${META_BASE}/${config.metaBusinessAccountId}/message_templates?limit=250`,
-          { headers: { Authorization: `Bearer ${config.metaAccessToken}` }, signal: controller.signal }
-        );
-        clearTimeout(timeout);
-      } catch (e) {
-        clearTimeout(timeout);
-        log.error('Meta PATCH fetch timeout/error', { error: e instanceof Error ? e.message : String(e) });
-        return json({ error: 'Meta API timeout or network error' }, 504);
-      }
+      log.info('PATCH sync started', { empresa, connectionId });
 
-      if (!res.ok) {
-        const err = await res.text();
-        log.error('Meta PATCH list error', { status: res.status, err });
-        return json({ error: `Meta API ${res.status}: ${err}` }, res.status);
-      }
+      // Helper: sync templates for a single connection/WABA
+      async function syncOneConnection(
+        connConfig: ChannelConfig,
+        connId: string | null,
+      ): Promise<{ synced: number; metaTotal: number; unmatched: string[] }> {
+        if (connConfig.mode !== 'META_CLOUD' || !connConfig.metaAccessToken || !connConfig.metaBusinessAccountId) {
+          log.warn('Skipping connection without Meta credentials', { connId });
+          return { synced: 0, metaTotal: 0, unmatched: [] };
+        }
 
-      const metaData = await res.json();
-      const metaTemplates = metaData.data || [];
-      log.info('Meta templates fetched', { count: metaTemplates.length });
+        // Fetch Meta templates for this WABA
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 25000);
+        let res: Response;
+        try {
+          res = await fetch(
+            `${META_BASE}/${connConfig.metaBusinessAccountId}/message_templates?limit=250`,
+            { headers: { Authorization: `Bearer ${connConfig.metaAccessToken}` }, signal: controller.signal }
+          );
+          clearTimeout(timeout);
+        } catch (e) {
+          clearTimeout(timeout);
+          log.error('Meta PATCH fetch timeout/error', { connId, error: e instanceof Error ? e.message : String(e) });
+          return { synced: 0, metaTotal: 0, unmatched: [] };
+        }
 
-      // Build map: name -> meta info
-      const metaMap = new Map<string, { id: string; status: string; rejected_reason?: string; category?: string; components?: unknown[] }>();
-      for (const mt of metaTemplates) {
-        metaMap.set(mt.name, {
-          id: mt.id,
-          status: mt.status,
-          rejected_reason: mt.rejected_reason,
-          category: mt.category,
-          components: mt.components,
-        });
-      }
+        if (!res.ok) {
+          const err = await res.text();
+          log.error('Meta PATCH list error', { connId, status: res.status, err });
+          return { synced: 0, metaTotal: 0, unmatched: [] };
+        }
 
-      // Get local templates for this empresa that have been submitted
-      let syncQuery = supabase
-        .from('message_templates')
-        .select('id, codigo, meta_template_id, meta_status')
-        .eq('empresa', empresa)
-        .neq('meta_status', 'LOCAL');
-      if (connectionId) syncQuery = syncQuery.eq('connection_id', connectionId);
-      const { data: locals } = await syncQuery;
+        const metaData = await res.json();
+        const metaTemplates = metaData.data || [];
+        log.info('Meta templates fetched', { connId, count: metaTemplates.length });
 
-      let synced = 0;
-      for (const local of (locals || [])) {
-        const meta = metaMap.get(local.codigo.toLowerCase());
-        if (meta) {
-          const newStatus = meta.status?.toUpperCase() || 'PENDING';
-          if (newStatus !== local.meta_status) {
-            await supabase
-              .from('message_templates')
-              .update({
-                meta_template_id: meta.id,
-                meta_status: newStatus,
-                meta_rejected_reason: meta.rejected_reason || null,
-                meta_category: meta.category || null,
-                meta_components: meta.components || null,
-              })
-              .eq('id', local.id);
-            synced++;
+        // Build map: name -> meta info
+        const metaMap = new Map<string, { id: string; status: string; rejected_reason?: string; category?: string; components?: unknown[] }>();
+        for (const mt of metaTemplates) {
+          metaMap.set(mt.name, {
+            id: mt.id,
+            status: mt.status,
+            rejected_reason: mt.rejected_reason,
+            category: mt.category,
+            components: mt.components,
+          });
+        }
+
+        // Get local templates for this connection that have been submitted
+        let syncQuery = supabase
+          .from('message_templates')
+          .select('id, codigo, meta_template_id, meta_status')
+          .eq('empresa', empresa)
+          .neq('meta_status', 'LOCAL');
+        if (connId) {
+          syncQuery = syncQuery.eq('connection_id', connId);
+        }
+        const { data: locals } = await syncQuery;
+
+        let synced = 0;
+        const unmatched: string[] = [];
+        for (const local of (locals || [])) {
+          const codigoLower = local.codigo.toLowerCase();
+          // Try exact match first, then fallback stripping clone suffix
+          let meta = metaMap.get(codigoLower);
+          if (!meta) {
+            const stripped = codigoLower.replace(/_[a-f0-9]{4,}$/, '');
+            if (stripped !== codigoLower) {
+              meta = metaMap.get(stripped);
+              if (meta) log.info('Matched via fallback (stripped suffix)', { codigo: local.codigo, strippedTo: stripped });
+            }
+          }
+
+          if (meta) {
+            const newStatus = meta.status?.toUpperCase() || 'PENDING';
+            if (newStatus !== local.meta_status) {
+              await supabase
+                .from('message_templates')
+                .update({
+                  meta_template_id: meta.id,
+                  meta_status: newStatus,
+                  meta_rejected_reason: meta.rejected_reason || null,
+                  meta_category: meta.category || null,
+                  meta_components: meta.components || null,
+                })
+                .eq('id', local.id);
+              synced++;
+            }
+          } else {
+            unmatched.push(local.codigo);
           }
         }
+
+        if (unmatched.length > 0) {
+          log.warn('Templates not found in Meta', { connId, unmatched });
+        }
+
+        return { synced, metaTotal: metaTemplates.length, unmatched };
       }
 
-      log.info('Sync completed', { empresa, synced, metaTotal: metaTemplates.length });
-      return json({ success: true, synced, metaTotal: metaTemplates.length });
+      // If connectionId is provided, sync only that connection
+      if (connectionId) {
+        const result = await syncOneConnection(config, connectionId);
+        log.info('Sync completed (single connection)', { empresa, connectionId, ...result });
+        return json({ success: true, synced: result.synced, metaTotal: result.metaTotal, unmatched: result.unmatched });
+      }
+
+      // No connectionId — iterate ALL active connections for this empresa
+      const { data: allConns } = await supabase
+        .from('whatsapp_connections')
+        .select('id')
+        .eq('empresa', empresa)
+        .eq('is_active', true);
+
+      if (!allConns || allConns.length === 0) {
+        log.info('No active connections found', { empresa });
+        return json({ success: true, synced: 0, metaTotal: 0, message: 'No active connections' });
+      }
+
+      let totalSynced = 0;
+      let totalMeta = 0;
+      const allUnmatched: string[] = [];
+
+      for (const conn of allConns) {
+        const connConfig = await resolveMetaCloudConfig(supabase, empresa, conn.id);
+        const result = await syncOneConnection(connConfig, conn.id);
+        totalSynced += result.synced;
+        totalMeta += result.metaTotal;
+        allUnmatched.push(...result.unmatched);
+      }
+
+      log.info('Sync completed (all connections)', { empresa, totalSynced, totalMeta, connectionsChecked: allConns.length });
+      return json({ success: true, synced: totalSynced, metaTotal: totalMeta, connectionsChecked: allConns.length, unmatched: allUnmatched });
     }
 
     return json({ error: 'Method not allowed' }, 405);
