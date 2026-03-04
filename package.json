@@ -58,6 +58,7 @@
     "input-otp": "^1.4.2",
     "jsdom": "^28.0.0",
     "lucide-react": "^0.462.0",
+    "motion": "^12.35.0",
     "next-themes": "^0.3.0",
     "prettier": "^3.8.1",
     "prettier-plugin-tailwindcss": "^0.7.2",
