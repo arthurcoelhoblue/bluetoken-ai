@@ -77,7 +77,7 @@ export function PipelineFilters({
         )}
       </Button>
 
-      <div className="w-px h-6 bg-border mx-1 hidden sm:block" />
+      <div className="w-px h-6 bg-border mx-4 hidden sm:block" />
 
       <Select value={temperatura} onValueChange={onTemperaturaChange}>
         <SelectTrigger className="w-28 h-9 text-xs">
