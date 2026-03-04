@@ -37,7 +37,7 @@ function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): n
   return (100 - prob) * 0.4 + daysNorm * 0.3 + slaPct * 0.2 + valorNorm * 0.1;
 }
 
-export function KanbanBoard({ columns, wonLost, isLoading, onDealClick }: KanbanBoardProps) {
+export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransferClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
