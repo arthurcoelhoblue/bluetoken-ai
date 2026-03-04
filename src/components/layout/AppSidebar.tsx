@@ -304,9 +304,15 @@ export function AppSidebar() {
                   <div className="flex flex-col overflow-hidden flex-1 gap-2 ml-1">
                     <span className="text-sm font-semibold truncate leading-none">{profile?.nome || 'Usuário'}</span>
                     <div className="flex gap-1.5">
-                      {roles.slice(0, 2).map(role => (
-                        <RoleBadge key={role} role={role} size="sm" />
-                      ))}
+                      {accessProfileName ? (
+                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium truncate">
+                          {accessProfileName}
+                        </span>
+                      ) : (
+                        roles.slice(0, 2).map(role => (
+                          <RoleBadge key={role} role={role} size="sm" />
+                        ))
+                      )}
                     </div>
                   </div>
                 )}
