@@ -364,7 +364,7 @@ export function ZadarmaPhoneWidget() {
   if (minimized) {
     return (
       <div
-        className="fixed z-[60] touch-none select-none"
+        className="fixed z-[9999] touch-none select-none"
         style={{ left: fabPosition.x, top: fabPosition.y }}
         onPointerDown={onFabPointerDown}
         onPointerMove={onFabPointerMove}
