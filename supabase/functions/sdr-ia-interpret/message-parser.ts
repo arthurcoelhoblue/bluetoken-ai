@@ -60,6 +60,7 @@ export interface ParsedContext {
   lead_id: string;
   contactsCrmId: string | null;
   contactsCrmOwnerId: string | null;
+  contactsOrgName: string | null;
 }
 
 // ========================================
@@ -236,7 +237,7 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   const [histRes, contactRes, classRes, stateRes] = await Promise.all([
     supabase.from('lead_messages').select('id, lead_id, run_id, empresa, conteudo, direcao, canal, sender_type, created_at')
       .eq('lead_id', leadId).eq('empresa', empresa).order('created_at', { ascending: false }).limit(20),
-    supabase.from('lead_contacts').select('id, nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
+    supabase.from('lead_contacts').select('id, nome, primeiro_nome, telefone, telefone_e164, email, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
       .eq('lead_id', leadId).eq('empresa', empresa).maybeSingle(),
     supabase.from('lead_classifications').select('icp, persona, temperatura, prioridade, score_interno, origem')
       .eq('lead_id', leadId).eq('empresa', empresa).order('classificado_em', { ascending: false }).limit(1).maybeSingle(),
@@ -256,10 +257,18 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   let contactsCrmOwnerId: string | null = null;
   {
     const { data: crmContact } = await supabase
-      .from('contacts').select('id, owner_id')
+      .from('contacts').select('id, owner_id, email, organization_id')
       .eq('legacy_lead_id', leadId).maybeSingle();
     contactsCrmId = crmContact?.id || null;
     contactsCrmOwnerId = crmContact?.owner_id || null;
+  }
+
+  // Fetch organization name if available
+  let contactsOrgName: string | null = null;
+  const crmOrgId = (await supabase.from('contacts').select('organization_id').eq('legacy_lead_id', leadId).maybeSingle()).data?.organization_id;
+  if (crmOrgId) {
+    const { data: org } = await supabase.from('organizations').select('nome').eq('id', crmOrgId).maybeSingle();
+    contactsOrgName = org?.nome || null;
   }
   if (contactsCrmId) {
     const { data: fetchedDeals } = await supabase
@@ -368,5 +377,6 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
     lead_id: message.lead_id,
     contactsCrmId,
     contactsCrmOwnerId,
+    contactsOrgName,
   };
 }

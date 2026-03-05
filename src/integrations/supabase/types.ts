@@ -5246,6 +5246,7 @@ export type Database = {
           meeting_id: string | null
           owner_id: string | null
           slot_escolhido: Json | null
+          slot_pre_selecionado: Json | null
           slots_oferecidos: Json | null
           status: string
           updated_at: string
@@ -5260,6 +5261,7 @@ export type Database = {
           meeting_id?: string | null
           owner_id?: string | null
           slot_escolhido?: Json | null
+          slot_pre_selecionado?: Json | null
           slots_oferecidos?: Json | null
           status?: string
           updated_at?: string
@@ -5274,6 +5276,7 @@ export type Database = {
           meeting_id?: string | null
           owner_id?: string | null
           slot_escolhido?: Json | null
+          slot_pre_selecionado?: Json | null
           slots_oferecidos?: Json | null
           status?: string
           updated_at?: string
