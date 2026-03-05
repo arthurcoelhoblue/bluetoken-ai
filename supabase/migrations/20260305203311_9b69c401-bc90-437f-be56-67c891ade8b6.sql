@@ -1,0 +1,1 @@
+ALTER TABLE public.meeting_scheduling_state ADD COLUMN IF NOT EXISTS slot_pre_selecionado JSONB DEFAULT NULL;
