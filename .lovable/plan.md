@@ -1,52 +1,52 @@
 
 
-## Problema
+## Diagnóstico: "Envio bloqueado: lead em opt-out" + Datas não atualizam
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+### Problema 1: Opt-out falso positivo
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+O `whatsapp-send` verifica `contacts.opt_out` antes de enviar qualquer mensagem. O lead BioJoias Brasil está com `opt_out = true` no banco.
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+**Causa raiz**: No `index.ts`, a ação `DESQUALIFICAR_LEAD` está mapeada para `MARCAR_OPT_OUT` (linha 37). Se a IA classificou incorretamente uma mensagem como desqualificação, o lead foi bloqueado permanentemente. Além disso, o `action-executor.ts` marca `opt_out = true` em `lead_contacts`, e o trigger `fn_sync_lead_to_contact` propaga isso para `contacts`.
 
-## Solução
+**Correção**:
+1. **Remover o mapeamento `DESQUALIFICAR_LEAD → MARCAR_OPT_OUT`** — desqualificar um lead NÃO é o mesmo que opt-out. Opt-out só deve acontecer quando o lead explicitamente pede para não ser contatado.
+2. **Criar ação `DESQUALIFICAR_LEAD` separada** no `action-executor.ts` que ajusta temperatura para FRIO e cancela cadências, mas **não marca opt-out**.
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### Problema 2: `last_inbound_at` não atualizado pelo webhook Baileys
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+O webhook `meta-webhook` (Meta Cloud API) atualiza `lead_conversation_state.last_inbound_at` quando recebe mensagem inbound (linhas 710-740). Porém, o webhook `whatsapp-inbound` (Baileys) **nunca faz isso**. 
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+Para empresas que usam Baileys (como Tokeniza), o `last_inbound_at` fica estagnado na data da primeira mensagem, causando:
+- Janela de 24h parecer expirada mesmo com o lead respondendo
+- Datas desatualizadas na lista de conversas
+
+**Correção**: Adicionar no `whatsapp-inbound/index.ts`, logo após salvar a mensagem (linha ~910), o mesmo upsert de `lead_conversation_state` que o `meta-webhook` faz:
 
 ```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
+// Update last_inbound_at for 24h window
+const now = new Date().toISOString();
+await supabase.from('lead_conversation_state').upsert(
+  { lead_id: resolvedLeadId, empresa, canal: 'WHATSAPP',
+    last_inbound_at: now, ultimo_contato_em: now, updated_at: now },
+  { onConflict: 'lead_id,empresa' }
+);
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+### Resumo de arquivos alterados
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+| `sdr-ia-interpret/index.ts` | Remover mapeamento `DESQUALIFICAR_LEAD → MARCAR_OPT_OUT` |
+| `sdr-ia-interpret/action-executor.ts` | Criar handler `DESQUALIFICAR_LEAD` que ajusta temperatura/cancela cadência sem marcar opt-out |
+| `whatsapp-inbound/index.ts` | Adicionar upsert de `last_inbound_at` após salvar mensagem inbound |
+
+### Correção manual necessária
+
+O lead BioJoias Brasil já está com `opt_out = true` no banco. Será necessário reverter isso manualmente via query:
+```sql
+UPDATE lead_contacts SET opt_out = false, opt_out_em = null, opt_out_motivo = null
+WHERE lead_id = '<ID_DO_LEAD>' AND empresa = 'TOKENIZA';
+UPDATE contacts SET opt_out = false, opt_out_em = null, opt_out_motivo = null
+WHERE legacy_lead_id = '<ID_DO_LEAD>' AND empresa = 'TOKENIZA';
+```
 
