@@ -572,6 +572,7 @@ export function ZadarmaPhoneWidget() {
         phoneNumber={lastCallNumber}
         callDuration={lastCallDuration}
       />
-    </div>
+    </div>,
+    document.body
   );
 }
