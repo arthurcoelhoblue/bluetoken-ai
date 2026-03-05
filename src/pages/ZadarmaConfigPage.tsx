@@ -303,8 +303,33 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
       if (noRecording.length > 0) {
         toast.warning(`⚠️ Gravação desabilitada nos ramais: ${noRecording.join(', ')}. Habilite no painel Zadarma (PBX → Extensões) para transcrição funcionar.`, { duration: 10000 });
       }
+      // Auto-link: for unmapped PBX extensions, check if extension_number exists in zadarma_extensions (any empresa)
+      const mappedNumbers = extensions.map(e => e.extension_number);
+      const unmapped = (Array.isArray(list) ? list : []).filter(
+        (z: { extension_number: string }) => !mappedNumbers.includes(z.extension_number)
+      );
+      let autoLinked = 0;
+      for (const z of unmapped) {
+        const { data: existing } = await supabase
+          .from('zadarma_extensions')
+          .select('user_id')
+          .eq('extension_number', z.extension_number)
+          .eq('is_active', true)
+          .limit(1)
+          .maybeSingle();
+        if (existing?.user_id) {
+          await saveExtension.mutateAsync({
+            empresa,
+            extension_number: z.extension_number,
+            user_id: existing.user_id,
+            sip_login: z.sip_login || null,
+          });
+          autoLinked++;
+        }
+      }
+      if (autoLinked > 0) toast.success(`${autoLinked} ramal(is) auto-vinculado(s) a partir de outras empresas`);
       if (updated > 0) toast.success(`${updated} ramal(is) atualizado(s) com SIP Login`);
-      else toast.info(`${list.length} ramal(is) encontrado(s) no PBX`);
+      if (updated === 0 && autoLinked === 0) toast.info(`${list.length} ramal(is) encontrado(s) no PBX`);
     } catch (e: unknown) {
       toast.error(`Erro ao sincronizar: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
