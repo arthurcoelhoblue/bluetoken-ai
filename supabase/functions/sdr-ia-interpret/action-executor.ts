@@ -87,8 +87,10 @@ async function applyAction(
           if (!notifyUserId) {
             const { data: sellers } = await supabase
               .from('user_access_assignments')
-              .select('user_id')
-              .eq('empresa', empresa);
+              .select('user_id, profiles!inner(is_vendedor, is_active)')
+              .eq('empresa', empresa)
+              .eq('profiles.is_vendedor', true)
+              .eq('profiles.is_active', true);
             if (sellers?.length) {
               // Pegar o vendedor com menos deals abertos
               let minDeals = Infinity;
