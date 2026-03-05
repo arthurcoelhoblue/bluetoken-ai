@@ -156,7 +156,7 @@ export function CopilotFab() {
   // Determine if bubble goes left or right of the FAB
   const bubbleOnLeft = position.x > window.innerWidth / 2;
 
-  return (
+  return createPortal(
     <>
       {/* Notification bubble */}
       {bubbleText && !open && (
