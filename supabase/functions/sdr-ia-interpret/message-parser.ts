@@ -247,6 +247,17 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   const classificacao = classRes.data || null;
   let conversationState = stateRes.data || null;
 
+  // Load deals separately using contact_id (deals table links via contact_id, not lead_id)
+  let dealsData: Record<string, unknown>[] = [];
+  if (contato?.id) {
+    const { data: fetchedDeals } = await supabase
+      .from('deals')
+      .select('id, titulo, valor, status, stage_id, owner_id, contact_id')
+      .eq('contact_id', contato.id)
+      .limit(5);
+    dealsData = fetchedDeals || [];
+  }
+
   // Create initial conversation state if missing
   if (!conversationState && leadId) {
     const frameworkAtivo = empresa === 'TOKENIZA' ? 'GPCT' : 'SPIN';
