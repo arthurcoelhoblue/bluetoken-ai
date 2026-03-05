@@ -226,8 +226,29 @@ async function applyAction(
               notify_user_id: tarefaNotifyUserId,
             }),
           });
-        } catch { /* ignore */ }
-        await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
+        } catch (tarefaErr) {
+          log.error('Erro ao notificar closer em CRIAR_TAREFA_CLOSER', { error: tarefaErr instanceof Error ? tarefaErr.message : String(tarefaErr) });
+        }
+
+        // Notificação in-app (sininho) para o vendedor
+        if (tarefaNotifyUserId) {
+          try {
+            const { data: tarefaContactName } = await supabase
+              .from('contacts').select('nome').eq('legacy_lead_id', leadId).maybeSingle();
+            const leadNome = tarefaContactName?.nome || 'Lead';
+            await supabase.from('notifications').insert({
+              user_id: tarefaNotifyUserId, empresa,
+              tipo: 'DEAL_NOVO_PRIORITARIO',
+              titulo: `🟠 Lead qualificado: ${leadNome}`,
+              mensagem: `Lead qualificado pela SDR IA e requer atenção. ${(detalhes as Record<string, unknown> | undefined)?.motivo || 'Tarefa criada automaticamente.'}`,
+              link: `/conversas`, entity_id: leadId, entity_type: 'lead',
+            });
+          } catch (notifErr) {
+            log.error('Erro ao criar notificação in-app CRIAR_TAREFA_CLOSER', { error: notifErr instanceof Error ? notifErr.message : String(notifErr) });
+          }
+        }
+
+        await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', escalado_para: tarefaNotifyUserId || null, updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
         await autoCreateDeal(supabase, leadId, empresa, detalhes);
         return true;
       }

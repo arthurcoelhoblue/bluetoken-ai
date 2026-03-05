@@ -247,13 +247,23 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   const classificacao = classRes.data || null;
   let conversationState = stateRes.data || null;
 
-  // Load deals separately using contact_id (deals table links via contact_id, not lead_id)
+  // Load deals separately using contacts.id (CRM table, NOT lead_contacts.id)
+  // deals.contact_id references contacts.id, not lead_contacts.id
   let dealsData: Record<string, unknown>[] = [];
-  if (contato?.id) {
+  let contactsCrmId: string | null = null;
+  let contactsCrmOwnerId: string | null = null;
+  {
+    const { data: crmContact } = await supabase
+      .from('contacts').select('id, owner_id')
+      .eq('legacy_lead_id', leadId).maybeSingle();
+    contactsCrmId = crmContact?.id || null;
+    contactsCrmOwnerId = crmContact?.owner_id || null;
+  }
+  if (contactsCrmId) {
     const { data: fetchedDeals } = await supabase
       .from('deals')
       .select('id, titulo, valor, status, stage_id, owner_id, contact_id')
-      .eq('contact_id', contato.id)
+      .eq('contact_id', contactsCrmId)
       .limit(5);
     dealsData = fetchedDeals || [];
   }
