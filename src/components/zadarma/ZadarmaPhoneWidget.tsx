@@ -345,23 +345,37 @@ export function ZadarmaPhoneWidget() {
     if (isLoadingExtension) return null;
     if (!hasExtension) return null;
     return (
-      <button
-        onClick={() => setMinimized(false)}
-        className="fixed bottom-20 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105"
+      <div
+        className="fixed z-[60] touch-none select-none"
+        style={{ left: fabPosition.x, top: fabPosition.y }}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={() => onFabPointerUp(() => setMinimized(false))}
       >
-        <Phone className="h-5 w-5" />
-      </button>
+        <button
+          className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center cursor-grab active:cursor-grabbing"
+        >
+          <Phone className="h-5 w-5" />
+        </button>
+      </div>
     );
   }
 
   if (minimized) {
     return (
-      <button
-        onClick={() => setMinimized(false)}
-        className="fixed bottom-20 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105 animate-pulse"
+      <div
+        className="fixed z-[60] touch-none select-none"
+        style={{ left: fabPosition.x, top: fabPosition.y }}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={() => onFabPointerUp(() => setMinimized(false))}
       >
-        <Phone className="h-5 w-5" />
-      </button>
+        <button
+          className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center cursor-grab active:cursor-grabbing animate-pulse"
+        >
+          <Phone className="h-5 w-5" />
+        </button>
+      </div>
     );
   }
 
