@@ -140,7 +140,7 @@ serve(async (req) => {
       empresa: msg.empresa,
       contactId: (parsedContext.contato as Record<string, unknown>)?.id as string | undefined,
       dealId: parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).id as string : undefined,
-      ownerId: parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined,
+      ownerId: (parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined) || (parsedContext.contato as Record<string, unknown>)?.owner_id as string || undefined,
       mensagem: msg.conteudo,
       telefone: parsedContext.telefone || undefined,
     };

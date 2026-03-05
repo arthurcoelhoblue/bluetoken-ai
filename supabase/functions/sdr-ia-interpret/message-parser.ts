@@ -231,23 +231,32 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   const empresa = message.empresa;
 
   // 2. Load context in parallel
-  const [histRes, contactRes, classRes, stateRes, dealsRes] = await Promise.all([
+  const [histRes, contactRes, classRes, stateRes] = await Promise.all([
     supabase.from('lead_messages').select('id, lead_id, run_id, empresa, conteudo, direcao, canal, sender_type, created_at')
       .eq('lead_id', leadId).eq('empresa', empresa).order('created_at', { ascending: false }).limit(20),
-    supabase.from('lead_contacts').select('nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
+    supabase.from('lead_contacts').select('id, nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
       .eq('lead_id', leadId).eq('empresa', empresa).maybeSingle(),
     supabase.from('lead_classifications').select('icp, persona, temperatura, prioridade, score_interno, origem')
       .eq('lead_id', leadId).eq('empresa', empresa).order('classificado_em', { ascending: false }).limit(1).maybeSingle(),
     supabase.from('lead_conversation_state').select('*')
       .eq('lead_id', leadId).eq('empresa', empresa).maybeSingle(),
-    supabase.from('deals').select('id, titulo, valor, status, stage_id')
-      .eq('lead_id', leadId).limit(5),
   ]);
 
   const historico = (histRes.data || []).filter((h: HistoricoMessage) => h.id !== messageId);
   const contato = contactRes.data || null;
   const classificacao = classRes.data || null;
   let conversationState = stateRes.data || null;
+
+  // Load deals separately using contact_id (deals table links via contact_id, not lead_id)
+  let dealsData: Record<string, unknown>[] = [];
+  if (contato?.id) {
+    const { data: fetchedDeals } = await supabase
+      .from('deals')
+      .select('id, titulo, valor, status, stage_id, owner_id, contact_id')
+      .eq('contact_id', contato.id)
+      .limit(5);
+    dealsData = fetchedDeals || [];
+  }
 
   // Create initial conversation state if missing
   if (!conversationState && leadId) {
@@ -332,7 +341,7 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
     message, historico, contato, classificacao, conversationState,
     conversation_state: conversationState,
     cadenciaNome, pessoaContext,
-    deals: dealsRes.data || [],
+    deals: dealsData,
     leadNome: contato?.nome || contato?.primeiro_nome || null,
     telefone: contato?.telefone_e164 || contato?.telefone || null,
     optOut: contato?.opt_out === true,
