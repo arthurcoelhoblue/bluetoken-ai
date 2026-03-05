@@ -18,6 +18,12 @@ const DEFAULT_PIPELINE_ID = "5bbac98b-5ae9-4b31-9b7f-896d7b732a2c"; // Ofertas P
 const DEFAULT_STAGE_ID = "da80e912-b462-401d-b367-1b6a9b2ec4da"; // Lead
 
 // Emails de teste a filtrar
+// Partner tags extracted from utm_campaign
+const PARTNER_TAGS: Record<string, string> = {
+  'MPUPPE': 'MPUPPE',
+  'AXIA': 'AXIA',
+};
+
 const TEST_EMAILS = [
   "tleonardo186@gmail.com",
   "tayara.r.araujo@gmail.com",
