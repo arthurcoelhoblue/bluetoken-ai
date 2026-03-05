@@ -19,7 +19,7 @@ export function KanbanColumn({ column, onDealClick }: KanbanColumnProps) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex flex-col w-64 shrink-0 rounded-xl overflow-hidden border border-border/50 bg-card/30">
+      <div className="flex flex-col w-64 shrink-0 h-full rounded-xl overflow-hidden border border-border/50 bg-card/30">
         {/* Header with stage color */}
         <div
           className="px-3 py-2.5 flex items-center gap-2"
