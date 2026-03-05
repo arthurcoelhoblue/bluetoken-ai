@@ -909,6 +909,25 @@ async function saveInboundMessage(
   const savedMessage = data as { id: string };
   log.info('Mensagem salva', { messageId: savedMessage.id, empresa });
 
+  // Update last_inbound_at for 24h window tracking (parity with meta-webhook)
+  if (resolvedLeadId && empresa) {
+    const inboundNow = new Date().toISOString();
+    await supabase.from('lead_conversation_state').upsert(
+      {
+        lead_id: resolvedLeadId,
+        empresa,
+        canal: 'WHATSAPP',
+        last_inbound_at: inboundNow,
+        ultimo_contato_em: inboundNow,
+        updated_at: inboundNow,
+      },
+      { onConflict: 'lead_id,empresa' }
+    ).then(({ error: upsertErr }) => {
+      if (upsertErr) log.error('Erro ao atualizar last_inbound_at', { error: upsertErr.message });
+      else log.info('last_inbound_at atualizado', { leadId: resolvedLeadId });
+    });
+  }
+
   // Auto-criar deal (regra anti-limbo) — fire-and-forget para não bloquear resposta
   if (resolvedLeadId && empresa) {
     const phoneE164 = normalizePhone(payload.from);
