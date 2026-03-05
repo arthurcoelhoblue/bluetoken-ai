@@ -459,7 +459,13 @@ export function ZadarmaPhoneWidget() {
 
   // Normal compact widget
   return (
-    <div className="fixed bottom-20 right-6 z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
+    <div
+      className="fixed z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up"
+      style={{
+        left: Math.min(fabPosition.x, window.innerWidth - 288),
+        top: Math.max(0, fabPosition.y - 400),
+      }}
+    >
       <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
         <div className="flex items-center gap-2">
           <Phone className="h-4 w-4" />
