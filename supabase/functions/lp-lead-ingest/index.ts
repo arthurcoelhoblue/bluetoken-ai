@@ -38,6 +38,7 @@ interface LeadPayload {
   nome: string;
   email: string;
   telefone?: string;
+  canal_origem?: string;
   tags?: string[];
   utm_source?: string;
   utm_medium?: string;
@@ -146,7 +147,7 @@ Deno.serve(async (req) => {
               numero_nacional: phoneNorm?.nacional || null,
               telefone_valido: phoneNorm !== null,
               empresa,
-              canal_origem: "LP_COM_IA",
+              canal_origem: lead.canal_origem || "LP_COM_IA",
               tags,
             })
             .select("id")
@@ -193,7 +194,7 @@ Deno.serve(async (req) => {
             status: "ABERTO",
             temperatura: "FRIO",
             owner_id: ownerId,
-            canal_origem: "LP_COM_IA",
+            canal_origem: lead.canal_origem || "LP_COM_IA",
             valor: 0,
             metadata: metadataExtra,
             tags: dealTags.length > 0 ? dealTags : null,
