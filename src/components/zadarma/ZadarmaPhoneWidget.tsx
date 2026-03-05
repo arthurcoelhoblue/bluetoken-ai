@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { toast } from 'sonner';
+import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useMyExtension, useZadarmaProxy } from '@/hooks/useZadarma';
@@ -81,6 +82,7 @@ export function ZadarmaPhoneWidget() {
   const [lastCallContact, setLastCallContact] = useState('');
   const [lastCallNumber, setLastCallNumber] = useState('');
   const [lastCallDealId, setLastCallDealId] = useState<string | undefined>();
+  const frontendCallIdRef = useRef<string | null>(null);
 
   const proxy = useZadarmaProxy();
   const speech = useSpeechRecognition();
@@ -157,6 +159,93 @@ export function ZadarmaPhoneWidget() {
     }
   }, [webrtc.status, isWebRTCMode]);
 
+  // Auto-link: find contact and deal by phone number
+  const autoLinkByPhone = useCallback(async (phoneNumber: string, empresaVal: EmpresaTipo): Promise<{ contactId: string | null; dealId: string | null }> => {
+    try {
+      const digits = phoneNumber.replace(/\D/g, '');
+      const suffix = digits.slice(-9);
+      if (suffix.length < 8) return { contactId: null, dealId: null };
+
+      const { data: contacts } = await supabase
+        .from('contacts')
+        .select('id')
+        .eq('empresa', empresaVal)
+        .or(`telefone.ilike.%${suffix}%,telefone_e164.ilike.%${suffix}%`)
+        .limit(1);
+
+      const contactId = contacts?.[0]?.id ?? null;
+      let linkedDealId: string | null = null;
+
+      if (contactId) {
+        const { data: deals } = await supabase
+          .from('deals')
+          .select('id')
+          .eq('contact_id', contactId)
+          .eq('status', 'ABERTO')
+          .order('created_at', { ascending: false })
+          .limit(1);
+        linkedDealId = deals?.[0]?.id ?? null;
+      }
+
+      console.log('[ZadarmaWidget] autoLinkByPhone result:', { contactId, dealId: linkedDealId, suffix });
+      return { contactId, dealId: linkedDealId };
+    } catch (err) {
+      console.error('[ZadarmaWidget] autoLinkByPhone error:', err);
+      return { contactId: null, dealId: null };
+    }
+  }, []);
+
+  // Create call record in DB on successful click_to_call
+  const createCallRecord = useCallback(async (phoneNumber: string, pbxCallId: string, dialDealId?: string) => {
+    if (!empresa || !profile?.id || !myExtension) return null;
+    try {
+      // Auto-link by phone if no dealId was provided
+      let contactId: string | null = null;
+      let linkedDealId: string | null = dialDealId ?? null;
+
+      const autoLink = await autoLinkByPhone(phoneNumber, empresa);
+      contactId = autoLink.contactId;
+      if (!linkedDealId && autoLink.dealId) {
+        linkedDealId = autoLink.dealId;
+      }
+
+      const { data: call, error: insertError } = await supabase
+        .from('calls')
+        .insert({
+          empresa,
+          deal_id: linkedDealId,
+          contact_id: contactId,
+          user_id: profile.id,
+          direcao: 'OUTBOUND',
+          status: 'RINGING',
+          pbx_call_id: pbxCallId,
+          caller_number: myExtension.extension_number,
+          destination_number: phoneNumber,
+          started_at: new Date().toISOString(),
+        })
+        .select('id, deal_id')
+        .single();
+
+      if (insertError) {
+        console.error('[ZadarmaWidget] Failed to create call record:', insertError);
+        return null;
+      }
+
+      console.log('[ZadarmaWidget] ✅ Call record created:', call.id, { contactId, dealId: linkedDealId });
+      frontendCallIdRef.current = call.id;
+
+      // Update dealId state if auto-linked
+      if (call.deal_id && !dialDealId) {
+        setDealId(call.deal_id);
+      }
+
+      return call.id;
+    } catch (err) {
+      console.error('[ZadarmaWidget] createCallRecord error:', err);
+      return null;
+    }
+  }, [empresa, profile?.id, myExtension, autoLinkByPhone]);
+
   // handleDialDirect — accepts number as param to preserve user gesture chain
   const handleDialDirect = useCallback((dialNumber: string, dialDealId?: string) => {
     console.log('[ZadarmaWidget] handleDialDirect called', { dialNumber, empresa, myExtension, isWebRTCMode });
@@ -177,6 +266,8 @@ export function ZadarmaPhoneWidget() {
     }, {
       onSuccess: (data) => {
         console.log('[ZadarmaWidget] click_to_call success:', data);
+        const pbxId = `frontend_${data?.time || Date.now()}`;
+        createCallRecord(dialNumber, pbxId, dialDealId);
         toast.success(isWebRTCMode
           ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
           : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
@@ -187,7 +278,7 @@ export function ZadarmaPhoneWidget() {
         setPhoneState('idle');
       },
     });
-  }, [empresa, myExtension, proxy, isWebRTCMode]);
+  }, [empresa, myExtension, proxy, isWebRTCMode, createCallRecord]);
 
   // Listen for dial events — only populate number and open widget, user confirms manually
   useEffect(() => {
@@ -253,8 +344,10 @@ export function ZadarmaPhoneWidget() {
         empresa,
         payload: { from: myExtension.extension_number, to: number },
       }, {
-        onSuccess: (data) => {
+      onSuccess: (data) => {
           console.log('[ZadarmaWidget] click_to_call success:', data);
+          const pbxId = `frontend_${data?.time || Date.now()}`;
+          createCallRecord(number, pbxId, dealId);
           toast.success(isWebRTCMode
             ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
             : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
@@ -273,13 +366,26 @@ export function ZadarmaPhoneWidget() {
       toast.error('Erro inesperado ao iniciar chamada.');
       setPhoneState('idle');
     }
-  }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
+  }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc, createCallRecord, dealId]);
 
   // Auto-dial removed — handleDialDirect is called synchronously from the event handler
 
   const handleHangup = useCallback(() => {
     if (isWebRTCMode) {
-      webrtc.hangup();
+      webrtc.hangup(frontendCallIdRef.current ?? undefined);
+    }
+    // Close call record from frontend if WebRTC didn't
+    if (frontendCallIdRef.current) {
+      const callId = frontendCallIdRef.current;
+      const dur = callTimer;
+      supabase.from('calls').update({
+        ended_at: new Date().toISOString(),
+        duracao_segundos: dur,
+        status: dur > 0 ? 'ANSWERED' : 'MISSED',
+      }).eq('id', callId).then(({ error }) => {
+        if (error) console.error('[ZadarmaWidget] Failed to close call record:', error);
+        else console.log(`[ZadarmaWidget] ✅ Closed call record ${callId} (${dur}s)`);
+      });
     }
     // Salvar dados da chamada para o dialog de resumo
     setLastCallDuration(callTimer);
@@ -295,12 +401,13 @@ export function ZadarmaPhoneWidget() {
       setNumber('');
       setContactName('');
       setDealId(undefined);
+      frontendCallIdRef.current = null;
       // Show call summary dialog after call ends
       if (callTimer > 5) {
         setShowCallSummary(true);
       }
     }, 2000);
-  }, [isWebRTCMode, webrtc]);
+  }, [isWebRTCMode, webrtc, callTimer, contactName, number, dealId]);
 
   const handleHold = () => {
     if (!empresa || !myExtension) return;
