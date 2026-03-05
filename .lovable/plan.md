@@ -1,32 +1,52 @@
 
 
-## Ajustar trigger e constraint para Tokeniza (sem ano fiscal)
+## Problema
 
-### Problema
-O trigger `fn_deal_ganho_to_cs_contract` usa `ano_fiscal` para todas as empresas, e acabamos de criar uma constraint unique em `(customer_id, ano_fiscal)`. Na Tokeniza não existe conceito de ano fiscal — cada deal ganho deve gerar seu próprio contrato independente, sem deduplicar por ano.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-### Solução
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-**1. Alterar a unique constraint** para incluir `empresa`, permitindo lógica diferente por empresa:
-- Dropar a constraint `cs_contracts_customer_ano_key`
-- Criar nova constraint parcial ou ajustar a lógica
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-Na verdade, a melhor abordagem: para Tokeniza, o trigger deve criar um contrato novo (sem `ON CONFLICT`) vinculado ao deal. Para Blue (e outras), mantém o comportamento atual com `ON CONFLICT` por ano fiscal.
+## Solução
 
-**2. Atualizar o trigger `fn_deal_ganho_to_cs_contract`** (migration SQL):
-- Se `v_empresa = 'TOKENIZA'`: fazer `INSERT` simples (sem `ON CONFLICT`), usando `ano_fiscal = 0` ou o ano corrente apenas como referência, mas sem deduplicação
-- Se outra empresa: manter o comportamento atual com `ON CONFLICT (customer_id, ano_fiscal)`
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-**3. Ajustar a constraint unique** para ser parcial — aplicável apenas quando `empresa != 'TOKENIZA'`:
-```sql
-DROP CONSTRAINT cs_contracts_customer_ano_key;
-CREATE UNIQUE INDEX cs_contracts_customer_ano_key 
-  ON cs_contracts (customer_id, ano_fiscal) 
-  WHERE empresa != 'TOKENIZA';
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
 ```
 
-Isso permite que Tokeniza tenha múltiplos contratos para o mesmo cliente sem conflito, enquanto Blue Consult mantém a regra de um contrato por ano fiscal.
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-### Arquivos afetados
-- Migration SQL (constraint parcial + trigger atualizado)
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
