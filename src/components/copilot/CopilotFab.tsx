@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useLocation } from 'react-router-dom';
 import { Bot, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -155,7 +156,7 @@ export function CopilotFab() {
   // Determine if bubble goes left or right of the FAB
   const bubbleOnLeft = position.x > window.innerWidth / 2;
 
-  return (
+  return createPortal(
     <>
       {/* Notification bubble */}
       {bubbleText && !open && (
@@ -206,6 +207,7 @@ export function CopilotFab() {
         externalOpen={open}
         onOpenChange={setOpen}
       />
-    </>
+    </>,
+    document.body
   );
 }

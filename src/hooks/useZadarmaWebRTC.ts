@@ -412,7 +412,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }
       // ACTIVE: match specific call-confirmed patterns AND bare words from Zadarma v9, WITH state guard
       else if (
-        (combined === 'confirmed' || combined === 'accepted' ||
+        (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted') ||
          combined.includes('in_call') || combined.includes('session confirmed')) &&
         canTransitionToActive(statusRef.current)
@@ -424,7 +424,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         safeSetStatus('active');
       }
       // ENDED: match specific termination patterns
-      else if (combined.includes('terminated') || combined.includes('call_end') || combined.includes('session ended') || combined.includes('call ended')) {
+      else if (combined.includes('terminated') || combined.includes('call_end') || combined.includes('session ended') || combined.includes('call ended') || combined.startsWith('canceled')) {
         origLog('[WebRTC] 📴 CALL ENDED detected via console.log');
         closeActiveCallRecord();
         incomingDetectedRef.current = false;
@@ -487,7 +487,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         triggerAutoAnswer();
       }
       else if (
-        (combined === 'confirmed' || combined === 'accepted' ||
+        (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted')) &&
         canTransitionToActive(statusRef.current)
       ) {

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { formatPhoneBR } from '@/lib/formatPhone';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -344,7 +345,7 @@ export function ZadarmaPhoneWidget() {
   if (minimized && !number) {
     if (isLoadingExtension) return null;
     if (!hasExtension) return null;
-    return (
+    return createPortal(
       <div
         className="fixed z-[9999] touch-none select-none"
         style={{ left: fabPosition.x, top: fabPosition.y }}
@@ -357,12 +358,13 @@ export function ZadarmaPhoneWidget() {
         >
           <Phone className="h-5 w-5" />
         </button>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   if (minimized) {
-    return (
+    return createPortal(
       <div
         className="fixed z-[9999] touch-none select-none"
         style={{ left: fabPosition.x, top: fabPosition.y }}
@@ -375,7 +377,8 @@ export function ZadarmaPhoneWidget() {
         >
           <Phone className="h-5 w-5" />
         </button>
-      </div>
+      </div>,
+      document.body
     );
   }
 
@@ -430,7 +433,7 @@ export function ZadarmaPhoneWidget() {
 
   // Maximized with coaching sidebar
   if (maximized && isInCall) {
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-[9999] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
           <div className="w-72 shrink-0 border-r border-border flex flex-col">
@@ -453,12 +456,13 @@ export function ZadarmaPhoneWidget() {
             <CoachingSidebar dealId={dealId} isActive={showCoaching} transcriptionChunk={transcriptionChunk} />
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
   // Normal compact widget
-  return (
+  return createPortal(
     <div
       className="fixed z-[9999] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up"
       style={{
@@ -568,6 +572,7 @@ export function ZadarmaPhoneWidget() {
         phoneNumber={lastCallNumber}
         callDuration={lastCallDuration}
       />
-    </div>
+    </div>,
+    document.body
   );
 }
