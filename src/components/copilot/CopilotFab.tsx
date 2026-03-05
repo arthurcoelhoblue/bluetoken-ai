@@ -160,7 +160,7 @@ export function CopilotFab() {
       {/* Notification bubble */}
       {bubbleText && !open && (
         <div
-          className="fixed z-[60] animate-in fade-in slide-in-from-bottom-2 duration-300"
+          className="fixed z-[9999] animate-in fade-in slide-in-from-bottom-2 duration-300"
           style={{
             ...(bubbleOnLeft
               ? { right: window.innerWidth - position.x + 8, bottom: window.innerHeight - position.y - FAB_SIZE / 2 + 8 }
@@ -180,7 +180,7 @@ export function CopilotFab() {
 
       {/* FAB */}
       <div
-        className="fixed z-50 touch-none select-none"
+        className="fixed z-[9999] touch-none select-none"
         style={{ left: position.x, top: position.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
