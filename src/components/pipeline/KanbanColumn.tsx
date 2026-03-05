@@ -19,7 +19,7 @@ export function KanbanColumn({ column, onDealClick }: KanbanColumnProps) {
 
   return (
     <TooltipProvider delayDuration={300}>
-      <div className="flex flex-col w-64 shrink-0 rounded-xl overflow-hidden border border-border/50 bg-card/30">
+      <div className="flex flex-col w-64 shrink-0 h-full rounded-xl overflow-hidden border border-border/50 bg-card/30">
         {/* Header with stage color */}
         <div
           className="px-3 py-2.5 flex items-center gap-2"
@@ -38,7 +38,7 @@ export function KanbanColumn({ column, onDealClick }: KanbanColumnProps) {
         {/* Drop area */}
         <div
           ref={setNodeRef}
-          className={`flex-1 flex flex-col gap-1.5 p-1.5 min-h-[80px] transition-colors duration-100 ${
+          className={`flex-1 min-h-0 flex flex-col gap-1.5 p-1.5 overflow-y-auto transition-colors duration-100 ${
             isOver ? 'bg-primary/10 ring-2 ring-primary/30' : ''
           }`}
         >

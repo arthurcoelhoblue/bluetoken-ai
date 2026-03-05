@@ -1,53 +1,69 @@
 
 
-## Diagnóstico
+## Diagnóstico Completo
 
-A cadeia de overflow impede scroll vertical dos deals dentro de cada coluna:
+Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
+
+### Problema 1: Scroll horizontal da pagina
+
+A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
 
 ```text
-AppLayout (line 41): overflow-y-auto overflow-x-hidden  ✓
-  └─ PipelinePage (line 144): overflow-y-hidden  ← BLOQUEIA scroll vertical
-       └─ KanbanBoard wrapper (line 179): overflow-hidden, flex-1 min-h-0
-            └─ Carousel (line 185): overflow-hidden
-                 └─ scrollRef (line 215): overflow-x-auto overflow-y-hidden  ← BLOQUEIA
-                      └─ KanbanColumn: flex flex-col, sem altura máxima
-                           └─ Drop area: flex-1, sem overflow-y-auto  ← NÃO SCROLLA
+AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
+  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
+       └─ flex-1 min-h-0 overflow-hidden  ← ok
+            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
+                 └─ scrollRef: overflow-auto  ← scroll interno ok
+                      └─ flex gap-4 minWidth:max-content  ← expande largura
 ```
 
-As colunas crescem infinitamente com os deals mas nenhum container permite scroll vertical. O `overflow-y-hidden` na PipelinePage e no scrollRef cortam tudo que excede a tela.
+O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
+
+### Problema 2: Grab scroll não funciona
+
+O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
+
+O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
 
 ## Solução
 
-Fazer cada **coluna do Kanban** ter scroll vertical independente, mantendo a altura restrita ao viewport:
+### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
 
-### 1. `KanbanColumn.tsx` — Adicionar scroll vertical na área de deals
+- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
+- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
 
-A drop area (div que contém os cards) precisa de `overflow-y-auto` e altura máxima controlada pelo flex layout:
+### Arquivo 2: `src/components/layout/AppLayout.tsx`
 
-```tsx
-// Drop area: adicionar overflow-y-auto e flex-1 com min-h-0
-<div ref={setNodeRef} className="flex-1 min-h-0 flex flex-col gap-1.5 p-1.5 overflow-y-auto ...">
+- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
+
+### Arquivo 3: `src/hooks/useGrabScroll.ts`
+
+- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
+- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
+- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
+- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
+
+A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
+
+```text
+pointerdown (capture, container):
+  ├─ É sobre botão/link? → ignora
+  └─ Senão → stopPropagation + registra posição
+                (dnd-kit NÃO recebe pointerdown)
+
+pointermove (capture, window):
+  ├─ < 8px → aguarda
+  ├─ horizontal → lock, scroll, stopImmediatePropagation
+  └─ vertical → release, re-dispatch pointerdown sintético no target
+                  (dnd-kit AGORA recebe e pode iniciar drag)
+
+pointerup (capture, window):
+  └─ reset
 ```
 
-### 2. `KanbanBoard.tsx` — Garantir que o container flex passa altura correta
-
-O `scrollRef` (line 215) precisa de `h-full` e o container interno dos deals precisa restringir altura:
-
-- Linha 216: mudar `min-h-[400px]` para `h-full` para que as colunas preencham o espaço disponível sem ultrapassar
-
-### 3. `KanbanColumn.tsx` — Restringir altura da coluna
-
-A coluna raiz precisa participar do flex com altura máxima:
-
-```tsx
-// Raiz: adicionar h-full para preencher o container
-<div className="flex flex-col w-64 shrink-0 h-full ...">
-```
-
-| Arquivo | Mudança |
+| Arquivo | Mudanca |
 |---------|---------|
-| `KanbanColumn.tsx` | `overflow-y-auto` + `min-h-0` na drop area; `h-full` na raiz |
-| `KanbanBoard.tsx` | Container interno: `h-full` em vez de `min-h-[400px]` |
-
-Resultado: cada coluna terá scroll vertical independente, os deals não ficam cortados pelo viewport.
+| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
+| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
+| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
 
