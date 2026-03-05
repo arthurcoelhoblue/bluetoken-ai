@@ -250,6 +250,52 @@ serve(async (req) => {
 
     log.info('Intent classified', { intent: classifierResult.intent, confidence: classifierResult.confidence, acao: classifierResult.acao || classifierResult.acao_recomendada });
 
+    // ========================================
+    // 4c. START MEETING SCHEDULING IF INTENT = AGENDAMENTO_REUNIAO
+    // ========================================
+    if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+      log.info('Intent AGENDAMENTO_REUNIAO detected, starting scheduling flow', { leadId: msg.lead_id, ownerId: meetingCtx.ownerId });
+      const startResult = await startMeetingScheduling(supabase, meetingCtx);
+      if (startResult.handled && startResult.response) {
+        const intentId = await saveInterpretation(supabase, msg, {
+          intent: 'AGENDAMENTO_REUNIAO',
+          confidence: classifierResult.confidence,
+          acao: startResult.action === 'ESCALAR_HUMANO' ? 'ESCALAR_HUMANO' : 'ENVIAR_RESPOSTA_AUTOMATICA',
+          deve_responder: true,
+        } as ClassifierResult, true, true, startResult.response);
+
+        // Send response via WhatsApp
+        const telefone = parsedContext.telefone;
+        if (telefone) {
+          await executeActions(supabase, {
+            lead_id: msg.lead_id,
+            run_id: msg.run_id,
+            empresa: msg.empresa,
+            acao: startResult.action === 'ESCALAR_HUMANO' ? 'ESCALAR_HUMANO' : 'ENVIAR_RESPOSTA_AUTOMATICA',
+            acao_detalhes: { intent: 'AGENDAMENTO_REUNIAO' },
+            telefone,
+            resposta: startResult.response,
+            source,
+            intent: 'AGENDAMENTO_REUNIAO',
+            confidence: classifierResult.confidence,
+            mensagem_original: msg.conteudo,
+            conversation_state: parsedContext.conversationState,
+            historico: parsedContext.historico as Record<string, unknown>[],
+          });
+        }
+
+        return new Response(JSON.stringify({
+          success: true, intentId,
+          intent: 'AGENDAMENTO_REUNIAO',
+          confidence: classifierResult.confidence,
+          acao: startResult.action === 'ESCALAR_HUMANO' ? 'ESCALAR_HUMANO' : 'ENVIAR_RESPOSTA_AUTOMATICA',
+          respostaEnviada: !!telefone,
+          responseText: startResult.response,
+          meetingSchedulingStarted: true,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
+    }
+
     // If manual mode, save and return without response
     if (isManualMode) {
       const intentId = await saveInterpretation(supabase, msg, classifierResult, false, false, null);
