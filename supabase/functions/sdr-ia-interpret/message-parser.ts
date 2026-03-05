@@ -58,6 +58,8 @@ export interface ParsedContext {
   canal: string;
   empresa: string;
   lead_id: string;
+  contactsCrmId: string | null;
+  contactsCrmOwnerId: string | null;
 }
 
 // ========================================
