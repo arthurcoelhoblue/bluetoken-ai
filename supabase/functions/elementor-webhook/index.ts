@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (mapErr || !mapping) {
+      console.error("[elementor-webhook] 404 - Mapping not found", { form_id: formId, error: mapErr?.message });
       return new Response(JSON.stringify({ error: "Form mapping not found or inactive", form_id: formId }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
