@@ -1,69 +1,23 @@
 
 
-## Diagnóstico Completo
+## Diagnóstico
 
-Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
+A Edge Function `import-lista-axia` foi criada mas **nunca foi executada**. Dois problemas:
 
-### Problema 1: Scroll horizontal da pagina
+1. **Não registrada no `config.toml`** — sem `verify_jwt = false`, o gateway rejeita a chamada
+2. **Nunca foi invocada** — ninguém chamou o endpoint POST
 
-A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
+## Plano
 
-```text
-AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
-  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
-       └─ flex-1 min-h-0 overflow-hidden  ← ok
-            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
-                 └─ scrollRef: overflow-auto  ← scroll interno ok
-                      └─ flex gap-4 minWidth:max-content  ← expande largura
-```
+1. **Registrar a função no `supabase/config.toml`** adicionando:
+   ```toml
+   [functions.import-lista-axia]
+   verify_jwt = false
+   ```
 
-O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
+2. **Invocar a função** via `curl_edge_functions` (POST para `/import-lista-axia`) para executar a importação dos ~306 leads
 
-### Problema 2: Grab scroll não funciona
+3. **Validar** com query de contagem em `contacts` e `deals` para confirmar que os registros foram criados
 
-O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
-
-O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
-
-## Solução
-
-### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
-
-- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
-- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
-
-### Arquivo 2: `src/components/layout/AppLayout.tsx`
-
-- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
-
-### Arquivo 3: `src/hooks/useGrabScroll.ts`
-
-- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
-- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
-- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
-- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
-
-A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
-
-```text
-pointerdown (capture, container):
-  ├─ É sobre botão/link? → ignora
-  └─ Senão → stopPropagation + registra posição
-                (dnd-kit NÃO recebe pointerdown)
-
-pointermove (capture, window):
-  ├─ < 8px → aguarda
-  ├─ horizontal → lock, scroll, stopImmediatePropagation
-  └─ vertical → release, re-dispatch pointerdown sintético no target
-                  (dnd-kit AGORA recebe e pode iniciar drag)
-
-pointerup (capture, window):
-  └─ reset
-```
-
-| Arquivo | Mudanca |
-|---------|---------|
-| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
-| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
-| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
+Resultado esperado: ~306 contatos + ~306 deals criados na empresa `BLUE_LABS`, pipeline Funil Comercial, etapa MQL, owner Rodrigo Oliveira, com tag "Lista Axia".
 
