@@ -2,22 +2,52 @@
 
 ## Diagnóstico
 
-A Edge Function `import-lista-axia` foi criada mas **nunca foi executada**. Dois problemas:
+A cadeia de overflow impede scroll vertical dos deals dentro de cada coluna:
 
-1. **Não registrada no `config.toml`** — sem `verify_jwt = false`, o gateway rejeita a chamada
-2. **Nunca foi invocada** — ninguém chamou o endpoint POST
+```text
+AppLayout (line 41): overflow-y-auto overflow-x-hidden  ✓
+  └─ PipelinePage (line 144): overflow-y-hidden  ← BLOQUEIA scroll vertical
+       └─ KanbanBoard wrapper (line 179): overflow-hidden, flex-1 min-h-0
+            └─ Carousel (line 185): overflow-hidden
+                 └─ scrollRef (line 215): overflow-x-auto overflow-y-hidden  ← BLOQUEIA
+                      └─ KanbanColumn: flex flex-col, sem altura máxima
+                           └─ Drop area: flex-1, sem overflow-y-auto  ← NÃO SCROLLA
+```
 
-## Plano
+As colunas crescem infinitamente com os deals mas nenhum container permite scroll vertical. O `overflow-y-hidden` na PipelinePage e no scrollRef cortam tudo que excede a tela.
 
-1. **Registrar a função no `supabase/config.toml`** adicionando:
-   ```toml
-   [functions.import-lista-axia]
-   verify_jwt = false
-   ```
+## Solução
 
-2. **Invocar a função** via `curl_edge_functions` (POST para `/import-lista-axia`) para executar a importação dos ~306 leads
+Fazer cada **coluna do Kanban** ter scroll vertical independente, mantendo a altura restrita ao viewport:
 
-3. **Validar** com query de contagem em `contacts` e `deals` para confirmar que os registros foram criados
+### 1. `KanbanColumn.tsx` — Adicionar scroll vertical na área de deals
 
-Resultado esperado: ~306 contatos + ~306 deals criados na empresa `BLUE_LABS`, pipeline Funil Comercial, etapa MQL, owner Rodrigo Oliveira, com tag "Lista Axia".
+A drop area (div que contém os cards) precisa de `overflow-y-auto` e altura máxima controlada pelo flex layout:
+
+```tsx
+// Drop area: adicionar overflow-y-auto e flex-1 com min-h-0
+<div ref={setNodeRef} className="flex-1 min-h-0 flex flex-col gap-1.5 p-1.5 overflow-y-auto ...">
+```
+
+### 2. `KanbanBoard.tsx` — Garantir que o container flex passa altura correta
+
+O `scrollRef` (line 215) precisa de `h-full` e o container interno dos deals precisa restringir altura:
+
+- Linha 216: mudar `min-h-[400px]` para `h-full` para que as colunas preencham o espaço disponível sem ultrapassar
+
+### 3. `KanbanColumn.tsx` — Restringir altura da coluna
+
+A coluna raiz precisa participar do flex com altura máxima:
+
+```tsx
+// Raiz: adicionar h-full para preencher o container
+<div className="flex flex-col w-64 shrink-0 h-full ...">
+```
+
+| Arquivo | Mudança |
+|---------|---------|
+| `KanbanColumn.tsx` | `overflow-y-auto` + `min-h-0` na drop area; `h-full` na raiz |
+| `KanbanBoard.tsx` | Container interno: `h-full` em vez de `min-h-[400px]` |
+
+Resultado: cada coluna terá scroll vertical independente, os deals não ficam cortados pelo viewport.
 
