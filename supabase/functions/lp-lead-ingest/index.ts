@@ -38,6 +38,7 @@ interface LeadPayload {
   nome: string;
   email: string;
   telefone?: string;
+  canal_origem?: string;
   tags?: string[];
   utm_source?: string;
   utm_medium?: string;
