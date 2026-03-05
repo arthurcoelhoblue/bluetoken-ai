@@ -249,6 +249,7 @@ export function ElementorIntegrationManager() {
 
   const openEditDialog = (mapping: FormMapping) => {
     const { main, extras, tracking } = splitFieldMap(mapping.field_map as Record<string, string>);
+    setIsInitializing(true);
     setEditingId(mapping.id);
     setNewFormId(mapping.form_id);
     setNewEmpresa(mapping.empresa);
@@ -260,6 +261,8 @@ export function ElementorIntegrationManager() {
     setNewTags(mapping.tags_auto?.join(", ") || "");
     setNewToken(mapping.token || "");
     setDialogOpen(true);
+    // Clear flag after effects have run
+    setTimeout(() => setIsInitializing(false), 0);
   };
 
   const openCreateDialog = () => {
