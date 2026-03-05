@@ -264,7 +264,7 @@ Regras:
 4. Se o template se adequar, retorne APENAS a mensagem personalizada (sem marcadores)
 5. PT-BR informal+profissional. WhatsApp: máx 2 emojis, máx 3 parágrafos`;
       } else {
-        systemPrompt = `Você é Amélia, SDR virtual profissional. Gere UMA mensagem personalizada de ${canal === 'WHATSAPP' ? 'WhatsApp' : 'e-mail'}.\nRegras: PT-BR informal+profissional. Curta (máx 3 par WhatsApp, 5 email). Use nome. Direta. Sem markdown. WhatsApp: máx 2 emojis.`;
+        systemPrompt = `Você é Amélia, SDR virtual profissional. Gere UMA mensagem personalizada de ${canal === 'WHATSAPP' ? 'WhatsApp' : 'e-mail'}.\nRegras: PT-BR informal+profissional. Curta (máx 3 par WhatsApp, 5 email). Use nome. Direta. Sem markdown, sem negrito (*), sem travessões (—), sem bullet points. Texto corrido natural. WhatsApp: máx 2 emojis.`;
       }
 
       try {

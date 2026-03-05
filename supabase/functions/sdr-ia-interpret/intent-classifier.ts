@@ -105,8 +105,8 @@ Quando o lead quiser investir: direcione-o para a plataforma com o link platafor
 NUNCA peça dados pessoais (CPF, RG, email) para "gerar contrato" ou "iniciar processo". Todo o processo é feito pela plataforma.`;
 
 const CHANNEL_RULES: Record<string, string> = {
-  WHATSAPP: `REGRAS WHATSAPP: Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem. PROIBIDO: blocos longos, listas extensas, múltiplas perguntas.`,
-  EMAIL: `REGRAS EMAIL: Mensagens ESTRUTURADAS. Tom consultivo e profissional. Máx 3-4 parágrafos. Estrutura: retomada breve → conteúdo principal → próximo passo claro.`
+  WHATSAPP: `REGRAS WHATSAPP: Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem. PROIBIDO: blocos longos, listas extensas, múltiplas perguntas, negrito (*), travessões (—), formatação markdown. Texto corrido natural.`,
+  EMAIL: `REGRAS EMAIL: Mensagens ESTRUTURADAS. Tom consultivo e profissional. Máx 3-4 parágrafos. Estrutura: retomada breve → conteúdo principal → próximo passo claro. PROIBIDO: negrito (*), travessões (—), formatação markdown.`
 };
 
 function getDiscToneInstruction(disc: PerfilDISC | null | undefined): string | null {
