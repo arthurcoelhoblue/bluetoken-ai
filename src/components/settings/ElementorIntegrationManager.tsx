@@ -150,15 +150,18 @@ export function ElementorIntegrationManager() {
 
   const [newPipelineId, setNewPipelineId] = useState("");
   const [newStageId, setNewStageId] = useState("");
+  const [isInitializing, setIsInitializing] = useState(false);
 
-  // Reset pipeline/stage when empresa changes
+  // Reset pipeline/stage when empresa changes (skip during edit init)
   useEffect(() => {
+    if (isInitializing) return;
     setNewPipelineId("");
     setNewStageId("");
   }, [newEmpresa]);
 
-  // Reset stage when pipeline changes
+  // Reset stage when pipeline changes (skip during edit init)
   useEffect(() => {
+    if (isInitializing) return;
     setNewStageId("");
   }, [newPipelineId]);
 
@@ -246,6 +249,7 @@ export function ElementorIntegrationManager() {
 
   const openEditDialog = (mapping: FormMapping) => {
     const { main, extras, tracking } = splitFieldMap(mapping.field_map as Record<string, string>);
+    setIsInitializing(true);
     setEditingId(mapping.id);
     setNewFormId(mapping.form_id);
     setNewEmpresa(mapping.empresa);
@@ -257,6 +261,8 @@ export function ElementorIntegrationManager() {
     setNewTags(mapping.tags_auto?.join(", ") || "");
     setNewToken(mapping.token || "");
     setDialogOpen(true);
+    // Clear flag after effects have run
+    setTimeout(() => setIsInitializing(false), 0);
   };
 
   const openCreateDialog = () => {
