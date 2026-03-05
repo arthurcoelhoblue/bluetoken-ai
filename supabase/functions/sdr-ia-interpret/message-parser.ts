@@ -366,5 +366,7 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
     canal: conversationState?.canal || message.canal || 'WHATSAPP',
     empresa: message.empresa,
     lead_id: message.lead_id,
+    contactsCrmId,
+    contactsCrmOwnerId,
   };
 }
