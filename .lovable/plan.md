@@ -1,33 +1,52 @@
 
 
-## Diagnóstico
+## Problema
 
-O último edit **removeu** os handlers `onPointerDownOutside` e `onInteractOutside` do `SheetContent`. Segundo a memória do projeto, a versão funcional **tinha** esses handlers — eles interceptavam cliques fora do sheet e verificavam se o alvo era um widget FAB (`data-fab-widget`). Sem eles, o comportamento de clique fora quebrou.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-## Correção
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-**Arquivo: `src/components/deals/DealDetailSheet.tsx`** — restaurar os handlers no `SheetContent`:
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-```tsx
-<SheetContent
-  className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0"
-  onPointerDownOutside={(e) => {
-    const target = e.detail?.originalEvent?.target as HTMLElement | null;
-    if (target?.closest('[data-fab-widget]')) {
-      e.preventDefault();
+## Solução
+
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
+
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
     }
-  }}
-  onInteractOutside={(e) => {
-    const target = e.detail?.originalEvent?.target as HTMLElement | null;
-    if (target?.closest('[data-fab-widget]')) {
-      e.preventDefault();
-    }
-  }}
->
+    return json response with slots offered
+  }
+}
 ```
 
-Esses handlers fazem exatamente o que funcionava antes: permitem cliques nos FABs (telefone/copilot) sem fechar o sheet, e permitem que cliques em outras áreas fechem normalmente.
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-### Arquivo afetado
-- `src/components/deals/DealDetailSheet.tsx` — restaurar `onPointerDownOutside` e `onInteractOutside`
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
