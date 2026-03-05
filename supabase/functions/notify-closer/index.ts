@@ -132,6 +132,21 @@ serve(async (req) => {
 
     // Determinar email do closer
     let closerEmail = body.closer_email;
+    
+    // Se temos notify_user_id, buscar e-mail do vendedor designado na tabela profiles
+    if (!closerEmail && body.notify_user_id) {
+      const { data: vendorProfile } = await supabase
+        .from('profiles')
+        .select('email')
+        .eq('id', body.notify_user_id)
+        .maybeSingle();
+      
+      if (vendorProfile?.email) {
+        closerEmail = vendorProfile.email;
+        log.info('Usando e-mail do vendedor designado', { email: closerEmail });
+      }
+    }
+    
     if (!closerEmail) {
       const empresaKey = body.empresa.toLowerCase();
       const { data: closerConfig } = await supabase
