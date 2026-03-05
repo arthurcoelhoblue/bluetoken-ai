@@ -87,8 +87,10 @@ async function applyAction(
           if (!notifyUserId) {
             const { data: sellers } = await supabase
               .from('user_access_assignments')
-              .select('user_id')
-              .eq('empresa', empresa);
+              .select('user_id, profiles!inner(is_vendedor, is_active)')
+              .eq('empresa', empresa)
+              .eq('profiles.is_vendedor', true)
+              .eq('profiles.is_active', true);
             if (sellers?.length) {
               // Pegar o vendedor com menos deals abertos
               let minDeals = Infinity;
@@ -187,10 +189,42 @@ async function applyAction(
       }
       if (leadId) {
         try {
+          // Buscar owner do contato para notificar o vendedor correto
+          const { data: tarefaContact } = await supabase
+            .from('contacts').select('id, owner_id')
+            .eq('legacy_lead_id', leadId).maybeSingle();
+          let tarefaNotifyUserId = tarefaContact?.owner_id as string | undefined;
+
+          // Round-robin se sem owner (filtrando apenas vendedores ativos)
+          if (!tarefaNotifyUserId) {
+            const { data: tarefaSellers } = await supabase
+              .from('user_access_assignments')
+              .select('user_id, profiles!inner(is_vendedor, is_active)')
+              .eq('empresa', empresa)
+              .eq('profiles.is_vendedor', true)
+              .eq('profiles.is_active', true);
+            if (tarefaSellers?.length) {
+              let minDeals = Infinity;
+              let bestSeller = tarefaSellers[0].user_id;
+              for (const s of tarefaSellers) {
+                const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', s.user_id).eq('status', 'ABERTO');
+                if ((count || 0) < minDeals) {
+                  minDeals = count || 0;
+                  bestSeller = s.user_id;
+                }
+              }
+              tarefaNotifyUserId = bestSeller;
+            }
+          }
+
           await fetch(`${envConfig.SUPABASE_URL}/functions/v1/notify-closer`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${envConfig.SUPABASE_SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ lead_id: leadId, empresa, motivo: (detalhes as Record<string, unknown> | undefined)?.motivo || 'Lead qualificado pelo SDR IA' }),
+            body: JSON.stringify({
+              lead_id: leadId, empresa,
+              motivo: (detalhes as Record<string, unknown> | undefined)?.motivo || 'Lead qualificado pelo SDR IA',
+              notify_user_id: tarefaNotifyUserId,
+            }),
           });
         } catch { /* ignore */ }
         await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
