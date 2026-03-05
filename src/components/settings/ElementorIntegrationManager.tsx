@@ -150,15 +150,18 @@ export function ElementorIntegrationManager() {
 
   const [newPipelineId, setNewPipelineId] = useState("");
   const [newStageId, setNewStageId] = useState("");
+  const [isInitializing, setIsInitializing] = useState(false);
 
-  // Reset pipeline/stage when empresa changes
+  // Reset pipeline/stage when empresa changes (skip during edit init)
   useEffect(() => {
+    if (isInitializing) return;
     setNewPipelineId("");
     setNewStageId("");
   }, [newEmpresa]);
 
-  // Reset stage when pipeline changes
+  // Reset stage when pipeline changes (skip during edit init)
   useEffect(() => {
+    if (isInitializing) return;
     setNewStageId("");
   }, [newPipelineId]);
 
