@@ -376,5 +376,6 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
     lead_id: message.lead_id,
     contactsCrmId,
     contactsCrmOwnerId,
+    contactsOrgName,
   };
 }
