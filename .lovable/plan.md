@@ -1,52 +1,49 @@
 
 
-## Problema
+## Diagnóstico e Solução: Chamadas não registradas + Auto-vinculação por telefone
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+### O que aconteceu com a ligação pro Tiago
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+A ligação foi feita com sucesso (console logs confirmam `click_to_call success` + WebRTC ativo por ~10s). Porém:
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+1. **Nenhum webhook chegou** — a tabela `call_events` está vazia para hoje, o que significa que o Zadarma PBX não enviou `NOTIFY_OUT_START` / `NOTIFY_END`
+2. **Sem registro na tabela `calls`** — o frontend **não cria** registros de chamadas; apenas o webhook faz isso
+3. **O fallback do frontend falhou** — `closeActiveCallRecord()` tentou fechar um registro existente mas não encontrou nenhum ("No open call record to close")
+4. **Sem transcrição** — sem registro = sem `recording_url` = sem transcrição
 
-## Solução
+O contato "Tiago" (id: `2e6f0c23`) existe na TOKENIZA com telefone `+5521985477371` e tem um deal aberto "Tiago" no pipeline "Ofertas Públicas".
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### Solução em duas partes
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+#### 1. Frontend cria registro de chamada ao iniciar (fallback resiliente)
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+Atualmente, apenas o webhook cria registros na tabela `calls`. Se o webhook falhar ou atrasar, a chamada é perdida.
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
-```
+**Mudança no `ZadarmaPhoneWidget.tsx`**: Ao receber `click_to_call success`, o frontend cria imediatamente um registro na tabela `calls` com os dados disponíveis (empresa, número, extensão, user_id). O webhook, quando chegar, faz upsert via `pbx_call_id` ao invés de criar duplicatas.
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+#### 2. Auto-vinculação por telefone (contact + deal)
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+Quando o frontend cria o registro de chamada, ele deve:
+- Buscar na tabela `contacts` por telefone correspondente (últimos 9 dígitos) na mesma empresa
+- Se encontrar contato, vincular `contact_id`
+- Se o contato tiver um deal ABERTO, vincular `deal_id`
+- Isso funciona **mesmo que a chamada não tenha sido iniciada de dentro de um deal**
+
+#### Mudanças técnicas
+
+**`src/components/zadarma/ZadarmaPhoneWidget.tsx`**:
+- No `onSuccess` do `click_to_call`, criar registro na tabela `calls` via `supabase.from('calls').insert()`
+- Incluir lógica de busca por telefone: `contacts` → `deals` (ABERTO, mais recente)
+- Guardar o `call.id` criado em um ref para uso no `closeActiveCallRecord` e no `CallSummaryDialog`
+
+**`src/hooks/useZadarmaWebRTC.ts`**:
+- Ajustar `closeActiveCallRecord` para aceitar um `callId` direto (passado pelo widget) ao invés de buscar "qualquer chamada sem ended_at"
+
+**`supabase/functions/zadarma-webhook/index.ts`**:
+- No `NOTIFY_START` / `NOTIFY_OUT_START`, fazer upsert via `pbx_call_id` ao invés de insert puro, para não duplicar se o frontend já criou o registro
+
+### Arquivos afetados
+1. `src/components/zadarma/ZadarmaPhoneWidget.tsx` — criar registro + auto-link
+2. `src/hooks/useZadarmaWebRTC.ts` — aceitar callId direto
+3. `supabase/functions/zadarma-webhook/index.ts` — upsert ao invés de insert
 
