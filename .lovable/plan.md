@@ -1,52 +1,35 @@
 
 
-## Problema
+## Diagnóstico: Telefone não liga + FABs bloqueados pelo Sheet
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+### Problema 1: Transição de status "accepted" nunca dispara
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
-
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
-
-## Solução
-
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
-
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
-
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
-
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
+**Causa raiz**: Na linha 415 de `useZadarmaWebRTC.ts`, a condição usa igualdade estrita:
+```js
+combined === 'confirmed' || combined === 'accepted'
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+Porém o widget Zadarma v9 loga `accepted` com argumentos extras: `accepted { _type: "undefined", value: "undefined" }`. Após concatenação, `combined` vira `"accepted {\"_type\":\"undefined\",\"value\":\"undefined\"}"` — que **nunca** é igual a `"accepted"`.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+Resultado: o status WebRTC fica preso em `ringing`, nunca transita para `active`. O phoneState do widget nunca chega a `active`, o timer não inicia, e a UI se comporta de forma inconsistente.
+
+Adicionalmente, o evento `canceled` (quando a outra parte cancela) também não é tratado pelo interceptor, deixando o estado preso.
+
+**Correção em `src/hooks/useZadarmaWebRTC.ts`**:
+- Trocar `combined === 'confirmed'` por `combined.startsWith('confirmed')` (ou `.includes()` com guard)
+- Trocar `combined === 'accepted'` por `combined.startsWith('accepted')`
+- Adicionar `combined.startsWith('canceled')` ao bloco de ENDED para tratar cancelamentos
+
+### Problema 2: Sheet do contato bloqueia FABs flutuantes
+
+**Causa raiz**: O `<Sheet>` (Radix UI) renderiza via **portal** no final do `document.body`. O overlay tem `fixed inset-0 z-50` com `bg-black/80` e captura pointer events. Os FABs (ZadarmaPhoneWidget e CopilotFab) estão dentro do `<SidebarProvider>` no DOM. Embora tenham `z-[9999]`, o portal do Sheet aparece **depois** no DOM, e o overlay com `pointer-events: auto` intercepta cliques antes que alcancem os FABs.
+
+**Correção em `src/components/zadarma/ZadarmaPhoneWidget.tsx` e `src/components/copilot/CopilotFab.tsx`**:
+- Envolver o JSX retornado de cada FAB com `ReactDOM.createPortal(..., document.body)` para que fiquem no mesmo nível DOM que os portais do Radix
+- Com z-[9999] > z-50 e mesmo nível de portal, os FABs ficarão sempre acima de qualquer Sheet/Dialog
+
+### Arquivos afetados
+1. `src/hooks/useZadarmaWebRTC.ts` — fix nas condições de matching
+2. `src/components/zadarma/ZadarmaPhoneWidget.tsx` — portal wrapper
+3. `src/components/copilot/CopilotFab.tsx` — portal wrapper
 
