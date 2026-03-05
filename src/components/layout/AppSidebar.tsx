@@ -254,7 +254,18 @@ export function AppSidebar() {
             <Collapsible key={group.label} defaultOpen={groupHasActiveRoute} className="group/collapsible">
               <SidebarGroup>
                 <CollapsibleTrigger asChild>
-                  <SidebarGroupLabel className="cursor-pointer hover:bg-sidebar-accent/50 rounded-md transition-colors select-none">
+                  <SidebarGroupLabel
+                    className="cursor-pointer hover:bg-sidebar-accent/50 rounded-md transition-colors select-none"
+                    onClick={(e) => {
+                      // After expanding, scroll the group into view
+                      const trigger = e.currentTarget;
+                      requestAnimationFrame(() => {
+                        setTimeout(() => {
+                          trigger.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                        }, 150);
+                      });
+                    }}
+                  >
                     <span className="flex-1">{group.label}</span>
                     <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=closed]/collapsible:-rotate-90" />
                   </SidebarGroupLabel>
