@@ -61,6 +61,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
 
     if (mapErr || !mapping) {
+      console.error("[elementor-webhook] 404 - Mapping not found", { form_id: formId, error: mapErr?.message });
       return new Response(JSON.stringify({ error: "Form mapping not found or inactive", form_id: formId }), {
         status: 404,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -69,6 +70,7 @@ Deno.serve(async (req) => {
 
     // Authenticate via X-Webhook-Token (optional — only validates if mapping has a token)
     if (mapping.token && tokenHeader !== mapping.token) {
+      console.error("[elementor-webhook] 401 - Invalid token", { form_id: formId });
       return new Response(JSON.stringify({ error: "Invalid webhook token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -153,6 +155,13 @@ Deno.serve(async (req) => {
     }
 
     if (!mainPayload.email && !mainPayload.nome) {
+      console.error("[elementor-webhook] 422 - Could not extract lead data", {
+        form_id: formId,
+        received_keys: Object.keys(body),
+        configured_map: fieldMap,
+        has_fields: !!elementorFields,
+        fields_keys: elementorFields ? Object.keys(elementorFields) : [],
+      });
       return new Response(JSON.stringify({
         error: "Could not extract lead data. Check field_map configuration.",
         received_keys: Object.keys(body),
