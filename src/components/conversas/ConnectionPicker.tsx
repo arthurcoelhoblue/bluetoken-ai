@@ -57,7 +57,7 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
     const conn = connections[0];
     return (
       <div className={className}>
-        <Badge variant="outline" className="h-7 text-xs font-normal gap-1.5 px-2.5 max-w-[200px] truncate">
+        <Badge variant="outline" className="h-7 text-xs font-normal gap-1.5 px-2.5">
           <Phone className="h-3 w-3 text-muted-foreground shrink-0" />
           <span className="truncate">{conn.label || conn.display_phone || conn.verified_name || 'WhatsApp'}</span>
         </Badge>
