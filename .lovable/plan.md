@@ -1,22 +1,52 @@
 
 
-## Tornar o botão flutuante do telefone arrastável (como o Copilot)
+## Problema
 
-O FAB do telefone hoje é fixo em `fixed bottom-20 right-6`. Vamos aplicar a mesma lógica de drag que já existe no `CopilotFab`: posição salva no localStorage, drag com pointer events, threshold para distinguir clique de arraste, clamp no resize.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-### Alterações em `ZadarmaPhoneWidget.tsx`
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-1. **Adicionar estado de posição + drag** (mesmo padrão do CopilotFab):
-   - `STORAGE_KEY = 'phone-fab-position'`, `FAB_SIZE = 48`, `DRAG_THRESHOLD = 5`
-   - Funções `loadPosition` / `savePosition` idênticas ao CopilotFab
-   - Estado `position` inicializado do localStorage ou default `{ x: innerWidth - 48 - 24, y: innerHeight - 48 - 80 }` (um pouco acima do Copilot)
-   - Refs: `isDraggingRef`, `dragStartRef`, `didDragRef`
-   - Handlers: `onPointerDown`, `onPointerMove`, `onPointerUp` com clamp e threshold
-   - `useEffect` para clamp no resize da janela
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-2. **FAB minimizado** (linhas ~258-279): trocar `fixed bottom-20 right-6` por `fixed` com `style={{ left: position.x, top: position.y }}` + adicionar `touch-none select-none` e os handlers de pointer no wrapper `div`, igual ao Copilot. O `onClick` do botão é substituído pelo `onPointerUp` (abre só se não arrastou).
+## Solução
 
-3. **Widget expandido** (linha ~362): o painel compacto também usa posição relativa ao FAB. Posicionar com `style` calculado a partir de `position`, abrindo para cima/esquerda se estiver perto da borda inferior/direita.
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-4. **Evitar conflito com CopilotFab**: a posição default do telefone será `y: innerHeight - 48 - 80` (offset diferente do Copilot que usa `- 24`).
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
+```
+
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 

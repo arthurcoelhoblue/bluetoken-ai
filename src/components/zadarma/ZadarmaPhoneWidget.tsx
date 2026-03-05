@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { formatPhoneBR } from '@/lib/formatPhone';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -17,6 +17,37 @@ import type { EmpresaTipo } from '@/types/telephony';
 import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
 const DIALPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
+
+const PHONE_STORAGE_KEY = 'phone-fab-position';
+const PHONE_FAB_SIZE = 48;
+const PHONE_DRAG_THRESHOLD = 5;
+
+function loadPhonePosition(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(PHONE_STORAGE_KEY);
+    if (raw) {
+      const pos = JSON.parse(raw);
+      if (
+        typeof pos.x === 'number' &&
+        typeof pos.y === 'number' &&
+        pos.x >= 0 &&
+        pos.y >= 0 &&
+        pos.x <= window.innerWidth - PHONE_FAB_SIZE &&
+        pos.y <= window.innerHeight - PHONE_FAB_SIZE
+      ) {
+        return pos;
+      }
+      localStorage.removeItem(PHONE_STORAGE_KEY);
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function savePhonePosition(pos: { x: number; y: number }) {
+  try {
+    localStorage.setItem(PHONE_STORAGE_KEY, JSON.stringify(pos));
+  } catch { /* ignore */ }
+}
 
 export function ZadarmaPhoneWidget() {
   const { profile } = useAuth();
@@ -51,8 +82,63 @@ export function ZadarmaPhoneWidget() {
   const [lastCallDealId, setLastCallDealId] = useState<string | undefined>();
 
   const proxy = useZadarmaProxy();
-  // autoDialRef removed — dial is now called directly from event handler
   const speech = useSpeechRecognition();
+
+  // Draggable FAB position
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number }>(() => {
+    const saved = loadPhonePosition();
+    const defaultPos = { x: window.innerWidth - PHONE_FAB_SIZE - 24, y: window.innerHeight - PHONE_FAB_SIZE - 80 };
+    if (!saved) return defaultPos;
+    return {
+      x: Math.max(0, Math.min(saved.x, window.innerWidth - PHONE_FAB_SIZE)),
+      y: Math.max(0, Math.min(saved.y, window.innerHeight - PHONE_FAB_SIZE)),
+    };
+  });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ px: 0, py: 0, sx: 0, sy: 0 });
+  const didDragRef = useRef(false);
+
+  useEffect(() => {
+    const onResize = () => {
+      setFabPosition(prev => ({
+        x: Math.min(prev.x, window.innerWidth - PHONE_FAB_SIZE),
+        y: Math.min(prev.y, window.innerHeight - PHONE_FAB_SIZE),
+      }));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const onFabPointerDown = useCallback((e: React.PointerEvent) => {
+    isDraggingRef.current = true;
+    didDragRef.current = false;
+    dragStartRef.current = { px: e.clientX, py: e.clientY, sx: fabPosition.x, sy: fabPosition.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [fabPosition]);
+
+  const onFabPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.px;
+    const dy = e.clientY - dragStartRef.current.py;
+    if (Math.abs(dx) > PHONE_DRAG_THRESHOLD || Math.abs(dy) > PHONE_DRAG_THRESHOLD) {
+      didDragRef.current = true;
+    }
+    const newX = Math.max(0, Math.min(window.innerWidth - PHONE_FAB_SIZE, dragStartRef.current.sx + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - PHONE_FAB_SIZE, dragStartRef.current.sy + dy));
+    setFabPosition({ x: newX, y: newY });
+  }, []);
+
+  const onFabPointerUp = useCallback((action: () => void) => {
+    isDraggingRef.current = false;
+    if (didDragRef.current) {
+      setFabPosition(prev => {
+        savePhonePosition(prev);
+        return prev;
+      });
+    } else {
+      action();
+    }
+  }, []);
 
   // Sync WebRTC status to phone state
   useEffect(() => {
@@ -259,23 +345,37 @@ export function ZadarmaPhoneWidget() {
     if (isLoadingExtension) return null;
     if (!hasExtension) return null;
     return (
-      <button
-        onClick={() => setMinimized(false)}
-        className="fixed bottom-20 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105"
+      <div
+        className="fixed z-[60] touch-none select-none"
+        style={{ left: fabPosition.x, top: fabPosition.y }}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={() => onFabPointerUp(() => setMinimized(false))}
       >
-        <Phone className="h-5 w-5" />
-      </button>
+        <button
+          className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center cursor-grab active:cursor-grabbing"
+        >
+          <Phone className="h-5 w-5" />
+        </button>
+      </div>
     );
   }
 
   if (minimized) {
     return (
-      <button
-        onClick={() => setMinimized(false)}
-        className="fixed bottom-20 right-6 z-[60] h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center hover:scale-105 animate-pulse"
+      <div
+        className="fixed z-[60] touch-none select-none"
+        style={{ left: fabPosition.x, top: fabPosition.y }}
+        onPointerDown={onFabPointerDown}
+        onPointerMove={onFabPointerMove}
+        onPointerUp={() => onFabPointerUp(() => setMinimized(false))}
       >
-        <Phone className="h-5 w-5" />
-      </button>
+        <button
+          className="h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-all flex items-center justify-center cursor-grab active:cursor-grabbing animate-pulse"
+        >
+          <Phone className="h-5 w-5" />
+        </button>
+      </div>
     );
   }
 
@@ -359,7 +459,13 @@ export function ZadarmaPhoneWidget() {
 
   // Normal compact widget
   return (
-    <div className="fixed bottom-20 right-6 z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up">
+    <div
+      className="fixed z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up"
+      style={{
+        left: Math.min(fabPosition.x, window.innerWidth - 288),
+        top: Math.max(0, fabPosition.y - 400),
+      }}
+    >
       <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
         <div className="flex items-center gap-2">
           <Phone className="h-4 w-4" />
