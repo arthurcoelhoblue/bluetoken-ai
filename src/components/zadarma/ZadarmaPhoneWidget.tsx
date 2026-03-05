@@ -366,7 +366,7 @@ export function ZadarmaPhoneWidget() {
       toast.error('Erro inesperado ao iniciar chamada.');
       setPhoneState('idle');
     }
-  }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc]);
+  }, [number, empresa, myExtension, proxy, isWebRTCMode, webrtc, createCallRecord, dealId]);
 
   // Auto-dial removed — handleDialDirect is called synchronously from the event handler
 
