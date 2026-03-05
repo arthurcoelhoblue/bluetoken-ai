@@ -157,8 +157,9 @@ serve(async (req) => {
       telefone: parsedContext.telefone || undefined,
     };
 
+    let meetingResult = { handled: false } as { handled: boolean; response?: string };
     if (!isManualMode) {
-      const meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
+      meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
       if (meetingResult.handled && meetingResult.response) {
         // Save as intent and send response
         const intentId = await saveInterpretation(supabase, msg, {
