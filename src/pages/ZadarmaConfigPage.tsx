@@ -349,6 +349,26 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
     }
   };
 
+  const handleLinkExtension = async (z: { extension_number: string; sip_login: string }) => {
+    const userId = linkSelections[z.extension_number];
+    if (!userId) { toast.error('Selecione um usuário'); return; }
+    setLinking(prev => ({ ...prev, [z.extension_number]: true }));
+    try {
+      await saveExtension.mutateAsync({
+        empresa,
+        extension_number: z.extension_number,
+        user_id: userId,
+        sip_login: z.sip_login,
+      });
+      toast.success(`Ramal ${z.extension_number} vinculado!`);
+      setLinkSelections(prev => { const n = { ...prev }; delete n[z.extension_number]; return n; });
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLinking(prev => ({ ...prev, [z.extension_number]: false }));
+    }
+  };
+
   // Ramais no Zadarma que NÃO estão mapeados no CRM
   const unmappedExts = zadarmaExts.filter(
     z => !extensions.some(e => e.extension_number === z.extension_number)
