@@ -181,9 +181,17 @@ async function handleSlotSelection(
   return await bookMeeting(supabase, ctx, state, chosen);
 }
 
+const EMPRESA_DISPLAY: Record<string, string> = {
+  BLUE: "Blue Consult",
+  BLUE_LABS: "Blue Labs",
+  TOKENIZA: "Tokeniza",
+  MPUPPE: "MPuppe",
+  AXIA: "Axia",
+};
+
 function buildMeetingTitle(ctx: MeetingSchedulerContext): string {
-  const parts: string[] = ["Reunião"];
-  if (ctx.empresaNome) parts.push(ctx.empresaNome);
+  const empresaDisplay = EMPRESA_DISPLAY[ctx.empresa] || ctx.empresa;
+  const parts: string[] = ["Reunião", empresaDisplay];
   if (ctx.leadNome) {
     parts.push("-");
     parts.push(ctx.leadNome);

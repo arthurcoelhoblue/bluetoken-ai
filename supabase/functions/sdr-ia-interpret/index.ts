@@ -161,7 +161,7 @@ serve(async (req) => {
       telefone: parsedContext.telefone || undefined,
       leadEmail,
       leadNome: parsedContext.leadNome || undefined,
-      empresaNome: (parsedContext as Record<string, unknown>).contactsOrgName as string || undefined,
+      empresaNome: undefined, // resolved from tenant ID in meeting-scheduler
     };
 
     let meetingResult = { handled: false } as { handled: boolean; response?: string };
