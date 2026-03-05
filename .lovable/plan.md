@@ -1,52 +1,64 @@
 
 
-## Problema
+## Problema Raiz
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+O agendamento não funciona porque o `ownerId` nunca chega ao `startMeetingScheduling`. A causa está em `message-parser.ts` linha 243:
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+```ts
+supabase.from('deals').select('id, titulo, valor, status, stage_id')
+  .eq('lead_id', leadId).limit(5)
+```
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+**Dois erros:**
+1. A tabela `deals` não tem coluna `lead_id` — o vínculo é via `contact_id` (referência à tabela `lead_contacts`). A query sempre retorna `[]`.
+2. O `select` não inclui `owner_id`, que é necessário para buscar a agenda do vendedor.
+
+Sem deals carregados, `parsedContext.deals` é sempre vazio, `meetingCtx.ownerId` é sempre `undefined`, e `startMeetingScheduling` retorna `{ handled: false }`.
 
 ## Solução
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### 1. Corrigir query de deals em `message-parser.ts` (linha 243-244)
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
-
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+Trocar a query para buscar deals pelo `contact_id` do lead_contact, incluindo `owner_id`:
 
 ```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
+// Buscar deal via contact_id (lead_contacts.id)
+supabase.from('deals').select('id, titulo, valor, status, stage_id, owner_id, contact_id')
+  .eq('contact_id', contactRes.data?.id || '')
+  .limit(5),
+```
+
+**Problema**: `contactRes` é resolvido no mesmo `Promise.all`. Precisamos reestruturar para primeiro buscar o contact, depois buscar deals com o `contact_id`.
+
+Alternativa mais simples: fazer a query de deals separada, após o `Promise.all`:
+
+```ts
+// Após o Promise.all atual (que já não inclui deals)
+let deals: Record<string, unknown>[] = [];
+if (contato?.id) {
+  const { data: dealsData } = await supabase
+    .from('deals')
+    .select('id, titulo, valor, status, stage_id, owner_id, contact_id')
+    .eq('contact_id', contato.id)
+    .limit(5);
+  deals = dealsData || [];
 }
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+### 2. Fallback para `owner_id` do `lead_contacts` em `index.ts` (linha 143)
+
+Se o deal não tiver `owner_id`, usar o `owner_id` do `lead_contacts`:
+
+```ts
+ownerId: parsedContext.deals?.[0]
+  ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string
+  : (parsedContext.contato as Record<string, unknown>)?.owner_id as string || undefined,
+```
+
+### Resumo
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+| `message-parser.ts` | Corrigir query de deals: usar `contact_id` em vez de `lead_id`; incluir `owner_id` no select; separar do `Promise.all` |
+| `index.ts` | Adicionar fallback para `owner_id` do `lead_contacts` quando deal não tem owner |
 
