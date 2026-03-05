@@ -1,52 +1,36 @@
 
 
-## Problema
+## Diagnóstico: Elementor falhou ao enviar lead
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+### Causa raiz
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+O mapeamento do formulário `direito_digital` na tabela `elementor_form_mappings` está com os valores do `field_map` **incorretos**. Alguém salvou os shortcodes do Elementor em vez dos IDs puros dos campos:
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+| Campo | Valor salvo (errado) | Valor correto |
+|-------|---------------------|---------------|
+| nome | `[field id="name"]` | `name` |
+| email | `[field id="email"]` | `email` |
+| telefone | `[field id="phone"]` | `phone` |
 
-## Solução
+O Elementor enviou o payload com `fields.name.value`, `fields.email.value`, `fields.phone.value` — mas o código tentou encontrar `fields["[field id=\"name\"]"]`, que não existe. Resultado: nenhum campo principal foi extraído, e a função retornou **422** ("Could not extract lead data").
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### Plano de correção
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
-
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
-
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
+**1. Corrigir o mapeamento no banco** (migration SQL):
+```sql
+UPDATE elementor_form_mappings
+SET field_map = '{"nome": "name", "email": "email", "telefone": "phone"}'::jsonb
+WHERE form_id = 'direito_digital';
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+**2. Adicionar logging nas respostas de erro** em `elementor-webhook/index.ts` para facilitar debugging futuro:
+- Log antes de retornar 404 (mapping not found)
+- Log antes de retornar 422 (could not extract)
+- Log antes de retornar 401 (token inválido)
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+Isso vai evitar que erros futuros fiquem "invisíveis" nos logs.
+
+### Arquivos afetados
+- Migration SQL (corrigir field_map)
+- `supabase/functions/elementor-webhook/index.ts` (adicionar logs de erro)
 
