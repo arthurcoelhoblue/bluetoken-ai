@@ -2,51 +2,60 @@
 
 ## Problema
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+O email de escalação vai para `closer@grupoblue.com.br` (fallback) em vez do email do vendedor. Dois pontos causam isso:
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+1. **Ação `CRIAR_TAREFA_CLOSER` (linha 190)**: Chama `notify-closer` sem passar `notify_user_id`. Sem esse campo, o `notify-closer` cai direto no fallback `closer@...`.
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+2. **Round-robin no `ESCALAR_HUMANO`**: Busca vendedores em `user_access_assignments` sem filtrar por `is_vendedor = true` na tabela `profiles`. Pode pegar admins ou outros usuários.
+
+Confirmação nos dados: a maioria dos `closer_notifications` recentes tem `closer_email = closer@grupoblue.com.br`, confirmando que o `notify_user_id` não está chegando.
 
 ## Solução
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### `supabase/functions/sdr-ia-interpret/action-executor.ts`
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+**1. Corrigir `CRIAR_TAREFA_CLOSER` (linhas 188-199)**
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+Adicionar busca do owner do contato e round-robin (mesma lógica do `ESCALAR_HUMANO`) antes de chamar `notify-closer`, passando `notify_user_id`:
 
 ```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
+case 'CRIAR_TAREFA_CLOSER':
+  if (runId) { ... }
+  if (leadId) {
+    // Buscar owner do contato
+    const { data: tarefaContact } = await supabase
+      .from('contacts').select('id, owner_id')
+      .eq('legacy_lead_id', leadId).maybeSingle();
+    let tarefaNotifyUserId = tarefaContact?.owner_id;
+
+    // Round-robin se sem owner (filtrando is_vendedor)
+    if (!tarefaNotifyUserId) {
+      // ... mesma lógica de round-robin ...
     }
-    return json response with slots offered
+
+    await fetch(notify-closer, {
+      body: { lead_id, empresa, motivo, notify_user_id: tarefaNotifyUserId }
+    });
   }
-}
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+**2. Filtrar round-robin por `is_vendedor` (linha 88-91)**
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+Trocar a query para fazer JOIN com `profiles` e filtrar apenas vendedores ativos:
+
+```ts
+const { data: sellers } = await supabase
+  .from('user_access_assignments')
+  .select('user_id, profiles!inner(is_vendedor, is_active)')
+  .eq('empresa', empresa)
+  .eq('profiles.is_vendedor', true)
+  .eq('profiles.is_active', true);
+```
+
+### Resumo
+
+| Local | Mudança |
+|-------|---------|
+| `CRIAR_TAREFA_CLOSER` (linha 188) | Buscar owner do contato + round-robin, passar `notify_user_id` |
+| Round-robin (linha 88) | Filtrar por `is_vendedor = true` e `is_active = true` |
 
