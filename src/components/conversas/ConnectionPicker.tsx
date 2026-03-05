@@ -80,7 +80,7 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
   return (
     <div className={className}>
       <Select value={selectedId} onValueChange={onChange}>
-        <SelectTrigger className="h-8 text-xs max-w-[200px]">
+        <SelectTrigger className="h-8 text-xs">
           <Phone className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
           <SelectValue placeholder="Selecionar número..." />
         </SelectTrigger>
