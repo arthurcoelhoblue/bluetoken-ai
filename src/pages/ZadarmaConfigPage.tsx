@@ -453,12 +453,35 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
             <CardContent>
               <div className="space-y-2">
                 {unmappedExts.map(z => (
-                  <div key={z.extension_number} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                  <div key={z.extension_number} className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/50 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-medium">Ramal {z.extension_number}</span>
                       <span className="text-xs text-muted-foreground">SIP: {z.sip_login}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Externo</Badge>
                     </div>
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={linkSelections[z.extension_number] || ''}
+                        onValueChange={val => setLinkSelections(prev => ({ ...prev, [z.extension_number]: val }))}
+                      >
+                        <SelectTrigger className="w-44 h-8 text-xs">
+                          <SelectValue placeholder="Selecionar usuário" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => (
+                            <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-8 text-xs"
+                        disabled={!linkSelections[z.extension_number] || linking[z.extension_number]}
+                        onClick={() => handleLinkExtension(z)}
+                      >
+                        {linking[z.extension_number] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+                        Vincular
+                      </Button>
                     <div className="flex items-center gap-1">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
