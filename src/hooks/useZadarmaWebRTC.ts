@@ -487,7 +487,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         triggerAutoAnswer();
       }
       else if (
-        (combined === 'confirmed' || combined === 'accepted' ||
+        (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted')) &&
         canTransitionToActive(statusRef.current)
       ) {
