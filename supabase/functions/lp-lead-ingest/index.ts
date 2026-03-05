@@ -194,7 +194,7 @@ Deno.serve(async (req) => {
             status: "ABERTO",
             temperatura: "FRIO",
             owner_id: ownerId,
-            canal_origem: "LP_COM_IA",
+            canal_origem: lead.canal_origem || "LP_COM_IA",
             valor: 0,
             metadata: metadataExtra,
             tags: dealTags.length > 0 ? dealTags : null,

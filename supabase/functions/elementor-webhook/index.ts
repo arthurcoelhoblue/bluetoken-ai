@@ -172,6 +172,16 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Extract page name from page_url for canal_origem
+    let canalOrigem = "LP_COM_IA";
+    const pageUrl = camposExtras.page_url;
+    if (pageUrl) {
+      try {
+        const pathname = new URL(pageUrl).pathname.replace(/^\/|\/$/g, "");
+        if (pathname) canalOrigem = pathname.split("/").pop() || pathname;
+      } catch { /* keep default */ }
+    }
+
     // Build ingest payload
     const ingestPayload = {
       empresa: mapping.empresa || "TOKENIZA",
@@ -181,6 +191,7 @@ Deno.serve(async (req) => {
         nome: mainPayload.nome || "",
         email: mainPayload.email || "",
         telefone: mainPayload.telefone || undefined,
+        canal_origem: canalOrigem,
         tags: mapping.tags_auto || [],
         ...(camposExtras.utm_source && { utm_source: camposExtras.utm_source }),
         ...(camposExtras.utm_medium && { utm_medium: camposExtras.utm_medium }),
