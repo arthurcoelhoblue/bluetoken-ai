@@ -25,10 +25,21 @@ serve(async (req) => {
     ]);
 
     const config = configRes.data || { duracao_minutos: 30, buffer_minutos: 10, max_por_dia: 8, timezone: "America/Sao_Paulo" };
-    const availability = availRes.data || [];
     const tokens = tokensRes.data;
 
-    if (availability.length === 0) return json({ error: "Nenhuma disponibilidade configurada" }, 400);
+    // Fallback: default Mon-Fri 09:00-18:00 if no availability configured
+    const availability = (availRes.data && availRes.data.length > 0)
+      ? availRes.data
+      : [
+          { dia_semana: 1, hora_inicio: '09:00', hora_fim: '18:00', ativo: true },
+          { dia_semana: 2, hora_inicio: '09:00', hora_fim: '18:00', ativo: true },
+          { dia_semana: 3, hora_inicio: '09:00', hora_fim: '18:00', ativo: true },
+          { dia_semana: 4, hora_inicio: '09:00', hora_fim: '18:00', ativo: true },
+          { dia_semana: 5, hora_inicio: '09:00', hora_fim: '18:00', ativo: true },
+        ];
+    if (availRes.data?.length === 0) {
+      console.warn("No user_availability configured for owner", owner_id, "— using default Mon-Fri 09:00-18:00");
+    }
 
     // Refresh token if needed
     let accessToken = tokens?.access_token;
