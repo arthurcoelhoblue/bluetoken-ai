@@ -344,8 +344,10 @@ export function ZadarmaPhoneWidget() {
         empresa,
         payload: { from: myExtension.extension_number, to: number },
       }, {
-        onSuccess: (data) => {
+      onSuccess: (data) => {
           console.log('[ZadarmaWidget] click_to_call success:', data);
+          const pbxId = `frontend_${data?.time || Date.now()}`;
+          createCallRecord(number, pbxId, dealId);
           toast.success(isWebRTCMode
             ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
             : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
