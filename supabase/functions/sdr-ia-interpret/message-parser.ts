@@ -341,7 +341,7 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
     message, historico, contato, classificacao, conversationState,
     conversation_state: conversationState,
     cadenciaNome, pessoaContext,
-    deals: dealsRes.data || [],
+    deals: dealsData,
     leadNome: contato?.nome || contato?.primeiro_nome || null,
     telefone: contato?.telefone_e164 || contato?.telefone || null,
     optOut: contato?.opt_out === true,
