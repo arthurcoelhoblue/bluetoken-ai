@@ -1,52 +1,63 @@
 
 
-## Problema
+## Diagnóstico - Conversa Arthur Coelho (BLUE)
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+Identifiquei **3 problemas distintos** analisando os logs e dados do banco:
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+### Problema 1: Agendamento de reunião falha - `No owner_id`
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+Os logs mostram claramente:
+```
+WARN meeting-scheduler: "No owner_id for meeting scheduling"
+```
 
-## Solução
+**Causa raiz**: O `message-parser.ts` busca deals usando `contato.id`, mas `contato` vem da tabela `lead_contacts` (id = `e4027f53...`). Porém, `deals.contact_id` referencia a tabela `contacts` (id = `eda04b5e...`). São IDs de tabelas diferentes. A query nunca retorna deals, logo `ownerId` fica `undefined`.
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+O deal existe (`6fcbf4c8...`) com `owner_id = 3eb15a6a` (Arthur Coelho), mas não é encontrado.
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
-
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+**Correção em `message-parser.ts`**: Após carregar o `contato` (lead_contacts), buscar o `contacts.id` correspondente via `legacy_lead_id` e usar esse ID para buscar deals:
 
 ```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
+// Buscar contacts.id (deals referencia contacts, não lead_contacts)
+let contactsCrmId: string | null = null;
+if (contato?.id) {
+  const { data: crmContact } = await supabase
+    .from('contacts').select('id, owner_id')
+    .eq('legacy_lead_id', leadId).maybeSingle();
+  contactsCrmId = crmContact?.id || null;
+}
+
+// Buscar deals pelo contacts.id (não lead_contacts.id)
+if (contactsCrmId) {
+  const { data: fetchedDeals } = await supabase.from('deals')
+    .select('id, titulo, valor, status, stage_id, owner_id, contact_id')
+    .eq('contact_id', contactsCrmId).limit(5);
+  dealsData = fetchedDeals || [];
 }
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+Também atualizar `meetingCtx` no `index.ts` para usar o `contacts.id` como `contactId`.
+
+### Problema 2: Email vai para `closer@grupoblue.com.br`
+
+O `contacts.owner_id` é `null` para este lead. O round-robin deveria funcionar, mas o bloco inteiro está dentro de `try { ... } catch { /* ignore */ }`, e a query com `profiles!inner(is_vendedor, is_active)` pode estar falhando silenciosamente (o Supabase JS client nem sempre suporta essa sintaxe de JOIN).
+
+**Correção em `action-executor.ts`**:
+1. Adicionar log no catch para diagnosticar erros (nunca `/* ignore */`)
+2. Trocar a query de round-robin para uma abordagem mais robusta — buscar user_ids das assignments e depois filtrar contra profiles separadamente
+3. Garantir que `CRIAR_TAREFA_CLOSER` também crie notificação in-app (veja Problema 3)
+
+### Problema 3: Sem notificação no sininho do vendedor
+
+A ação `CRIAR_TAREFA_CLOSER` (linhas 185-233) **não insere nenhum registro na tabela `notifications`**. Só chama o `notify-closer` (email) e cria o deal. Diferente do `ESCALAR_HUMANO` que insere notificação in-app (linhas 124-141).
+
+**Correção**: Adicionar inserção de notificação in-app no `CRIAR_TAREFA_CLOSER`, similar ao `ESCALAR_HUMANO`.
+
+### Resumo de mudanças
 
 | Arquivo | Mudança |
 |---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+| `message-parser.ts` | Buscar `contacts.id` via `legacy_lead_id` para usar na query de deals (em vez de `lead_contacts.id`) |
+| `index.ts` | Passar `contacts.id` como `contactId` no `meetingCtx` (não `lead_contacts.id`) |
+| `action-executor.ts` | 1. Adicionar notificação in-app no `CRIAR_TAREFA_CLOSER`; 2. Logar erros no catch; 3. Tornar round-robin mais robusto |
 
