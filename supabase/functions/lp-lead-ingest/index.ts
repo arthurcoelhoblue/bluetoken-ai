@@ -147,7 +147,7 @@ Deno.serve(async (req) => {
               numero_nacional: phoneNorm?.nacional || null,
               telefone_valido: phoneNorm !== null,
               empresa,
-              canal_origem: "LP_COM_IA",
+              canal_origem: lead.canal_origem || "LP_COM_IA",
               tags,
             })
             .select("id")
