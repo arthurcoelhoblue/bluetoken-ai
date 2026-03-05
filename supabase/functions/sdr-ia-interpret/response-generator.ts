@@ -83,8 +83,8 @@ function sanitizeRoboticResponse(resposta: string, leadNome?: string): string {
 // ========================================
 
 const CHANNEL_RULES: Record<string, string> = {
-  WHATSAPP: 'Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem.',
-  EMAIL: 'Mensagens ESTRUTURADAS. Tom consultivo. 3-4 parágrafos. Retomar contexto no início.',
+  WHATSAPP: 'Mensagens CURTAS (2-4 linhas). Tom conversacional. UMA pergunta por mensagem. NUNCA use negrito, travessões ou listas. Texto corrido natural.',
+  EMAIL: 'Mensagens ESTRUTURADAS. Tom consultivo. 3-4 parágrafos. Retomar contexto no início. NUNCA use negrito (*), travessões (—) ou formatação markdown.',
 };
 
 // ========================================
