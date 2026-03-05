@@ -1,56 +1,69 @@
 
 
-## Importação Lista Axia — Plano Corrigido
+## Diagnóstico Completo
 
-### Configuração
+Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
 
-| Campo | Valor | ID |
-|-------|-------|----|
-| **Empresa** | BLUE_LABS | `BLUE_LABS` |
-| **Pipeline** | Funil Comercial | `2de90016-ff26-48d3-af69-9ef1480cd506` |
-| **Primeira etapa** | MQL | `c904d4ef-1071-443d-983d-42c33cd2d8af` |
-| **Vendedor** | Rodrigo Oliveira | `221ec231-ad88-4514-b9f1-8170679483b7` |
-| **Tag** | `Lista Axia` | — |
-| **Canal origem** | `LISTA_AXIA` | — |
+### Problema 1: Scroll horizontal da pagina
 
-### Dados da planilha
+A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
 
-~306 linhas com campos: First Name, Last Name, Job Titles, Company, E-mail, Phone, Employees, Industries, Person Linkedin, Website, Company Linkedin, City.
+```text
+AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
+  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
+       └─ flex-1 min-h-0 overflow-hidden  ← ok
+            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
+                 └─ scrollRef: overflow-auto  ← scroll interno ok
+                      └─ flex gap-4 minWidth:max-content  ← expande largura
+```
 
-### Execução
+O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
 
-Inserir todos os registros válidos (com email) via SQL (insert tool) em lotes de ~50, usando CTEs para criar atomicamente:
+### Problema 2: Grab scroll não funciona
 
-1. **Contato** na tabela `contacts`:
-   - `nome` = First Name + Last Name
-   - `primeiro_nome` = First Name
-   - `sobrenome` = Last Name
-   - `email` = E-mail
-   - `telefone` = Phone
-   - `empresa` = `BLUE_LABS`
-   - `canal_origem` = `LISTA_AXIA`
-   - `tags` = `["Lista Axia"]`
-   - Metadados LinkedIn: Person Linkedin em campo relevante, Job Titles como cargo, Company como empresa do contato, Industries como setor, City como cidade
+O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
 
-2. **Deal** na tabela `deals` para cada contato criado:
-   - `titulo` = First Name + Last Name
-   - `contact_id` = ID do contato criado
-   - `pipeline_id` = `2de90016-ff26-48d3-af69-9ef1480cd506`
-   - `stage_id` = `c904d4ef-1071-443d-983d-42c33cd2d8af`
-   - `owner_id` = `221ec231-ad88-4514-b9f1-8170679483b7`
-   - `status` = `ABERTO`
-   - `temperatura` = `FRIO`
-   - `canal_origem` = `LISTA_AXIA`
-   - `tags` = `["Lista Axia"]`
-   - `valor` = 0
+O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
 
-3. **Deduplicação**: antes de inserir, verificar se já existe contato com o mesmo email na empresa `BLUE_LABS`. Se existir, pular (não criar contato nem deal duplicado).
+## Solução
 
-### Implementação técnica
+### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
 
-- Executar via `insert tool` (SQL direto), sem migração de schema
-- Lotes de ~50 registros para evitar timeout
-- CTE pattern: `WITH new_contact AS (INSERT INTO contacts ... RETURNING id) INSERT INTO deals ... SELECT id FROM new_contact`
-- Filtrar linhas sem email válido
-- Total estimado: ~6-7 lotes
+- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
+- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
+
+### Arquivo 2: `src/components/layout/AppLayout.tsx`
+
+- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
+
+### Arquivo 3: `src/hooks/useGrabScroll.ts`
+
+- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
+- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
+- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
+- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
+
+A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
+
+```text
+pointerdown (capture, container):
+  ├─ É sobre botão/link? → ignora
+  └─ Senão → stopPropagation + registra posição
+                (dnd-kit NÃO recebe pointerdown)
+
+pointermove (capture, window):
+  ├─ < 8px → aguarda
+  ├─ horizontal → lock, scroll, stopImmediatePropagation
+  └─ vertical → release, re-dispatch pointerdown sintético no target
+                  (dnd-kit AGORA recebe e pode iniciar drag)
+
+pointerup (capture, window):
+  └─ reset
+```
+
+| Arquivo | Mudanca |
+|---------|---------|
+| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
+| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
+| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
 
