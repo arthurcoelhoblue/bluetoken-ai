@@ -42,7 +42,7 @@ export function LinkedDealsPopover({ deals }: LinkedDealsPopoverProps) {
             <button
               key={deal.id}
               className="w-full text-left px-3 py-2.5 hover:bg-muted/50 transition-colors flex items-center gap-3"
-              onClick={() => navigate(`/deals?pipeline=${deal.pipeline_id}&deal=${deal.id}`)}
+              onClick={() => navigate(`/pipeline?pipeline=${deal.pipeline_id}&deal=${deal.id}`)}
             >
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">{deal.titulo}</p>
