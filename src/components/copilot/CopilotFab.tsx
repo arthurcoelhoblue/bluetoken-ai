@@ -161,6 +161,7 @@ export function CopilotFab() {
       {/* Notification bubble */}
       {bubbleText && !open && (
         <div
+          data-fab-widget
           className="fixed z-[9999] animate-in fade-in slide-in-from-bottom-2 duration-300"
           style={{
             ...(bubbleOnLeft
