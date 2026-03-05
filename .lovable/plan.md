@@ -1,33 +1,52 @@
 
 
-## Fix: `handleOpenChange` abre dialog de agendamento ao clicar no widget
+## Problema
 
-### Problema
-Com `modal={false}`, o Radix Sheet ainda dispara `onOpenChange(false)` quando detecta cliques fora do `SheetContent`. Isso aciona o `handleOpenChange`, que verifica se o deal tem atividade futura e, se não tem, abre o `ScheduleActivityDialog` — mesmo quando o clique foi no widget de telefonia.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-### Correção
-Em `src/components/deals/DealDetailSheet.tsx`, restaurar os handlers `onPointerDownOutside` e `onInteractOutside` no `SheetContent` para prevenir que cliques em `[data-fab-widget]` disparem o `onOpenChange`:
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-```tsx
-<SheetContent
-  className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0"
-  onPointerDownOutside={(e) => {
-    const target = (e.detail?.originalEvent?.target ?? e.target) as HTMLElement | null;
-    if (target?.closest?.('[data-fab-widget]')) {
-      e.preventDefault();
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+
+## Solução
+
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
+
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
     }
-  }}
-  onInteractOutside={(e) => {
-    const target = ((e as any).detail?.originalEvent?.target ?? (e as any).target) as HTMLElement | null;
-    if (target?.closest?.('[data-fab-widget]')) {
-      e.preventDefault();
-    }
-  }}
->
+    return json response with slots offered
+  }
+}
 ```
 
-Com `modal={false}`, não há FocusTrap nem overlay bloqueante — então esses handlers agora funcionarão corretamente para impedir que o `onOpenChange` seja chamado ao clicar nos FABs, sem bloquear os cliques nos próprios widgets.
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-### Arquivo afetado
-- `src/components/deals/DealDetailSheet.tsx` — adicionar handlers ao `SheetContent`
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
