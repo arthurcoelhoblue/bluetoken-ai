@@ -1,66 +1,52 @@
 
 
-## Diagnóstico — Três Problemas
+## Problema
 
-### Problema 1: E-mail do lead não incluído como convidado na reunião
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-O `meeting-scheduler.ts` chama `calendar-book` **sem passar `attendee_email`** (linha 159-167). O `calendar-book` suporta o campo `attendee_email` e já adiciona como convidado no Google Calendar quando presente — mas nunca recebe esse dado do scheduler.
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-O e-mail do lead está disponível em `lead_contacts.email` (ou `pessoas.email_principal`), mas o `MeetingSchedulerContext` não inclui esse campo.
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-**Correção**:
-- Adicionar `leadEmail?: string` ao `MeetingSchedulerContext`
-- No `index.ts`, resolver o email do contato: `(parsedContext.contato as any)?.email || pessoaContext?.pessoa?.email_principal`
-- No `handleSlotSelection`, passar `attendee_email: ctx.leadEmail` no body do fetch para `calendar-book`
+## Solução
 
-### Problema 2: Horário errado — lead pediu 9h mas agendou 10h
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-O `calendar-slots` gera slots com base na disponibilidade do vendedor e oferece opções pré-definidas. O lead **não pode pedir um horário específico** — só pode escolher entre 1, 2 ou 3 slots oferecidos. Se o slot das 9h não foi oferecido ou o lead escolheu outro, o sistema agenda o que foi selecionado.
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
 
-Porém, há um bug maior: o `calendar-slots` usa `new Date()` do servidor (UTC) para construir os horários, mas aplica `setHours()` localmente — sem conversão de timezone. O servidor Deno roda em **UTC**, então `setHours(9, 0)` cria 09:00 UTC = 06:00 BRT. Os labels mostram "09:00" mas o ISO datetime enviado é na verdade 09:00 UTC (= 06:00 BRT ou 10:00 CET dependendo do contexto).
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
 
-A raiz do problema: **todo o cálculo de slots ignora o timezone do vendedor**. O campo `timezone` existe em `user_meeting_config` mas nunca é usado na geração de slots.
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
+```
 
-### Problema 3: Timezone por vendedor (Europa vs Brasil)
-
-O campo `user_meeting_config.timezone` já existe (default `America/Sao_Paulo`). A solução é usá-lo tanto na geração de slots quanto na criação de eventos:
-
-- **`calendar-slots`**: Usar o timezone do config para converter corretamente as horas de disponibilidade para UTC antes de comparar com busy periods e gerar ISOs corretos
-- **`calendar-book`**: Usar o timezone do vendedor (buscar de `user_meeting_config`) em vez de hardcoded `America/Sao_Paulo`
-
-Para você (Europa), basta configurar `timezone: "Europe/Lisbon"` (ou o fuso correto) no `user_meeting_config`. Para os outros vendedores, o default `America/Sao_Paulo` já funciona.
-
----
-
-## Plano de Implementação
-
-### 1. `meeting-scheduler.ts` — Passar e-mail do lead como convidado
-
-- Adicionar `leadEmail?: string` à interface `MeetingSchedulerContext`
-- Em `handleSlotSelection`, incluir `attendee_email: ctx.leadEmail` no body enviado ao `calendar-book`
-
-### 2. `index.ts` — Resolver e-mail do lead no contexto
-
-- Ao montar `meetingCtx`, adicionar: `leadEmail: contato?.email || pessoaContext?.pessoa?.email_principal`
-
-### 3. `calendar-slots/index.ts` — Corrigir cálculo de timezone
-
-- Ler `config.timezone` (default `America/Sao_Paulo`)
-- Construir datas de disponibilidade no timezone correto usando offset manual (Deno não tem Intl timezone nativo para Date, mas podemos calcular offsets conhecidos)
-- Garantir que os ISOs gerados representem corretamente o horário no fuso do vendedor
-- Labels exibidos ao lead devem refletir o horário de Brasília (já que leads são brasileiros)
-
-### 4. `calendar-book/index.ts` — Usar timezone do vendedor
-
-- Buscar `user_meeting_config.timezone` do owner
-- Usar esse timezone no `start.timeZone` e `end.timeZone` do evento Google Calendar (em vez de hardcoded `America/Sao_Paulo`)
-
-### Resumo
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
 | Arquivo | Mudança |
 |---------|---------|
-| `meeting-scheduler.ts` | Adicionar `leadEmail` ao contexto + passar `attendee_email` no booking |
-| `index.ts` | Resolver email do contato para `meetingCtx.leadEmail` |
-| `calendar-slots/index.ts` | Usar timezone do vendedor para gerar slots corretos |
-| `calendar-book/index.ts` | Buscar timezone do vendedor em vez de hardcoded `America/Sao_Paulo` |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 

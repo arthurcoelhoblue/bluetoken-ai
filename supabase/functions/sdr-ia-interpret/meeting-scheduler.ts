@@ -17,6 +17,7 @@ export interface MeetingSchedulerContext {
   ownerId?: string;
   mensagem: string;
   telefone?: string;
+  leadEmail?: string;
 }
 
 export interface MeetingSchedulerResult {
@@ -164,6 +165,7 @@ async function handleSlotSelection(
       titulo: `Reunião com lead`,
       start: chosen.start,
       end: chosen.end,
+      attendee_email: ctx.leadEmail || null,
     }),
   });
 

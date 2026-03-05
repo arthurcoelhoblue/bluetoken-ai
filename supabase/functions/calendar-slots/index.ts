@@ -5,6 +5,83 @@ import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
 const GOOGLE_CLIENT_ID = Deno.env.get("GOOGLE_CALENDAR_CLIENT_ID");
 const GOOGLE_CLIENT_SECRET = Deno.env.get("GOOGLE_CALENDAR_CLIENT_SECRET");
 
+// Known timezone offsets (hours from UTC)
+const TIMEZONE_OFFSETS: Record<string, number> = {
+  "America/Sao_Paulo": -3,
+  "America/Fortaleza": -3,
+  "America/Manaus": -4,
+  "America/Cuiaba": -4,
+  "America/Rio_Branco": -5,
+  "America/Noronha": -2,
+  "Europe/Lisbon": 0, // WET (winter), +1 WEST (summer)
+  "Europe/London": 0,
+  "Europe/Madrid": 1,
+  "Europe/Paris": 1,
+  "Europe/Berlin": 1,
+  "Europe/Rome": 1,
+  "Europe/Amsterdam": 1,
+  "US/Eastern": -5,
+  "US/Central": -6,
+  "US/Pacific": -8,
+};
+
+/**
+ * Get the UTC offset in hours for a timezone, accounting for DST via Intl API.
+ */
+function getTimezoneOffsetHours(tz: string, date: Date): number {
+  try {
+    // Use Intl to get the actual offset including DST
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      timeZoneName: "shortOffset",
+    });
+    const parts = formatter.formatToParts(date);
+    const tzPart = parts.find(p => p.type === "timeZoneName");
+    if (tzPart) {
+      // Format: "GMT+1", "GMT-3", "GMT+5:30", "GMT"
+      const match = tzPart.value.match(/GMT([+-]?\d+)?(?::(\d+))?/);
+      if (match) {
+        const hours = match[1] ? parseInt(match[1]) : 0;
+        const minutes = match[2] ? parseInt(match[2]) : 0;
+        return hours + (minutes / 60) * Math.sign(hours || 1);
+      }
+    }
+  } catch {
+    // Fallback to static map
+  }
+  return TIMEZONE_OFFSETS[tz] ?? -3; // default BRT
+}
+
+/**
+ * Create a Date representing a specific local time in a given timezone.
+ * E.g., localDateInTz(2026-03-06, 9, 0, "America/Sao_Paulo") → Date for 09:00 BRT in UTC
+ */
+function localDateInTz(baseDate: Date, hours: number, minutes: number, tz: string): Date {
+  // Start with UTC midnight of the base date
+  const utc = Date.UTC(baseDate.getUTCFullYear(), baseDate.getUTCMonth(), baseDate.getUTCDate(), hours, minutes, 0, 0);
+  const offset = getTimezoneOffsetHours(tz, new Date(utc));
+  // Subtract offset to convert local → UTC
+  return new Date(utc - offset * 3600000);
+}
+
+/**
+ * Format a UTC Date into a local time string for a given timezone.
+ */
+function formatLocalTime(date: Date, tz: string): { hours: number; minutes: number } {
+  const offset = getTimezoneOffsetHours(tz, date);
+  const local = new Date(date.getTime() + offset * 3600000);
+  return { hours: local.getUTCHours(), minutes: local.getUTCMinutes() };
+}
+
+/**
+ * Get day of week in a timezone.
+ */
+function getDayOfWeekInTz(date: Date, tz: string): number {
+  const offset = getTimezoneOffsetHours(tz, date);
+  const local = new Date(date.getTime() + offset * 3600000);
+  return local.getUTCDay();
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return handleCorsOptions(req);
   const cors = getCorsHeaders(req);
@@ -25,6 +102,7 @@ serve(async (req) => {
     ]);
 
     const config = configRes.data || { duracao_minutos: 30, buffer_minutos: 10, max_por_dia: 8, timezone: "America/Sao_Paulo" };
+    const sellerTz = config.timezone || "America/Sao_Paulo";
     const tokens = tokensRes.data;
 
     // Fallback: default Mon-Fri 09:00-18:00 if no availability configured
@@ -110,7 +188,7 @@ serve(async (req) => {
       availMap.set(a.dia_semana, { start: a.hora_inicio, end: a.hora_fim });
     }
 
-    // Generate candidate slots
+    // Generate candidate slots using seller's timezone
     const duracao = config.duracao_minutos || 30;
     const buffer = config.buffer_minutos || 10;
     const slotDuration = duracao + buffer;
@@ -119,19 +197,26 @@ serve(async (req) => {
     const dayNames = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
     const monthNames = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
 
+    // Labels are always shown in BRT (leads are Brazilian)
+    const labelTz = "America/Sao_Paulo";
+
     for (let d = 0; d < days_ahead && candidates.length < num_slots * 3; d++) {
-      const day = new Date(now.getTime() + (d + 1) * 24 * 60 * 60 * 1000);
-      const dow = day.getDay();
+      const dayOffset = new Date(now.getTime() + (d + 1) * 24 * 60 * 60 * 1000);
+      
+      // Get the day of week in the seller's timezone
+      const dow = getDayOfWeekInTz(dayOffset, sellerTz);
       const avail = availMap.get(dow);
       if (!avail) continue;
 
       const [startH, startM] = avail.start.split(":").map(Number);
       const [endH, endM] = avail.end.split(":").map(Number);
 
-      const dayStart = new Date(day);
-      dayStart.setHours(startH, startM, 0, 0);
-      const dayEnd = new Date(day);
-      dayEnd.setHours(endH, endM, 0, 0);
+      // Create start/end times in seller's timezone, converted to UTC
+      const dayStart = localDateInTz(dayOffset, startH, startM, sellerTz);
+      const dayEnd = localDateInTz(dayOffset, endH, endM, sellerTz);
+
+      // Skip if dayStart is in the past
+      if (dayStart.getTime() < now.getTime()) continue;
 
       let cursor = new Date(dayStart);
       while (cursor.getTime() + duracao * 60000 <= dayEnd.getTime()) {
@@ -145,7 +230,10 @@ serve(async (req) => {
         });
 
         if (!hasConflict) {
-          const label = `${dayNames[dow]}, ${day.getDate()} ${monthNames[day.getMonth()]} às ${String(cursor.getHours()).padStart(2, "0")}:${String(cursor.getMinutes()).padStart(2, "0")}`;
+          // Format label in lead's timezone (BRT)
+          const localTime = formatLocalTime(cursor, labelTz);
+          const localDay = new Date(cursor.getTime() + getTimezoneOffsetHours(labelTz, cursor) * 3600000);
+          const label = `${dayNames[localDay.getUTCDay()]}, ${localDay.getUTCDate()} ${monthNames[localDay.getUTCMonth()]} às ${String(localTime.hours).padStart(2, "0")}:${String(localTime.minutes).padStart(2, "0")}`;
           candidates.push({ start: new Date(cursor), end: slotEnd, label });
         }
 
@@ -182,7 +270,7 @@ serve(async (req) => {
       duracao_minutos: duracao,
     }));
 
-    return json({ slots, total: slots.length });
+    return json({ slots, total: slots.length, timezone: sellerTz });
   } catch (err) {
     return json({ error: err instanceof Error ? err.message : "Unknown error" }, 500);
   }

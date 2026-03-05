@@ -24,11 +24,12 @@ serve(async (req) => {
     // Load tokens + config
     const [tokensRes, configRes] = await Promise.all([
       supabase.from("user_google_tokens").select("*").eq("user_id", owner_id).maybeSingle(),
-      supabase.from("user_meeting_config").select("google_meet_enabled").eq("user_id", owner_id).maybeSingle(),
+      supabase.from("user_meeting_config").select("google_meet_enabled, timezone").eq("user_id", owner_id).maybeSingle(),
     ]);
 
     const tokens = tokensRes.data;
     const meetEnabled = configRes.data?.google_meet_enabled ?? true;
+    const sellerTimezone = configRes.data?.timezone || "America/Sao_Paulo";
 
     let googleEventId: string | null = null;
     let meetLink: string | null = null;
@@ -63,8 +64,8 @@ serve(async (req) => {
       const event: Record<string, unknown> = {
         summary: titulo || "Reunião agendada",
         description: descricao || "",
-        start: { dateTime: start, timeZone: "America/Sao_Paulo" },
-        end: { dateTime: end, timeZone: "America/Sao_Paulo" },
+        start: { dateTime: start, timeZone: sellerTimezone },
+        end: { dateTime: end, timeZone: sellerTimezone },
       };
 
       if (attendee_email) {
