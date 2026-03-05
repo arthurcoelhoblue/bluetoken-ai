@@ -1,53 +1,52 @@
 
 
-## Diagnóstico
+## Problema
 
-O arquivo `DealDetailSheet.tsx` **já tem** `modal={false}` (linha 144) e os handlers `onPointerDownOutside`/`onInteractOutside` (linhas 147-158). Portanto a correção anterior foi aplicada parcialmente.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-**A causa raiz real** está em `src/components/ui/sheet.tsx`: o `SheetContent` **sempre renderiza** o `<SheetOverlay />` (linha 57), independente do modo modal. Esse overlay é um `<div>` fixo cobrindo toda a tela com `bg-black/80` que intercepta eventos de pointer — mesmo com `modal={false}`, o overlay continua bloqueando cliques no widget.
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-## Plano de correção
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-### 1. `src/components/ui/sheet.tsx` — Tornar o overlay condicional
+## Solução
 
-Modificar `SheetContent` para aceitar uma prop `showOverlay` (default `true`) e só renderizar `<SheetOverlay />` quando `showOverlay` for `true`:
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-```tsx
-interface SheetContentProps
-  extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {
-  showOverlay?: boolean;
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
 }
-
-const SheetContent = React.forwardRef<...>(
-  ({ side = "right", className, children, showOverlay = true, ...props }, ref) => (
-    <SheetPortal>
-      {showOverlay && <SheetOverlay />}
-      <SheetPrimitive.Content ref={ref} className={cn(sheetVariants({ side }), className)} {...props}>
-        {children}
-        <SheetPrimitive.Close ...>
-          ...
-        </SheetPrimitive.Close>
-      </SheetPrimitive.Content>
-    </SheetPortal>
-  ),
-);
 ```
 
-### 2. `src/components/deals/DealDetailSheet.tsx` — Usar a nova prop e limpar handlers
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-- Adicionar `showOverlay={false}` ao `<SheetContent>`
-- Remover os handlers `onPointerDownOutside` e `onInteractOutside` (não são mais necessários sem overlay)
-
-```tsx
-<Sheet open={open} onOpenChange={handleOpenChange} modal={false}>
-  <SheetContent
-    className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0"
-    showOverlay={false}
-  >
-```
-
-### Resultado
-
-Com `modal={false}` + sem overlay: sem backdrop bloqueante, sem FocusTrap, sem interceptação de eventos. O widget de telefonia receberá cliques normalmente. O fechamento do sheet continua controlado pelo botão X e pelo `handleOpenChange`.
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
