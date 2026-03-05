@@ -18,6 +18,37 @@ import type { DialEvent, PhoneWidgetState } from '@/types/telephony';
 
 const DIALPAD = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '*', '0', '#'];
 
+const PHONE_STORAGE_KEY = 'phone-fab-position';
+const PHONE_FAB_SIZE = 48;
+const PHONE_DRAG_THRESHOLD = 5;
+
+function loadPhonePosition(): { x: number; y: number } | null {
+  try {
+    const raw = localStorage.getItem(PHONE_STORAGE_KEY);
+    if (raw) {
+      const pos = JSON.parse(raw);
+      if (
+        typeof pos.x === 'number' &&
+        typeof pos.y === 'number' &&
+        pos.x >= 0 &&
+        pos.y >= 0 &&
+        pos.x <= window.innerWidth - PHONE_FAB_SIZE &&
+        pos.y <= window.innerHeight - PHONE_FAB_SIZE
+      ) {
+        return pos;
+      }
+      localStorage.removeItem(PHONE_STORAGE_KEY);
+    }
+  } catch { /* ignore */ }
+  return null;
+}
+
+function savePhonePosition(pos: { x: number; y: number }) {
+  try {
+    localStorage.setItem(PHONE_STORAGE_KEY, JSON.stringify(pos));
+  } catch { /* ignore */ }
+}
+
 export function ZadarmaPhoneWidget() {
   const { profile } = useAuth();
   const { activeCompany } = useCompany();
