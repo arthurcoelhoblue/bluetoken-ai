@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { supabase } from '@/integrations/supabase/client';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
@@ -258,8 +259,18 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
   const [syncing, setSyncing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newExtNumber, setNewExtNumber] = useState('');
-  const [zadarmaExts, setZadarmaExts] = useState<Array<{ extension_number: string; sip_login: string }>>([]);
+  const [zadarmaExts, setZadarmaExts] = useState<Array<{ extension_number: string; sip_login: string; is_recorded?: boolean }>>([]);
   const [showSync, setShowSync] = useState(false);
+  const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
+  const [linking, setLinking] = useState<Record<string, boolean>>({});
+  const [users, setUsers] = useState<Array<{ id: string; nome: string }>>([]);
+
+  // Load users for linking dropdown
+  useEffect(() => {
+    supabase.from('profiles').select('id, nome').eq('is_active', true).order('nome').then(({ data }) => {
+      if (data) setUsers(data);
+    });
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -338,6 +349,26 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
     }
   };
 
+  const handleLinkExtension = async (z: { extension_number: string; sip_login: string }) => {
+    const userId = linkSelections[z.extension_number];
+    if (!userId) { toast.error('Selecione um usuário'); return; }
+    setLinking(prev => ({ ...prev, [z.extension_number]: true }));
+    try {
+      await saveExtension.mutateAsync({
+        empresa,
+        extension_number: z.extension_number,
+        user_id: userId,
+        sip_login: z.sip_login,
+      });
+      toast.success(`Ramal ${z.extension_number} vinculado!`);
+      setLinkSelections(prev => { const n = { ...prev }; delete n[z.extension_number]; return n; });
+    } catch (e: unknown) {
+      toast.error(`Erro: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setLinking(prev => ({ ...prev, [z.extension_number]: false }));
+    }
+  };
+
   // Ramais no Zadarma que NÃO estão mapeados no CRM
   const unmappedExts = zadarmaExts.filter(
     z => !extensions.some(e => e.extension_number === z.extension_number)
@@ -412,27 +443,49 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
           <Card className="border-dashed">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                Ramais externos (não vinculados ao CRM)
+                <Plus className="h-4 w-4 text-primary" />
+                Ramais não vinculados — vincule ao CRM
               </CardTitle>
               <CardDescription className="text-xs">
-                Estes ramais existem no PBX Zadarma mas não estão vinculados a nenhum usuário neste CRM. Podem estar em uso em outros sistemas (ex: Pipedrive).
+                Estes ramais existem no PBX mas não estão vinculados a nenhum usuário. Selecione um usuário e clique em "Vincular".
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-2">
                 {unmappedExts.map(z => (
-                  <div key={z.extension_number} className="flex items-center justify-between p-2 rounded-md bg-muted/50">
+                  <div key={z.extension_number} className="flex items-center justify-between gap-2 p-2 rounded-md bg-muted/50 flex-wrap">
                     <div className="flex items-center gap-2">
                       <span className="font-mono text-sm font-medium">Ramal {z.extension_number}</span>
                       <span className="text-xs text-muted-foreground">SIP: {z.sip_login}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0">Externo</Badge>
                     </div>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1.5">
+                      <Select
+                        value={linkSelections[z.extension_number] || ''}
+                        onValueChange={val => setLinkSelections(prev => ({ ...prev, [z.extension_number]: val }))}
+                      >
+                        <SelectTrigger className="w-44 h-8 text-xs">
+                          <SelectValue placeholder="Selecionar usuário" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {users.map(u => (
+                            <SelectItem key={u.id} value={u.id}>{u.nome}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="sm"
+                        variant="default"
+                        className="h-8 text-xs"
+                        disabled={!linkSelections[z.extension_number] || linking[z.extension_number]}
+                        onClick={() => handleLinkExtension(z)}
+                      >
+                        {linking[z.extension_number] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
+                        Vincular
+                      </Button>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-destructive/60 hover:text-destructive text-xs">
-                            <Trash2 className="h-3 w-3 mr-1" /> Excluir do PBX
+                          <Button variant="ghost" size="sm" className="h-8 text-destructive/60 hover:text-destructive text-xs">
+                            <Trash2 className="h-3 w-3 mr-1" /> Excluir
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
@@ -442,7 +495,7 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
                               Excluir ramal {z.extension_number} do PBX?
                             </AlertDialogTitle>
                             <AlertDialogDescription>
-                              Este ramal pode estar em uso em outros sistemas (ex: Pipedrive, integrações externas). Excluí-lo do PBX Zadarma afetará <strong>todos</strong> os sistemas que o utilizam. Esta ação não pode ser desfeita.
+                              Este ramal pode estar em uso em outros sistemas. Excluí-lo do PBX Zadarma afetará <strong>todos</strong> os sistemas que o utilizam.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
