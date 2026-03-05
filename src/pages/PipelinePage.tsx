@@ -11,7 +11,7 @@ import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
-import { LeadLookupDialog } from '@/components/pipeline/LeadLookupDialog';
+
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
@@ -77,17 +77,10 @@ function PipelineContent() {
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
-  const [lookupDealId, setLookupDealId] = useState<string | null>(null);
-  const [showLookup, setShowLookup] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
 
   const handleDealClick = (dealId: string) => {
-    if (dealFromUrl === dealId) {
-      setSelectedDealId(dealId);
-      return;
-    }
-    setLookupDealId(dealId);
-    setShowLookup(true);
+    setSelectedDealId(dealId);
   };
 
   // Auto-open deal from query param when navigating from insights
@@ -198,22 +191,6 @@ function PipelineContent() {
             open={!!selectedDealId}
             onOpenChange={open => !open && setSelectedDealId(null)}
           />
-
-          {lookupDealId && (
-            <LeadLookupDialog
-              open={showLookup}
-              onOpenChange={(open) => {
-                setShowLookup(open);
-                if (!open) setLookupDealId(null);
-              }}
-              dealId={lookupDealId}
-              onContinueToDeal={() => {
-                setSelectedDealId(lookupDealId);
-                setShowLookup(false);
-                setLookupDealId(null);
-              }}
-            />
-          )}
 
           {selectedPipeline && (
             <CreateDealDialog
