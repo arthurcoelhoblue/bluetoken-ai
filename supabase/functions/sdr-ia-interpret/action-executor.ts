@@ -104,6 +104,9 @@ async function applyAction(
             }
           }
 
+          // Marcar escalado_para SEM mudar modo — Amélia continua respondendo até vendedor assumir
+          await supabase.from('lead_conversation_state').update({ escalado_para: notifyUserId || null, updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
+
           // Chamar notify-closer com prioridade
           await fetch(`${envConfig.SUPABASE_URL}/functions/v1/notify-closer`, {
             method: 'POST',
