@@ -18,6 +18,8 @@ export interface MeetingSchedulerContext {
   mensagem: string;
   telefone?: string;
   leadEmail?: string;
+  leadNome?: string;
+  empresaNome?: string;
 }
 
 export interface MeetingSchedulerResult {
