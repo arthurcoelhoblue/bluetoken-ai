@@ -135,12 +135,15 @@ serve(async (req) => {
     // ========================================
     // 3b. MEETING SCHEDULING FLOW CHECK
     // ========================================
+    // Use contacts CRM ID (from contacts table via legacy_lead_id), not lead_contacts.id
+    // parsedContext.contactsCrmId is resolved in message-parser via legacy_lead_id lookup
+    const crmContactId = (parsedContext as Record<string, unknown>).contactsCrmId as string | undefined;
     const meetingCtx = {
       leadId: msg.lead_id,
       empresa: msg.empresa,
-      contactId: (parsedContext.contato as Record<string, unknown>)?.id as string | undefined,
+      contactId: crmContactId || (parsedContext.contato as Record<string, unknown>)?.id as string | undefined,
       dealId: parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).id as string : undefined,
-      ownerId: (parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined) || (parsedContext.contato as Record<string, unknown>)?.owner_id as string || undefined,
+      ownerId: (parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined) || (parsedContext as Record<string, unknown>).contactsCrmOwnerId as string || (parsedContext.contato as Record<string, unknown>)?.owner_id as string || undefined,
       mensagem: msg.conteudo,
       telefone: parsedContext.telefone || undefined,
     };
