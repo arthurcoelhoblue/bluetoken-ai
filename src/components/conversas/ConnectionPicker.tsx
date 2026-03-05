@@ -73,7 +73,8 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
   if (isLoading) return null;
 
   const displayLabel = (c: WhatsAppConnection) => {
-    const name = c.label || c.display_phone || c.verified_name || c.id.slice(0, 8);
+    const parts = [c.label, c.display_phone, c.verified_name].filter(Boolean);
+    const name = parts.length > 0 ? parts.join(' · ') : c.id.slice(0, 8);
     return c.is_default ? `${name} (padrão)` : name;
   };
 
