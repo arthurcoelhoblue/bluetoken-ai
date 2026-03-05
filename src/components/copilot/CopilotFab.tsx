@@ -207,6 +207,7 @@ export function CopilotFab() {
         externalOpen={open}
         onOpenChange={setOpen}
       />
-    </>
+    </>,
+    document.body
   );
 }
