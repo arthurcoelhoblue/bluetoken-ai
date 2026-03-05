@@ -358,37 +358,47 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   }, [safeSetStatus]);
 
   // Close active call record in DB when call ends locally (fallback for missing webhook)
-  const closeActiveCallRecord = useCallback(async () => {
-    if (!callStartedAtRef.current || !empresa) return;
-    const duracao = Math.round((Date.now() - callStartedAtRef.current) / 1000);
+  const closeActiveCallRecord = useCallback(async (explicitCallId?: string) => {
+    const duracao = callStartedAtRef.current
+      ? Math.round((Date.now() - callStartedAtRef.current) / 1000)
+      : 0;
     callStartedAtRef.current = 0;
-    if (duracao < 1) return;
+
+    const targetId = explicitCallId;
+    if (!targetId && !empresa) return;
+
     try {
-      // First, find the most recent open call record ID
-      const { data: openCall, error: selectError } = await supabase
-        .from('calls')
-        .select('id')
-        .eq('empresa', empresa)
-        .is('ended_at', null)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      let callId = targetId;
 
-      if (selectError) { console.error('[WebRTC] Failed to find open call:', selectError); return; }
-      if (!openCall) { console.log('[WebRTC] No open call record to close'); return; }
+      // If no explicit ID, fall back to finding open call
+      if (!callId) {
+        const { data: openCall, error: selectError } = await supabase
+          .from('calls')
+          .select('id')
+          .eq('empresa', empresa!)
+          .is('ended_at', null)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      // Then update by specific ID
+        if (selectError) { console.error('[WebRTC] Failed to find open call:', selectError); return; }
+        if (!openCall) { console.log('[WebRTC] No open call record to close'); return; }
+        callId = openCall.id;
+      }
+
+      if (duracao < 1 && !explicitCallId) return;
+
       const { error: updateError } = await supabase
         .from('calls')
         .update({
           ended_at: new Date().toISOString(),
           duracao_segundos: duracao,
-          status: 'ANSWERED',
+          status: duracao > 0 ? 'ANSWERED' : 'MISSED',
         })
-        .eq('id', openCall.id);
+        .eq('id', callId);
 
       if (updateError) console.error('[WebRTC] Failed to close call record:', updateError);
-      else console.log(`[WebRTC] ✅ Closed call record ${openCall.id} locally (${duracao}s)`);
+      else console.log(`[WebRTC] ✅ Closed call record ${callId} locally (${duracao}s)`);
     } catch (err) {
       console.error('[WebRTC] Error closing call record:', err);
     }
