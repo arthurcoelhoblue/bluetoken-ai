@@ -166,7 +166,53 @@ async function handleSlotSelection(
     return { handled: true, response: "Número inválido. Por favor, escolha 1, 2 ou 3." };
   }
 
-  // Book the meeting via calendar-book
+  // If no email, save slot and ask for email
+  if (!ctx.leadEmail) {
+    await supabase.from("meeting_scheduling_state")
+      .update({ slot_pre_selecionado: chosen })
+      .eq("id", state.id as string);
+    return {
+      handled: true,
+      response: `Ótima escolha! Para enviar o convite da reunião, preciso do seu e-mail. Pode me informar? 📧`,
+    };
+  }
+
+  // Book the meeting
+  return await bookMeeting(supabase, ctx, state, chosen);
+}
+
+function buildMeetingTitle(ctx: MeetingSchedulerContext): string {
+  const parts: string[] = ["Reunião"];
+  if (ctx.empresaNome) parts.push(ctx.empresaNome);
+  if (ctx.leadNome) {
+    parts.push("-");
+    parts.push(ctx.leadNome);
+  }
+  return parts.join(" ");
+}
+
+async function completeBookingWithEmail(
+  supabase: SupabaseClient,
+  ctx: MeetingSchedulerContext,
+  state: Record<string, unknown>,
+  email: string
+): Promise<MeetingSchedulerResult> {
+  const chosen = state.slot_pre_selecionado as { id: number; start: string; end: string; label: string };
+  if (!chosen) {
+    return { handled: true, response: "Houve um erro interno. Vamos recomeçar o agendamento?" };
+  }
+  ctx.leadEmail = email;
+  return await bookMeeting(supabase, ctx, state, chosen);
+}
+
+async function bookMeeting(
+  supabase: SupabaseClient,
+  ctx: MeetingSchedulerContext,
+  state: Record<string, unknown>,
+  chosen: { id: number; start: string; end: string; label: string }
+): Promise<MeetingSchedulerResult> {
+  const titulo = buildMeetingTitle(ctx);
+
   const bookResp = await fetch(`${envConfig.SUPABASE_URL}/functions/v1/calendar-book`, {
     method: "POST",
     headers: {
@@ -178,7 +224,7 @@ async function handleSlotSelection(
       deal_id: ctx.dealId || state.deal_id || null,
       contact_id: ctx.contactId || state.contact_id || null,
       empresa: ctx.empresa,
-      titulo: `Reunião com lead`,
+      titulo,
       start: chosen.start,
       end: chosen.end,
       attendee_email: ctx.leadEmail || null,
@@ -197,6 +243,7 @@ async function handleSlotSelection(
     .update({
       status: "ACEITO",
       slot_escolhido: chosen,
+      slot_pre_selecionado: null,
       meeting_id: bookData.meeting?.id || null,
     })
     .eq("id", state.id as string);

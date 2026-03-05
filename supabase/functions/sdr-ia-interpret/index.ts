@@ -160,6 +160,8 @@ serve(async (req) => {
       mensagem: msg.conteudo,
       telefone: parsedContext.telefone || undefined,
       leadEmail,
+      leadNome: parsedContext.leadNome || undefined,
+      empresaNome: (parsedContext as Record<string, unknown>).contactsOrgName as string || undefined,
     };
 
     let meetingResult = { handled: false } as { handled: boolean; response?: string };

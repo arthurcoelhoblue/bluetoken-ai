@@ -60,6 +60,7 @@ export interface ParsedContext {
   lead_id: string;
   contactsCrmId: string | null;
   contactsCrmOwnerId: string | null;
+  contactsOrgName: string | null;
 }
 
 // ========================================
