@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { formatPhoneBR } from '@/lib/formatPhone';
 import { Phone, PhoneOff, Mic, MicOff, X, Minimize2, Maximize2, Pause, Play, Wifi, WifiOff, Loader2, Delete } from 'lucide-react';
 import { Button } from '@/components/ui/button';
