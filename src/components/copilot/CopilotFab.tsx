@@ -180,7 +180,7 @@ export function CopilotFab() {
 
       {/* FAB */}
       <div
-        className="fixed z-50 touch-none select-none"
+        className="fixed z-[9999] touch-none select-none"
         style={{ left: position.x, top: position.y }}
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}

@@ -460,7 +460,7 @@ export function ZadarmaPhoneWidget() {
   // Normal compact widget
   return (
     <div
-      className="fixed z-[60] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up"
+      className="fixed z-[9999] w-72 rounded-2xl bg-card border border-border shadow-lg overflow-hidden animate-slide-up"
       style={{
         left: Math.min(fabPosition.x, window.innerWidth - 288),
         top: Math.max(0, fabPosition.y - 400),
