@@ -482,11 +482,10 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
                         {linking[z.extension_number] ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1" />}
                         Vincular
                       </Button>
-                    <div className="flex items-center gap-1">
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
-                          <Button variant="ghost" size="sm" className="text-destructive/60 hover:text-destructive text-xs">
-                            <Trash2 className="h-3 w-3 mr-1" /> Excluir do PBX
+                          <Button variant="ghost" size="sm" className="h-8 text-destructive/60 hover:text-destructive text-xs">
+                            <Trash2 className="h-3 w-3 mr-1" /> Excluir
                           </Button>
                         </AlertDialogTrigger>
                         <AlertDialogContent>
@@ -496,7 +495,7 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
                               Excluir ramal {z.extension_number} do PBX?
                             </AlertDialogTitle>
                             <AlertDialogDescription>
-                              Este ramal pode estar em uso em outros sistemas (ex: Pipedrive, integrações externas). Excluí-lo do PBX Zadarma afetará <strong>todos</strong> os sistemas que o utilizam. Esta ação não pode ser desfeita.
+                              Este ramal pode estar em uso em outros sistemas. Excluí-lo do PBX Zadarma afetará <strong>todos</strong> os sistemas que o utilizam.
                             </AlertDialogDescription>
                           </AlertDialogHeader>
                           <AlertDialogFooter>
