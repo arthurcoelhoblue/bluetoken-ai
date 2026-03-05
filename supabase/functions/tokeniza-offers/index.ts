@@ -42,10 +42,20 @@ serve(async (req) => {
     log.info('Fetching offers from Tokeniza API...');
 
     const apiUrl = 'https://plataforma.tokeniza.com.br/api/v1/crowdfunding/getCrowdfundingList';
-    const response = await fetch(apiUrl, { method: 'GET', headers: { 'Accept': 'application/json' } });
+    
+    let response: Response | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        response = await fetch(apiUrl, { method: 'GET', headers: { 'Accept': 'application/json' }, signal: AbortSignal.timeout(15000) });
+        if (response.ok) break;
+        log.error('API error attempt ' + attempt, { status: response.status });
+      } catch (e) {
+        log.error('Fetch error attempt ' + attempt, { error: e instanceof Error ? e.message : String(e) });
+      }
+      if (attempt < 3) await new Promise(r => setTimeout(r, 1000 * attempt));
+    }
 
-    if (!response.ok) {
-      log.error('API error', { status: response.status, statusText: response.statusText });
+    if (!response || !response.ok) {
       return new Response(JSON.stringify({ error: 'Failed to fetch offers from Tokeniza' }), { status: 502, headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
