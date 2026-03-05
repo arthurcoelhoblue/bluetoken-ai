@@ -204,7 +204,7 @@ export function ManualMessageInput({
             empresa={empresa}
             value={connectionId}
             onChange={setConnectionId}
-            className="shrink-0"
+            className="flex-1 min-w-0"
           />
           <MediaAttachments
             onMediaReady={handleMediaReady}
