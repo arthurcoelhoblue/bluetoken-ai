@@ -133,7 +133,16 @@ serve(async (req) => {
     }
 
     // ========================================
-    // 3b. MEETING SCHEDULING FLOW CHECK
+    // 3b. CHECK MANUAL MODE FIRST — before any response logic
+    // ========================================
+    const convStateRaw = parsedContext.conversationState;
+    const isManualMode = !isReprocess && (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
+    if (isManualMode) {
+      log.info('Manual mode — interpreting but suppressing ALL responses (including meeting scheduling)', { source });
+    }
+
+    // ========================================
+    // 3c. MEETING SCHEDULING FLOW CHECK (only if NOT manual mode)
     // ========================================
     // Use contacts CRM ID (from contacts table via legacy_lead_id), not lead_contacts.id
     // parsedContext.contactsCrmId is resolved in message-parser via legacy_lead_id lookup
@@ -148,28 +157,23 @@ serve(async (req) => {
       telefone: parsedContext.telefone || undefined,
     };
 
-    const meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
-    if (meetingResult.handled && meetingResult.response) {
-      // Save as intent and send response
-      const intentId = await saveInterpretation(supabase, msg, {
-        intent: 'AGENDAMENTO_REUNIAO',
-        confidence: 1.0,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-        deve_responder: true,
-      } as ClassifierResult, true, true, meetingResult.response);
-      return new Response(JSON.stringify({
-        success: true, intentId,
-        intent: 'AGENDAMENTO_REUNIAO', confidence: 1.0,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', respostaEnviada: true,
-        responseText: meetingResult.response,
-      }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
-    }
-
-    // Check manual mode — skip when reprocessing (mode already switched to SDR_IA)
-    const convStateRaw = parsedContext.conversationState;
-    const isManualMode = !isReprocess && (convStateRaw as Record<string, unknown> | null)?.modo === 'MANUAL';
-    if (isManualMode) {
-      log.info('Manual mode — interpreting but suppressing response', { source });
+    if (!isManualMode) {
+      const meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
+      if (meetingResult.handled && meetingResult.response) {
+        // Save as intent and send response
+        const intentId = await saveInterpretation(supabase, msg, {
+          intent: 'AGENDAMENTO_REUNIAO',
+          confidence: 1.0,
+          acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+          deve_responder: true,
+        } as ClassifierResult, true, true, meetingResult.response);
+        return new Response(JSON.stringify({
+          success: true, intentId,
+          intent: 'AGENDAMENTO_REUNIAO', confidence: 1.0,
+          acao: 'ENVIAR_RESPOSTA_AUTOMATICA', respostaEnviada: true,
+          responseText: meetingResult.response,
+        }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
+      }
     }
 
     // ========================================

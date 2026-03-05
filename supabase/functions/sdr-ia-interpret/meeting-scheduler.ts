@@ -78,7 +78,9 @@ export async function startMeetingScheduling(
     });
 
     if (!slotsResp.ok) {
-      log.warn("Failed to fetch slots", { status: slotsResp.status });
+      let errorBody = '';
+      try { errorBody = await slotsResp.text(); } catch {}
+      log.warn("Failed to fetch slots", { status: slotsResp.status, body: errorBody });
       return { handled: false };
     }
 
