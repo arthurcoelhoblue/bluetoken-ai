@@ -367,6 +367,7 @@ export function ZadarmaPhoneWidget() {
   if (minimized) {
     return createPortal(
       <div
+        data-fab-widget
         className="fixed z-[9999] touch-none select-none"
         style={{ left: fabPosition.x, top: fabPosition.y }}
         onPointerDown={onFabPointerDown}
