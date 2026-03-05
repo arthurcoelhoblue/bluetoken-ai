@@ -256,10 +256,18 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   let contactsCrmOwnerId: string | null = null;
   {
     const { data: crmContact } = await supabase
-      .from('contacts').select('id, owner_id')
+      .from('contacts').select('id, owner_id, email, organization_id')
       .eq('legacy_lead_id', leadId).maybeSingle();
     contactsCrmId = crmContact?.id || null;
     contactsCrmOwnerId = crmContact?.owner_id || null;
+  }
+
+  // Fetch organization name if available
+  let contactsOrgName: string | null = null;
+  const crmOrgId = (await supabase.from('contacts').select('organization_id').eq('legacy_lead_id', leadId).maybeSingle()).data?.organization_id;
+  if (crmOrgId) {
+    const { data: org } = await supabase.from('organizations').select('nome').eq('id', crmOrgId).maybeSingle();
+    contactsOrgName = org?.nome || null;
   }
   if (contactsCrmId) {
     const { data: fetchedDeals } = await supabase
