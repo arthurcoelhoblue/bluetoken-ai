@@ -345,7 +345,7 @@ export function ZadarmaPhoneWidget() {
   if (minimized && !number) {
     if (isLoadingExtension) return null;
     if (!hasExtension) return null;
-    return (
+    return createPortal(
       <div
         className="fixed z-[9999] touch-none select-none"
         style={{ left: fabPosition.x, top: fabPosition.y }}
@@ -358,7 +358,8 @@ export function ZadarmaPhoneWidget() {
         >
           <Phone className="h-5 w-5" />
         </button>
-      </div>
+      </div>,
+      document.body
     );
   }
 
