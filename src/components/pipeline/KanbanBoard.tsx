@@ -213,7 +213,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
         )}
 
         <div ref={scrollRef} className="overflow-x-auto overflow-y-hidden h-full" data-grab-area>
-          <div className="flex gap-4 pb-4 min-h-[400px] px-6" style={{ minWidth: 'max-content' }}>
+          <div className="flex gap-4 pb-4 h-full px-6" style={{ minWidth: 'max-content' }}>
             {sortedColumns.map(col => (
               <KanbanColumn key={col.stage.id} column={col} onDealClick={onDealClick} />
             ))}

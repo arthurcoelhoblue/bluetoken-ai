@@ -38,7 +38,7 @@ export function KanbanColumn({ column, onDealClick }: KanbanColumnProps) {
         {/* Drop area */}
         <div
           ref={setNodeRef}
-          className={`flex-1 flex flex-col gap-1.5 p-1.5 min-h-[80px] transition-colors duration-100 ${
+          className={`flex-1 min-h-0 flex flex-col gap-1.5 p-1.5 overflow-y-auto transition-colors duration-100 ${
             isOver ? 'bg-primary/10 ring-2 ring-primary/30' : ''
           }`}
         >
