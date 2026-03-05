@@ -82,6 +82,7 @@ export function ZadarmaPhoneWidget() {
   const [lastCallContact, setLastCallContact] = useState('');
   const [lastCallNumber, setLastCallNumber] = useState('');
   const [lastCallDealId, setLastCallDealId] = useState<string | undefined>();
+  const frontendCallIdRef = useRef<string | null>(null);
 
   const proxy = useZadarmaProxy();
   const speech = useSpeechRecognition();
