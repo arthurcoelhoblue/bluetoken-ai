@@ -198,44 +198,48 @@ export function ManualMessageInput({
         </div>
       )}
 
-      <div className="flex items-end gap-2">
-        <ConnectionPicker
-          empresa={empresa}
-          value={connectionId}
-          onChange={setConnectionId}
-          className="shrink-0"
-        />
-        <Textarea
-          ref={textareaRef}
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder={windowExpired ? 'Envie um template para reabrir a conversa...' : placeholder}
-          className="min-h-[40px] max-h-[120px] resize-none flex-1"
-          rows={1}
-          disabled={sendMutation.isPending || windowExpired}
-        />
-        <MediaAttachments
-          onMediaReady={handleMediaReady}
-          disabled={sendMutation.isPending || windowExpired}
-        />
-        <Button
-          size="icon"
-          variant="outline"
-          onClick={() => setTemplatePickerOpen(true)}
-          title="Enviar template"
-          className="shrink-0"
-        >
-          <FileText className="h-4 w-4" />
-        </Button>
-        <Button
-          size="icon"
-          onClick={handleSend}
-          disabled={!text.trim() || sendMutation.isPending || windowExpired}
-          className="shrink-0"
-        >
-          <Send className="h-4 w-4" />
-        </Button>
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <ConnectionPicker
+            empresa={empresa}
+            value={connectionId}
+            onChange={setConnectionId}
+            className="shrink-0"
+          />
+          <MediaAttachments
+            onMediaReady={handleMediaReady}
+            disabled={sendMutation.isPending || windowExpired}
+          />
+          <Button
+            size="icon"
+            variant="outline"
+            onClick={() => setTemplatePickerOpen(true)}
+            title="Enviar template"
+            className="shrink-0"
+          >
+            <FileText className="h-4 w-4" />
+          </Button>
+        </div>
+        <div className="flex items-end gap-2">
+          <Textarea
+            ref={textareaRef}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder={windowExpired ? 'Envie um template para reabrir a conversa...' : placeholder}
+            className="min-h-[40px] max-h-[120px] resize-none flex-1"
+            rows={1}
+            disabled={sendMutation.isPending || windowExpired}
+          />
+          <Button
+            size="icon"
+            onClick={handleSend}
+            disabled={!text.trim() || sendMutation.isPending || windowExpired}
+            className="shrink-0"
+          >
+            <Send className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       {telefone && (
