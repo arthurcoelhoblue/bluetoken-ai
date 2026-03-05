@@ -1,39 +1,52 @@
-## Investigação: Erro ao dar GANHO no deal "Tiago" (Tokeniza)
 
-### Causa raiz encontrada
 
-O deal "Tiago" (id: `3534dda6...`) está com status `ABERTO` — a operação de fechar como GANHO falhou.
+## Problema
 
-O erro no banco de dados é:
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-> `there is no unique or exclusion constraint matching the ON CONFLICT specification`
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-Ele é disparado pelo trigger `**fn_deal_ganho_to_cs_contract**`, que executa:
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-```sql
-INSERT INTO cs_contracts (customer_id, empresa, ano_fiscal, ...)
-VALUES (...)
-ON CONFLICT (customer_id, ano_fiscal) DO UPDATE SET ...
+## Solução
+
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
+
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
 ```
 
-Porém a tabela `cs_contracts` **não possui** uma constraint unique em `(customer_id, ano_fiscal)`. Resultado: o Postgres rejeita o `ON CONFLICT`, o trigger falha, e o UPDATE inteiro do deal é revertido. Na tokeniza não existe o conceito de ano fiscal.
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-### Problema secundário
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
-Também há erros recorrentes `column deals.pipeline_empresa does not exist` — provavelmente queries de fundo (workbench, metas) que estão tentando acessar `pipeline_empresa` direto na tabela `deals` ao invés de uma view. Isso não bloqueia o GANHO, mas gera toasts de erro na interface.
-
-### Plano de correção
-
-**1. Criar a constraint faltante na `cs_contracts**` (migration SQL):
-
-```sql
-ALTER TABLE public.cs_contracts
-ADD CONSTRAINT cs_contracts_customer_ano_key UNIQUE (customer_id, ano_fiscal);
-```
-
-**2. Melhorar o `handleWin` com `onError` explícito** em `DealDetailSheet.tsx` para mostrar a mensagem real do erro ao invés de "Erro inesperado".
-
-### Arquivos afetados
-
-- Migration SQL (constraint na tabela `cs_contracts`)
-- `src/components/deals/DealDetailSheet.tsx` (adicionar `onError` no `handleWin`)

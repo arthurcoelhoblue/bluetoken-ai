@@ -121,6 +121,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
     if (!deal) return;
     closeDeal.mutate({ dealId: deal.id, status: 'GANHO', stageId: deal.stage_id }, {
       onSuccess: () => toast.success('Deal marcado como ganho!'),
+      onError: (err: Error) => toast.error(err.message || 'Erro ao marcar como ganho'),
     });
   };
 
