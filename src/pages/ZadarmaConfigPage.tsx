@@ -443,11 +443,11 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
           <Card className="border-dashed">
             <CardHeader className="pb-2">
               <CardTitle className="text-sm flex items-center gap-2">
-                <ExternalLink className="h-4 w-4 text-muted-foreground" />
-                Ramais externos (não vinculados ao CRM)
+                <Plus className="h-4 w-4 text-primary" />
+                Ramais não vinculados — vincule ao CRM
               </CardTitle>
               <CardDescription className="text-xs">
-                Estes ramais existem no PBX Zadarma mas não estão vinculados a nenhum usuário neste CRM. Podem estar em uso em outros sistemas (ex: Pipedrive).
+                Estes ramais existem no PBX mas não estão vinculados a nenhum usuário. Selecione um usuário e clique em "Vincular".
               </CardDescription>
             </CardHeader>
             <CardContent>
