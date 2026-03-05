@@ -92,13 +92,40 @@ Deno.serve(async (req) => {
     const direcao = eventType.includes('OUT') ? 'OUTBOUND' : 'INBOUND';
 
     if (eventType === 'NOTIFY_START' || eventType === 'NOTIFY_OUT_START') {
-      const { data: call } = await supabase.from('calls').insert({
-        empresa, deal_id: dealId, contact_id: contactId, user_id: userId, direcao, status: 'RINGING',
-        pbx_call_id: pbxCallId, caller_number: callerNumber, destination_number: destinationNumber, started_at: new Date().toISOString(),
-      }).select('id').single();
+      // Check if frontend already created a record for this call (match by destination number + user + recent)
+      let callId: string | null = null;
+      if (userId) {
+        const { data: existing } = await supabase.from('calls')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('status', 'RINGING')
+          .is('ended_at', null)
+          .gte('created_at', new Date(Date.now() - 120000).toISOString())
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (existing) {
+          // Update existing record with real pbx_call_id
+          await supabase.from('calls').update({
+            pbx_call_id: pbxCallId,
+            deal_id: dealId || undefined,
+            contact_id: contactId || undefined,
+          }).eq('id', existing.id);
+          callId = existing.id;
+          log.info('Merged frontend call record with webhook', { callId, pbxCallId });
+        }
+      }
 
-      if (call) {
-        await supabase.from('call_events').insert({ call_id: call.id, event_type: eventType, payload: Object.fromEntries(params) });
+      if (!callId) {
+        const { data: call } = await supabase.from('calls').insert({
+          empresa, deal_id: dealId, contact_id: contactId, user_id: userId, direcao, status: 'RINGING',
+          pbx_call_id: pbxCallId, caller_number: callerNumber, destination_number: destinationNumber, started_at: new Date().toISOString(),
+        }).select('id').single();
+        callId = call?.id ?? null;
+      }
+
+      if (callId) {
+        await supabase.from('call_events').insert({ call_id: callId, event_type: eventType, payload: Object.fromEntries(params) });
       }
     } else if (eventType === 'NOTIFY_ANSWER') {
       const { data: existing } = await supabase.from('calls').select('id').eq('pbx_call_id', pbxCallId).maybeSingle();

@@ -590,13 +590,13 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     });
   }, [status]);
 
-  const hangup = useCallback(() => {
+  const hangup = useCallback((callId?: string) => {
     console.log('[WebRTC] 🔴 hangup() called — setting cooldown and clicking widget hangup button...');
     hangupCooldownRef.current = Date.now();
     incomingDetectedRef.current = false;
     autoAnswerDoneRef.current = false;
 
-    closeActiveCallRecord();
+    closeActiveCallRecord(callId);
     clickHangupButton();
 
     window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'hangup' } }));

@@ -372,7 +372,20 @@ export function ZadarmaPhoneWidget() {
 
   const handleHangup = useCallback(() => {
     if (isWebRTCMode) {
-      webrtc.hangup();
+      webrtc.hangup(frontendCallIdRef.current ?? undefined);
+    }
+    // Close call record from frontend if WebRTC didn't
+    if (frontendCallIdRef.current) {
+      const callId = frontendCallIdRef.current;
+      const dur = callTimer;
+      supabase.from('calls').update({
+        ended_at: new Date().toISOString(),
+        duracao_segundos: dur,
+        status: dur > 0 ? 'ANSWERED' : 'MISSED',
+      }).eq('id', callId).then(({ error }) => {
+        if (error) console.error('[ZadarmaWidget] Failed to close call record:', error);
+        else console.log(`[ZadarmaWidget] ✅ Closed call record ${callId} (${dur}s)`);
+      });
     }
     // Salvar dados da chamada para o dialog de resumo
     setLastCallDuration(callTimer);
@@ -388,12 +401,13 @@ export function ZadarmaPhoneWidget() {
       setNumber('');
       setContactName('');
       setDealId(undefined);
+      frontendCallIdRef.current = null;
       // Show call summary dialog after call ends
       if (callTimer > 5) {
         setShowCallSummary(true);
       }
     }, 2000);
-  }, [isWebRTCMode, webrtc]);
+  }, [isWebRTCMode, webrtc, callTimer, contactName, number, dealId]);
 
   const handleHold = () => {
     if (!empresa || !myExtension) return;
