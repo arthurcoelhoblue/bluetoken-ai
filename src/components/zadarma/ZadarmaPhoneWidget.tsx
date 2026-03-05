@@ -431,7 +431,7 @@ export function ZadarmaPhoneWidget() {
   // Maximized with coaching sidebar
   if (maximized && isInCall) {
     return (
-      <div className="fixed inset-0 z-[60] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
+      <div className="fixed inset-0 z-[9999] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
           <div className="w-72 shrink-0 border-r border-border flex flex-col">
             <div className="flex items-center justify-between px-4 py-3 bg-primary text-primary-foreground">
