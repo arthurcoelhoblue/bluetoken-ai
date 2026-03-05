@@ -83,26 +83,48 @@ async function applyAction(
           const { data: escContact } = await supabase.from('contacts').select('id, owner_id, nome').eq('legacy_lead_id', leadId).maybeSingle();
           let notifyUserId = escContact?.owner_id as string | undefined;
 
-          // Round-robin se sem owner
+          // Fallback: buscar owner do deal associado
+          if (!notifyUserId && escContact?.id) {
+            const { data: dealWithOwner } = await supabase
+              .from('deals').select('owner_id')
+              .eq('contact_id', escContact.id as string)
+              .eq('status', 'ABERTO')
+              .order('updated_at', { ascending: false })
+              .limit(1).maybeSingle();
+            if (dealWithOwner?.owner_id) {
+              notifyUserId = dealWithOwner.owner_id as string;
+              log.info('ESCALAR_HUMANO: usando owner do deal como fallback', { owner_id: notifyUserId });
+            }
+          }
+
+          // Round-robin se sem owner (queries separadas para evitar falha silenciosa do JOIN)
           if (!notifyUserId) {
-            const { data: sellers } = await supabase
+            const { data: assignments } = await supabase
               .from('user_access_assignments')
-              .select('user_id, profiles!inner(is_vendedor, is_active)')
-              .eq('empresa', empresa)
-              .eq('profiles.is_vendedor', true)
-              .eq('profiles.is_active', true);
-            if (sellers?.length) {
-              // Pegar o vendedor com menos deals abertos
-              let minDeals = Infinity;
-              let bestSeller = sellers[0].user_id;
-              for (const s of sellers) {
-                const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', s.user_id).eq('status', 'ABERTO');
-                if ((count || 0) < minDeals) {
-                  minDeals = count || 0;
-                  bestSeller = s.user_id;
+              .select('user_id')
+              .eq('empresa', empresa);
+            if (assignments?.length) {
+              const userIds = assignments.map((a: { user_id: string }) => a.user_id);
+              const { data: activeVendors } = await supabase
+                .from('profiles')
+                .select('id')
+                .in('id', userIds)
+                .eq('is_vendedor', true)
+                .eq('is_active', true);
+              if (activeVendors?.length) {
+                let minDeals = Infinity;
+                let bestSeller = (activeVendors[0] as { id: string }).id;
+                for (const v of activeVendors) {
+                  const vid = (v as { id: string }).id;
+                  const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', vid).eq('status', 'ABERTO');
+                  if ((count || 0) < minDeals) {
+                    minDeals = count || 0;
+                    bestSeller = vid;
+                  }
                 }
+                notifyUserId = bestSeller;
+                log.info('ESCALAR_HUMANO: round-robin selecionou vendedor', { owner_id: notifyUserId });
               }
-              notifyUserId = bestSeller;
             }
           }
 
@@ -196,25 +218,48 @@ async function applyAction(
             .eq('legacy_lead_id', leadId).maybeSingle();
           tarefaNotifyUserId = tarefaContact?.owner_id as string | undefined;
 
-          // Round-robin se sem owner (filtrando apenas vendedores ativos)
+          // Fallback: buscar owner do deal associado
+          if (!tarefaNotifyUserId && tarefaContact?.id) {
+            const { data: dealWithOwner } = await supabase
+              .from('deals').select('owner_id')
+              .eq('contact_id', tarefaContact.id as string)
+              .eq('status', 'ABERTO')
+              .order('updated_at', { ascending: false })
+              .limit(1).maybeSingle();
+            if (dealWithOwner?.owner_id) {
+              tarefaNotifyUserId = dealWithOwner.owner_id as string;
+              log.info('CRIAR_TAREFA_CLOSER: usando owner do deal como fallback', { owner_id: tarefaNotifyUserId });
+            }
+          }
+
+          // Round-robin se sem owner (queries separadas para evitar falha silenciosa do JOIN)
           if (!tarefaNotifyUserId) {
-            const { data: tarefaSellers } = await supabase
+            const { data: assignments } = await supabase
               .from('user_access_assignments')
-              .select('user_id, profiles!inner(is_vendedor, is_active)')
-              .eq('empresa', empresa)
-              .eq('profiles.is_vendedor', true)
-              .eq('profiles.is_active', true);
-            if (tarefaSellers?.length) {
-              let minDeals = Infinity;
-              let bestSeller = tarefaSellers[0].user_id;
-              for (const s of tarefaSellers) {
-                const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', s.user_id).eq('status', 'ABERTO');
-                if ((count || 0) < minDeals) {
-                  minDeals = count || 0;
-                  bestSeller = s.user_id;
+              .select('user_id')
+              .eq('empresa', empresa);
+            if (assignments?.length) {
+              const userIds = assignments.map((a: { user_id: string }) => a.user_id);
+              const { data: activeVendors } = await supabase
+                .from('profiles')
+                .select('id')
+                .in('id', userIds)
+                .eq('is_vendedor', true)
+                .eq('is_active', true);
+              if (activeVendors?.length) {
+                let minDeals = Infinity;
+                let bestSeller = (activeVendors[0] as { id: string }).id;
+                for (const v of activeVendors) {
+                  const vid = (v as { id: string }).id;
+                  const { count } = await supabase.from('deals').select('id', { count: 'exact', head: true }).eq('owner_id', vid).eq('status', 'ABERTO');
+                  if ((count || 0) < minDeals) {
+                    minDeals = count || 0;
+                    bestSeller = vid;
+                  }
                 }
+                tarefaNotifyUserId = bestSeller;
+                log.info('CRIAR_TAREFA_CLOSER: round-robin selecionou vendedor', { owner_id: tarefaNotifyUserId });
               }
-              tarefaNotifyUserId = bestSeller;
             }
           }
 
