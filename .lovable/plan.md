@@ -1,69 +1,49 @@
 
 
-## Diagnóstico Completo
+## Diagnóstico — Três Problemas
 
-Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
+### 1. Rota `/deals` não existe → 404
 
-### Problema 1: Scroll horizontal da pagina
+O `LinkedDealsPopover` (usado na tela de conversas) navega para `/deals?pipeline=...&deal=...`, mas **não existe rota `/deals`** no `App.tsx`. A rota correta é `/pipeline`. O console confirma o 404.
 
-A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
-
-```text
-AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
-  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
-       └─ flex-1 min-h-0 overflow-hidden  ← ok
-            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
-                 └─ scrollRef: overflow-auto  ← scroll interno ok
-                      └─ flex gap-4 minWidth:max-content  ← expande largura
+**Correção**: Em `LinkedDealsPopover.tsx` linha 45, trocar `/deals` por `/pipeline`:
+```tsx
+onClick={() => navigate(`/pipeline?pipeline=${deal.pipeline_id}&deal=${deal.id}`)}
 ```
 
-O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
+### 2. Escalação muda para MANUAL imediatamente — deveria manter SDR_IA até o vendedor assumir
 
-### Problema 2: Grab scroll não funciona
-
-O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
-
-O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
-
-## Solução
-
-### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
-
-- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
-- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
-
-### Arquivo 2: `src/components/layout/AppLayout.tsx`
-
-- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
-
-### Arquivo 3: `src/hooks/useGrabScroll.ts`
-
-- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
-- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
-- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
-- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
-
-A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
-
-```text
-pointerdown (capture, container):
-  ├─ É sobre botão/link? → ignora
-  └─ Senão → stopPropagation + registra posição
-                (dnd-kit NÃO recebe pointerdown)
-
-pointermove (capture, window):
-  ├─ < 8px → aguarda
-  ├─ horizontal → lock, scroll, stopImmediatePropagation
-  └─ vertical → release, re-dispatch pointerdown sintético no target
-                  (dnd-kit AGORA recebe e pode iniciar drag)
-
-pointerup (capture, window):
-  └─ reset
+Atualmente, na linha 65 de `action-executor.ts`, ao escalar a IA muda o modo para `MANUAL` instantaneamente:
+```ts
+await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', ... })
 ```
 
-| Arquivo | Mudanca |
+Isso silencia a Amélia antes do vendedor assumir. O comportamento correto é:
+- **Manter `modo: 'SDR_IA'`** durante a escalação
+- Marcar um flag `escalado_para` com o `user_id` do vendedor designado
+- A Amélia continua respondendo normalmente enquanto o vendedor não assume
+- Quando o vendedor clica "Assumir atendimento", aí sim muda para `MANUAL`
+
+**Correção em `action-executor.ts`** (ESCALAR_HUMANO, linha 65):
+- Em vez de `modo: 'MANUAL'`, fazer `update({ escalado_para: notifyUserId, updated_at: now })` sem mudar o modo
+- Será necessário adicionar coluna `escalado_para UUID` na tabela `lead_conversation_state` via migration
+
+A lógica de takeover no hook `useConversationTakeover` já funciona corretamente — quando o vendedor clica "Assumir", ele muda o modo para MANUAL.
+
+### 3. E-mail da escalação vai para `closer_email` genérico — deveria ir para o e-mail do vendedor designado
+
+O `notify-closer` busca um `closer_email` de `system_settings` ou usa fallback genérico. Deveria enviar para o **e-mail do vendedor** que foi designado (`notify_user_id`).
+
+**Correção em `notify-closer/index.ts`**:
+- Quando `notify_user_id` está presente, buscar o e-mail do perfil desse usuário em `auth.users` (via service client) ou na tabela `profiles`
+- Usar esse e-mail como destinatário em vez do `closer_email` genérico
+
+### Resumo das mudanças
+
+| Arquivo | Mudança |
 |---------|---------|
-| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
-| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
-| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
+| `src/components/leads/LinkedDealsPopover.tsx` | `/deals` → `/pipeline` na navegação |
+| `supabase/functions/sdr-ia-interpret/action-executor.ts` | Remover `modo: 'MANUAL'` na escalação; adicionar `escalado_para` |
+| `supabase/functions/notify-closer/index.ts` | Buscar e-mail do vendedor designado via `profiles` quando `notify_user_id` presente |
+| **Migration SQL** | Adicionar coluna `escalado_para UUID` em `lead_conversation_state` |
 
