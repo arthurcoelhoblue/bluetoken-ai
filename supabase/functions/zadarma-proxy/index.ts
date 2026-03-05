@@ -250,7 +250,7 @@ Deno.serve(async (req) => {
       case 'create_extension': {
         const { extension: newExt } = payload;
         if (!newExt) throw new Error('extension number required (3 digits)');
-        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/create/', { extension: String(newExt) }, 'POST');
+        result = await zadarmaRequest(config.api_key, config.api_secret, '/v1/pbx/internal/create/', { start_number: String(newExt), quantity: '1', return_password: 'true' }, 'POST');
         break;
       }
 
