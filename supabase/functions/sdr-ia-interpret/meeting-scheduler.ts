@@ -46,8 +46,22 @@ export async function handleMeetingScheduling(
       .eq("status", "PENDENTE")
       .maybeSingle();
 
-    if (pendingState && pendingState.slots_oferecidos) {
-      return await handleSlotSelection(supabase, ctx, pendingState);
+    if (pendingState) {
+      // Handle AGUARDANDO_EMAIL state — lead needs to provide email
+      if (pendingState.status === 'PENDENTE' && pendingState.slot_pre_selecionado) {
+        // Check if message contains an email
+        const emailMatch = ctx.mensagem.trim().match(/[\w.+-]+@[\w.-]+\.\w{2,}/i);
+        if (emailMatch) {
+          const email = emailMatch[0];
+          ctx.leadEmail = email;
+          return await completeBookingWithEmail(supabase, ctx, pendingState, email);
+        }
+        return { handled: true, response: "Preciso do seu e-mail para enviar o convite da reunião. Pode me informar? 📧" };
+      }
+
+      if (pendingState.slots_oferecidos) {
+        return await handleSlotSelection(supabase, ctx, pendingState);
+      }
     }
 
     return { handled: false };
