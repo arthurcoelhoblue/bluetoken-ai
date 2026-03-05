@@ -1,69 +1,52 @@
 
 
-## Diagnóstico Completo
+## Problema
 
-Analisei toda a cadeia de layout: `AppLayout` → `PipelinePage` → `KanbanBoard` → scroll container. Encontrei **duas causas raiz**:
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-### Problema 1: Scroll horizontal da pagina
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-A cadeia de overflow está quebrada. O conteúdo do Kanban usa `minWidth: 'max-content'` para forçar largura das colunas, mas o wrapper do carrossel (`<div className="relative flex-1 min-h-0">`, linha 185 do KanbanBoard) **não tem restrição de largura nem overflow-hidden**. Isso faz com que o conteúdo "vaze" para cima na hierarquia:
-
-```text
-AppLayout: overflow-auto (linha 41)  ← MOSTRA SCROLLBAR
-  └─ PipelinePage: overflow-x-hidden  ← tenta bloquear mas...
-       └─ flex-1 min-h-0 overflow-hidden  ← ok
-            └─ KanbanBoard wrapper: relative flex-1 min-h-0  ← SEM overflow-hidden!
-                 └─ scrollRef: overflow-auto  ← scroll interno ok
-                      └─ flex gap-4 minWidth:max-content  ← expande largura
-```
-
-O wrapper do carrossel expande sem limite, empurrando o PipelinePage, que por sua vez faz o `overflow-auto` do AppLayout mostrar scrollbar horizontal.
-
-### Problema 2: Grab scroll não funciona
-
-O `DealCard` espalha `{...attributes, ...listeners}` diretamente no Card (linha 67). Os listeners do dnd-kit incluem `onPointerDown` que chama `setPointerCapture()` no elemento do card. Isso redireciona **todos** os eventos de pointer subsequentes para aquele elemento, fazendo com que o `pointermove` no `window` (usado pelo grab scroll) nunca receba os eventos -- mesmo em capture phase.
-
-O `useGrabScroll` intercepta `pointerdown` em capture (correto), mas não impede o dnd-kit de também receber o `pointerdown` no card (que acontece na fase de bubble). Quando o dnd-kit detecta 8px de movimento, ele ativa o sensor e captura o ponteiro antes que o grab scroll tenha chance de decidir o eixo.
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
 ## Solução
 
-### Arquivo 1: `src/components/pipeline/KanbanBoard.tsx`
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-- **Carousel wrapper**: Adicionar `overflow-hidden` ao div wrapper do carrossel (linha 185) para conter a largura do conteúdo interno e impedir vazamento para os containers pais
-- **Scroll container**: Mudar de `overflow-auto` para `overflow-x-auto overflow-y-hidden` para restringir scroll apenas ao eixo horizontal
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
 
-### Arquivo 2: `src/components/layout/AppLayout.tsx`
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
 
-- Mudar o content wrapper (linha 41) de `overflow-auto` para `overflow-y-auto overflow-x-hidden` como proteção adicional contra qualquer página que tente expandir horizontalmente
-
-### Arquivo 3: `src/hooks/useGrabScroll.ts`
-
-- No `onPointerDown` em capture: quando o clique acontece sobre a área de scroll (e não sobre botões), chamar `e.stopPropagation()` imediatamente para impedir o dnd-kit de receber o evento nos filhos
-- Salvar o `pointerId` para usar `releasePointerCapture` caso o dnd-kit consiga capturar
-- No `onPointerMove`: quando o eixo é detectado como **vertical** (released), re-disparar um novo `pointerdown` sintético para que o dnd-kit possa ativar normalmente para drag de cards verticais
-- Quando eixo é horizontal: manter o `stopImmediatePropagation` atual
-
-A ideia central: bloquear o `pointerdown` de chegar ao dnd-kit inicialmente, e só liberá-lo quando confirmarmos que o movimento é vertical (drag de card) e não horizontal (scroll do carrossel).
-
-```text
-pointerdown (capture, container):
-  ├─ É sobre botão/link? → ignora
-  └─ Senão → stopPropagation + registra posição
-                (dnd-kit NÃO recebe pointerdown)
-
-pointermove (capture, window):
-  ├─ < 8px → aguarda
-  ├─ horizontal → lock, scroll, stopImmediatePropagation
-  └─ vertical → release, re-dispatch pointerdown sintético no target
-                  (dnd-kit AGORA recebe e pode iniciar drag)
-
-pointerup (capture, window):
-  └─ reset
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
 ```
 
-| Arquivo | Mudanca |
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+
+| Arquivo | Mudança |
 |---------|---------|
-| `src/components/layout/AppLayout.tsx` | `overflow-auto` → `overflow-y-auto overflow-x-hidden` |
-| `src/components/pipeline/KanbanBoard.tsx` | Adicionar `overflow-hidden` no wrapper do carrossel; scroll container `overflow-x-auto overflow-y-hidden` |
-| `src/hooks/useGrabScroll.ts` | Bloquear pointerdown na captura, re-disparar se movimento vertical |
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
