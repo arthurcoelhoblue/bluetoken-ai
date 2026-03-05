@@ -174,6 +174,15 @@ Deno.serve(async (req) => {
         if (lead.utm_term) metadataExtra.utm_term = lead.utm_term;
         if (lead.campos_extras) metadataExtra.campos_extras = lead.campos_extras;
 
+        // Extract partner tags from utm_campaign
+        const dealTags: string[] = [...(lead.tags || [])];
+        const campaignUpper = (lead.utm_campaign || "").toUpperCase();
+        for (const [key, tag] of Object.entries(PARTNER_TAGS)) {
+          if (campaignUpper.includes(key) && !dealTags.includes(tag)) {
+            dealTags.push(tag);
+          }
+        }
+
         const { data: newDeal, error: dealErr } = await supabase
           .from("deals")
           .insert({
@@ -187,6 +196,7 @@ Deno.serve(async (req) => {
             canal_origem: "LP_COM_IA",
             valor: 0,
             metadata: metadataExtra,
+            tags: dealTags.length > 0 ? dealTags : null,
           })
           .select("id")
           .single();
