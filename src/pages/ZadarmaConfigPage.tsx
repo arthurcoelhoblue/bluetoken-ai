@@ -259,8 +259,18 @@ function RamaisTab({ empresa, extensions, extLoading, proxy, saveExtension, dele
   const [syncing, setSyncing] = useState(false);
   const [creating, setCreating] = useState(false);
   const [newExtNumber, setNewExtNumber] = useState('');
-  const [zadarmaExts, setZadarmaExts] = useState<Array<{ extension_number: string; sip_login: string }>>([]);
+  const [zadarmaExts, setZadarmaExts] = useState<Array<{ extension_number: string; sip_login: string; is_recorded?: boolean }>>([]);
   const [showSync, setShowSync] = useState(false);
+  const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
+  const [linking, setLinking] = useState<Record<string, boolean>>({});
+  const [users, setUsers] = useState<Array<{ id: string; nome: string }>>([]);
+
+  // Load users for linking dropdown
+  useEffect(() => {
+    supabase.from('profiles').select('id, nome').eq('is_active', true).order('nome').then(({ data }) => {
+      if (data) setUsers(data);
+    });
+  }, []);
 
   const handleSync = async () => {
     setSyncing(true);
