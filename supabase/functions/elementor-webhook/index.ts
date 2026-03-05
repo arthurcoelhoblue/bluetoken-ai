@@ -155,6 +155,13 @@ Deno.serve(async (req) => {
     }
 
     if (!mainPayload.email && !mainPayload.nome) {
+      console.error("[elementor-webhook] 422 - Could not extract lead data", {
+        form_id: formId,
+        received_keys: Object.keys(body),
+        configured_map: fieldMap,
+        has_fields: !!elementorFields,
+        fields_keys: elementorFields ? Object.keys(elementorFields) : [],
+      });
       return new Response(JSON.stringify({
         error: "Could not extract lead data. Check field_map configuration.",
         received_keys: Object.keys(body),
