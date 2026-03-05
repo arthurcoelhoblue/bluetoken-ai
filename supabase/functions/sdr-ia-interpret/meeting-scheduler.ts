@@ -17,6 +17,7 @@ export interface MeetingSchedulerContext {
   ownerId?: string;
   mensagem: string;
   telefone?: string;
+  leadEmail?: string;
 }
 
 export interface MeetingSchedulerResult {
