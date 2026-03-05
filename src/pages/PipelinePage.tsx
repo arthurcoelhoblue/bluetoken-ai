@@ -77,17 +77,10 @@ function PipelineContent() {
   const [showCreateDeal, setShowCreateDeal] = useState(false);
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
-  const [lookupDealId, setLookupDealId] = useState<string | null>(null);
-  const [showLookup, setShowLookup] = useState(false);
   const [showTransfer, setShowTransfer] = useState(false);
 
   const handleDealClick = (dealId: string) => {
-    if (dealFromUrl === dealId) {
-      setSelectedDealId(dealId);
-      return;
-    }
-    setLookupDealId(dealId);
-    setShowLookup(true);
+    setSelectedDealId(dealId);
   };
 
   // Auto-open deal from query param when navigating from insights
