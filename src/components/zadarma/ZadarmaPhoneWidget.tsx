@@ -82,8 +82,63 @@ export function ZadarmaPhoneWidget() {
   const [lastCallDealId, setLastCallDealId] = useState<string | undefined>();
 
   const proxy = useZadarmaProxy();
-  // autoDialRef removed — dial is now called directly from event handler
   const speech = useSpeechRecognition();
+
+  // Draggable FAB position
+  const [fabPosition, setFabPosition] = useState<{ x: number; y: number }>(() => {
+    const saved = loadPhonePosition();
+    const defaultPos = { x: window.innerWidth - PHONE_FAB_SIZE - 24, y: window.innerHeight - PHONE_FAB_SIZE - 80 };
+    if (!saved) return defaultPos;
+    return {
+      x: Math.max(0, Math.min(saved.x, window.innerWidth - PHONE_FAB_SIZE)),
+      y: Math.max(0, Math.min(saved.y, window.innerHeight - PHONE_FAB_SIZE)),
+    };
+  });
+  const isDraggingRef = useRef(false);
+  const dragStartRef = useRef({ px: 0, py: 0, sx: 0, sy: 0 });
+  const didDragRef = useRef(false);
+
+  useEffect(() => {
+    const onResize = () => {
+      setFabPosition(prev => ({
+        x: Math.min(prev.x, window.innerWidth - PHONE_FAB_SIZE),
+        y: Math.min(prev.y, window.innerHeight - PHONE_FAB_SIZE),
+      }));
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
+
+  const onFabPointerDown = useCallback((e: React.PointerEvent) => {
+    isDraggingRef.current = true;
+    didDragRef.current = false;
+    dragStartRef.current = { px: e.clientX, py: e.clientY, sx: fabPosition.x, sy: fabPosition.y };
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  }, [fabPosition]);
+
+  const onFabPointerMove = useCallback((e: React.PointerEvent) => {
+    if (!isDraggingRef.current) return;
+    const dx = e.clientX - dragStartRef.current.px;
+    const dy = e.clientY - dragStartRef.current.py;
+    if (Math.abs(dx) > PHONE_DRAG_THRESHOLD || Math.abs(dy) > PHONE_DRAG_THRESHOLD) {
+      didDragRef.current = true;
+    }
+    const newX = Math.max(0, Math.min(window.innerWidth - PHONE_FAB_SIZE, dragStartRef.current.sx + dx));
+    const newY = Math.max(0, Math.min(window.innerHeight - PHONE_FAB_SIZE, dragStartRef.current.sy + dy));
+    setFabPosition({ x: newX, y: newY });
+  }, []);
+
+  const onFabPointerUp = useCallback((action: () => void) => {
+    isDraggingRef.current = false;
+    if (didDragRef.current) {
+      setFabPosition(prev => {
+        savePhonePosition(prev);
+        return prev;
+      });
+    } else {
+      action();
+    }
+  }, []);
 
   // Sync WebRTC status to phone state
   useEffect(() => {
