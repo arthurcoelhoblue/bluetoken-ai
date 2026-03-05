@@ -57,9 +57,9 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
     const conn = connections[0];
     return (
       <div className={className}>
-        <Badge variant="outline" className="h-7 text-xs font-normal gap-1.5 px-2.5">
-          <Phone className="h-3 w-3 text-muted-foreground" />
-          {conn.label || conn.display_phone || conn.verified_name || 'WhatsApp'}
+        <Badge variant="outline" className="h-7 text-xs font-normal gap-1.5 px-2.5 max-w-[200px] truncate">
+          <Phone className="h-3 w-3 text-muted-foreground shrink-0" />
+          <span className="truncate">{conn.label || conn.display_phone || conn.verified_name || 'WhatsApp'}</span>
         </Badge>
       </div>
     );
@@ -73,18 +73,14 @@ export function ConnectionPicker({ empresa, value, onChange, className }: Connec
   if (isLoading) return null;
 
   const displayLabel = (c: WhatsAppConnection) => {
-    const parts: string[] = [];
-    if (c.label) parts.push(c.label);
-    if (c.display_phone) parts.push(c.display_phone);
-    else if (c.verified_name) parts.push(c.verified_name);
-    if (c.is_default) parts.push('(padrão)');
-    return parts.join(' · ') || c.id.slice(0, 8);
+    const name = c.label || c.display_phone || c.verified_name || c.id.slice(0, 8);
+    return c.is_default ? `${name} (padrão)` : name;
   };
 
   return (
     <div className={className}>
       <Select value={selectedId} onValueChange={onChange}>
-        <SelectTrigger className="h-8 text-xs">
+        <SelectTrigger className="h-8 text-xs max-w-[200px]">
           <Phone className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
           <SelectValue placeholder="Selecionar número..." />
         </SelectTrigger>
