@@ -11,7 +11,7 @@ import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
-import { LeadLookupDialog } from '@/components/pipeline/LeadLookupDialog';
+
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
