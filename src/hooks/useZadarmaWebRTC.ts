@@ -28,7 +28,7 @@ interface UseZadarmaWebRTCReturn {
   error: string | null;
   isReady: boolean;
   dial: (number: string) => void;
-  hangup: () => void;
+  hangup: (callId?: string) => void;
   answer: () => void;
 }
 
