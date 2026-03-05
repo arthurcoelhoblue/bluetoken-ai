@@ -192,22 +192,6 @@ function PipelineContent() {
             onOpenChange={open => !open && setSelectedDealId(null)}
           />
 
-          {lookupDealId && (
-            <LeadLookupDialog
-              open={showLookup}
-              onOpenChange={(open) => {
-                setShowLookup(open);
-                if (!open) setLookupDealId(null);
-              }}
-              dealId={lookupDealId}
-              onContinueToDeal={() => {
-                setSelectedDealId(lookupDealId);
-                setShowLookup(false);
-                setLookupDealId(null);
-              }}
-            />
-          )}
-
           {selectedPipeline && (
             <CreateDealDialog
               open={showCreateDeal}
