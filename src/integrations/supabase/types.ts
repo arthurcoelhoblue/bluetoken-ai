@@ -4576,6 +4576,7 @@ export type Database = {
           empresa_proxima_msg:
             | Database["public"]["Enums"]["empresa_tipo"]
             | null
+          escalado_para: string | null
           estado_funil: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo: Database["public"]["Enums"]["framework_tipo"]
           framework_data: Json | null
@@ -4602,6 +4603,7 @@ export type Database = {
           empresa_proxima_msg?:
             | Database["public"]["Enums"]["empresa_tipo"]
             | null
+          escalado_para?: string | null
           estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
           framework_data?: Json | null
@@ -4628,6 +4630,7 @@ export type Database = {
           empresa_proxima_msg?:
             | Database["public"]["Enums"]["empresa_tipo"]
             | null
+          escalado_para?: string | null
           estado_funil?: Database["public"]["Enums"]["estado_funil_tipo"]
           framework_ativo?: Database["public"]["Enums"]["framework_tipo"]
           framework_data?: Json | null

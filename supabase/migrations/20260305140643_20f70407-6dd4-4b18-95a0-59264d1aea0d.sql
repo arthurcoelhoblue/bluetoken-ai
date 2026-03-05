@@ -1,0 +1,1 @@
+ALTER TABLE public.lead_conversation_state ADD COLUMN IF NOT EXISTS escalado_para UUID;

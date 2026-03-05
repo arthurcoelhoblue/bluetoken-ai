@@ -62,7 +62,8 @@ async function applyAction(
 
     case 'ESCALAR_HUMANO':
       if (leadId) {
-        await supabase.from('lead_conversation_state').update({ modo: 'MANUAL', updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
+        // Não mudar para MANUAL aqui — a Amélia continua respondendo até o vendedor assumir
+        await supabase.from('lead_conversation_state').update({ escalado_para: notifyUserId || null, updated_at: now }).eq('lead_id', leadId).eq('empresa', empresa);
 
         // --- Escalação inteligente: notificar + deal + atribuição ---
         try {
