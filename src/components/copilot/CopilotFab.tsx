@@ -182,6 +182,7 @@ export function CopilotFab() {
 
       {/* FAB */}
       <div
+        data-fab-widget
         className="fixed z-[9999] touch-none select-none"
         style={{ left: position.x, top: position.y }}
         onPointerDown={onPointerDown}
