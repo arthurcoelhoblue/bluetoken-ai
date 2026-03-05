@@ -18,6 +18,12 @@ const DEFAULT_PIPELINE_ID = "5bbac98b-5ae9-4b31-9b7f-896d7b732a2c"; // Ofertas P
 const DEFAULT_STAGE_ID = "da80e912-b462-401d-b367-1b6a9b2ec4da"; // Lead
 
 // Emails de teste a filtrar
+// Partner tags extracted from utm_campaign
+const PARTNER_TAGS: Record<string, string> = {
+  'MPUPPE': 'MPUPPE',
+  'AXIA': 'AXIA',
+};
+
 const TEST_EMAILS = [
   "tleonardo186@gmail.com",
   "tayara.r.araujo@gmail.com",
@@ -168,6 +174,15 @@ Deno.serve(async (req) => {
         if (lead.utm_term) metadataExtra.utm_term = lead.utm_term;
         if (lead.campos_extras) metadataExtra.campos_extras = lead.campos_extras;
 
+        // Extract partner tags from utm_campaign
+        const dealTags: string[] = [...(lead.tags || [])];
+        const campaignUpper = (lead.utm_campaign || "").toUpperCase();
+        for (const [key, tag] of Object.entries(PARTNER_TAGS)) {
+          if (campaignUpper.includes(key) && !dealTags.includes(tag)) {
+            dealTags.push(tag);
+          }
+        }
+
         const { data: newDeal, error: dealErr } = await supabase
           .from("deals")
           .insert({
@@ -181,6 +196,7 @@ Deno.serve(async (req) => {
             canal_origem: "LP_COM_IA",
             valor: 0,
             metadata: metadataExtra,
+            tags: dealTags.length > 0 ? dealTags : null,
           })
           .select("id")
           .single();
