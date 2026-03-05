@@ -166,17 +166,38 @@ serve(async (req) => {
     if (!isManualMode) {
       meetingResult = await handleMeetingScheduling(supabase, meetingCtx);
       if (meetingResult.handled && meetingResult.response) {
+        const telefone = parsedContext.telefone;
         // Save as intent and send response
         const intentId = await saveInterpretation(supabase, msg, {
           intent: 'AGENDAMENTO_REUNIAO',
           confidence: 1.0,
           acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
           deve_responder: true,
-        } as ClassifierResult, true, true, meetingResult.response);
+        } as ClassifierResult, true, !!telefone, meetingResult.response);
+
+        // Actually send the response via WhatsApp
+        if (telefone) {
+          await executeActions(supabase, {
+            lead_id: msg.lead_id,
+            run_id: msg.run_id,
+            empresa: msg.empresa,
+            acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+            acao_detalhes: { intent: 'AGENDAMENTO_REUNIAO' },
+            telefone,
+            resposta: meetingResult.response,
+            source,
+            intent: 'AGENDAMENTO_REUNIAO',
+            confidence: 1.0,
+            mensagem_original: msg.conteudo,
+            conversation_state: parsedContext.conversationState,
+            historico: parsedContext.historico,
+          });
+        }
+
         return new Response(JSON.stringify({
           success: true, intentId,
           intent: 'AGENDAMENTO_REUNIAO', confidence: 1.0,
-          acao: 'ENVIAR_RESPOSTA_AUTOMATICA', respostaEnviada: true,
+          acao: 'ENVIAR_RESPOSTA_AUTOMATICA', respostaEnviada: !!telefone,
           responseText: meetingResult.response,
         }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
       }
