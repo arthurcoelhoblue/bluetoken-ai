@@ -147,6 +147,10 @@ serve(async (req) => {
     // Use contacts CRM ID (from contacts table via legacy_lead_id), not lead_contacts.id
     // parsedContext.contactsCrmId is resolved in message-parser via legacy_lead_id lookup
     const crmContactId = (parsedContext as Record<string, unknown>).contactsCrmId as string | undefined;
+    const leadEmail = (parsedContext.contato as Record<string, unknown>)?.email as string | undefined
+      || (parsedContext.pessoaContext as Record<string, unknown>)?.pessoa
+        ? ((parsedContext.pessoaContext as Record<string, unknown>)?.pessoa as Record<string, unknown>)?.email_principal as string | undefined
+        : undefined;
     const meetingCtx = {
       leadId: msg.lead_id,
       empresa: msg.empresa,
@@ -155,6 +159,7 @@ serve(async (req) => {
       ownerId: (parsedContext.deals?.[0] ? (parsedContext.deals[0] as Record<string, unknown>).owner_id as string : undefined) || (parsedContext as Record<string, unknown>).contactsCrmOwnerId as string || (parsedContext.contato as Record<string, unknown>)?.owner_id as string || undefined,
       mensagem: msg.conteudo,
       telefone: parsedContext.telefone || undefined,
+      leadEmail,
     };
 
     let meetingResult = { handled: false } as { handled: boolean; response?: string };

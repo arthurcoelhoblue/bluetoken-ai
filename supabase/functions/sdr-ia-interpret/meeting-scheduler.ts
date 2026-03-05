@@ -165,6 +165,7 @@ async function handleSlotSelection(
       titulo: `Reunião com lead`,
       start: chosen.start,
       end: chosen.end,
+      attendee_email: ctx.leadEmail || null,
     }),
   });
 

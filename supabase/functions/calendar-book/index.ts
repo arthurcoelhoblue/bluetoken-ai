@@ -64,8 +64,8 @@ serve(async (req) => {
       const event: Record<string, unknown> = {
         summary: titulo || "Reunião agendada",
         description: descricao || "",
-        start: { dateTime: start, timeZone: "America/Sao_Paulo" },
-        end: { dateTime: end, timeZone: "America/Sao_Paulo" },
+        start: { dateTime: start, timeZone: sellerTimezone },
+        end: { dateTime: end, timeZone: sellerTimezone },
       };
 
       if (attendee_email) {
