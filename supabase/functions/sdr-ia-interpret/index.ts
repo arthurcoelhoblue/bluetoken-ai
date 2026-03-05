@@ -261,7 +261,7 @@ serve(async (req) => {
     // ========================================
     // 4c. START MEETING SCHEDULING IF INTENT = AGENDAMENTO_REUNIAO
     // ========================================
-    if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+    if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled && !isManualMode) {
       log.info('Intent AGENDAMENTO_REUNIAO detected, starting scheduling flow', { leadId: msg.lead_id, ownerId: meetingCtx.ownerId });
       const startResult = await startMeetingScheduling(supabase, meetingCtx);
       if (startResult.handled && startResult.response) {
