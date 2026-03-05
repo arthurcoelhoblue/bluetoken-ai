@@ -433,7 +433,7 @@ export function ZadarmaPhoneWidget() {
 
   // Maximized with coaching sidebar
   if (maximized && isInCall) {
-    return (
+    return createPortal(
       <div className="fixed inset-0 z-[9999] bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
         <div className="w-full max-w-3xl h-[80vh] bg-card border border-border rounded-2xl shadow-2xl flex overflow-hidden">
           <div className="w-72 shrink-0 border-r border-border flex flex-col">
@@ -456,7 +456,8 @@ export function ZadarmaPhoneWidget() {
             <CoachingSidebar dealId={dealId} isActive={showCoaching} transcriptionChunk={transcriptionChunk} />
           </div>
         </div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
