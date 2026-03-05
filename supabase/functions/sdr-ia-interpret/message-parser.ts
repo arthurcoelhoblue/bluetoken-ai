@@ -236,7 +236,7 @@ export async function loadFullContext(supabase: SupabaseClient, messageId: strin
   const [histRes, contactRes, classRes, stateRes] = await Promise.all([
     supabase.from('lead_messages').select('id, lead_id, run_id, empresa, conteudo, direcao, canal, sender_type, created_at')
       .eq('lead_id', leadId).eq('empresa', empresa).order('created_at', { ascending: false }).limit(20),
-    supabase.from('lead_contacts').select('id, nome, primeiro_nome, telefone, telefone_e164, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
+    supabase.from('lead_contacts').select('id, nome, primeiro_nome, telefone, telefone_e164, email, pessoa_id, opt_out, opt_out_em, opt_out_motivo, pipedrive_deal_id, owner_id')
       .eq('lead_id', leadId).eq('empresa', empresa).maybeSingle(),
     supabase.from('lead_classifications').select('icp, persona, temperatura, prioridade, score_interno, origem')
       .eq('lead_id', leadId).eq('empresa', empresa).order('classificado_em', { ascending: false }).limit(1).maybeSingle(),
