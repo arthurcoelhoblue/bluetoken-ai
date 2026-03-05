@@ -70,6 +70,7 @@ Deno.serve(async (req) => {
 
     // Authenticate via X-Webhook-Token (optional — only validates if mapping has a token)
     if (mapping.token && tokenHeader !== mapping.token) {
+      console.error("[elementor-webhook] 401 - Invalid token", { form_id: formId });
       return new Response(JSON.stringify({ error: "Invalid webhook token" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
