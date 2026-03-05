@@ -188,12 +188,13 @@ async function applyAction(
         await supabase.from('lead_cadence_runs').update({ status: 'PAUSADA', updated_at: now }).eq('id', runId).eq('status', 'ATIVA');
       }
       if (leadId) {
+        let tarefaNotifyUserId: string | undefined;
         try {
           // Buscar owner do contato para notificar o vendedor correto
           const { data: tarefaContact } = await supabase
             .from('contacts').select('id, owner_id')
             .eq('legacy_lead_id', leadId).maybeSingle();
-          let tarefaNotifyUserId = tarefaContact?.owner_id as string | undefined;
+          tarefaNotifyUserId = tarefaContact?.owner_id as string | undefined;
 
           // Round-robin se sem owner (filtrando apenas vendedores ativos)
           if (!tarefaNotifyUserId) {
