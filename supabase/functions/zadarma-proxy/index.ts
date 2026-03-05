@@ -85,6 +85,7 @@ Deno.serve(async (req) => {
 
     const body = await req.json();
     const { action, empresa, payload = {} } = body;
+    log.info('Request', { action, empresa, payload });
 
     // Get global config (singleton)
     const supabase = createServiceClient();
