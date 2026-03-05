@@ -1,5 +1,6 @@
+import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { getCorsHeaders } from "../_shared/cors.ts";
-import { createServiceClient } from '../_shared/config.ts';
+import { envConfig, createServiceClient } from '../_shared/config.ts';
 
 Deno.serve(async (req) => {
   const corsHeaders = getCorsHeaders(req);
@@ -12,6 +13,30 @@ Deno.serve(async (req) => {
     if (!user_id || !password) {
       return new Response(JSON.stringify({ error: 'user_id and password required' }), {
         status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const authHeader = req.headers.get('Authorization');
+    if (!authHeader) {
+      return new Response(JSON.stringify({ error: 'Não autorizado' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const callerClient = createClient(envConfig.SUPABASE_URL, envConfig.SUPABASE_ANON_KEY, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user: caller } } = await callerClient.auth.getUser();
+    if (!caller) {
+      return new Response(JSON.stringify({ error: 'Não autorizado' }), {
+        status: 401, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
+
+    const { data: hasAdmin } = await callerClient.rpc('has_role', { _user_id: caller.id, _role: 'ADMIN' });
+    if (!hasAdmin) {
+      return new Response(JSON.stringify({ error: 'Acesso negado. Apenas ADMINs podem alterar senhas.' }), {
+        status: 403, headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
     }
 
