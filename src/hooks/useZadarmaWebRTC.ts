@@ -424,7 +424,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         safeSetStatus('active');
       }
       // ENDED: match specific termination patterns
-      else if (combined.includes('terminated') || combined.includes('call_end') || combined.includes('session ended') || combined.includes('call ended')) {
+      else if (combined.includes('terminated') || combined.includes('call_end') || combined.includes('session ended') || combined.includes('call ended') || combined.startsWith('canceled')) {
         origLog('[WebRTC] 📴 CALL ENDED detected via console.log');
         closeActiveCallRecord();
         incomingDetectedRef.current = false;
