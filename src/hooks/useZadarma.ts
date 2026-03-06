@@ -203,7 +203,10 @@ export function useZadarmaStatistics(empresa: EmpresaTipo | null, start: string,
       });
       return result;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
