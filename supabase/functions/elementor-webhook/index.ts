@@ -181,6 +181,10 @@ Deno.serve(async (req) => {
         if (pathname) canalOrigem = pathname.split("/").pop() || pathname;
       } catch { /* keep default */ }
     }
+    // Fallback: usar form_id como canal_origem se page_url não veio
+    if (canalOrigem === "LP_COM_IA" && formId) {
+      canalOrigem = formId.replace(/_/g, "-");
+    }
 
     // Build ingest payload
     const ingestPayload = {
