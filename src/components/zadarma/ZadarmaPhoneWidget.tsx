@@ -666,6 +666,7 @@ export function ZadarmaPhoneWidget() {
             <Button
               className="w-full gap-2"
               disabled={!number.trim() || proxy.isPending}
+              onPointerDown={(e) => { e.stopPropagation(); }}
               onClick={handleDial}
             >
               <Phone className="h-4 w-4" />
