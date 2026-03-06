@@ -1,52 +1,41 @@
 
 
-## Problema
+# Diagnóstico: Telefone disparando ligação sozinho
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+## Causa raiz identificada
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+Existem **dois problemas combinados** que causam o auto-dial fantasma:
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+### 1. postMessage com keyword muito ampla (linha 495)
+O listener de `postMessage` usa `combined.includes('invite')` — qualquer mensagem de qualquer iframe que contenha a palavra "invite" (ex: convites do Sentry, mensagens do Lovable preview, etc.) dispara o `triggerAutoAnswer()`.
+
+### 2. `clickAnswerButton` clica no botão de LIGAR em vez do botão de ATENDER
+O seletor `[class*="zdrm-webphone-call-btn"]:not([class*="decline"])` (linha 96) corresponde ao **botão genérico de fazer chamada** do widget Zadarma, não apenas ao botão de atender. Quando o `triggerAutoAnswer` é ativado por um falso positivo, ele clica nesse botão, que inicia uma chamada para o número que estiver no campo de input do widget oculto.
+
+### Fluxo do bug:
+```
+postMessage com "invite" (falso positivo)
+  → triggerAutoAnswer()
+    → clickAnswerButton()
+      → clica em [class*="zdrm-webphone-call-btn"] (botão de LIGAR)
+        → widget Zadarma faz chamada para número aleatório
+```
 
 ## Solução
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+**Arquivo: `src/hooks/useZadarmaWebRTC.ts`**
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+### Correção 1: Restringir keyword no postMessage (linha 495)
+Trocar `combined.includes('invite')` por `combined.includes('invite received')` para evitar falsos positivos.
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+### Correção 2: Remover seletor perigoso do `clickAnswerButton` (linha 96)
+Remover `'[class*="zdrm-webphone-call-btn"]:not([class*="decline"])'` da lista de seletores do `clickAnswerButton`. Este seletor corresponde ao botão de iniciar chamada, não ao de atender.
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
-```
+### Correção 3: Adicionar guard de estado no `triggerAutoAnswer`
+Só permitir auto-answer quando o status atual é `ready` (idle). Se o status já for `calling`, `active`, ou `dialing`, bloquear a execução.
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+### Correção 4: Adicionar guard no console.log interceptor
+Aplicar a mesma verificação de estado no interceptador de `console.log` para a detecção de "incoming" — só disparar se o status for `ready`.
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+Essas 4 mudanças eliminam tanto a causa (falsos positivos) quanto o efeito (clicar no botão errado), tornando o sistema robusto contra regressões.
 
