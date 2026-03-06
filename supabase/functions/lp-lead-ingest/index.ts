@@ -173,11 +173,15 @@ Deno.serve(async (req) => {
           contactId = newContact.id;
         }
 
-        // Build deal title
-        const campaignShort = lead.utm_campaign
-          ? lead.utm_campaign.replace(/[\[\]🟡🔴🟢]/g, "").trim().substring(0, 60)
-          : "LP com IA";
-        const dealTitle = `${lead.nome || email.split("@")[0]} [${campaignShort}]`;
+        // Build deal title: prioridade canal_origem > utm_campaign > sem tag
+        const origemTag = lead.canal_origem && lead.canal_origem !== "LP_COM_IA"
+          ? lead.canal_origem.substring(0, 60)
+          : lead.utm_campaign
+            ? lead.utm_campaign.replace(/[\[\]🟡🔴🟢]/g, "").trim().substring(0, 60)
+            : null;
+        const dealTitle = origemTag
+          ? `${lead.nome || email.split("@")[0]} [${origemTag}]`
+          : `${lead.nome || email.split("@")[0]}`;
 
         // Metadata extra
         const metadataExtra: Record<string, unknown> = {};
