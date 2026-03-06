@@ -1,47 +1,52 @@
 
 
-# Diagnóstico: Lead `test@leofelipe.com.br` não criou deal + canal_origem ainda é LP_COM_IA
+## Problema
 
-## Investigação realizada
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-1. **Testei o webhook `elementor-webhook` + `lp-lead-ingest` diretamente** — ambos estão funcionando. Criei um contato e deal de teste com sucesso via `criptomoedas_tokens`.
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-2. **O deal "leonardo" das 13:00 FOI criado** com sucesso pelo formulário `criptomoedas_tokens`. O título está correto (sem `[LP com IA]`). Porém o `canal_origem` ficou `LP_COM_IA` porque o Elementor não enviou `page_url` no body.
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-3. **O email `test@leofelipe.com.br` NUNCA chegou ao nosso webhook** — não há nenhum log, nenhum contato, nenhum registro. Isso é um problema do lado do WordPress/Elementor (o webhook não disparou ou apontou para URL errada).
+## Solução
 
-## Problemas identificados
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-### 1. `test@leofelipe.com.br` não chegou
-Isso não é um bug do nosso código. O formulário do Elementor no WordPress não disparou o webhook para essa submissão. Precisa verificar no WordPress se:
-- O webhook está configurado no formulário correto
-- A URL do webhook está correta: `https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/elementor-webhook?form_id=criptomoedas_tokens`
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
 
-### 2. `canal_origem` vem como `LP_COM_IA` em vez do nome da página
-O Elementor não está enviando o campo `page_url` no body. A solução é usar o `form_id` como fallback para `canal_origem` no `elementor-webhook`, já que o `form_id` já identifica a página (ex: `criptomoedas_tokens` → `criptomoedas-tokens`).
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
 
-## Solução técnica
-
-**Arquivo: `supabase/functions/elementor-webhook/index.ts`** — Linhas 175-183
-
-Adicionar fallback usando `form_id` quando `page_url` não está disponível:
-
-```typescript
-let canalOrigem = "LP_COM_IA";
-const pageUrl = camposExtras.page_url;
-if (pageUrl) {
-  try {
-    const pathname = new URL(pageUrl).pathname.replace(/^\/|\/$/g, "");
-    if (pathname) canalOrigem = pathname.split("/").pop() || pathname;
-  } catch { /* keep default */ }
-}
-// Fallback: usar form_id como canal_origem se page_url não veio
-if (canalOrigem === "LP_COM_IA" && formId) {
-  canalOrigem = formId.replace(/_/g, "-");
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
 }
 ```
 
-Isso garante que mesmo sem `page_url`, o deal terá `canal_origem: "criptomoedas-tokens"` e o título ficará `"Nome [criptomoedas-tokens]"`.
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-Sobre o `test@leofelipe.com.br`: precisa verificar a configuração do webhook no WordPress/Elementor para essa página, pois a submissão nunca chegou ao nosso servidor.
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
