@@ -417,8 +417,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       // INCOMING: match specific Zadarma incoming-call patterns
       if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received') || (combined.includes('incoming') && combined.includes('caller'))) {
-        origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
-        triggerAutoAnswer();
+        if (statusRef.current === 'ready') {
+          origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
+          triggerAutoAnswer();
+        }
       }
       // ACTIVE: match specific call-confirmed patterns AND bare words from Zadarma v9, WITH state guard
       else if (
