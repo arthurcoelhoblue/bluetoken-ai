@@ -494,7 +494,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       const combined = JSON.stringify(data).toLowerCase();
 
-      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite')) {
+      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received')) {
         console.log('[WebRTC] 📞 INCOMING via postMessage!', data);
         triggerAutoAnswer();
       }
