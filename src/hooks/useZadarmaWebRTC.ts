@@ -330,6 +330,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       console.log('[WebRTC] 🛑 triggerAutoAnswer blocked by hangup cooldown');
       return;
     }
+    if (statusRef.current !== 'ready') {
+      console.log('[WebRTC] 🛑 triggerAutoAnswer blocked — status is:', statusRef.current);
+      return;
+    }
     lastAutoAnswerTriggerRef.current = now;
     autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
