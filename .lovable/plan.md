@@ -1,40 +1,52 @@
 
 
-## Diagnóstico real
+## Problema
 
-Inspecionei todos os arquivos relevantes. O estado atual do código:
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-- `DealDetailSheet.tsx`: `modal={false}` ✓, `showOverlay={false}` ✓, handlers com detecção de `[data-fab-widget]` ✓
-- `sheet.tsx`: suporta `showOverlay` condicional ✓  
-- `ZadarmaPhoneWidget.tsx`: **todos os 4 portals já têm `data-fab-widget`** (linhas 457, 477, 546, 576) ✓
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-A causa raiz **não é** `data-fab-widget` faltando. O problema é que a detecção do target nos handlers `onPointerDownOutside` / `onInteractOutside` é **frágil**: dependendo da versão/comportamento do Radix, `e.detail?.originalEvent?.target` pode ser `undefined`, fazendo com que a condição `closest('[data-fab-widget]')` nunca seja verdadeira, e `preventDefault()` **nunca seja chamado**. Resultado: Radix chama `handleOpenChange(false)`, que dispara o `ScheduleActivityDialog` em vez de fechar o sheet.
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-## Solução definitiva
+## Solução
 
-**Arquivo: `src/components/deals/DealDetailSheet.tsx`** — simplificar os handlers para **sempre** prevenir o fechamento por clique fora:
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-```tsx
-<SheetContent
-  className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0"
-  showOverlay={false}
-  onPointerDownOutside={(e) => e.preventDefault()}
-  onInteractOutside={(e) => e.preventDefault()}
->
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
 ```
 
-### Por que isso funciona
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
 
-Com `modal={false}` + `showOverlay={false}`, o sheet já não tem backdrop nem FocusTrap. O único efeito restante é que Radix ainda dispara `onPointerDownOutside` quando detecta clique fora do `SheetContent`, tentando fechar o dialog. Ao prevenir **incondicionalmente**, eliminamos toda fragilidade de detecção de target.
-
-O sheet continua fechável via:
-- Botão X (SheetPrimitive.Close)
-- Botão explícito `onClose` no `DealDetailHeader`
-- Lógica de `handleOpenChange` para ações programáticas
-
-### Impacto
-
-- Nenhum outro Sheet é afetado (a mudança é só no `DealDetailSheet`)
-- O widget de telefonia recebe todos os cliques normalmente
-- O `ScheduleActivityDialog` só aparece quando o usuário explicitamente fecha o sheet (via X ou botão close)
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
