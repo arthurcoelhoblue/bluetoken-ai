@@ -103,13 +103,28 @@ Deno.serve(async (req) => {
         }
 
         // Dedup: check if contact exists by email
-        const { data: existingContact } = await supabase
+        const { data: existingContactByEmail } = await supabase
           .from("contacts")
           .select("id")
           .eq("empresa", empresa)
           .eq("email", email)
           .limit(1)
           .maybeSingle();
+
+        // Dedup by phone if email not found
+        const phoneNorm = normalizePhoneE164(lead.telefone || null);
+        let existingContact = existingContactByEmail;
+        if (!existingContact && phoneNorm?.e164) {
+          const { data: existingContactByPhone } = await supabase
+            .from("contacts")
+            .select("id")
+            .eq("empresa", empresa)
+            .eq("telefone_e164", phoneNorm.e164)
+            .eq("is_active", true)
+            .limit(1)
+            .maybeSingle();
+          existingContact = existingContactByPhone;
+        }
 
         let contactId: string;
 
@@ -131,9 +146,7 @@ Deno.serve(async (req) => {
             continue;
           }
         } else {
-          // Create contact
-          const phoneNorm = normalizePhoneE164(lead.telefone || null);
-          const tags = lead.tags || [];
+          // Create contact (phoneNorm already computed above)
 
           const { data: newContact, error: contactErr } = await supabase
             .from("contacts")
@@ -148,7 +161,7 @@ Deno.serve(async (req) => {
               telefone_valido: phoneNorm !== null,
               empresa,
               canal_origem: lead.canal_origem || "LP_COM_IA",
-              tags,
+              tags: lead.tags || [],
             })
             .select("id")
             .single();
