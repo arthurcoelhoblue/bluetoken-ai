@@ -92,7 +92,7 @@ function clickAnswerButton(): boolean {
     '[class*="zdrm"][class*="answer-ico"]',
     '[class*="zdrm-ringing"] [class*="accept"]',
     '[class*="zdrm-ringing"] [class*="answer"]',
-    '[class*="zdrm-webphone-call-btn"]:not([class*="decline"])',
+    
     '.answer-btn',
     '.call-accept',
     '.btn-answer',
