@@ -161,7 +161,7 @@ Deno.serve(async (req) => {
               telefone_valido: phoneNorm !== null,
               empresa,
               canal_origem: lead.canal_origem || "LP_COM_IA",
-              tags,
+              tags: lead.tags || [],
             })
             .select("id")
             .single();
