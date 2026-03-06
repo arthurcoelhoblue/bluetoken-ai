@@ -203,7 +203,10 @@ export function useZadarmaStatistics(empresa: EmpresaTipo | null, start: string,
       });
       return result;
     },
-    staleTime: 5 * 60 * 1000,
+    staleTime: 10 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -220,7 +223,10 @@ export function useZadarmaTariff(empresa: EmpresaTipo | null) {
       });
       return result;
     },
-    staleTime: 10 * 60 * 1000,
+    staleTime: 30 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -231,20 +237,30 @@ export function useExtensionStatuses(empresa: EmpresaTipo | null, extensions: { 
     queryKey: ['zadarma-ext-statuses', empresa, extensions.map(e => e.extension_number).join(',')],
     enabled: !!empresa && extensions.length > 0,
     queryFn: async () => {
-      const results = await Promise.allSettled(
-        extensions.map(ext =>
-          proxy.mutateAsync({
+      // Serialize calls with delay to avoid rate limits
+      const results: Record<string, unknown>[] = [];
+      for (const ext of extensions) {
+        try {
+          const r = await proxy.mutateAsync({
             action: 'get_extension_status',
             empresa: empresa!,
             payload: { extension: ext.extension_number },
-          }).then(r => ({ extension: ext.extension_number, user_nome: ext.user_nome, ...r }))
-        )
-      );
-      return results
-        .filter((r): r is PromiseFulfilledResult<Record<string, unknown>> => r.status === 'fulfilled')
-        .map(r => r.value);
+          });
+          results.push({ extension: ext.extension_number, user_nome: ext.user_nome, ...r });
+        } catch {
+          // Skip failed extensions silently
+        }
+        // 500ms delay between calls to respect rate limits
+        if (extensions.indexOf(ext) < extensions.length - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      return results;
     },
-    refetchInterval: 30_000,
-    staleTime: 15_000,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+    gcTime: 60_000,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
