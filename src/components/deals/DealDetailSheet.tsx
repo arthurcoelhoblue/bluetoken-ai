@@ -145,18 +145,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
         <SheetContent
           className="w-[600px] sm:max-w-[600px] flex flex-col overflow-y-auto p-0"
           showOverlay={false}
-          onPointerDownOutside={(e) => {
-            const target = (e.detail?.originalEvent?.target ?? e.target) as HTMLElement | null;
-            if (target?.closest?.('[data-fab-widget]')) {
-              e.preventDefault();
-            }
-          }}
-          onInteractOutside={(e) => {
-            const target = ((e as any).detail?.originalEvent?.target ?? (e as any).target) as HTMLElement | null;
-            if (target?.closest?.('[data-fab-widget]')) {
-              e.preventDefault();
-            }
-          }}
+          onPointerDownOutside={(e) => e.preventDefault()}
+          onInteractOutside={(e) => e.preventDefault()}
         >
           {isLoading ? (
             <div className="space-y-4 p-6"><Skeleton className="h-16 w-full" /><Skeleton className="h-8 w-3/4" /><Skeleton className="h-48 w-full" /></div>
