@@ -146,9 +146,7 @@ Deno.serve(async (req) => {
             continue;
           }
         } else {
-          // Create contact
-          const phoneNorm = normalizePhoneE164(lead.telefone || null);
-          const tags = lead.tags || [];
+          // Create contact (phoneNorm already computed above)
 
           const { data: newContact, error: contactErr } = await supabase
             .from("contacts")
