@@ -92,7 +92,7 @@ function clickAnswerButton(): boolean {
     '[class*="zdrm"][class*="answer-ico"]',
     '[class*="zdrm-ringing"] [class*="accept"]',
     '[class*="zdrm-ringing"] [class*="answer"]',
-    '[class*="zdrm-webphone-call-btn"]:not([class*="decline"])',
+    
     '.answer-btn',
     '.call-accept',
     '.btn-answer',
@@ -330,6 +330,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       console.log('[WebRTC] 🛑 triggerAutoAnswer blocked by hangup cooldown');
       return;
     }
+    if (statusRef.current !== 'ready') {
+      console.log('[WebRTC] 🛑 triggerAutoAnswer blocked — status is:', statusRef.current);
+      return;
+    }
     lastAutoAnswerTriggerRef.current = now;
     autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
@@ -417,8 +421,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       // INCOMING: match specific Zadarma incoming-call patterns
       if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received') || (combined.includes('incoming') && combined.includes('caller'))) {
-        origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
-        triggerAutoAnswer();
+        if (statusRef.current === 'ready') {
+          origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
+          triggerAutoAnswer();
+        }
       }
       // ACTIVE: match specific call-confirmed patterns AND bare words from Zadarma v9, WITH state guard
       else if (
@@ -492,7 +498,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       const combined = JSON.stringify(data).toLowerCase();
 
-      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite')) {
+      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received')) {
         console.log('[WebRTC] 📞 INCOMING via postMessage!', data);
         triggerAutoAnswer();
       }
