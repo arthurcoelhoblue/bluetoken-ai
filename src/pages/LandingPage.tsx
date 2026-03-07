@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 
 // ─── Brand Colors ────────────────────────────────────────────────────────────
 const COLORS = {
