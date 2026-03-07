@@ -172,3 +172,6 @@ verify_jwt = false
 
 [functions.sync-renewal-triggers]
 verify_jwt = false
+
+[functions.push-send]
+verify_jwt = false
