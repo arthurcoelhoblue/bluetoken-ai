@@ -1,52 +1,23 @@
 
+# Copiar API Key Preview na Tabela
 
-## Problema
+## Contexto
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+A API Key completa só é exibida uma vez no momento da criação (por segurança, apenas o hash é armazenado). Na tabela, só temos o `key_preview` (últimos 8 caracteres). O que podemos fazer é tornar o preview clicável para copiar.
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+## Alteração
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+**Arquivo:** `src/components/settings/ApiKeysManager.tsx`
 
-## Solução
+Na coluna "Preview" da tabela (linha ~180-182), substituir o `<code>` estático por um botão clicável que copia o preview e mostra feedback visual (ícone Copy → Check):
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+- Envolver o `<code>` com um `<button>` estilizado com cursor pointer e tooltip
+- Ao clicar, copiar `...{key_preview}` para o clipboard
+- Mostrar ícone de `Copy` ao lado, que muda para `Check` por 2 segundos após copiar
+- Toast de confirmação "Preview copiado!"
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+Também adicionar um botão de copiar na coluna de ações, ao lado dos botões existentes de toggle e delete.
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+## Nota importante
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
-```
-
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
-
+A chave completa não pode ser recuperada após a criação (apenas o hash é armazenado no banco). Se o usuário precisar da chave completa novamente, deverá gerar uma nova.
