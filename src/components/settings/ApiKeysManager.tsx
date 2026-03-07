@@ -23,7 +23,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Key, Plus, Copy, Trash2, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Key, Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
@@ -48,6 +48,14 @@ export function ApiKeysManager() {
   const [rawKey, setRawKey] = useState<string | null>(null);
   const [showRawKey, setShowRawKey] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [copiedPreviewId, setCopiedPreviewId] = useState<string | null>(null);
+
+  const copyPreview = (id: string, preview: string) => {
+    navigator.clipboard.writeText(`...${preview}`);
+    setCopiedPreviewId(id);
+    toast.success("Preview copiado!");
+    setTimeout(() => setCopiedPreviewId(null), 2000);
+  };
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ["api-keys", activeCompany],
@@ -178,7 +186,18 @@ export function ApiKeysManager() {
                       <Badge variant="outline">{k.empresa}</Badge>
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs text-muted-foreground">...{k.key_preview}</code>
+                      <button
+                        onClick={() => copyPreview(k.id, k.key_preview)}
+                        className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs font-mono text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                        title="Clique para copiar"
+                      >
+                        <code>...{k.key_preview}</code>
+                        {copiedPreviewId === k.id ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Badge variant={k.is_active ? "default" : "secondary"}>
