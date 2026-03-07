@@ -186,7 +186,18 @@ export function ApiKeysManager() {
                       <Badge variant="outline">{k.empresa}</Badge>
                     </TableCell>
                     <TableCell>
-                      <code className="text-xs text-muted-foreground">...{k.key_preview}</code>
+                      <button
+                        onClick={() => copyPreview(k.id, k.key_preview)}
+                        className="inline-flex items-center gap-1.5 rounded px-1.5 py-0.5 text-xs font-mono text-muted-foreground hover:bg-muted transition-colors cursor-pointer"
+                        title="Clique para copiar"
+                      >
+                        <code>...{k.key_preview}</code>
+                        {copiedPreviewId === k.id ? (
+                          <Check className="h-3 w-3 text-green-500" />
+                        ) : (
+                          <Copy className="h-3 w-3" />
+                        )}
+                      </button>
                     </TableCell>
                     <TableCell>
                       <Badge variant={k.is_active ? "default" : "secondary"}>
