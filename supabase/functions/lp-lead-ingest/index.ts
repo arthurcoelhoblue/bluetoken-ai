@@ -140,10 +140,79 @@ Deno.serve(async (req) => {
             .limit(1)
             .maybeSingle();
 
-          if (existingDeal) {
-            results.push({ email, status: "skipped", reason: "deal_aberto_existente", contact_id: contactId });
-            continue;
+        if (existingDeal) {
+          // 1. Registrar atividade de re-conversão
+          const reconversaoMeta: Record<string, unknown> = {
+            reconversao_em: new Date().toISOString(),
+            canal_origem: lead.canal_origem || "LP_COM_IA",
+          };
+          if (lead.utm_source) reconversaoMeta.utm_source = lead.utm_source;
+          if (lead.utm_medium) reconversaoMeta.utm_medium = lead.utm_medium;
+          if (lead.utm_campaign) reconversaoMeta.utm_campaign = lead.utm_campaign;
+          if (lead.utm_content) reconversaoMeta.utm_content = lead.utm_content;
+          if (lead.utm_term) reconversaoMeta.utm_term = lead.utm_term;
+
+          await supabase.from("deal_activities").insert({
+            deal_id: existingDeal.id,
+            tipo: "NOTA",
+            descricao: `🔄 Lead reconverteu via ${lead.canal_origem || "LP_COM_IA"}`,
+            metadata: reconversaoMeta,
+          });
+
+          // 2. Atualizar tags do deal (merge partner tags)
+          const newPartnerTags: string[] = [];
+          const campaignUpperReconv = (lead.utm_campaign || "").toUpperCase();
+          for (const [key, tag] of Object.entries(PARTNER_TAGS)) {
+            if (campaignUpperReconv.includes(key)) {
+              newPartnerTags.push(tag);
+            }
           }
+          if (newPartnerTags.length > 0) {
+            const { data: dealData } = await supabase
+              .from("deals")
+              .select("tags, owner_id, titulo")
+              .eq("id", existingDeal.id)
+              .single();
+            const currentTags: string[] = dealData?.tags || [];
+            const mergedTags = [...new Set([...currentTags, ...newPartnerTags])];
+            if (mergedTags.length > currentTags.length) {
+              await supabase
+                .from("deals")
+                .update({ tags: mergedTags })
+                .eq("id", existingDeal.id);
+            }
+          }
+
+          // 3. Notificar owner do deal
+          const { data: dealInfo } = await supabase
+            .from("deals")
+            .select("owner_id, titulo, pipeline_id")
+            .eq("id", existingDeal.id)
+            .single();
+
+          if (dealInfo?.owner_id) {
+            const { data: pipelineInfo } = await supabase
+              .from("pipelines")
+              .select("empresa")
+              .eq("id", dealInfo.pipeline_id)
+              .single();
+
+            await supabase.from("notifications").insert({
+              user_id: dealInfo.owner_id,
+              empresa: pipelineInfo?.empresa || empresa,
+              titulo: `🔄 Lead reconverteu: ${lead.nome || email}`,
+              mensagem: `O lead "${lead.nome || email}" converteu novamente via ${lead.canal_origem || "LP_COM_IA"}. Deal: ${dealInfo.titulo}`,
+              tipo: "INFO",
+              referencia_tipo: "DEAL",
+              referencia_id: existingDeal.id,
+              link: "/pipeline",
+            });
+          }
+
+          // 4. Retornar status reconverted
+          results.push({ email, status: "reconverted", deal_id: existingDeal.id, contact_id: contactId });
+          continue;
+        }
         } else {
           // Create contact (phoneNorm already computed above)
 
