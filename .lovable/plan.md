@@ -1,52 +1,44 @@
 
 
-## Problema
+# Landing Page da Amélia CRM
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+## O que será feito
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+Criar a landing page completa da Amélia CRM como uma rota pública (`/home`) e ajustar o roteamento para que seja a home do site.
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+## Alterações
 
-## Solução
+### 1. Copiar assets de marca para `public/images/brand/`
+- `amelia-icon-64.png`
+- `amelia-icon-192.png`
+- `amelia-logo.png`
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### 2. Criar `src/pages/LandingPage.tsx`
+Usar o componente fornecido (903 linhas) com todas as seções:
+- Navbar com scroll effect e menu mobile
+- Hero com logo animado e CTAs
+- Personas (Diretor Comercial, Head de Vendas, CEO)
+- Brain Section (4 passos da IA)
+- Platform comparison (6 ferramentas vs Amélia)
+- Chat simulation interativo
+- Features grid (9 funcionalidades)
+- Comparison table (Amélia vs Pipedrive vs HubSpot vs Salesforce)
+- Proof section (programa piloto)
+- Pricing (R$180/usuário)
+- Demo form com glassmorphism
+- Footer completo
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+### 3. Atualizar `src/App.tsx`
+- Lazy import do `LandingPage`
+- Adicionar rota pública `/home` apontando para `LandingPage`
+- O botão "Agendar Demo" do navbar e o botão "Entrar" no navbar devem linkar para `/auth`
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+### 4. Ajuste no componente
+- O botão "Entrar" no navbar deve usar `react-router-dom` Link para `/auth` em vez de anchor link
+- O form de demo pode ser estático por enquanto (sem backend), ou podemos integrar com a lp-lead-ingest edge function futuramente
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
-```
-
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+## Roteamento
+- `/home` — Landing page pública (sem autenticação)
+- `/` — Comportamento atual mantido (redireciona para `/meu-dia` ou `/auth`)
+- `/auth` — Login/Signup
 
