@@ -30,7 +30,6 @@ const TEST_EMAILS = [
   "halisonhenrique@gmail.com",
   "halison@hhperformancedigital.com.br",
   "mychel.souza@gmail.com",
-  "mychel@blueconsult.com.br",
   "teste@pipedrive.com",
 ];
 
