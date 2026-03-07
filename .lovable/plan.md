@@ -1,52 +1,62 @@
-
+# Plano: Re-conversão de Lead — Registrar nova conversão em deal existente
 
 ## Problema
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
-
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
-
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+Quando um lead já existente converte novamente na LP com IA, a função `lp-lead-ingest` encontra o contato e o deal aberto no mesmo pipeline, e simplesmente **pula** (status `skipped`, reason `deal_aberto_existente`). O vendedor nunca fica sabendo que o lead converteu de novo.
 
 ## Solução
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+Alterar `supabase/functions/lp-lead-ingest/index.ts` — quando o contato já existe **e** já tem deal aberto no pipeline:
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+1. **Registrar atividade no deal** — inserir em `deal_activities` uma nota com os dados da nova conversão (origem, UTMs, data)
+2. **Atualizar tags do deal** — adicionar tags de parceiro (MPUPPE, AXIA) se ainda não existirem
+3. **Criar notificação** para o owner do deal informando a re-conversão
+4. **Retornar status `reconverted**` em vez de `skipped` — assim o sistema externo sabe que a conversão foi processada
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+### Trecho afetado (linhas 131-147)
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
+Onde hoje faz:
+
+```typescript
+if (existingDeal) {
+  results.push({ email, status: "skipped", reason: "deal_aberto_existente" });
+  continue;
 }
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+Passará a:
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+```typescript
+if (existingDeal) {
+  // 1. Registrar atividade de re-conversão
+  await supabase.from("deal_activities").insert({
+    deal_id: existingDeal.id,
+    tipo: "NOTA",
+    descricao: `🔄 Lead reconverteu via ${lead.canal_origem || "LP_COM_IA"}`,
+    metadata: { utm_source, utm_campaign, canal_origem, reconversao_em: new Date().toISOString() }
+  });
 
+  // 2. Atualizar tags do deal (adicionar parceiro se novo)
+  // Fetch deal tags, merge new partner tags, update
+
+  // 3. Notificar owner
+  // Insert notification: "Lead X converteu novamente em [origem]"
+
+  // 4. Retornar status reconverted
+  results.push({ email, status: "reconverted", deal_id: existingDeal.id, contact_id: contactId });
+  continue;
+}
+```
+
+Também ajustar o **summary** no final para contar `reconverted` separadamente.
+
+### Nota sobre `mychel@blueconsult.com.br`
+
+Remova o email [mychel@blueconsult.com.br](mailto:mychel@blueconsult.com.br) da lista `TEST_EMAILS` (linha 47).
+
+---
+
+## Escopo da alteração
+
+- **1 arquivo**: `supabase/functions/lp-lead-ingest/index.ts`
+- **Sem migration** — usa tabelas existentes (`deal_activities`, `notifications`, `deals`)
