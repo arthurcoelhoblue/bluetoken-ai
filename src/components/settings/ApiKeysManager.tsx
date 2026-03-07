@@ -23,7 +23,7 @@ import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Key, Plus, Copy, Trash2, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
+import { Key, Plus, Copy, Check, Trash2, ToggleLeft, ToggleRight, Eye, EyeOff, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 
