@@ -73,6 +73,7 @@ const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
 const AdminEmpresas = lazy(() => import("./pages/AdminEmpresas"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
 const MarketingListsPage = lazy(() => import("./pages/MarketingListsPage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
