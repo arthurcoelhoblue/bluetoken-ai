@@ -48,6 +48,14 @@ export function ApiKeysManager() {
   const [rawKey, setRawKey] = useState<string | null>(null);
   const [showRawKey, setShowRawKey] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [copiedPreviewId, setCopiedPreviewId] = useState<string | null>(null);
+
+  const copyPreview = (id: string, preview: string) => {
+    navigator.clipboard.writeText(`...${preview}`);
+    setCopiedPreviewId(id);
+    toast.success("Preview copiado!");
+    setTimeout(() => setCopiedPreviewId(null), 2000);
+  };
 
   const { data: keys, isLoading } = useQuery({
     queryKey: ["api-keys", activeCompany],
