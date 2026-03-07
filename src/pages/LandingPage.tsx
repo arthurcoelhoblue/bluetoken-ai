@@ -98,6 +98,11 @@ function Navbar() {
             </li>
           ))}
           <li>
+            <Link to="/auth" style={{
+              textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, color: COLORS.darkSlate, opacity: 0.75,
+            }}>Entrar</Link>
+          </li>
+          <li>
             <a href="#demo" style={{
               display: 'inline-flex', alignItems: 'center', padding: '10px 22px', borderRadius: 12,
               background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
