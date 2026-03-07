@@ -73,6 +73,7 @@ const AccessControl = lazy(() => import("./pages/admin/AccessControl"));
 const AdminEmpresas = lazy(() => import("./pages/AdminEmpresas"));
 const WikiPage = lazy(() => import("./pages/WikiPage"));
 const MarketingListsPage = lazy(() => import("./pages/MarketingListsPage"));
+const LandingPage = lazy(() => import("./pages/LandingPage"));
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -104,6 +105,7 @@ const App = () => (
                 <Route path="/unauthorized" element={<Unauthorized />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/f/:slug" element={<PublicFormPage />} />
+                <Route path="/home" element={<LandingPage />} />
                 
                 {/* Protected routes */}
                 <Route path="/" element={<Index />} />
