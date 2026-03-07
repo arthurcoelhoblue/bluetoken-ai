@@ -301,6 +301,7 @@ Deno.serve(async (req) => {
     const summary = {
       total: leadsInput.length,
       created: results.filter((r) => r.status === "created").length,
+      reconverted: results.filter((r) => r.status === "reconverted").length,
       skipped: results.filter((r) => r.status === "skipped").length,
       errors: results.filter((r) => r.status === "error").length,
       results,
