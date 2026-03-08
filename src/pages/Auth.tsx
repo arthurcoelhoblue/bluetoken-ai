@@ -89,7 +89,7 @@ export default function Auth() {
           <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-12 w-12 object-contain" />
           <div>
             <h1 className="text-xl font-bold text-primary-foreground">Amélia CRM</h1>
-            <p className="text-xs text-primary-foreground/70">Grupo Blue</p>
+            <p className="text-xs text-primary-foreground/70">Blue Labs</p>
           </div>
         </div>
       </header>
