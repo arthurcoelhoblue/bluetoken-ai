@@ -86,9 +86,7 @@ export default function Auth() {
       {/* Header */}
       <header className="p-6">
         <div className="flex items-center gap-2">
-          <div className="h-10 w-10 rounded-lg bg-gradient-primary flex items-center justify-center">
-            <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-7 w-7 object-contain" />
-          </div>
+          <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-12 w-12 object-contain" />
           <div>
             <h1 className="text-xl font-bold text-primary-foreground">Amélia CRM</h1>
             <p className="text-xs text-primary-foreground/70">Grupo Blue</p>
