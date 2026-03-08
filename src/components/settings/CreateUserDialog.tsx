@@ -6,12 +6,16 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from '@/components/ui/form';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useAccessProfiles } from '@/hooks/useAccessControl';
 import { useCompany } from '@/contexts/CompanyContext';
+import { useSubscriptionLimits } from '@/hooks/useSubscriptionLimits';
 import { supabase } from '@/integrations/supabase/client';
 import { toast } from 'sonner';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createUserSchema, type CreateUserFormData } from '@/schemas/users';
+import { AlertTriangle, Crown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 interface Props {
   open: boolean;
@@ -23,6 +27,8 @@ const SUPER_ADMIN_NAME = 'Super Admin';
 export function CreateUserDialog({ open, onOpenChange }: Props) {
   const { empresaRecords } = useCompany();
   const { data: profiles = [] } = useAccessProfiles();
+  const { canAddUser, subscription, activeUsers } = useSubscriptionLimits();
+  const navigate = useNavigate();
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],
     queryFn: async () => {
@@ -167,9 +173,21 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
               </FormItem>
             )} />
 
+            {!canAddUser && subscription.status !== 'inactive' && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Limite de usuários atingido ({activeUsers}/{subscription.user_limit}).{' '}
+                  <Button variant="link" className="h-auto p-0 text-destructive underline" onClick={() => { onOpenChange(false); navigate('/assinatura'); }}>
+                    <Crown className="h-3 w-3 mr-1" /> Fazer upgrade
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || !canAddUser}>
                 {form.formState.isSubmitting ? 'Criando...' : 'Criar Usuário'}
               </Button>
             </DialogFooter>

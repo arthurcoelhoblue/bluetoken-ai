@@ -6741,6 +6741,48 @@ export type Database = {
         }
         Relationships: []
       }
+      subscriptions: {
+        Row: {
+          created_at: string | null
+          current_period_end: string | null
+          current_period_start: string | null
+          empresa: string
+          id: string
+          plan: Database["public"]["Enums"]["subscription_plan"]
+          status: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id: string | null
+          stripe_subscription_id: string | null
+          updated_at: string | null
+          user_limit: number
+        }
+        Insert: {
+          created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          empresa: string
+          id?: string
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string | null
+          user_limit?: number
+        }
+        Update: {
+          created_at?: string | null
+          current_period_end?: string | null
+          current_period_start?: string | null
+          empresa?: string
+          id?: string
+          plan?: Database["public"]["Enums"]["subscription_plan"]
+          status?: Database["public"]["Enums"]["subscription_status"]
+          stripe_customer_id?: string | null
+          stripe_subscription_id?: string | null
+          updated_at?: string | null
+          user_limit?: number
+        }
+        Relationships: []
+      }
       system_settings: {
         Row: {
           category: string
@@ -8989,6 +9031,13 @@ export type Database = {
         | "SCORE_ATUALIZADO"
         | "CLIQUE_OFERTA"
         | "FUNIL_ATUALIZADO"
+      subscription_plan: "free" | "amelia_full"
+      subscription_status:
+        | "active"
+        | "cancelled"
+        | "past_due"
+        | "trialing"
+        | "inactive"
       temperatura_tipo: "FRIO" | "MORNO" | "QUENTE"
       user_role:
         | "ADMIN"
@@ -9280,6 +9329,14 @@ export const Constants = {
         "SCORE_ATUALIZADO",
         "CLIQUE_OFERTA",
         "FUNIL_ATUALIZADO",
+      ],
+      subscription_plan: ["free", "amelia_full"],
+      subscription_status: [
+        "active",
+        "cancelled",
+        "past_due",
+        "trialing",
+        "inactive",
       ],
       temperatura_tipo: ["FRIO", "MORNO", "QUENTE"],
       user_role: [
