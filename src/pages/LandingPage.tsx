@@ -739,7 +739,7 @@ function FormField({ label, type, placeholder }: { label: string; type: string; 
 function DemoSection() {
   return (
     <section id="demo" style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
+      padding: '120px 0', position: 'relative', overflow: 'hidden', zIndex: 20,
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
