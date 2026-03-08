@@ -464,7 +464,7 @@ function FeaturesSection() {
   const translateX = -progress * maxTranslate;
 
   return (
-    <section id="features" ref={stickyRef} style={{ height: '400vh', position: 'relative' }}>
+    <section id="features" ref={stickyRef} style={{ height: '400vh', position: 'relative', zIndex: 20 }}>
       <div style={{
         position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
         background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
