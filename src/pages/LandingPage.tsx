@@ -180,8 +180,8 @@ function Hero() {
       </div>
 
       <div style={{
-        position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+        position: 'absolute', bottom: 40, left: 0, right: 0,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8,
         color: COLORS.tealPrimary, fontSize: '0.8rem', fontWeight: 500,
         opacity: Math.max(1 - heroProgress * 3, 0),
         animation: 'scrollBounce 2s ease-in-out infinite',
