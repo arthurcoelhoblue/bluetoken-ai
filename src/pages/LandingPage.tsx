@@ -771,11 +771,11 @@ function DemoSection() {
               padding: 40, borderRadius: 24, background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)',
             }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              <div className="demo-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                 <FormField label="Nome *" type="text" placeholder="Seu nome completo" />
                 <FormField label="Email *" type="email" placeholder="seu@email.com" />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              <div className="demo-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                 <FormField label="Telefone *" type="tel" placeholder="(11) 99999-9999" />
                 <FormField label="Empresa" type="text" placeholder="Nome da empresa" />
               </div>
