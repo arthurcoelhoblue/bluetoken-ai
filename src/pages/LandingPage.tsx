@@ -927,6 +927,7 @@ export default function LandingPage() {
           .nav-links-desktop { display: none !important; }
           .nav-mobile-toggle { display: block !important; }
           .platform-compare-grid { grid-template-columns: 1fr !important; }
+          .demo-form-grid { grid-template-columns: 1fr !important; }
         }
 
         html { scroll-behavior: smooth; }
