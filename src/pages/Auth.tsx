@@ -87,7 +87,7 @@ export default function Auth() {
       <header className="p-6">
         <div className="flex items-center gap-2">
           <div className="h-10 w-10 rounded-lg bg-gradient-primary flex items-center justify-center">
-            <Bot className="h-6 w-6 text-primary-foreground" />
+            <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-7 w-7 object-contain" />
           </div>
           <div>
             <h1 className="text-xl font-bold text-primary-foreground">Amélia CRM</h1>

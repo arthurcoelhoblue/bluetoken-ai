@@ -13,8 +13,8 @@ const COLORS = {
 
 // ─── Logo path (relative to public/) ─────────────────────────────────────────
 const LOGO_SRC = '/images/brand/amelia-logo.png';
-const LOGO_SMALL_SRC = '/images/brand/amelia-logo-small.jpg';
-const ICON_SRC = '/images/brand/amelia-icon-192.png';
+const LOGO_SMALL_SRC = '/images/brand/amelia-logo.png';
+const ICON_SRC = '/images/brand/amelia-logo.png';
 
 // ─── Reveal on Scroll Hook ──────────────────────────────────────────────────
 function useReveal() {
