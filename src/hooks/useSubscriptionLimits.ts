@@ -16,7 +16,7 @@ interface SubscriptionData {
 
 export function useSubscriptionLimits() {
   const { activeCompany } = useCompany();
-  const selectedEmpresa = activeCompany?.id;
+  const selectedEmpresa = activeCompany;
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ["subscription-limits", selectedEmpresa],
