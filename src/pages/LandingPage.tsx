@@ -634,7 +634,7 @@ function ProofSection() {
   const { ref: parallaxRef, offset } = useParallax(0.12);
   return (
     <section id="proof" ref={parallaxRef} style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
+      padding: '120px 0', position: 'relative', overflow: 'hidden', zIndex: 20,
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
       <div style={{ position: 'absolute', top: '20%', right: '10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(95,192,165,0.06) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
