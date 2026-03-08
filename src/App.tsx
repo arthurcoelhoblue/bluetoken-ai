@@ -183,6 +183,7 @@ const App = () => (
 
                 {/* Wiki & Marketing */}
                 <Route path="/marketing/listas" element={<ProtectedRoute><ErrorBoundary><MarketingListsPage /></ErrorBoundary></ProtectedRoute>} />
+                <Route path="/assinatura" element={<ProtectedRoute><ErrorBoundary><Assinatura /></ErrorBoundary></ProtectedRoute>} />
                 <Route path="/wiki" element={<ProtectedRoute screenKey="wiki"><ErrorBoundary><WikiPage /></ErrorBoundary></ProtectedRoute>} />
 
                 {/* Catch-all */}
