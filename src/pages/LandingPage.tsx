@@ -822,7 +822,7 @@ function DemoSection() {
 function Footer() {
   return (
     <>
-      <section style={{ padding: '64px 0', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, textAlign: 'center' }}>
+      <section style={{ padding: '64px 0', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, textAlign: 'center', position: 'relative', zIndex: 20 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
             <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'white', marginBottom: 12 }}>Pronto para transformar suas vendas?</h3>
