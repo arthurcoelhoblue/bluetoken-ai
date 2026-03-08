@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useEffect } from "react";
 import { Crown, Users, CreditCard, ExternalLink, CheckCircle2, AlertTriangle } from "lucide-react";
-import AppLayout from "@/components/layout/AppLayout";
+import { AppLayout } from "@/components/layout/AppLayout";
 
 const PLAN_LABELS: Record<string, string> = {
   free: "Sem assinatura",
