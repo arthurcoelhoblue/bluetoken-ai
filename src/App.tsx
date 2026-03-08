@@ -105,7 +105,7 @@ const App = () => (
                 <Route path="/unauthorized" element={<Unauthorized />} />
                 <Route path="/reset-password" element={<ResetPassword />} />
                 <Route path="/f/:slug" element={<PublicFormPage />} />
-                <Route path="/home" element={<LandingPage />} />
+                <Route path="/home" element={<Navigate to="/" replace />} />
                 
                 {/* Protected routes */}
                 <Route path="/" element={<Index />} />
