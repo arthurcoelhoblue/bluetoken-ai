@@ -836,7 +836,7 @@ function Footer() {
         </div>
       </section>
 
-      <footer style={{ padding: '64px 0 32px', background: '#071e1e', color: 'rgba(255,255,255,0.5)' }}>
+      <footer style={{ padding: '64px 0 32px', background: '#071e1e', color: 'rgba(255,255,255,0.5)', position: 'relative', zIndex: 20 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 48, marginBottom: 48 }}>
             <div style={{ maxWidth: 300 }}>
