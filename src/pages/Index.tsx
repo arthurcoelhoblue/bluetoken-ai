@@ -1,5 +1,8 @@
 import { useAuth } from '@/contexts/AuthContext';
 import { Navigate } from 'react-router-dom';
+import { lazy } from 'react';
+
+const LandingPage = lazy(() => import('@/pages/LandingPage'));
 
 export default function Index() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -16,5 +19,5 @@ export default function Index() {
     return <Navigate to="/meu-dia" replace />;
   }
 
-  return <Navigate to="/auth" replace />;
+  return <LandingPage />;
 }
