@@ -110,10 +110,10 @@ function Navbar() {
 
 // ─── Hero — Scroll-driven Scaling ────────────────────────────────────────────
 function Hero() {
-  const { ref: heroRef, progress: heroProgress } = useScrollProgress({ start: 0.15, end: 0.55 });
-  const scale = 1 - heroProgress * 0.2;
-  const opacity = 1 - heroProgress * 1.2;
-  const logoY = -heroProgress * 80;
+  const { ref: heroRef, progress: heroProgress } = useScrollProgress({ start: 0.45, end: 0.75 });
+  const scale = 1 - heroProgress * 0.15;
+  const opacity = 1 - heroProgress;
+  const logoY = -heroProgress * 60;
 
   return (
     <section id="hero" ref={heroRef} style={{
