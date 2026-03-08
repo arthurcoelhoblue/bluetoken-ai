@@ -173,9 +173,21 @@ export function CreateUserDialog({ open, onOpenChange }: Props) {
               </FormItem>
             )} />
 
+            {!canAddUser && subscription.status !== 'inactive' && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertDescription>
+                  Limite de usuários atingido ({activeUsers}/{subscription.user_limit}).{' '}
+                  <Button variant="link" className="h-auto p-0 text-destructive underline" onClick={() => { onOpenChange(false); navigate('/assinatura'); }}>
+                    <Crown className="h-3 w-3 mr-1" /> Fazer upgrade
+                  </Button>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <DialogFooter>
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancelar</Button>
-              <Button type="submit" disabled={form.formState.isSubmitting}>
+              <Button type="submit" disabled={form.formState.isSubmitting || !canAddUser}>
                 {form.formState.isSubmitting ? 'Criando...' : 'Criar Usuário'}
               </Button>
             </DialogFooter>
