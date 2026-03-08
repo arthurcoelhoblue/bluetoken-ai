@@ -27,6 +27,8 @@ const SUPER_ADMIN_NAME = 'Super Admin';
 export function CreateUserDialog({ open, onOpenChange }: Props) {
   const { empresaRecords } = useCompany();
   const { data: profiles = [] } = useAccessProfiles();
+  const { canAddUser, subscription, activeUsers } = useSubscriptionLimits();
+  const navigate = useNavigate();
   const { data: allUsers = [] } = useQuery({
     queryKey: ['all-profiles-for-gestor'],
     queryFn: async () => {
