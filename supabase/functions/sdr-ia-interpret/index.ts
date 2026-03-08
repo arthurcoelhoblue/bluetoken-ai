@@ -423,7 +423,7 @@ serve(async (req) => {
         log.info('Anti-limbo: funil avançado, usando resposta IA em vez de clarificação', { estadoFunil, iaNullCount, spinFilled });
       } else if (!hasContext && classifierResult.intent === 'NAO_ENTENDI') {
         classifierResult._ia_null_count_update = newCount;
-        respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Grupo Blue. Em que posso te ajudar?';
+        respostaTexto = respostaTexto || 'Oi! Sou a Amélia, do comercial do Blue Labs. Em que posso te ajudar?';
         classifierResult.deve_responder = true;
       } else if (newCount >= ESCALATION_THRESHOLD) {
         classifierResult._ia_null_count_update = newCount;

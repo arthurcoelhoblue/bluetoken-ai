@@ -160,7 +160,7 @@ export default function Auth() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="text-xs text-primary-foreground/50">
-          © 2025 Grupo Blue. Powered by Amelia IA.
+          © 2025 Blue Labs. Powered by Amelia IA.
         </p>
       </footer>
     </div>

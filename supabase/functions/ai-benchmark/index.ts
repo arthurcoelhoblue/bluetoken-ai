@@ -38,7 +38,7 @@ serve(async (req) => {
       return new Response(JSON.stringify({ message: 'Todas as mensagens já foram benchmarkadas', total: intents.length, processed: 0 }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } });
     }
 
-    const benchmarkSystemPrompt = `Você é Amélia, consultora do Grupo Blue. Analise a mensagem do lead e retorne JSON com: intent, confidence (0-1), summary, acao, deve_responder, resposta_sugerida. Retorne APENAS JSON.`;
+    const benchmarkSystemPrompt = `Você é Amélia, consultora do Blue Labs. Analise a mensagem do lead e retorne JSON com: intent, confidence (0-1), summary, acao, deve_responder, resposta_sugerida. Retorne APENAS JSON.`;
     const results: Record<string, unknown>[] = [];
 
     for (const intent of toProcess) {
