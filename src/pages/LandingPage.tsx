@@ -387,7 +387,7 @@ function PlatformSection() {
   const { ref: parallaxRef, offset } = useParallax(0.1);
 
   return (
-    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden', zIndex: 1 }}>
+    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden', zIndex: 20 }}>
       <div style={{ position: 'absolute', top: '30%', left: '-10%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(55,156,139,0.04) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
         <Reveal>
