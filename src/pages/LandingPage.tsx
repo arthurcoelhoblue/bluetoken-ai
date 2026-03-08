@@ -203,7 +203,7 @@ const personas = [
 function Personas() {
   const { ref: parallaxRef, offset } = useParallax(0.15);
   return (
-    <section id="personas" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', overflow: 'hidden' }}>
+    <section id="personas" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', overflow: 'hidden', zIndex: 1 }}>
       {/* Parallax shape */}
       <div style={{ position: 'absolute', top: '20%', right: '-5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(188,233,217,0.3) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
@@ -247,12 +247,12 @@ function BrainSection() {
   const activeStep = Math.min(Math.floor(progress * 4), 3);
 
   return (
-    <section id="brain" ref={stickyRef} style={{ height: '300vh', position: 'relative' }}>
+    <section id="brain" ref={stickyRef} style={{ height: '300vh', position: 'relative', zIndex: 10 }}>
       <div style={{
         position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
         background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
-        paddingTop: 80,
+        paddingTop: 80, zIndex: 10,
       }}>
         {/* Animated BG circles */}
         <div style={{ position: 'absolute', top: '10%', left: '10%', width: 500, height: 500, borderRadius: '50%', background: `radial-gradient(circle, rgba(95,192,165,${0.03 + progress * 0.05}) 0%, transparent 70%)`, transform: `scale(${1 + progress * 0.3})`, pointerEvents: 'none', transition: 'transform 0.3s ease' }} />
@@ -387,7 +387,7 @@ function PlatformSection() {
   const { ref: parallaxRef, offset } = useParallax(0.1);
 
   return (
-    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden' }}>
+    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden', zIndex: 1 }}>
       <div style={{ position: 'absolute', top: '30%', left: '-10%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(55,156,139,0.04) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
         <Reveal>
