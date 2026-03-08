@@ -1,44 +1,52 @@
 
 
-# Fix: Landing Page Mobile Layout Issues
+## Problema
 
-## Problem
-On desktop, the page renders correctly. On mobile (375px), the page jumps from the Personas section directly to the Footer CTA. All middle sections (Brain, Platform, Features, Metrics, Comparison, Proof, Pricing, Demo) are invisible — they exist in the DOM but are visually hidden due to z-index stacking conflicts between sticky sections and normal-flow sections.
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-## Root Cause
-- **BrainSection** has `zIndex: 10` and `height: 300vh` with sticky inner. Sections after it (Platform with `zIndex: 1`, Features with no zIndex, etc.) render *behind* the Brain section on mobile.
-- **FeaturesSection** has `height: 400vh` with sticky inner but no `zIndex`, so it also gets buried.
-- Sections without explicit `position: relative` and `zIndex` get trapped in the default stacking context.
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-## Solution
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-### 1. Fix z-index stacking for ALL sections after BrainSection
-Every section after BrainSection needs `position: 'relative'` and an appropriate `zIndex` to render above the sticky containers:
+## Solução
 
-- **PlatformSection** (line 390): Already has `zIndex: 1` — change to `zIndex: 20`
-- **FeaturesSection** (line 467): Add `zIndex: 20` and `position: 'relative'`
-- **MetricsSection** (line 541): Add `position: 'relative', zIndex: 20`
-- **ComparisonSection** (line 578): Add `position: 'relative', zIndex: 20`
-- **ProofSection** (line 636): Already has `position: 'relative'` — add `zIndex: 20`
-- **PricingSection** (line 683): Add `position: 'relative', zIndex: 20`
-- **DemoSection** (line 741): Already has `position: 'relative'` — add `zIndex: 20`
-- **Footer CTA + footer** (line 825/839): Add `position: 'relative', zIndex: 20`
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-### 2. Fix mobile-specific layout overflows
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
 
-- **DemoSection grid** (line 746): Change `minmax(400px, 1fr)` to `minmax(280px, 1fr)` so it doesn't overflow on 375px screens
-- **Demo form fields** (lines 774, 778): Add responsive single-column on mobile via media query or inline check
-- **Comparison table**: Already has `overflowX: 'auto'` on the container — verify it works
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
 
-### 3. Add mobile media query adjustments
-In the existing `<style>` block (line 926), add:
-```css
-@media (max-width: 768px) {
-  /* existing rules... */
-  .demo-form-grid { grid-template-columns: 1fr !important; }
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
 }
 ```
 
-### Files Changed
-- `src/pages/LandingPage.tsx` — z-index fixes on ~8 sections, responsive grid adjustments on DemoSection
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 

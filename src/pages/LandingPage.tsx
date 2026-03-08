@@ -387,7 +387,7 @@ function PlatformSection() {
   const { ref: parallaxRef, offset } = useParallax(0.1);
 
   return (
-    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden', zIndex: 1 }}>
+    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden', zIndex: 20 }}>
       <div style={{ position: 'absolute', top: '30%', left: '-10%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(55,156,139,0.04) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
         <Reveal>
@@ -464,7 +464,7 @@ function FeaturesSection() {
   const translateX = -progress * maxTranslate;
 
   return (
-    <section id="features" ref={stickyRef} style={{ height: '400vh', position: 'relative' }}>
+    <section id="features" ref={stickyRef} style={{ height: '400vh', position: 'relative', zIndex: 20 }}>
       <div style={{
         position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
         background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
@@ -539,7 +539,7 @@ function MetricCounter({ target, prefix, suffix, label }: { target: number; pref
 function MetricsSection() {
   return (
     <section style={{
-      padding: '80px 0', position: 'relative',
+      padding: '80px 0', position: 'relative', zIndex: 20,
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
@@ -575,7 +575,7 @@ function renderCell(val: string | boolean) {
 
 function ComparisonSection() {
   return (
-    <section id="comparison" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)' }}>
+    <section id="comparison" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', zIndex: 20 }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
@@ -634,7 +634,7 @@ function ProofSection() {
   const { ref: parallaxRef, offset } = useParallax(0.12);
   return (
     <section id="proof" ref={parallaxRef} style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
+      padding: '120px 0', position: 'relative', overflow: 'hidden', zIndex: 20,
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
       <div style={{ position: 'absolute', top: '20%', right: '10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(95,192,165,0.06) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
@@ -680,7 +680,7 @@ const pricingFeatures = [
 
 function PricingSection() {
   return (
-    <section id="pricing" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)' }}>
+    <section id="pricing" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', zIndex: 20 }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
@@ -739,11 +739,11 @@ function FormField({ label, type, placeholder }: { label: string; type: string; 
 function DemoSection() {
   return (
     <section id="demo" style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
+      padding: '120px 0', position: 'relative', overflow: 'hidden', zIndex: 20,
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: 64, alignItems: 'center' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 64, alignItems: 'center' }}>
           <Reveal>
             <div style={{ color: 'white' }}>
               <div className="tag tag-light">Veja na prática</div>
@@ -771,11 +771,11 @@ function DemoSection() {
               padding: 40, borderRadius: 24, background: 'rgba(255,255,255,0.06)',
               border: '1px solid rgba(255,255,255,0.1)', backdropFilter: 'blur(20px)',
             }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              <div className="demo-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                 <FormField label="Nome *" type="text" placeholder="Seu nome completo" />
                 <FormField label="Email *" type="email" placeholder="seu@email.com" />
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
+              <div className="demo-form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
                 <FormField label="Telefone *" type="tel" placeholder="(11) 99999-9999" />
                 <FormField label="Empresa" type="text" placeholder="Nome da empresa" />
               </div>
@@ -822,7 +822,7 @@ function DemoSection() {
 function Footer() {
   return (
     <>
-      <section style={{ padding: '64px 0', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, textAlign: 'center' }}>
+      <section style={{ padding: '64px 0', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, textAlign: 'center', position: 'relative', zIndex: 20 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
             <h3 style={{ fontSize: '1.8rem', fontWeight: 800, color: 'white', marginBottom: 12 }}>Pronto para transformar suas vendas?</h3>
@@ -836,7 +836,7 @@ function Footer() {
         </div>
       </section>
 
-      <footer style={{ padding: '64px 0 32px', background: '#071e1e', color: 'rgba(255,255,255,0.5)' }}>
+      <footer style={{ padding: '64px 0 32px', background: '#071e1e', color: 'rgba(255,255,255,0.5)', position: 'relative', zIndex: 20 }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 48, marginBottom: 48 }}>
             <div style={{ maxWidth: 300 }}>
@@ -927,6 +927,7 @@ export default function LandingPage() {
           .nav-links-desktop { display: none !important; }
           .nav-mobile-toggle { display: block !important; }
           .platform-compare-grid { grid-template-columns: 1fr !important; }
+          .demo-form-grid { grid-template-columns: 1fr !important; }
         }
 
         html { scroll-behavior: smooth; }
