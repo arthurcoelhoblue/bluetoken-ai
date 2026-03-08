@@ -575,7 +575,7 @@ function renderCell(val: string | boolean) {
 
 function ComparisonSection() {
   return (
-    <section id="comparison" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)' }}>
+    <section id="comparison" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', zIndex: 20 }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
