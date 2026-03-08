@@ -89,7 +89,7 @@ export default function Auth() {
           <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-12 w-12 object-contain" />
           <div>
             <h1 className="text-xl font-bold text-primary-foreground">Amélia CRM</h1>
-            <p className="text-xs text-primary-foreground/70">Grupo Blue</p>
+            <p className="text-xs text-primary-foreground/70">Blue Labs</p>
           </div>
         </div>
       </header>
@@ -160,7 +160,7 @@ export default function Auth() {
       {/* Footer */}
       <footer className="p-6 text-center">
         <p className="text-xs text-primary-foreground/50">
-          © 2025 Grupo Blue. Powered by Amelia IA.
+          © 2025 Blue Labs. Powered by Amelia IA.
         </p>
       </footer>
     </div>

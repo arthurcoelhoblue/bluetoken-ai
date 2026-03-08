@@ -14,7 +14,7 @@ const log = createLogger('copilot-chat');
 
 import { getCorsHeaders, handleCorsOptions } from "../_shared/cors.ts";
 
-const SYSTEM_PROMPT = `Você é a Amélia, consultora estratégica de vendas e sucesso do cliente do Amélia CRM (Grupo Blue).
+const SYSTEM_PROMPT = `Você é a Amélia, consultora estratégica de vendas e sucesso do cliente do Amélia CRM (Blue Labs).
 Você é a mesma Amélia que atende leads no WhatsApp — sua voz, personalidade e inteligência são consistentes em todos os canais.
 
 ## Personalidade
