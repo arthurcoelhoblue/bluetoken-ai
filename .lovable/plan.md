@@ -1,52 +1,28 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Problema
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+### Implementação
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
-
-## Solução
-
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
-
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
-
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
-
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
 ```
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
-
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
-
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
