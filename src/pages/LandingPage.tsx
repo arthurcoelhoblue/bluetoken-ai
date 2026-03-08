@@ -587,7 +587,7 @@ function ComparisonSection() {
           </div>
         </Reveal>
         <Reveal>
-          <div style={{ overflowX: 'auto', borderRadius: 24, boxShadow: '0 8px 40px rgba(11,75,75,0.06)' }}>
+          <div style={{ overflowX: 'auto', borderRadius: 24, boxShadow: '0 8px 40px rgba(11,75,75,0.06)', overflow: 'visible' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', background: COLORS.pureWhite, fontSize: '0.9rem' }}>
               <thead>
                 <tr>
@@ -595,9 +595,9 @@ function ComparisonSection() {
                   <th style={{
                     padding: '32px 20px 24px', textAlign: 'center', fontWeight: 600,
                     background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-                    color: 'white', borderRadius: '16px 16px 0 0', position: 'relative',
+                    color: 'white', borderRadius: '16px 16px 0 0', position: 'relative', overflow: 'visible',
                   }}>
-                    <span style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', padding: '4px 16px', borderRadius: 100, background: COLORS.deepTeal, color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>★ Recomendado</span>
+                    <span style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', padding: '4px 16px', borderRadius: 100, background: COLORS.deepTeal, color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap', zIndex: 10 }}>★ Recomendado</span>
                     Amélia CRM
                   </th>
                   <th style={{ padding: '24px 20px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #f0f0f0' }}>Pipedrive</th>
