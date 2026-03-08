@@ -1,24 +1,52 @@
 
 
-# Trocar logo da Amélia em todo o sistema
+## Problema
 
-## O que será feito
+O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
 
-Substituir o ícone/logo atual (ícone Bot do Lucide e imagens antigas) pela nova logo do cérebro em 3 locais:
+1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
+2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
+3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
 
-### 1. Copiar asset para o projeto
-- Copiar `user-uploads://Logo_Amélia_sem_fundo.png` para `public/images/brand/amelia-logo.png` (substituindo a antiga)
+O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
 
-### 2. Sidebar (`src/components/layout/AppSidebar.tsx`, linhas 200-203)
-- Substituir o `<Bot>` icon dentro do quadrado gradiente por uma `<img>` com a nova logo
+## Solução
 
-### 3. Página de Auth (`src/pages/Auth.tsx`, linhas 88-96)
-- Substituir o `<Bot>` icon no header por `<img>` com a nova logo
+Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
+- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
+- E o intent classificado é `AGENDAMENTO_REUNIAO`
 
-### 4. Landing Page (`src/pages/LandingPage.tsx`, linhas 15-17)
-- Atualizar `LOGO_SRC` e `ICON_SRC` para apontar para a nova imagem (o `LOGO_SRC` já será substituído pelo copy)
+### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
 
-## Escopo
-- 3 arquivos editados + 1 asset substituído
-- Sem mudança de comportamento
+Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+
+```ts
+// After classifyIntent, around line 251:
+if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
+  const startResult = await startMeetingScheduling(supabase, meetingCtx);
+  if (startResult.handled && startResult.response) {
+    const intentId = await saveInterpretation(supabase, msg, {
+      intent: 'AGENDAMENTO_REUNIAO',
+      confidence: classifierResult.confidence,
+      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
+      deve_responder: true,
+    }, true, true, startResult.response);
+    // Send response via WhatsApp
+    if (telefone) {
+      await executeActions(supabase, {
+        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
+        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
+        resposta: startResult.response, ...
+      });
+    }
+    return json response with slots offered
+  }
+}
+```
+
+O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+
+| Arquivo | Mudança |
+|---------|---------|
+| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
 
