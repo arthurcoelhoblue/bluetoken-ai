@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router-dom';
+import { useScrollProgress, useStickyProgress, useCountUp, useParallax } from '@/hooks/useScrollEffects';
 
 // ─── Brand Colors ────────────────────────────────────────────────────────────
 const COLORS = {
@@ -11,42 +12,43 @@ const COLORS = {
   pureWhite: '#FFFFFF',
 };
 
-// ─── Logo path (relative to public/) ─────────────────────────────────────────
 const LOGO_SRC = '/images/brand/amelia-logo.png';
-const LOGO_SMALL_SRC = '/images/brand/amelia-logo.png';
 const ICON_SRC = '/images/brand/amelia-logo.png';
 
-// ─── Reveal on Scroll Hook ──────────────────────────────────────────────────
+// ─── Reveal on Scroll ────────────────────────────────────────────────────────
 function useReveal() {
   const ref = useRef<HTMLDivElement>(null);
   const [visible, setVisible] = useState(false);
-
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    const obs = new IntersectionObserver(
-      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
-      { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
-    );
+    const obs = new IntersectionObserver(([e]) => { if (e.isIntersecting) setVisible(true); }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
     obs.observe(el);
     return () => obs.disconnect();
   }, []);
-
   return { ref, visible };
 }
 
 function Reveal({ children, delay = 0, className = '' }: { children: React.ReactNode; delay?: number; className?: string }) {
   const { ref, visible } = useReveal();
   return (
-    <div
-      ref={ref}
-      className={className}
-      style={{
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(40px)',
-        transition: `opacity 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s, transform 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s`,
-      }}
-    >
+    <div ref={ref} className={className} style={{
+      opacity: visible ? 1 : 0,
+      transform: visible ? 'translateY(0)' : 'translateY(40px)',
+      transition: `opacity 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s, transform 0.8s cubic-bezier(0.22,1,0.36,1) ${delay}s`,
+    }}>
+      {children}
+    </div>
+  );
+}
+
+// ─── BlurReveal — text fades from blurry to clear ────────────────────────────
+function BlurReveal({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  const { ref, progress } = useScrollProgress({ start: 0.2, end: 0.5 });
+  const opacity = 0.3 + progress * 0.7;
+  const blur = (1 - progress) * 6;
+  return (
+    <div ref={ref} className={className} style={{ opacity, filter: `blur(${blur}px)`, transition: 'filter 0.1s linear' }}>
       {children}
     </div>
   );
@@ -55,8 +57,6 @@ function Reveal({ children, delay = 0, className = '' }: { children: React.React
 // ─── Navbar ──────────────────────────────────────────────────────────────────
 function Navbar() {
   const [scrolled, setScrolled] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
-
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', onScroll, { passive: true });
@@ -72,48 +72,33 @@ function Navbar() {
   ];
 
   return (
-    <nav
-      style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000,
-        padding: '16px 0',
-        background: scrolled ? 'rgba(255,255,255,0.85)' : 'transparent',
-        backdropFilter: scrolled ? 'blur(20px)' : 'none',
-        WebkitBackdropFilter: scrolled ? 'blur(20px)' : 'none',
-        borderBottom: scrolled ? '1px solid rgba(11,75,75,0.08)' : 'none',
-        boxShadow: scrolled ? '0 4px 30px rgba(11,75,75,0.06)' : 'none',
-        transition: 'all 0.4s ease',
-      }}
-    >
+    <nav style={{
+      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 1000, padding: '16px 0',
+      background: scrolled ? 'rgba(255,255,255,0.85)' : 'transparent',
+      backdropFilter: scrolled ? 'blur(20px)' : 'none',
+      WebkitBackdropFilter: scrolled ? 'blur(20px)' : 'none',
+      borderBottom: scrolled ? '1px solid rgba(11,75,75,0.08)' : 'none',
+      boxShadow: scrolled ? '0 4px 30px rgba(11,75,75,0.06)' : 'none',
+      transition: 'all 0.4s ease',
+    }}>
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <a href="#" style={{ display: 'flex', alignItems: 'center', gap: 10, textDecoration: 'none', fontWeight: 700, fontSize: '1.25rem', color: COLORS.darkSlate }}>
           <img src={ICON_SRC} alt="Amélia CRM" style={{ height: 36, width: 36, borderRadius: 8 }} />
           <span style={{ color: COLORS.tealPrimary, fontWeight: 800 }}>amélia</span>CRM
         </a>
-
-        {/* Desktop links */}
         <ul style={{ display: 'flex', alignItems: 'center', gap: 32, listStyle: 'none', margin: 0, padding: 0 }} className="nav-links-desktop">
           {links.map(l => (
-            <li key={l.href}>
-              <a href={l.href} style={{ textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, color: COLORS.darkSlate, opacity: 0.75 }}>{l.label}</a>
-            </li>
+            <li key={l.href}><a href={l.href} style={{ textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, color: COLORS.darkSlate, opacity: 0.75 }}>{l.label}</a></li>
           ))}
-          <li>
-            <Link to="/auth" style={{
-              textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, color: COLORS.darkSlate, opacity: 0.75,
-            }}>Entrar</Link>
-          </li>
-          <li>
-            <a href="#demo" style={{
-              display: 'inline-flex', alignItems: 'center', padding: '10px 22px', borderRadius: 12,
-              background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-              color: 'white', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none',
-              boxShadow: '0 4px 15px rgba(55,156,139,0.3)',
-            }}>Agendar Demo</a>
-          </li>
+          <li><Link to="/auth" style={{ textDecoration: 'none', fontSize: '0.9rem', fontWeight: 500, color: COLORS.darkSlate, opacity: 0.75 }}>Entrar</Link></li>
+          <li><a href="#demo" style={{
+            display: 'inline-flex', alignItems: 'center', padding: '10px 22px', borderRadius: 12,
+            background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
+            color: 'white', fontWeight: 600, fontSize: '0.85rem', textDecoration: 'none',
+            boxShadow: '0 4px 15px rgba(55,156,139,0.3)',
+          }}>Agendar Demo</a></li>
         </ul>
-
-        {/* Mobile toggle */}
-        <button onClick={() => setMobileOpen(!mobileOpen)} className="nav-mobile-toggle" style={{ display: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
+        <button className="nav-mobile-toggle" style={{ display: 'none', background: 'none', border: 'none', cursor: 'pointer', padding: 8 }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={COLORS.darkSlate} strokeWidth="2" strokeLinecap="round">
             <line x1="3" y1="6" x2="21" y2="6" /><line x1="3" y1="12" x2="21" y2="12" /><line x1="3" y1="18" x2="21" y2="18" />
           </svg>
@@ -123,73 +108,82 @@ function Navbar() {
   );
 }
 
-// ─── Hero ────────────────────────────────────────────────────────────────────
+// ─── Hero — Scroll-driven Scaling ────────────────────────────────────────────
 function Hero() {
+  const { ref: heroRef, progress: heroProgress } = useScrollProgress({ start: 0.15, end: 0.55 });
+  const scale = 1 - heroProgress * 0.2;
+  const opacity = 1 - heroProgress * 1.2;
+  const logoY = -heroProgress * 80;
+
   return (
-    <section id="hero" style={{
+    <section id="hero" ref={heroRef} style={{
       position: 'relative', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
       padding: '120px 24px 80px', overflow: 'hidden',
       background: `radial-gradient(ellipse at 50% 0%, rgba(188,233,217,0.35) 0%, rgba(255,255,255,0) 70%), radial-gradient(ellipse at 80% 80%, rgba(95,192,165,0.1) 0%, transparent 50%), ${COLORS.pureWhite}`,
     }}>
-      <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', maxWidth: 800 }}>
-        <Reveal>
-          <div style={{ width: 160, height: 160, margin: '0 auto 32px', animation: 'float 6s ease-in-out infinite', filter: 'drop-shadow(0 20px 40px rgba(55,156,139,0.2))' }}>
-            <img src={LOGO_SRC} alt="Amélia CRM" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
-          </div>
-        </Reveal>
-        <Reveal delay={0.1}>
-          <div style={{
-            display: 'inline-block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase',
-            padding: '6px 16px', borderRadius: 100, background: 'rgba(55,156,139,0.1)', color: COLORS.tealPrimary, marginBottom: 16,
-          }}>CRM com Inteligência Artificial Integrada</div>
-        </Reveal>
-        <Reveal delay={0.2}>
-          <h1 style={{
-            fontSize: 'clamp(2.5rem, 6vw, 4rem)', fontWeight: 800, lineHeight: 1.1, marginBottom: 24,
-            background: `linear-gradient(135deg, ${COLORS.darkSlate} 0%, ${COLORS.deepTeal} 100%)`,
+      {/* Parallax BG shapes */}
+      <div style={{ position: 'absolute', top: '10%', left: '5%', width: 300, height: 300, borderRadius: '50%', background: 'radial-gradient(circle, rgba(55,156,139,0.06) 0%, transparent 70%)', transform: `translateY(${heroProgress * 60}px)`, pointerEvents: 'none' }} />
+      <div style={{ position: 'absolute', bottom: '15%', right: '8%', width: 200, height: 200, borderRadius: '50%', background: 'radial-gradient(circle, rgba(95,192,165,0.08) 0%, transparent 70%)', transform: `translateY(${heroProgress * 40}px)`, pointerEvents: 'none' }} />
+
+      <div style={{
+        position: 'relative', zIndex: 2, textAlign: 'center', maxWidth: 800,
+        transform: `scale(${Math.max(scale, 0.8)})`,
+        opacity: Math.max(opacity, 0),
+        transition: 'transform 0.05s linear, opacity 0.05s linear',
+        willChange: 'transform, opacity',
+      }}>
+        <div style={{
+          width: 160, height: 160, margin: '0 auto 32px',
+          filter: 'drop-shadow(0 20px 40px rgba(55,156,139,0.2))',
+          transform: `translateY(${logoY}px)`,
+          transition: 'transform 0.05s linear',
+          willChange: 'transform',
+        }}>
+          <img src={LOGO_SRC} alt="Amélia CRM" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+        </div>
+
+        <div style={{
+          display: 'inline-block', fontSize: '0.75rem', fontWeight: 600, letterSpacing: '0.12em', textTransform: 'uppercase',
+          padding: '6px 16px', borderRadius: 100, background: 'rgba(55,156,139,0.1)', color: COLORS.tealPrimary, marginBottom: 16,
+        }}>CRM com Inteligência Artificial Integrada</div>
+
+        <h1 style={{
+          fontSize: 'clamp(2.5rem, 6vw, 4.5rem)', fontWeight: 800, lineHeight: 1.08, marginBottom: 24,
+          background: `linear-gradient(135deg, ${COLORS.darkSlate} 0%, ${COLORS.deepTeal} 100%)`,
+          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+        }}>
+          Seu time vende.<br />
+          <span style={{
+            background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-          }}>
-            Seu time vende.<br />
-            <span style={{
-              background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-            }}>A Amélia faz todo o resto.</span>
-          </h1>
-        </Reveal>
-        <Reveal delay={0.3}>
-          <p style={{ fontSize: '1.2rem', lineHeight: 1.8, color: '#5a6b7a', maxWidth: 600, margin: '0 auto 40px' }}>
-            De lead frio a reunião agendada — sem intervenção humana. A Amélia qualifica, aborda e converte automaticamente pelo WhatsApp, Email e Telefone enquanto seu time foca em fechar negócios.
-          </p>
-        </Reveal>
-        <Reveal delay={0.4}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 48, flexWrap: 'wrap' }}>
-            <a href="#demo" style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 12,
-              background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-              color: 'white', fontWeight: 600, fontSize: '1rem', textDecoration: 'none',
-              boxShadow: '0 4px 15px rgba(55,156,139,0.3)',
-            }}>Agendar Demo Gratuita →</a>
-            <a href="#brain" style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 12,
-              background: 'rgba(55,156,139,0.08)', color: COLORS.tealPrimary, fontWeight: 600, fontSize: '1rem',
-              textDecoration: 'none', border: '1.5px solid rgba(55,156,139,0.2)',
-            }}>Ver como funciona</a>
-          </div>
-        </Reveal>
-        <Reveal delay={0.5}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, fontSize: '0.85rem', color: '#8a9baa' }}>
-            <span>+200 empresas confiam na Amélia</span>
-            <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#ccc' }}></span>
-            <span>⭐ 4.9/5 de satisfação</span>
-          </div>
-        </Reveal>
+          }}>A Amélia faz todo o resto.</span>
+        </h1>
+
+        <p style={{ fontSize: '1.2rem', lineHeight: 1.8, color: '#5a6b7a', maxWidth: 600, margin: '0 auto 40px' }}>
+          De lead frio a reunião agendada — sem intervenção humana. A Amélia qualifica, aborda e converte automaticamente pelo WhatsApp, Email e Telefone enquanto seu time foca em fechar negócios.
+        </p>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 16, marginBottom: 48, flexWrap: 'wrap' }}>
+          <a href="#demo" className="btn-primary" style={{ padding: '14px 32px', fontSize: '1rem' }}>Agendar Demo Gratuita →</a>
+          <a href="#brain" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8, padding: '14px 32px', borderRadius: 12,
+            background: 'rgba(55,156,139,0.08)', color: COLORS.tealPrimary, fontWeight: 600, fontSize: '1rem',
+            textDecoration: 'none', border: '1.5px solid rgba(55,156,139,0.2)',
+          }}>Ver como funciona</a>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 24, fontSize: '0.85rem', color: '#8a9baa' }}>
+          <span>+200 empresas confiam na Amélia</span>
+          <span style={{ width: 4, height: 4, borderRadius: '50%', background: '#ccc' }} />
+          <span>⭐ 4.9/5 de satisfação</span>
+        </div>
       </div>
 
-      {/* Scroll indicator */}
       <div style={{
         position: 'absolute', bottom: 40, left: '50%', transform: 'translateX(-50%)',
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-        color: COLORS.tealPrimary, fontSize: '0.8rem', fontWeight: 500, opacity: 0.7,
+        color: COLORS.tealPrimary, fontSize: '0.8rem', fontWeight: 500,
+        opacity: Math.max(1 - heroProgress * 3, 0),
         animation: 'scrollBounce 2s ease-in-out infinite',
       }}>
         Scroll para mergulhar
@@ -207,39 +201,38 @@ const personas = [
 ];
 
 function Personas() {
+  const { ref: parallaxRef, offset } = useParallax(0.15);
   return (
-    <section id="personas" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
+    <section id="personas" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', overflow: 'hidden' }}>
+      {/* Parallax shape */}
+      <div style={{ position: 'absolute', top: '20%', right: '-5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(188,233,217,0.3) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <div className="tag">Para quem é</div>
             <h2 className="section-title">Se você se identifica, a Amélia<br />foi feita para você.</h2>
           </div>
         </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 28 }}>
-          {personas.map((p, i) => (
-            <Reveal key={i} delay={0.1 * (i + 1)}>
-              <div className="persona-card">
-                <div className="persona-icon">{p.icon}</div>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: 12, color: COLORS.darkSlate }}>{p.title}</h3>
-                <p style={{
-                  fontSize: '0.95rem', lineHeight: 1.65, color: '#5a6b7a', fontStyle: 'italic',
-                  marginBottom: 20, paddingLeft: 16, borderLeft: `3px solid ${COLORS.lightMint}`,
-                }}>{p.quote}</p>
-                <div style={{
-                  fontSize: '0.9rem', lineHeight: 1.6, color: COLORS.darkSlate,
-                  padding: 16, background: 'rgba(188,233,217,0.15)', borderRadius: 12,
-                }} dangerouslySetInnerHTML={{ __html: p.answer }} />
-              </div>
-            </Reveal>
-          ))}
-        </div>
+        <BlurReveal>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 28 }}>
+            {personas.map((p, i) => (
+              <Reveal key={i} delay={0.1 * (i + 1)}>
+                <div className="persona-card">
+                  <div className="persona-icon">{p.icon}</div>
+                  <h3 style={{ fontSize: '1.25rem', fontWeight: 700, marginBottom: 12, color: COLORS.darkSlate }}>{p.title}</h3>
+                  <p style={{ fontSize: '0.95rem', lineHeight: 1.65, color: '#5a6b7a', fontStyle: 'italic', marginBottom: 20, paddingLeft: 16, borderLeft: `3px solid ${COLORS.lightMint}` }}>{p.quote}</p>
+                  <div style={{ fontSize: '0.9rem', lineHeight: 1.6, color: COLORS.darkSlate, padding: 16, background: 'rgba(188,233,217,0.15)', borderRadius: 12 }} dangerouslySetInnerHTML={{ __html: p.answer }} />
+                </div>
+              </Reveal>
+            ))}
+          </div>
+        </BlurReveal>
       </div>
     </section>
   );
 }
 
-// ─── Brain Steps ─────────────────────────────────────────────────────────────
+// ─── Brain — Sticky Pinned Reveal ────────────────────────────────────────────
 const brainSteps = [
   { step: '1/4', badge: 'RAG + Embeddings', title: 'Absorve seu conhecimento', desc: 'Você alimenta com playbooks, scripts e informações do produto. A Amélia estuda tudo e entende seu mercado, concorrentes e objeções.' },
   { step: '2/4', badge: 'Machine Learning', title: 'Analisa cada lead', desc: 'Cruza dados do contato com o que aprendeu. Identifica quem tem perfil ideal, quem está quente e quem precisa de mais nutrição.' },
@@ -248,34 +241,60 @@ const brainSteps = [
 ];
 
 function BrainSection() {
+  const { ref: stickyRef, progress } = useStickyProgress();
+
+  // Each step occupies 25% of progress
+  const activeStep = Math.min(Math.floor(progress * 4), 3);
+
   return (
-    <section id="brain" style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
-      background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
-    }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-        <Reveal>
-          <div style={{ textAlign: 'center', marginBottom: 72, position: 'relative', zIndex: 2 }}>
+    <section id="brain" ref={stickyRef} style={{ height: '300vh', position: 'relative' }}>
+      <div style={{
+        position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
+        background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+      }}>
+        {/* Animated BG circles */}
+        <div style={{ position: 'absolute', top: '10%', left: '10%', width: 500, height: 500, borderRadius: '50%', background: `radial-gradient(circle, rgba(95,192,165,${0.03 + progress * 0.05}) 0%, transparent 70%)`, transform: `scale(${1 + progress * 0.3})`, pointerEvents: 'none', transition: 'transform 0.3s ease' }} />
+        <div style={{ position: 'absolute', bottom: '5%', right: '5%', width: 350, height: 350, borderRadius: '50%', background: `radial-gradient(circle, rgba(188,233,217,${0.02 + progress * 0.04}) 0%, transparent 70%)`, transform: `scale(${1 + progress * 0.2})`, pointerEvents: 'none', transition: 'transform 0.3s ease' }} />
+
+        <div style={{ maxWidth: 1200, width: '100%', padding: '0 24px', position: 'relative', zIndex: 2 }}>
+          <div style={{ textAlign: 'center', marginBottom: 48 }}>
             <div className="tag tag-light">Dentro das sinapses da IA</div>
             <h2 className="section-title" style={{ color: 'white' }}>Não é automação burra.<br />É inteligência de verdade.</h2>
             <p style={{ fontSize: '1.125rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.7)', maxWidth: 640, margin: '0 auto' }}>
               A Amélia não segue scripts fixos. Ela aprende, interpreta contexto e toma decisões como seu melhor vendedor faria.
             </p>
           </div>
-        </Reveal>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, position: 'relative', zIndex: 2 }}>
-          {brainSteps.map((s, i) => (
-            <Reveal key={i} delay={0.1 * (i + 1)}>
-              <div className="brain-step">
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: COLORS.vividMint, marginBottom: 8 }}>
-                  Passo {s.step}
-                  <span style={{ padding: '3px 10px', borderRadius: 100, background: 'rgba(95,192,165,0.15)', color: COLORS.vividMint, fontSize: '0.65rem', fontWeight: 600 }}>{s.badge}</span>
+
+          {/* Steps — reveal one at a time */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 16, position: 'relative', zIndex: 2 }}>
+            {brainSteps.map((s, i) => {
+              const isActive = i <= activeStep;
+              const isCurrent = i === activeStep;
+              return (
+                <div key={i} className="brain-step" style={{
+                  opacity: isActive ? 1 : 0.15,
+                  transform: isActive ? 'translateY(0) scale(1)' : 'translateY(30px) scale(0.95)',
+                  borderColor: isCurrent ? 'rgba(95,192,165,0.5)' : undefined,
+                  boxShadow: isCurrent ? '0 0 40px rgba(95,192,165,0.15)' : undefined,
+                  transition: 'all 0.6s cubic-bezier(0.22,1,0.36,1)',
+                  willChange: 'transform, opacity',
+                }}>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '0.7rem', fontWeight: 600, letterSpacing: '0.1em', textTransform: 'uppercase', color: COLORS.vividMint, marginBottom: 8 }}>
+                    Passo {s.step}
+                    <span style={{ padding: '3px 10px', borderRadius: 100, background: 'rgba(95,192,165,0.15)', color: COLORS.vividMint, fontSize: '0.65rem', fontWeight: 600 }}>{s.badge}</span>
+                  </div>
+                  <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'white', marginBottom: 12, marginTop: 12 }}>{s.title}</h3>
+                  <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.6)' }}>{s.desc}</p>
                 </div>
-                <h3 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'white', marginBottom: 12, marginTop: 12 }}>{s.title}</h3>
-                <p style={{ fontSize: '0.9rem', lineHeight: 1.7, color: 'rgba(255,255,255,0.6)' }}>{s.desc}</p>
-              </div>
-            </Reveal>
-          ))}
+              );
+            })}
+          </div>
+
+          {/* Progress bar */}
+          <div style={{ maxWidth: 400, margin: '32px auto 0', height: 3, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${progress * 100}%`, background: `linear-gradient(90deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, borderRadius: 2, transition: 'width 0.1s linear' }} />
+          </div>
         </div>
       </div>
     </section>
@@ -327,11 +346,7 @@ function ChatSimulation() {
           const msg = chatMessages[idx];
           if (msg.type === 'result') {
             return (
-              <div key={idx} style={{
-                marginTop: 12, padding: '12px 16px', background: 'rgba(55,156,139,0.06)', borderRadius: 12,
-                borderLeft: `3px solid ${COLORS.vividMint}`, fontSize: '0.8rem', color: COLORS.tealPrimary, fontWeight: 500,
-                animation: 'fadeInUp 0.5s ease',
-              }}>{msg.text}</div>
+              <div key={idx} style={{ marginTop: 12, padding: '12px 16px', background: 'rgba(55,156,139,0.06)', borderRadius: 12, borderLeft: `3px solid ${COLORS.vividMint}`, fontSize: '0.8rem', color: COLORS.tealPrimary, fontWeight: 500, animation: 'fadeInUp 0.5s ease' }}>{msg.text}</div>
             );
           }
           const isLead = msg.type === 'lead';
@@ -341,8 +356,7 @@ function ChatSimulation() {
                 maxWidth: '80%', padding: '12px 16px', borderRadius: 16, fontSize: '0.85rem', lineHeight: 1.55,
                 background: isLead ? '#e8f5f0' : `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
                 color: isLead ? COLORS.darkSlate : 'white',
-                borderBottomRightRadius: isLead ? 4 : 16,
-                borderBottomLeftRadius: isLead ? 16 : 4,
+                borderBottomRightRadius: isLead ? 4 : 16, borderBottomLeftRadius: isLead ? 16 : 4,
               }}>{msg.text}</div>
             </div>
           );
@@ -360,7 +374,7 @@ function ChatSimulation() {
   );
 }
 
-// ─── Platform Section ────────────────────────────────────────────────────────
+// ─── Platform ────────────────────────────────────────────────────────────────
 function PlatformSection() {
   const tools = ['CRM', 'Chat', 'Email', 'Telefone', 'Agenda', 'CS'];
   const benefits = [
@@ -369,17 +383,21 @@ function PlatformSection() {
     'Sem alt-tab: a conversa com o lead acontece dentro do CRM',
     'Dados de todos os canais em um só lugar — chega de planilha paralela',
   ];
+  const { ref: parallaxRef, offset } = useParallax(0.1);
 
   return (
-    <section id="platform" style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)' }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
+    <section id="platform" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #f7fcfa 0%, #fff 100%)', position: 'relative', overflow: 'hidden' }}>
+      <div style={{ position: 'absolute', top: '30%', left: '-10%', width: 500, height: 500, borderRadius: '50%', background: 'radial-gradient(circle, rgba(55,156,139,0.04) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <div className="tag">Tudo em um lugar</div>
             <h2 className="section-title">6 ferramentas. 6 logins. 6 faturas.<br />Ou a Amélia.</h2>
-            <p className="section-sub" style={{ margin: '0 auto' }}>
-              Nos outros CRMs, você precisa de ferramentas separadas. Na Amélia, é tudo integrado — inclusive a conversa com o lead.
-            </p>
+            <BlurReveal>
+              <p className="section-sub" style={{ margin: '0 auto' }}>
+                Nos outros CRMs, você precisa de ferramentas separadas. Na Amélia, é tudo integrado — inclusive a conversa com o lead.
+              </p>
+            </BlurReveal>
           </div>
         </Reveal>
 
@@ -388,21 +406,16 @@ function PlatformSection() {
             <div style={{ padding: 40, borderRadius: 24, background: '#fafafa', border: '1px solid #eee' }}>
               <h4 style={{ fontSize: '1rem', fontWeight: 600, color: '#8a9baa', marginBottom: 24 }}>Sem a Amélia</h4>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-                {tools.map(t => (
-                  <span key={t} style={{ padding: '8px 16px', borderRadius: 10, background: '#fff', border: '1px solid #e0e0e0', fontSize: '0.85rem', color: '#888' }}>{t}</span>
-                ))}
+                {tools.map(t => (<span key={t} style={{ padding: '8px 16px', borderRadius: 10, background: '#fff', border: '1px solid #e0e0e0', fontSize: '0.85rem', color: '#888' }}>{t}</span>))}
               </div>
               <p style={{ fontSize: '0.85rem', color: '#b44', fontWeight: 500 }}>6 logins · Dados fragmentados · +R$ 3.000/mês</p>
             </div>
-
             <div style={{
               width: 60, height: 60, borderRadius: '50%', flexShrink: 0,
               background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
               display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: 'white', fontWeight: 800, fontSize: '0.8rem',
-              boxShadow: '0 8px 30px rgba(55,156,139,0.3)',
+              color: 'white', fontWeight: 800, fontSize: '0.8rem', boxShadow: '0 8px 30px rgba(55,156,139,0.3)',
             }}>VS</div>
-
             <div style={{
               padding: 40, borderRadius: 24,
               background: 'linear-gradient(135deg, rgba(55,156,139,0.04), rgba(95,192,165,0.08))',
@@ -413,12 +426,7 @@ function PlatformSection() {
               <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
                 {benefits.map((b, i) => (
                   <li key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 16, fontSize: '0.95rem', lineHeight: 1.5, color: COLORS.darkSlate }}>
-                    <span style={{
-                      flexShrink: 0, width: 22, height: 22, borderRadius: '50%',
-                      background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-                      color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '0.7rem', fontWeight: 700, marginTop: 2,
-                    }}>✓</span>
+                    <span style={{ flexShrink: 0, width: 22, height: 22, borderRadius: '50%', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.7rem', fontWeight: 700, marginTop: 2 }}>✓</span>
                     {b}
                   </li>
                 ))}
@@ -427,15 +435,13 @@ function PlatformSection() {
           </div>
         </Reveal>
 
-        <Reveal>
-          <ChatSimulation />
-        </Reveal>
+        <Reveal><ChatSimulation /></Reveal>
       </div>
     </section>
   );
 }
 
-// ─── Features ────────────────────────────────────────────────────────────────
+// ─── Features — Horizontal Scroll ────────────────────────────────────────────
 const features = [
   { icon: '💬', title: 'Cadências Multi-canal', desc: 'Follow-up automático por WhatsApp, email e telefone. Nenhum lead cai no esquecimento.' },
   { icon: '⚡', title: 'Fluxos Inteligentes', desc: 'Automações drag-and-drop com condições e gatilhos. Monte em minutos, rode para sempre.' },
@@ -448,31 +454,41 @@ const features = [
   { icon: '💚', title: 'Customer Success', desc: 'Health Score, NPS e playbooks de retenção. Reduza churn antes que ele aconteça.' },
 ];
 
-const metrics = [
-  { val: '+40%', label: 'Aumento na conversão' },
-  { val: 'R$ 3.200', label: 'Economia mensal' },
-  { val: '24/7', label: 'IA trabalhando por você' },
-  { val: '85%', label: 'Leads qualificados automaticamente' },
-];
-
 function FeaturesSection() {
+  const { ref: stickyRef, progress } = useStickyProgress();
+  // 9 cards × 310px wide + gaps, we need enough translateX
+  const totalCardsWidth = features.length * 330;
+  const viewportEstimate = typeof window !== 'undefined' ? window.innerWidth : 1200;
+  const maxTranslate = Math.max(totalCardsWidth - viewportEstimate + 100, 0);
+  const translateX = -progress * maxTranslate;
+
   return (
-    <section id="features" style={{
-      padding: '120px 0', position: 'relative', overflow: 'hidden',
-      background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
-    }}>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
-        <Reveal>
-          <div style={{ textAlign: 'center', marginBottom: 64, position: 'relative', zIndex: 2 }}>
+    <section id="features" ref={stickyRef} style={{ height: '400vh', position: 'relative' }}>
+      <div style={{
+        position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
+        background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
+        display: 'flex', flexDirection: 'column', justifyContent: 'center',
+      }}>
+        <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', width: '100%' }}>
+          <div style={{ textAlign: 'center', marginBottom: 48, position: 'relative', zIndex: 2 }}>
             <div className="tag tag-light">O que está por baixo do capô</div>
             <h2 className="section-title" style={{ color: 'white' }}>Zero trabalho manual.<br />Máxima conversão.</h2>
           </div>
-        </Reveal>
+        </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 72, position: 'relative', zIndex: 2 }}>
-          {features.map((f, i) => (
-            <Reveal key={i} delay={0.1 * ((i % 3) + 1)}>
-              <div className="feature-card">
+        {/* Horizontal scrolling cards */}
+        <div style={{ overflow: 'hidden', padding: '0 24px', position: 'relative', zIndex: 2 }}>
+          <div style={{
+            display: 'flex', gap: 20,
+            transform: `translateX(${translateX}px)`,
+            transition: 'transform 0.05s linear',
+            willChange: 'transform',
+            paddingLeft: Math.max((viewportEstimate - 1200) / 2, 24),
+          }}>
+            {features.map((f, i) => (
+              <div key={i} className="feature-card" style={{
+                minWidth: 310, maxWidth: 310, flexShrink: 0,
+              }}>
                 <div style={{
                   width: 44, height: 44, borderRadius: 12, marginBottom: 20, fontSize: '1.2rem',
                   background: 'linear-gradient(135deg, rgba(95,192,165,0.2), rgba(55,156,139,0.15))',
@@ -481,25 +497,54 @@ function FeaturesSection() {
                 <h4 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'white', marginBottom: 8 }}>{f.title}</h4>
                 <p style={{ fontSize: '0.85rem', lineHeight: 1.65, color: 'rgba(255,255,255,0.55)' }}>{f.desc}</p>
               </div>
-            </Reveal>
-          ))}
+            ))}
+          </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24, position: 'relative', zIndex: 2 }}>
-          {metrics.map((m, i) => (
-            <Reveal key={i} delay={0.1 * (i + 1)}>
-              <div style={{
-                textAlign: 'center', padding: '32px 20px', borderRadius: 20,
-                background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
-              }}>
-                <div style={{
-                  fontSize: '2.5rem', fontWeight: 800,
-                  background: `linear-gradient(135deg, ${COLORS.vividMint}, ${COLORS.lightMint})`,
-                  WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
-                }}>{m.val}</div>
-                <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{m.label}</div>
-              </div>
-            </Reveal>
+        {/* Scroll progress indicator */}
+        <div style={{ maxWidth: 300, margin: '32px auto 0', height: 2, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }}>
+          <div style={{ height: '100%', width: `${progress * 100}%`, background: `linear-gradient(90deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, borderRadius: 2, transition: 'width 0.05s linear' }} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ─── Metrics — Counter Animation ─────────────────────────────────────────────
+const metricsData = [
+  { target: 40, prefix: '+', suffix: '%', label: 'Aumento na conversão' },
+  { target: 3200, prefix: 'R$ ', suffix: '', label: 'Economia mensal' },
+  { target: 24, prefix: '', suffix: '/7', label: 'IA trabalhando por você' },
+  { target: 85, prefix: '', suffix: '%', label: 'Leads qualificados automaticamente' },
+];
+
+function MetricCounter({ target, prefix, suffix, label }: { target: number; prefix: string; suffix: string; label: string }) {
+  const { ref, value } = useCountUp(target, 2000);
+  return (
+    <div ref={ref} style={{
+      textAlign: 'center', padding: '32px 20px', borderRadius: 20,
+      background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      <div style={{
+        fontSize: '2.5rem', fontWeight: 800,
+        background: `linear-gradient(135deg, ${COLORS.vividMint}, ${COLORS.lightMint})`,
+        WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
+      }}>{prefix}{target === 3200 ? value.toLocaleString('pt-BR') : value}{suffix}</div>
+      <div style={{ fontSize: '0.85rem', color: 'rgba(255,255,255,0.5)', marginTop: 4 }}>{label}</div>
+    </div>
+  );
+}
+
+function MetricsSection() {
+  return (
+    <section style={{
+      padding: '80px 0', position: 'relative',
+      background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
+    }}>
+      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 24 }}>
+          {metricsData.map((m, i) => (
+            <MetricCounter key={i} {...m} />
           ))}
         </div>
       </div>
@@ -507,7 +552,7 @@ function FeaturesSection() {
   );
 }
 
-// ─── Comparison Table ────────────────────────────────────────────────────────
+// ─── Comparison ──────────────────────────────────────────────────────────────
 const comparisonRows = [
   { label: 'Por usuário/mês', amelia: 'R$ 180', pipedrive: 'R$ 384', hubspot: 'R$ 600', salesforce: 'R$ 1.050' },
   { label: 'Equipe de 5', amelia: 'R$ 1.719/mês', pipedrive: 'R$ 1.920/mês', hubspot: 'R$ 3.000/mês', salesforce: 'R$ 5.250/mês' },
@@ -535,7 +580,9 @@ function ComparisonSection() {
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <div className="tag">Comparativo real</div>
             <h2 className="section-title">Mais funcionalidades.<br />Uma fração do preço.</h2>
-            <p className="section-sub" style={{ margin: '0 auto' }}>Comparamos com os maiores CRMs do mercado. Veja por que migrar para a Amélia é uma decisão óbvia.</p>
+            <BlurReveal>
+              <p className="section-sub" style={{ margin: '0 auto' }}>Comparamos com os maiores CRMs do mercado. Veja por que migrar para a Amélia é uma decisão óbvia.</p>
+            </BlurReveal>
           </div>
         </Reveal>
         <Reveal>
@@ -549,11 +596,7 @@ function ComparisonSection() {
                     background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
                     color: 'white', borderRadius: '16px 16px 0 0', position: 'relative',
                   }}>
-                    <span style={{
-                      position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)',
-                      padding: '3px 14px', borderRadius: 100, background: COLORS.deepTeal,
-                      color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap',
-                    }}>★ Recomendado</span>
+                    <span style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', padding: '3px 14px', borderRadius: 100, background: COLORS.deepTeal, color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>★ Recomendado</span>
                     Amélia CRM
                   </th>
                   <th style={{ padding: '24px 20px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #f0f0f0' }}>Pipedrive</th>
@@ -585,13 +628,15 @@ function ComparisonSection() {
   );
 }
 
-// ─── Proof Section ───────────────────────────────────────────────────────────
+// ─── Proof ───────────────────────────────────────────────────────────────────
 function ProofSection() {
+  const { ref: parallaxRef, offset } = useParallax(0.12);
   return (
-    <section id="proof" style={{
+    <section id="proof" ref={parallaxRef} style={{
       padding: '120px 0', position: 'relative', overflow: 'hidden',
       background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
     }}>
+      <div style={{ position: 'absolute', top: '20%', right: '10%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(95,192,165,0.06) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
         <Reveal>
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
@@ -606,10 +651,12 @@ function ProofSection() {
               background: 'rgba(95,192,165,0.1)', border: '1px solid rgba(95,192,165,0.2)',
               color: COLORS.vividMint, fontWeight: 600, fontSize: '0.95rem', marginBottom: 32,
             }}>🚀 Programa Piloto — Condições exclusivas</div>
-            <p style={{ fontSize: '1.2rem', lineHeight: 1.8, color: 'rgba(255,255,255,0.7)', marginBottom: 40 }}>
-              Seja uma das primeiras empresas a experimentar o poder da Amélia. Estamos selecionando empresas para nosso{' '}
-              <em style={{ fontStyle: 'normal', color: COLORS.vividMint, fontWeight: 600 }}>programa piloto com condições exclusivas</em> de early-adopter. Vagas limitadas.
-            </p>
+            <BlurReveal>
+              <p style={{ fontSize: '1.2rem', lineHeight: 1.8, color: 'rgba(255,255,255,0.7)', marginBottom: 40 }}>
+                Seja uma das primeiras empresas a experimentar o poder da Amélia. Estamos selecionando empresas para nosso{' '}
+                <em style={{ fontStyle: 'normal', color: COLORS.vividMint, fontWeight: 600 }}>programa piloto com condições exclusivas</em> de early-adopter. Vagas limitadas.
+              </p>
+            </BlurReveal>
             <a href="#demo" style={{
               display: 'inline-flex', alignItems: 'center', padding: '14px 32px', borderRadius: 12,
               background: 'rgba(255,255,255,0.1)', border: '1.5px solid rgba(255,255,255,0.2)',
@@ -622,7 +669,7 @@ function ProofSection() {
   );
 }
 
-// ─── Pricing Section ─────────────────────────────────────────────────────────
+// ─── Pricing ─────────────────────────────────────────────────────────────────
 const pricingFeatures = [
   'Pipeline visual com Kanban drag-and-drop', 'SDR com Inteligência Artificial', 'WhatsApp Business API integrado',
   'Email profissional integrado', 'Telefonia com gravação e transcrição', 'Google Calendar com agendamento automático',
@@ -638,7 +685,9 @@ function PricingSection() {
           <div style={{ textAlign: 'center', marginBottom: 64 }}>
             <div className="tag">Preço transparente</div>
             <h2 className="section-title">Um preço. Tudo incluso.<br />Sem surpresas.</h2>
-            <p className="section-sub" style={{ margin: '0 auto' }}>Sem planos confusos. Todas as funcionalidades liberadas desde o dia 1.</p>
+            <BlurReveal>
+              <p className="section-sub" style={{ margin: '0 auto' }}>Sem planos confusos. Todas as funcionalidades liberadas desde o dia 1.</p>
+            </BlurReveal>
           </div>
         </Reveal>
         <Reveal>
@@ -658,12 +707,7 @@ function PricingSection() {
             <ul style={{ listStyle: 'none', textAlign: 'left', marginBottom: 36, padding: 0 }}>
               {pricingFeatures.map((f, i) => (
                 <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', fontSize: '0.9rem', color: COLORS.darkSlate, borderBottom: '1px solid #f5f5f5' }}>
-                  <span style={{
-                    flexShrink: 0, width: 20, height: 20, borderRadius: '50%',
-                    background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
-                    color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '0.65rem', fontWeight: 700,
-                  }}>✓</span>
+                  <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.65rem', fontWeight: 700 }}>✓</span>
                   {f}
                 </li>
               ))}
@@ -678,6 +722,19 @@ function PricingSection() {
 }
 
 // ─── Demo Form ───────────────────────────────────────────────────────────────
+function FormField({ label, type, placeholder }: { label: string; type: string; placeholder: string }) {
+  return (
+    <div>
+      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>{label}</label>
+      <input type={type} placeholder={placeholder} style={{
+        width: '100%', padding: '14px 16px', borderRadius: 12,
+        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
+        color: 'white', fontFamily: 'inherit', fontSize: '0.95rem', outline: 'none',
+      }} />
+    </div>
+  );
+}
+
 function DemoSection() {
   return (
     <section id="demo" style={{
@@ -700,10 +757,7 @@ function DemoSection() {
                   { icon: '💰', text: 'ROI estimado para sua operação' },
                 ].map((b, i) => (
                   <li key={i} style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 20, fontSize: '1rem', color: 'rgba(255,255,255,0.8)' }}>
-                    <span style={{
-                      width: 36, height: 36, borderRadius: 10, background: 'rgba(95,192,165,0.15)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0,
-                    }}>{b.icon}</span>
+                    <span style={{ width: 36, height: 36, borderRadius: 10, background: 'rgba(95,192,165,0.15)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1rem', flexShrink: 0 }}>{b.icon}</span>
                     {b.text}
                   </li>
                 ))}
@@ -763,24 +817,10 @@ function DemoSection() {
   );
 }
 
-function FormField({ label, type, placeholder }: { label: string; type: string; placeholder: string }) {
-  return (
-    <div>
-      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 600, color: 'rgba(255,255,255,0.6)', marginBottom: 8 }}>{label}</label>
-      <input type={type} placeholder={placeholder} style={{
-        width: '100%', padding: '14px 16px', borderRadius: 12,
-        background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.12)',
-        color: 'white', fontFamily: 'inherit', fontSize: '0.95rem', outline: 'none',
-      }} />
-    </div>
-  );
-}
-
 // ─── Footer ──────────────────────────────────────────────────────────────────
 function Footer() {
   return (
     <>
-      {/* CTA Strip */}
       <section style={{ padding: '64px 0', background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`, textAlign: 'center' }}>
         <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px' }}>
           <Reveal>
@@ -872,9 +912,8 @@ export default function LandingPage() {
         .brain-step {
           padding: 40px 28px; background: rgba(255,255,255,0.04);
           border: 1px solid rgba(255,255,255,0.06); border-radius: 20px;
-          transition: all 0.4s ease; backdrop-filter: blur(10px); height: 100%;
+          transition: all 0.6s cubic-bezier(0.22,1,0.36,1); backdrop-filter: blur(10px); height: 100%;
         }
-        .brain-step:hover { background: rgba(255,255,255,0.08); transform: translateY(-4px); border-color: rgba(95,192,165,0.3); }
 
         .feature-card {
           padding: 32px 28px; border-radius: 20px; background: rgba(255,255,255,0.04);
@@ -899,6 +938,7 @@ export default function LandingPage() {
       <BrainSection />
       <PlatformSection />
       <FeaturesSection />
+      <MetricsSection />
       <ComparisonSection />
       <ProofSection />
       <PricingSection />
