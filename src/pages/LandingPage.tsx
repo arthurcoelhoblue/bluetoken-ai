@@ -203,7 +203,7 @@ const personas = [
 function Personas() {
   const { ref: parallaxRef, offset } = useParallax(0.15);
   return (
-    <section id="personas" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', overflow: 'hidden' }}>
+    <section id="personas" ref={parallaxRef} style={{ padding: '120px 0', background: 'linear-gradient(180deg, #fff 0%, #f7fcfa 100%)', position: 'relative', overflow: 'hidden', zIndex: 1 }}>
       {/* Parallax shape */}
       <div style={{ position: 'absolute', top: '20%', right: '-5%', width: 400, height: 400, borderRadius: '50%', background: 'radial-gradient(circle, rgba(188,233,217,0.3) 0%, transparent 70%)', transform: `translateY(${offset}px)`, pointerEvents: 'none' }} />
       <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 24px', position: 'relative', zIndex: 2 }}>
