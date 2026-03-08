@@ -198,9 +198,7 @@ export function AppSidebar() {
       {/* Header */}
       <SidebarHeader className="border-b border-sidebar-border pb-4">
         <div className="flex items-center gap-3 px-2 py-3">
-          <div className="h-8 w-8 rounded-lg bg-gradient-primary flex items-center justify-center shrink-0">
-            <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-6 w-6 object-contain" />
-          </div>
+          <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-10 w-10 object-contain shrink-0" />
           {!collapsed && (
             <div className="flex flex-col overflow-hidden">
               <span className="font-bold text-sm truncate">Amélia CRM</span>
