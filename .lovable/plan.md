@@ -1,52 +1,57 @@
 
 
-## Problema
+# Upgrade Visual da Landing Page — Nível Apple
 
-O `startMeetingScheduling` está importado no `index.ts` mas **nunca é chamado**. O fluxo atual:
+## Análise da Apple MacBook Pro Page
 
-1. `handleMeetingScheduling` (linha 148) — verifica se já existe um estado `PENDENTE` de agendamento
-2. Se não existe estado pendente, retorna `{ handled: false }` e segue o fluxo normal
-3. O classificador pode detectar `AGENDAMENTO_REUNIAO` como intent, mas **ninguém inicia o fluxo de slots**
+Técnicas identificadas que serão aplicadas na Amélia:
 
-O lead pede reunião, a IA classifica corretamente, mas nunca busca os horários na agenda do vendedor.
+1. **Scroll-driven text scaling** — título hero que reduz de tamanho conforme scroll
+2. **Sticky pinned sections** — seção fica fixa enquanto conteúdo revela progressivamente
+3. **Parallax layers** — elementos de fundo se movem em velocidades diferentes
+4. **Horizontal scroll** — cards deslizam horizontalmente com scroll vertical
+5. **Text opacity/blur transitions** — texto desfocado que ganha nitidez ao entrar na viewport
+6. **Number counter animation** — métricas contam de 0 ao valor final
+7. **Cinematic dark aesthetic** — full-bleed dark com gradientes sutis
 
-## Solução
+## Alterações em `src/pages/LandingPage.tsx`
 
-Adicionar a chamada a `startMeetingScheduling` no `index.ts` quando:
-- O `handleMeetingScheduling` retorna `{ handled: false }` (sem estado pendente)
-- E o intent classificado é `AGENDAMENTO_REUNIAO`
+### 1. Hook `useScrollProgress`
+Custom hook que retorna um valor 0→1 baseado na posição de scroll de um elemento (usando `IntersectionObserver` + scroll listener). Base para todos os efeitos.
 
-### Mudança em `supabase/functions/sdr-ia-interpret/index.ts`
+### 2. Hero — Scroll-driven scaling
+- Título começa grande (`scale(1)`) e reduz para `scale(0.85)` + `opacity: 0` conforme scroll
+- Logo faz parallax (sobe mais rápido que o scroll)
+- Background gradient muda sutilmente com scroll
 
-Após a classificação de intent (seção 4b, ~linha 251), verificar se o intent é `AGENDAMENTO_REUNIAO` e iniciar o fluxo de agendamento:
+### 3. Brain Section — Sticky pinned reveal
+- Container tem `height: 300vh` (scroll space)
+- Conteúdo interno fica `position: sticky; top: 0`
+- Os 4 passos aparecem um a um conforme scroll progress (0-25%, 25-50%, 50-75%, 75-100%)
+- Cada passo faz fade+slide ao entrar e sai ao próximo
 
-```ts
-// After classifyIntent, around line 251:
-if (classifierResult.intent === 'AGENDAMENTO_REUNIAO' && !meetingResult.handled) {
-  const startResult = await startMeetingScheduling(supabase, meetingCtx);
-  if (startResult.handled && startResult.response) {
-    const intentId = await saveInterpretation(supabase, msg, {
-      intent: 'AGENDAMENTO_REUNIAO',
-      confidence: classifierResult.confidence,
-      acao: 'ENVIAR_RESPOSTA_AUTOMATICA',
-      deve_responder: true,
-    }, true, true, startResult.response);
-    // Send response via WhatsApp
-    if (telefone) {
-      await executeActions(supabase, {
-        lead_id: msg.lead_id, run_id: msg.run_id, empresa: msg.empresa,
-        acao: 'ENVIAR_RESPOSTA_AUTOMATICA', telefone,
-        resposta: startResult.response, ...
-      });
-    }
-    return json response with slots offered
-  }
-}
-```
+### 4. Features — Horizontal scroll
+- Scroll vertical converte em horizontal para os 9 cards de features
+- Container sticky com `translateX` baseado em scroll progress
 
-O `meetingCtx.ownerId` vem de `parsedContext.deals?.[0].owner_id`. Se o lead não tiver deal com owner, o `startMeetingScheduling` já trata retornando `{ handled: false }`.
+### 5. Metrics — Counter animation
+- Números contam de 0 ao valor final quando entram na viewport
+- Usa `requestAnimationFrame` para smoothness
 
-| Arquivo | Mudança |
-|---------|---------|
-| `supabase/functions/sdr-ia-interpret/index.ts` | Chamar `startMeetingScheduling` quando intent = `AGENDAMENTO_REUNIAO` e não há estado pendente |
+### 6. Parallax backgrounds
+- Formas geométricas sutis (círculos, gradientes) com `translateY` proporcional ao scroll
+- Aplicado nas seções Personas, Platform e Proof
+
+### 7. Text blur reveal
+- Subtítulos das seções começam com `filter: blur(4px)` e `opacity: 0.3`
+- Transição para nítido conforme scroll progress
+
+### 8. Smooth scroll global
+- `html { scroll-behavior: smooth }` já existe, adicionar `scroll-snap` opcional nas seções principais
+
+## Escopo
+- **1 arquivo**: `src/pages/LandingPage.tsx` (rewrite significativo das seções)
+- **1 arquivo**: `src/index.css` (adicionar utility classes para scroll effects)
+- **Sem dependências novas** — tudo com IntersectionObserver + scroll events + CSS transforms
+- **Sem mudança de conteúdo** — mesmo texto, mesmas seções, visual premium
 
