@@ -28,7 +28,8 @@ const STATUS_CONFIG: Record<string, { label: string; variant: "default" | "secon
 
 export default function Assinatura() {
   const { subscription, activeUsers, isLoading, refetch } = useSubscriptionLimits();
-  const { selectedEmpresa } = useCompany();
+  const { activeCompany } = useCompany();
+  const selectedEmpresa = activeCompany?.id;
   const [loadingCheckout, setLoadingCheckout] = useState(false);
   const [loadingPortal, setLoadingPortal] = useState(false);
   const [searchParams] = useSearchParams();
