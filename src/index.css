@@ -5,38 +5,38 @@
 /* Amelia CRM - Grupo Blue - Design System
    Enterprise Dashboard - Clean, Professional, Trust-inspiring */
 
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 
 @layer base {
   :root {
-    /* Core brand colors - Deep corporate blue */
+    /* Core brand colors - Amélia CRM Brand Manual */
     --background: 220 20% 98%;
-    --foreground: 222 47% 11%;
+    --foreground: 209 24% 22%;
 
     --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
+    --card-foreground: 209 24% 22%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 222 47% 11%;
+    --popover-foreground: 209 24% 22%;
 
-    /* Primary - Medium Aquamarine #66CDAA softer */
-    --primary: 160 41% 65%;
-    --primary-foreground: 0 0% 8%;
-    --primary-glow: 160 41% 75%;
+    /* Primary - Teal Primary #379C8B */
+    --primary: 170 47% 41%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 155 42% 56%;
 
     /* Secondary - Soft gray-blue */
     --secondary: 220 14% 96%;
-    --secondary-foreground: 222 47% 11%;
+    --secondary-foreground: 209 24% 22%;
 
     /* Muted - Subtle backgrounds */
     --muted: 220 14% 96%;
     --muted-foreground: 220 9% 46%;
 
-    /* Accent */
-    --accent: 160 51% 60%;
+    /* Accent - Vivid Mint #5FC0A5 */
+    --accent: 155 42% 56%;
     --accent-foreground: 0 0% 100%;
 
-    /* Blue Consult - Professional green */
+    /* Success */
     --success: 142 71% 45%;
     --success-foreground: 0 0% 100%;
 
@@ -50,23 +50,23 @@
     /* Borders and inputs */
     --border: 220 13% 91%;
     --input: 220 13% 91%;
-    --ring: 160 51% 60%;
+    --ring: 170 47% 41%;
 
     --radius: 0.75rem;
 
     /* Sidebar */
     --sidebar-background: 0 0% 7%;
     --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 160 51% 60%;
+    --sidebar-primary: 170 47% 41%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 0 0% 14%;
     --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-border: 0 0% 14%;
-    --sidebar-ring: 160 51% 60%;
+    --sidebar-ring: 170 47% 41%;
 
-    /* Custom - Gradients and effects */
-    --gradient-primary: linear-gradient(135deg, hsl(160 51% 60%), hsl(160 51% 75%));
-    --gradient-hero: linear-gradient(135deg, hsl(0 0% 7%), hsl(160 51% 25%));
+    /* Custom - Gradients and effects (Deep Teal → Vivid Mint) */
+    --gradient-primary: linear-gradient(135deg, hsl(170 47% 41%), hsl(155 42% 56%));
+    --gradient-hero: linear-gradient(135deg, hsl(0 0% 7%), hsl(180 74% 17%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 100%), hsl(220 20% 98%));
     --gradient-success: linear-gradient(135deg, hsl(142 71% 45%), hsl(160 70% 40%));
 
@@ -74,7 +74,7 @@
     --shadow-sm: 0 1px 2px 0 hsl(0 0% 0% / 0.05);
     --shadow-md: 0 4px 6px -1px hsl(0 0% 0% / 0.1), 0 2px 4px -2px hsl(0 0% 0% / 0.1);
     --shadow-lg: 0 10px 15px -3px hsl(0 0% 0% / 0.1), 0 4px 6px -4px hsl(0 0% 0% / 0.1);
-    --shadow-glow: 0 0 20px hsl(160 51% 60% / 0.3);
+    --shadow-glow: 0 0 20px hsl(170 47% 41% / 0.3);
     --shadow-card: 0 1px 3px 0 hsl(0 0% 0% / 0.1), 0 1px 2px -1px hsl(0 0% 0% / 0.1);
   }
 
@@ -88,9 +88,10 @@
     --popover: 0 0% 10%;
     --popover-foreground: 0 0% 95%;
 
-    --primary: 160 41% 65%;
+    /* Primary - Vivid Mint for dark mode contrast */
+    --primary: 155 42% 56%;
     --primary-foreground: 0 0% 8%;
-    --primary-glow: 160 41% 75%;
+    --primary-glow: 153 50% 82%;
 
     --secondary: 0 0% 14%;
     --secondary-foreground: 0 0% 95%;
@@ -98,7 +99,7 @@
     --muted: 0 0% 14%;
     --muted-foreground: 0 0% 55%;
 
-    --accent: 160 51% 65%;
+    --accent: 155 42% 56%;
     --accent-foreground: 0 0% 100%;
 
     --success: 142 71% 50%;
@@ -112,22 +113,22 @@
 
     --border: 0 0% 18%;
     --input: 0 0% 18%;
-    --ring: 160 51% 65%;
+    --ring: 155 42% 56%;
 
     --sidebar-background: 0 0% 3%;
     --sidebar-foreground: 0 0% 95%;
-    --sidebar-primary: 160 51% 65%;
+    --sidebar-primary: 155 42% 56%;
     --sidebar-primary-foreground: 0 0% 100%;
     --sidebar-accent: 0 0% 10%;
     --sidebar-accent-foreground: 0 0% 95%;
     --sidebar-border: 0 0% 10%;
-    --sidebar-ring: 160 51% 65%;
+    --sidebar-ring: 155 42% 56%;
 
-    --gradient-primary: linear-gradient(135deg, hsl(160 51% 60%), hsl(160 51% 75%));
-    --gradient-hero: linear-gradient(135deg, hsl(0 0% 3%), hsl(160 51% 20%));
+    --gradient-primary: linear-gradient(135deg, hsl(170 47% 41%), hsl(155 42% 56%));
+    --gradient-hero: linear-gradient(135deg, hsl(0 0% 3%), hsl(180 74% 17%));
     --gradient-card: linear-gradient(180deg, hsl(0 0% 10%), hsl(0 0% 6%));
 
-    --shadow-glow: 0 0 20px hsl(160 51% 60% / 0.4);
+    --shadow-glow: 0 0 20px hsl(155 42% 56% / 0.4);
   }
 }
 
@@ -271,10 +272,10 @@
 
 @keyframes pulse-glow {
   0%, 100% {
-    box-shadow: 0 0 20px hsl(160 51% 60% / 0.3);
+    box-shadow: 0 0 20px hsl(170 47% 41% / 0.3);
   }
   50% {
-    box-shadow: 0 0 30px hsl(160 51% 60% / 0.5);
+    box-shadow: 0 0 30px hsl(170 47% 41% / 0.5);
   }
 }
 
