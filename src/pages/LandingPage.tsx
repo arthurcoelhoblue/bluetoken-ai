@@ -593,11 +593,11 @@ function ComparisonSection() {
                 <tr>
                   <th style={{ padding: '24px 20px', textAlign: 'left', fontWeight: 600, borderBottom: '2px solid #f0f0f0' }}></th>
                   <th style={{
-                    padding: '24px 20px', textAlign: 'center', fontWeight: 600,
+                    padding: '32px 20px 24px', textAlign: 'center', fontWeight: 600,
                     background: `linear-gradient(135deg, ${COLORS.tealPrimary}, ${COLORS.vividMint})`,
                     color: 'white', borderRadius: '16px 16px 0 0', position: 'relative',
                   }}>
-                    <span style={{ position: 'absolute', top: -12, left: '50%', transform: 'translateX(-50%)', padding: '3px 14px', borderRadius: 100, background: COLORS.deepTeal, color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>★ Recomendado</span>
+                    <span style={{ position: 'absolute', top: -14, left: '50%', transform: 'translateX(-50%)', padding: '4px 16px', borderRadius: 100, background: COLORS.deepTeal, color: COLORS.lightMint, fontSize: '0.65rem', fontWeight: 700, letterSpacing: '0.05em', whiteSpace: 'nowrap' }}>★ Recomendado</span>
                     Amélia CRM
                   </th>
                   <th style={{ padding: '24px 20px', textAlign: 'center', fontWeight: 600, borderBottom: '2px solid #f0f0f0' }}>Pipedrive</th>
