@@ -252,6 +252,7 @@ function BrainSection() {
         position: 'sticky', top: 0, height: '100vh', overflow: 'hidden',
         background: 'linear-gradient(135deg, #0B2E2E 0%, #0B4B4B 40%, #1a5c5c 100%)',
         display: 'flex', alignItems: 'center', justifyContent: 'center',
+        paddingTop: 80,
       }}>
         {/* Animated BG circles */}
         <div style={{ position: 'absolute', top: '10%', left: '10%', width: 500, height: 500, borderRadius: '50%', background: `radial-gradient(circle, rgba(95,192,165,${0.03 + progress * 0.05}) 0%, transparent 70%)`, transform: `scale(${1 + progress * 0.3})`, pointerEvents: 'none', transition: 'transform 0.3s ease' }} />
