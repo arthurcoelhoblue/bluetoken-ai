@@ -174,8 +174,8 @@ serve(async (req) => {
         if (/^\{\{/.test(rawText)) {
           rawText = 'Olá ' + rawText;
         }
-        if (/\{\{[^}]+\}\}\s*$/.test(rawText)) {
-          rawText = rawText.trimEnd() + '.';
+        if (/\{\{[^}]+\}\}\s*[.!?,;:]?\s*$/.test(rawText)) {
+          rawText = rawText.replace(/(\{\{[^}]+\}\})\s*[.!?,;:]?\s*$/, '$1. Fico à disposição.');
         }
 
         const varMap: Record<string, number> = {};
