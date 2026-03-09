@@ -1,28 +1,28 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-### Status: ✅ Implementado
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+# Plano: Corrigir templates falhando e reenviar batch
 
-### Implementação
+## Status Atual
+- **18 templates Axia**: todos `PENDING` (já submetidos, aguardando aprovação Meta) ✅
+- **5 templates MPUPPE**: submetidos com sucesso e atualizados para `PENDING` ✅  
+- **2 templates MPUPPE falhando**: `lgpd_followup_conteudo` e `lgpd_risco_anpd_urgencia` — Meta rejeita com "Variáveis não podem estar no início ou no fim do modelo"
+- **19 templates MPUPPE restantes**: ainda `LOCAL`, não foram processados pois o batch expirou antes de completar
+- **Sync PATCH**: 17 templates sincronizados com sucesso ✅
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+## Causa Raiz dos 2 Erros
+A normalização do edge function adiciona `.` apenas quando o texto termina exatamente com `}}`. Mas os templates armazenados já têm `{{2}}.` (variável + ponto) — a Meta ainda considera isso "variável no final".
 
-### Webhook URL (configurar no Stripe Dashboard)
-```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
-```
+## Etapas
 
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+### 1. Melhorar normalização no edge function
+Alterar o regex de detecção de variável final para também capturar `{{N}}.` ou `{{N}}!` (variável + pontuação simples):
+- De: `/\{\{[^}]+\}\}\s*$/`
+- Para: `/\{\{[^}]+\}\}\s*[.!?,;:]?\s*$/`
+- Quando detectado, substituir por `{{N}}. Fico à disposição.`
+
+### 2. Reenviar batch-submit
+Com a normalização corrigida, disparar novamente o batch para submeter os 21 templates LOCAL restantes (incluindo os 2 que falharam).
+
+### 3. Sincronizar status
+Rodar PATCH novamente para atualizar status dos que já foram aprovados/rejeitados pela Meta.
+
