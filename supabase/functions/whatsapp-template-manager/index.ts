@@ -72,7 +72,7 @@ serve(async (req) => {
 
         let batchQuery = supabase
           .from('message_templates')
-          .select('id, codigo, nome, conteudo, canal')
+          .select('id, codigo, nome, conteudo, canal, meta_category, meta_language, meta_components')
           .eq('empresa', empresa)
           .eq('meta_status', 'LOCAL')
           .eq('canal', 'WHATSAPP')
@@ -89,34 +89,46 @@ serve(async (req) => {
         for (const tpl of locals) {
           try {
             const metaName = tpl.codigo.toLowerCase();
-            let rawText = tpl.conteudo as string;
+            const category = (tpl.meta_category as string) || 'MARKETING';
+            const language = (tpl.meta_language as string) || 'pt_BR';
 
-            // Meta doesn't allow variables at the very start or end
-            // Prefix with "Olá " if text starts with {{...}}
-            if (/^\{\{/.test(rawText)) {
-              rawText = 'Olá ' + rawText;
-            }
-            // If text ends with {{...}}, append a period
-            if (/\{\{[^}]+\}\}\s*$/.test(rawText)) {
-              rawText = rawText.trimEnd() + '.';
-            }
-
-            const varMap: Record<string, number> = {};
-            let varCounter = 0;
-            const bodyText = rawText.replace(
-              /\{\{(\w+)\}\}/g,
-              (_m: string, varName: string) => {
+            // If meta_components is stored, use them directly (already formatted)
+            let comps: unknown[];
+            if (tpl.meta_components && Array.isArray(tpl.meta_components) && (tpl.meta_components as unknown[]).length > 0) {
+              // Use stored components — normalize BODY variables
+              comps = (tpl.meta_components as Array<Record<string, unknown>>).map((comp: Record<string, unknown>) => {
+                if (comp.type !== 'BODY' || typeof comp.text !== 'string') return comp;
+                let rawText = comp.text as string;
+                if (/^\{\{/.test(rawText)) rawText = 'Olá ' + rawText;
+                if (/\{\{[^}]+\}\}\s*$/.test(rawText)) rawText = rawText.trimEnd() + '.';
+                const varMap: Record<string, number> = {};
+                let vc = 0;
+                const bodyText = rawText.replace(/\{\{(\w+)\}\}/g, (_m: string, vn: string) => {
+                  if (!(vn in varMap)) { vc++; varMap[vn] = vc; }
+                  return `{{${varMap[vn]}}}`;
+                });
+                const exVals = Array(vc).fill('Cliente');
+                return { ...comp, text: bodyText, ...(vc > 0 ? { example: { body_text: [exVals] } } : {}) };
+              });
+            } else {
+              // Fallback: build BODY-only component from conteudo
+              let rawText = tpl.conteudo as string;
+              if (/^\{\{/.test(rawText)) rawText = 'Olá ' + rawText;
+              if (/\{\{[^}]+\}\}\s*$/.test(rawText)) rawText = rawText.trimEnd() + '.';
+              const varMap: Record<string, number> = {};
+              let varCounter = 0;
+              const bodyText = rawText.replace(/\{\{(\w+)\}\}/g, (_m: string, varName: string) => {
                 if (!(varName in varMap)) { varCounter++; varMap[varName] = varCounter; }
                 return `{{${varMap[varName]}}}`;
-              }
-            );
-            const exampleValues = Array(varCounter).fill('Cliente');
-            const comps = [{ type: 'BODY', text: bodyText, ...(varCounter > 0 ? { example: { body_text: [exampleValues] } } : {}) }];
+              });
+              const exampleValues = Array(varCounter).fill('Cliente');
+              comps = [{ type: 'BODY', text: bodyText, ...(varCounter > 0 ? { example: { body_text: [exampleValues] } } : {}) }];
+            }
 
             const res = await fetch(`${META_BASE}/${config.metaBusinessAccountId}/message_templates`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.metaAccessToken}` },
-              body: JSON.stringify({ name: metaName, category: 'MARKETING', language: 'pt_BR', components: comps }),
+              body: JSON.stringify({ name: metaName, category, language, components: comps }),
             });
             const resData = await res.json();
 
