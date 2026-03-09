@@ -100,7 +100,7 @@ serve(async (req) => {
                 if (comp.type !== 'BODY' || typeof comp.text !== 'string') return comp;
                 let rawText = comp.text as string;
                 if (/^\{\{/.test(rawText)) rawText = 'Olá ' + rawText;
-                if (/\{\{[^}]+\}\}\s*$/.test(rawText)) rawText = rawText.trimEnd() + '.';
+                if (/\{\{[^}]+\}\}\s*[.!?,;:]?\s*$/.test(rawText)) rawText = rawText.replace(/(\{\{[^}]+\}\})\s*[.!?,;:]?\s*$/, '$1. Fico à disposição.');
                 const varMap: Record<string, number> = {};
                 let vc = 0;
                 const bodyText = rawText.replace(/\{\{(\w+)\}\}/g, (_m: string, vn: string) => {
