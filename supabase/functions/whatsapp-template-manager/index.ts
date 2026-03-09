@@ -140,7 +140,7 @@ serve(async (req) => {
 
             await supabase.from('message_templates').update({
               meta_template_id: resData.id, meta_status: resData.status || 'PENDING',
-              meta_category: 'MARKETING', meta_language: 'pt_BR', meta_components: comps,
+              meta_category: category, meta_language: language, meta_components: comps,
             }).eq('id', tpl.id);
 
             batchResults.push({ codigo: tpl.codigo, success: true, metaId: resData.id });
