@@ -114,7 +114,7 @@ serve(async (req) => {
               // Fallback: build BODY-only component from conteudo
               let rawText = tpl.conteudo as string;
               if (/^\{\{/.test(rawText)) rawText = 'Olá ' + rawText;
-              if (/\{\{[^}]+\}\}\s*$/.test(rawText)) rawText = rawText.trimEnd() + '.';
+              if (/\{\{[^}]+\}\}\s*[.!?,;:]?\s*$/.test(rawText)) rawText = rawText.replace(/(\{\{[^}]+\}\})\s*[.!?,;:]?\s*$/, '$1. Fico à disposição.');
               const varMap: Record<string, number> = {};
               let varCounter = 0;
               const bodyText = rawText.replace(/\{\{(\w+)\}\}/g, (_m: string, varName: string) => {
