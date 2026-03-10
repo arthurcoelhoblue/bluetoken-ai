@@ -347,7 +347,11 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
   // Fetch WebRTC key
   const fetchKey = useCallback(async (): Promise<string | null> => {
-    if (!empresa || !sipLogin) return null;
+    if (!empresa || !sipLogin) {
+      console.warn('[WebRTC] fetchKey skipped — missing empresa or sipLogin', { empresa, sipLogin });
+      return null;
+    }
+    console.log('[WebRTC] 🔑 Fetching WebRTC key...', { empresa, sipLogin });
     try {
       const { data, error: fnError } = await supabase.functions.invoke('zadarma-proxy', {
         body: { action: 'get_webrtc_key', empresa, payload: { sip_login: sipLogin } },
@@ -355,9 +359,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       if (fnError) throw fnError;
       const key = data?.key;
       if (!key) throw new Error('No WebRTC key returned');
+      console.log('[WebRTC] ✅ WebRTC key obtained successfully');
       return key as string;
     } catch (err) {
-      console.error('[WebRTC] Failed to fetch key:', err);
+      console.error('[WebRTC] ❌ Failed to fetch key:', err);
       setError(err instanceof Error ? err.message : 'Erro ao obter chave WebRTC');
       return null;
     }
