@@ -1,28 +1,34 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
+# Consistência entre Stage do Pipeline e Temperatura
 
-### Status: ✅ Implementado
+## O Problema
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+As tags no card de conversa vêm de fontes independentes:
 
-### Implementação
+- **Stage** ("Atacar agora!", "Contato Iniciado") → vem da tabela `pipeline_stages` via `deals.stage_id`
+- **Temperatura** ("Frio", "Morno", "Quente") → vem do campo `deals.temperatura`
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+Não existe nenhuma regra que sincronize esses dois valores. Um vendedor pode mover um deal para o stage "Atacar agora!" sem que a temperatura mude de "Frio" para "Quente". Da mesma forma, um lead pode ser classificado automaticamente como "Frio" mesmo estando num stage urgente.
 
-### Webhook URL (configurar no Stripe Dashboard)
-```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
-```
+## Opções de Correção
 
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+Há duas abordagens possíveis:
+
+### Opção A — Atualizar temperatura automaticamente ao mudar de stage
+
+Quando um deal é movido para um stage marcado como prioritário (ex: "Atacar agora!", "Negociação"), a temperatura é automaticamente elevada para QUENTE. Isso garante consistência mas remove controle manual do vendedor sobre a temperatura.
+
+### Opção B — Esconder a tag de temperatura quando o stage já comunica urgência
+
+Se o stage já indica urgência (ex: "Atacar agora!"), não mostrar a badge de temperatura redundante/contraditória. A temperatura continuaria existindo nos dados, mas visualmente seria suprimida quando o stage já carrega essa informação.
+
+## Qual abordagem você prefere?
+
+Preciso saber para implementar a correção correta. Na opção A, a mudança seria no backend (mutation de mover deal). Na opção B, seria apenas no componente `ConversaCard`.
+
+&nbsp;
+
+&nbsp;
+
+Prefiro a opção B
+
+&nbsp;
