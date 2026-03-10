@@ -17,6 +17,7 @@ interface AppLayoutProps {
 
 export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
+  const [showGlobalDeal, setShowGlobalDeal] = useState(false);
 
   if (isLoading) {
     return (
