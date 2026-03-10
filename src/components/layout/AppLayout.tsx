@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar } from './AppSidebar';
 import { TopBar } from './TopBar';
@@ -6,6 +7,8 @@ import { ThemeProvider } from '@/contexts/ThemeContext';
 import { Navigate } from 'react-router-dom';
 import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
 import { CopilotFab } from '@/components/copilot/CopilotFab';
+import { GlobalCreateDealDialog } from '@/components/pipeline/GlobalCreateDealDialog';
+import { Plus } from 'lucide-react';
 
 interface AppLayoutProps {
   children: React.ReactNode;
