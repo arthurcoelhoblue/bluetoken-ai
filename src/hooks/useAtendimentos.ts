@@ -25,6 +25,7 @@ export interface Atendimento {
   deal_stage_cor: string | null;
   deal_stage_id: string | null;
   deal_stage_posicao: number | null;
+  deal_stage_is_priority: boolean;
   deal_id: string | null;
   score_engajamento: number | null;
   score_intencao: number | null;
