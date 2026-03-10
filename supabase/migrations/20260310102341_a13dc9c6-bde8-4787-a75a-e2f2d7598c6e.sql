@@ -1,0 +1,1 @@
+UPDATE public.zadarma_extensions SET sip_login = '472122-110' WHERE extension_number = '110' AND empresa = 'BLUE_LABS' AND sip_login IS NULL;

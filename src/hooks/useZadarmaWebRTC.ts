@@ -49,16 +49,57 @@ const WIDGET_SELECTORS = [
   'iframe[src*="webrtc"]',
 ];
 
+const SCRIPT_LOAD_TIMEOUT_MS = 30000;
+
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    if (document.querySelector(`script[src="${src}"]`)) {
+      console.log('[WebRTC] Script already loaded:', src);
+      resolve();
+      return;
+    }
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+
+    const timeout = setTimeout(() => {
+      console.error('[WebRTC] ⏰ Script load TIMEOUT after 30s:', src);
+      script.remove();
+      reject(new Error(`Script load timeout (30s): ${src}`));
+    }, SCRIPT_LOAD_TIMEOUT_MS);
+
+    script.onload = () => {
+      clearTimeout(timeout);
+      console.log('[WebRTC] ✅ Script loaded:', src);
+      resolve();
+    };
+    script.onerror = () => {
+      clearTimeout(timeout);
+      console.error('[WebRTC] ❌ Script failed to load:', src);
+      script.remove();
+      reject(new Error(`Failed to load script: ${src}`));
+    };
     document.head.appendChild(script);
   });
+}
+
+async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      await loadScript(src);
+      return;
+    } catch (err) {
+      if (attempt < retries) {
+        console.warn(`[WebRTC] 🔄 Retrying script load (attempt ${attempt + 2}):`, src);
+        // Remove failed script tag so retry can re-add
+        const existing = document.querySelector(`script[src="${src}"]`);
+        existing?.remove();
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 // Temporarily make all widget elements interactive (remove inert + unhide)
@@ -306,7 +347,11 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
   // Fetch WebRTC key
   const fetchKey = useCallback(async (): Promise<string | null> => {
-    if (!empresa || !sipLogin) return null;
+    if (!empresa || !sipLogin) {
+      console.warn('[WebRTC] fetchKey skipped — missing empresa or sipLogin', { empresa, sipLogin });
+      return null;
+    }
+    console.log('[WebRTC] 🔑 Fetching WebRTC key...', { empresa, sipLogin });
     try {
       const { data, error: fnError } = await supabase.functions.invoke('zadarma-proxy', {
         body: { action: 'get_webrtc_key', empresa, payload: { sip_login: sipLogin } },
@@ -314,9 +359,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       if (fnError) throw fnError;
       const key = data?.key;
       if (!key) throw new Error('No WebRTC key returned');
+      console.log('[WebRTC] ✅ WebRTC key obtained successfully');
       return key as string;
     } catch (err) {
-      console.error('[WebRTC] Failed to fetch key:', err);
+      console.error('[WebRTC] ❌ Failed to fetch key:', err);
       setError(err instanceof Error ? err.message : 'Erro ao obter chave WebRTC');
       return null;
     }
@@ -522,18 +568,28 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
   // Initialize widget
   const initialize = useCallback(async () => {
-    if (!empresa || !sipLogin || !enabled || initializedRef.current) return;
+    if (!empresa || !sipLogin || !enabled || initializedRef.current) {
+      console.log('[WebRTC] initialize() skipped:', { empresa, sipLogin, enabled, initialized: initializedRef.current });
+      return;
+    }
 
+    console.log('[WebRTC] 🚀 Starting initialization...', { empresa, sipLogin });
     setStatus('loading');
     setError(null);
 
     try {
       const key = await fetchKey();
-      if (!key) { setStatus('error'); return; }
+      if (!key) {
+        console.error('[WebRTC] ❌ No key obtained, aborting init');
+        setStatus('error');
+        return;
+      }
       keyRef.current = key;
 
-      await loadScript(SCRIPT_LIB);
-      await loadScript(SCRIPT_FN);
+      console.log('[WebRTC] 📦 Loading Zadarma scripts...');
+      await loadScriptWithRetry(SCRIPT_LIB, 1);
+      await loadScriptWithRetry(SCRIPT_FN, 1);
+      console.log('[WebRTC] ✅ Scripts loaded, waiting for zadarmaWidgetFn...');
 
       let attempts = 0;
       while (!window.zadarmaWidgetFn && attempts < 50) {
@@ -541,8 +597,12 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         attempts++;
       }
 
-      if (!window.zadarmaWidgetFn) throw new Error('zadarmaWidgetFn não carregou');
+      if (!window.zadarmaWidgetFn) {
+        console.error('[WebRTC] ❌ zadarmaWidgetFn not available after 5s wait');
+        throw new Error('zadarmaWidgetFn não carregou');
+      }
 
+      console.log('[WebRTC] ✅ zadarmaWidgetFn found, initializing widget...');
       injectHideCSS();
       window.zadarmaWidgetFn(key, sipLogin, 'rounded', 'pt', true, { right: '10px', bottom: '5px' });
 
@@ -552,9 +612,11 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }, 2000);
 
       initializedRef.current = true;
+      console.log('[WebRTC] ✅ Widget initialized successfully!');
       setStatus('ready');
 
       refreshTimerRef.current = setTimeout(async () => {
+        console.log('[WebRTC] 🔄 Refreshing WebRTC key...');
         const newKey = await fetchKey();
         if (newKey) {
           keyRef.current = newKey;
@@ -563,7 +625,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       }, KEY_REFRESH_MS);
 
     } catch (err) {
-      console.error('[WebRTC] Init error:', err);
+      console.error('[WebRTC] ❌ Init error:', err);
       setError(err instanceof Error ? err.message : 'Erro ao inicializar WebRTC');
       setStatus('error');
     }
