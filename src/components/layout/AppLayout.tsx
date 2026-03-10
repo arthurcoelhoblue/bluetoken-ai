@@ -48,6 +48,14 @@ export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
           </SidebarInset>
         </div>
         <ZadarmaPhoneWidget />
+        <button
+          onClick={() => setShowGlobalDeal(true)}
+          className="fixed bottom-20 right-6 z-40 h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:bg-primary/90 flex items-center justify-center transition-transform hover:scale-105"
+          title="Novo Deal"
+        >
+          <Plus className="h-5 w-5" />
+        </button>
+        <GlobalCreateDealDialog open={showGlobalDeal} onOpenChange={setShowGlobalDeal} />
         <CopilotFab />
       </SidebarProvider>
     </ThemeProvider>
