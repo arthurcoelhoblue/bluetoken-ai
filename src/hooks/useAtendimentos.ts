@@ -309,6 +309,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
           deal_stage_cor: stageInfo?.cor ?? null,
           deal_stage_id: dealInfo?.stageId ?? null,
           deal_stage_posicao: stageInfo?.posicao ?? null,
+          deal_stage_is_priority: stageInfo?.is_priority ?? false,
           deal_id: dealInfo?.dealId ?? null,
           score_engajamento: dealInfo?.scoreEngajamento ?? null,
           score_intencao: dealInfo?.scoreIntencao ?? null,

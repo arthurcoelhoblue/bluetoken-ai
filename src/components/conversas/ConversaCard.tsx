@@ -91,7 +91,7 @@ export function ConversaCard({ atendimento: a, compact = false }: ConversaCardPr
                 {a.deal_stage_nome}
               </Badge>
             )}
-            {!compact && <TemperaturaBadge temperatura={a.temperatura} />}
+            {!compact && !a.deal_stage_is_priority && <TemperaturaBadge temperatura={a.temperatura} />}
             {a.modo !== 'MANUAL' && a.modo && (
               <Badge variant="outline" className="text-[10px] py-0 gap-0.5 bg-accent/50 text-accent-foreground border-accent">
                 <Sparkles className="h-3 w-3" />IA
