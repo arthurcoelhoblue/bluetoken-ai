@@ -139,7 +139,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
       }>();
 
       // Map stage_id -> stage info
-      const stageInfoMap = new Map<string, { nome: string; cor: string; posicao: number }>();
+      const stageInfoMap = new Map<string, { nome: string; cor: string; posicao: number; is_priority: boolean }>();
 
       if (crmContactIds.length > 0) {
         const { data: deals, error: dealsErr } = await supabase
