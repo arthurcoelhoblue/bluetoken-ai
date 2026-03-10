@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { useCreateDeal } from '@/hooks/useDeals';
 import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
@@ -16,7 +17,7 @@ import { useDealAutoFill } from '@/hooks/useDealAutoFill';
 import type { PipelineStage } from '@/types/deal';
 import { toast } from 'sonner';
 import { createDealSchema, type CreateDealFormData } from '@/schemas/deals';
-import { Brain, UserPlus, ChevronsUpDown, Check } from 'lucide-react';
+import { Brain, UserPlus, ChevronsUpDown, Check, ChevronDown } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { QuickCreateContactDialog } from './QuickCreateContactDialog';
 import { cn } from '@/lib/utils';
@@ -75,6 +76,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const [contactSearch, setContactSearch] = useState('');
   const [contactPopoverOpen, setContactPopoverOpen] = useState(false);
   const [manualContact, setManualContact] = useState<{ id: string; nome: string } | null>(null);
+  const [moreOptionsOpen, setMoreOptionsOpen] = useState(false);
 
   const { data: searchResults = [] } = useContactSearch(contactSearch, empresa);
   const createDeal = useCreateDeal();
@@ -108,6 +110,16 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
   const contactId = form.watch('contact_id');
   const selectedContactName = allContacts.find(c => c.id === contactId)?.nome;
 
+  // Auto-fill title with contact name when contact is selected
+  useEffect(() => {
+    if (selectedContactName) {
+      const currentTitle = form.getValues('titulo');
+      if (!currentTitle) {
+        form.setValue('titulo', selectedContactName);
+      }
+    }
+  }, [selectedContactName, form]);
+
   const handleSubmit = async (data: CreateDealFormData) => {
     const finalContactId = data.contact_id;
 
@@ -124,13 +136,14 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
         stage_id: data.stage_id || defaultStageId,
         valor: data.valor,
         temperatura: data.temperatura,
-        owner_id: data.owner_id,
+        owner_id: data.owner_id || user?.id || '',
       });
       toast.success('Deal criado com sucesso');
       onOpenChange(false);
       form.reset();
       setManualContact(null);
       setContactSearch('');
+      setMoreOptionsOpen(false);
     } catch {
       toast.error('Erro ao criar deal');
     }
@@ -162,17 +175,11 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
                 Campos pré-preenchidos pela Amélia com base nas conversas.
               </div>
             )}
-            <FormField control={form.control} name="titulo" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Título *</FormLabel>
-                <FormControl><Input {...field} placeholder="Ex: Declaração IR 2025" /></FormControl>
-                <FormMessage />
-              </FormItem>
-            )} />
 
+            {/* Primary fields — always visible */}
             <FormField control={form.control} name="contact_id" render={({ field }) => (
               <FormItem className="flex flex-col">
-                <FormLabel>Contato</FormLabel>
+                <FormLabel>Contato *</FormLabel>
                 <div className="flex gap-2">
                   <Popover open={contactPopoverOpen} onOpenChange={setContactPopoverOpen}>
                     <PopoverTrigger asChild>
@@ -233,60 +240,79 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
               </FormItem>
             )} />
 
-            <div className="grid grid-cols-2 gap-4">
-              <FormField control={form.control} name="valor" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Valor (R$)</FormLabel>
-                  <FormControl>
-                    <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} placeholder="0" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )} />
-              <FormField control={form.control} name="temperatura" render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Temperatura</FormLabel>
-                  <Select value={field.value} onValueChange={field.onChange}>
-                    <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                    <SelectContent>
-                      <SelectItem value="FRIO">Frio</SelectItem>
-                      <SelectItem value="MORNO">Morno</SelectItem>
-                      <SelectItem value="QUENTE">Quente</SelectItem>
-                    </SelectContent>
-                  </Select>
-                  <FormMessage />
-                </FormItem>
-              )} />
-            </div>
-
-            <FormField control={form.control} name="owner_id" render={({ field }) => (
+            <FormField control={form.control} name="titulo" render={({ field }) => (
               <FormItem>
-                <FormLabel>Vendedor Responsável *</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl><SelectTrigger><SelectValue placeholder="Selecione o vendedor" /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {vendedores.map(v => (
-                      <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <FormLabel>Título *</FormLabel>
+                <FormControl><Input {...field} placeholder="Ex: Declaração IR 2025" /></FormControl>
                 <FormMessage />
               </FormItem>
             )} />
 
-            <FormField control={form.control} name="stage_id" render={({ field }) => (
-              <FormItem>
-                <FormLabel>Stage Inicial</FormLabel>
-                <Select value={field.value} onValueChange={field.onChange}>
-                  <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
-                  <SelectContent>
-                    {activeStages.map(s => (
-                      <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </FormItem>
-            )} />
+            {/* Secondary fields — collapsed by default */}
+            <Collapsible open={moreOptionsOpen} onOpenChange={setMoreOptionsOpen}>
+              <CollapsibleTrigger asChild>
+                <Button type="button" variant="ghost" size="sm" className="w-full justify-between text-muted-foreground text-xs px-1">
+                  Mais opções
+                  <ChevronDown className={cn("h-4 w-4 transition-transform", moreOptionsOpen && "rotate-180")} />
+                </Button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="space-y-4 pt-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <FormField control={form.control} name="valor" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Valor (R$)</FormLabel>
+                      <FormControl>
+                        <Input type="number" {...field} onChange={e => field.onChange(parseFloat(e.target.value) || 0)} placeholder="0" />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                  <FormField control={form.control} name="temperatura" render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Temperatura</FormLabel>
+                      <Select value={field.value} onValueChange={field.onChange}>
+                        <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                        <SelectContent>
+                          <SelectItem value="FRIO">Frio</SelectItem>
+                          <SelectItem value="MORNO">Morno</SelectItem>
+                          <SelectItem value="QUENTE">Quente</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )} />
+                </div>
+
+                <FormField control={form.control} name="owner_id" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Vendedor Responsável</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue placeholder="Selecione o vendedor" /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {vendedores.map(v => (
+                          <SelectItem key={v.id} value={v.id}>{v.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+
+                <FormField control={form.control} name="stage_id" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Stage Inicial</FormLabel>
+                    <Select value={field.value} onValueChange={field.onChange}>
+                      <FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl>
+                      <SelectContent>
+                        {activeStages.map(s => (
+                          <SelectItem key={s.id} value={s.id}>{s.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </FormItem>
+                )} />
+              </CollapsibleContent>
+            </Collapsible>
 
             <Button type="submit" className="w-full" disabled={createDeal.isPending}>
               {createDeal.isPending ? 'Criando...' : 'Criar Deal'}

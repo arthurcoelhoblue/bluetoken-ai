@@ -7,7 +7,7 @@ export const createDealSchema = z.object({
   contact_id: z.string().optional(),
   contact_nome: z.string().optional(),
   stage_id: z.string().optional(),
-  owner_id: z.string().min(1, 'Selecione um vendedor responsável'),
+  owner_id: z.string().optional(),
 });
 
 export type CreateDealFormData = z.infer<typeof createDealSchema>;
