@@ -49,16 +49,57 @@ const WIDGET_SELECTORS = [
   'iframe[src*="webrtc"]',
 ];
 
+const SCRIPT_LOAD_TIMEOUT_MS = 30000;
+
 function loadScript(src: string): Promise<void> {
   return new Promise((resolve, reject) => {
-    if (document.querySelector(`script[src="${src}"]`)) { resolve(); return; }
+    if (document.querySelector(`script[src="${src}"]`)) {
+      console.log('[WebRTC] Script already loaded:', src);
+      resolve();
+      return;
+    }
     const script = document.createElement('script');
     script.src = src;
     script.async = true;
-    script.onload = () => resolve();
-    script.onerror = () => reject(new Error(`Failed to load script: ${src}`));
+
+    const timeout = setTimeout(() => {
+      console.error('[WebRTC] ⏰ Script load TIMEOUT after 30s:', src);
+      script.remove();
+      reject(new Error(`Script load timeout (30s): ${src}`));
+    }, SCRIPT_LOAD_TIMEOUT_MS);
+
+    script.onload = () => {
+      clearTimeout(timeout);
+      console.log('[WebRTC] ✅ Script loaded:', src);
+      resolve();
+    };
+    script.onerror = () => {
+      clearTimeout(timeout);
+      console.error('[WebRTC] ❌ Script failed to load:', src);
+      script.remove();
+      reject(new Error(`Failed to load script: ${src}`));
+    };
     document.head.appendChild(script);
   });
+}
+
+async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      await loadScript(src);
+      return;
+    } catch (err) {
+      if (attempt < retries) {
+        console.warn(`[WebRTC] 🔄 Retrying script load (attempt ${attempt + 2}):`, src);
+        // Remove failed script tag so retry can re-add
+        const existing = document.querySelector(`script[src="${src}"]`);
+        existing?.remove();
+        await new Promise(r => setTimeout(r, 2000));
+      } else {
+        throw err;
+      }
+    }
+  }
 }
 
 // Temporarily make all widget elements interactive (remove inert + unhide)
