@@ -162,7 +162,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
             .select('id, nome, cor, posicao')
             .in('id', Array.from(stageIds));
           for (const s of stages ?? []) {
-            stageInfoMap.set(s.id, { nome: s.nome, cor: s.cor, posicao: s.posicao });
+            stageInfoMap.set(s.id, { nome: s.nome, cor: s.cor, posicao: s.posicao, is_priority: s.is_priority });
           }
         }
 
