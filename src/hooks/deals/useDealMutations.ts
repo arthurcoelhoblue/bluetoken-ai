@@ -100,7 +100,10 @@ export function useCloseDeal() {
       const { error } = await supabase.from('deals').update(updates).eq('id', dealId);
       if (error) throw error;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['deals'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['atendimentos'] });
+    },
   });
 }
 
