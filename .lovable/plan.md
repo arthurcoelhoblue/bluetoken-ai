@@ -1,28 +1,46 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-### Status: ✅ Implementado
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+# Corrigir acesso da Glauciane e prevenir reincidência
 
-### Implementação
+## Problema raiz
+O trigger `handle_new_user()` atribui `READONLY` a novos usuários. O trigger que dá `CLOSER` só dispara quando o admin atribui um perfil de acesso via `user_access_assignments`. Se o admin não faz essa atribuição, o usuário fica preso em `READONLY`.
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+## Dados atuais da Glauciane
+- **Email:** glauciane.rodrigues@tokeniza.com.br
+- **Role:** READONLY (única)
+- **Perfis de acesso:** 0 atribuições
+- **Status:** Ativa
 
-### Webhook URL (configurar no Stripe Dashboard)
+## Correções
+
+### 1. Corrigir a Glauciane imediatamente (dados)
+- UPDATE `user_roles` → trocar `READONLY` por `CLOSER`
+- Ela também precisa de uma atribuição em `user_access_assignments` com empresa `TOKENIZA` para que o RLS funcione corretamente
+
+### 2. Alterar o trigger `handle_new_user()` (migration)
+Mudar o default de `READONLY` para `CLOSER` para novos usuários:
+```sql
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+...
+  ELSE
+    INSERT INTO public.user_roles (user_id, role)
+    VALUES (NEW.id, 'CLOSER');  -- era READONLY
+  END IF;
 ```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+
+### 3. Backfill: corrigir TODOS os usuários que estão só com READONLY
+Qualquer outro usuário na mesma situação será corrigido:
+```sql
+UPDATE user_roles SET role = 'CLOSER'
+WHERE role = 'READONLY'
+AND user_id NOT IN (
+  SELECT user_id FROM user_roles WHERE role != 'READONLY'
+);
 ```
 
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+## Impacto
+- A Glauciane terá acesso imediato
+- Futuros usuários já entrarão com `CLOSER` em vez de `READONLY`
+- Usuários existentes presos em READONLY serão corrigidos
+- Nota: a Glauciane ainda precisará de um perfil de acesso atribuído pelo admin na tela de Controle de Acesso para ter permissões granulares corretas
+
