@@ -43,9 +43,17 @@ export function ConversaCard({ atendimento: a, compact = false }: ConversaCardPr
     ? formatDistanceToNow(new Date(a.ultimo_contato), { locale: ptBR, addSuffix: true })
     : null;
 
+  // Aguardando retorno: inbound = cliente enviou última msg, vendedor precisa responder
+  const isAguardando = a.ultima_direcao === 'INBOUND';
+  const minutosEspera = isAguardando && a.ultimo_contato
+    ? (Date.now() - new Date(a.ultimo_contato).getTime()) / 60000
+    : 0;
+  const aguardandoCor = minutosEspera > 15 ? 'bg-destructive' : 'bg-warning';
+  const aguardandoPulse = minutosEspera > 15;
+
   return (
     <Card
-      className="cursor-pointer hover:bg-accent/30 transition-colors"
+      className={`cursor-pointer hover:bg-accent/30 transition-colors ${isAguardando ? 'ring-1 ring-inset ' + (minutosEspera > 15 ? 'ring-destructive/30 bg-destructive/5' : 'ring-warning/30 bg-warning/5') : ''}`}
       onClick={() => navigate(`/leads/${a.lead_id}/${a.empresa}`)}
     >
       <CardContent className={`flex items-center gap-4 ${compact ? 'py-2 px-3' : 'py-3 px-4'}`}>
@@ -60,8 +68,8 @@ export function ConversaCard({ atendimento: a, compact = false }: ConversaCardPr
               <Bot className="h-5 w-5 text-accent-foreground" />
             )}
           </div>
-          {a.ultima_direcao === 'INBOUND' && (
-            <span className="absolute -top-0.5 -right-0.5 h-3 w-3 rounded-full bg-warning border-2 border-background" />
+          {isAguardando && (
+            <span className={`absolute -top-0.5 -right-0.5 h-3.5 w-3.5 rounded-full ${aguardandoCor} border-2 border-background ${aguardandoPulse ? 'animate-pulse' : ''}`} />
           )}
         </div>
 
