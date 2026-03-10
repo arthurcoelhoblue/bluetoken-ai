@@ -25,6 +25,7 @@ export interface Atendimento {
   deal_stage_cor: string | null;
   deal_stage_id: string | null;
   deal_stage_posicao: number | null;
+  deal_stage_is_priority: boolean;
   deal_id: string | null;
   score_engajamento: number | null;
   score_intencao: number | null;
@@ -138,7 +139,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
       }>();
 
       // Map stage_id -> stage info
-      const stageInfoMap = new Map<string, { nome: string; cor: string; posicao: number }>();
+      const stageInfoMap = new Map<string, { nome: string; cor: string; posicao: number; is_priority: boolean }>();
 
       if (crmContactIds.length > 0) {
         const { data: deals, error: dealsErr } = await supabase
@@ -158,10 +159,10 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
         if (stageIds.size > 0) {
           const { data: stages } = await supabase
             .from('pipeline_stages')
-            .select('id, nome, cor, posicao')
+            .select('id, nome, cor, posicao, is_priority')
             .in('id', Array.from(stageIds));
           for (const s of stages ?? []) {
-            stageInfoMap.set(s.id, { nome: s.nome, cor: s.cor, posicao: s.posicao });
+            stageInfoMap.set(s.id, { nome: s.nome, cor: s.cor, posicao: s.posicao, is_priority: s.is_priority });
           }
         }
 
@@ -308,6 +309,7 @@ export function useAtendimentos({ empresaFilter, userId, isAdmin }: UseAtendimen
           deal_stage_cor: stageInfo?.cor ?? null,
           deal_stage_id: dealInfo?.stageId ?? null,
           deal_stage_posicao: stageInfo?.posicao ?? null,
+          deal_stage_is_priority: stageInfo?.is_priority ?? false,
           deal_id: dealInfo?.dealId ?? null,
           score_engajamento: dealInfo?.scoreEngajamento ?? null,
           score_intencao: dealInfo?.scoreIntencao ?? null,
