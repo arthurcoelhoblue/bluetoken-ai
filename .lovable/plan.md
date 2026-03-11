@@ -1,28 +1,21 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-### Status: ✅ Implementado
+# Corrigir scrollbar nas notificações do sininho
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+## Problema
+O `ScrollArea` do Radix usa `max-h-[420px] overflow-y-auto` no Root, mas o Radix gerencia o overflow internamente via seu Viewport. O `overflow-y-auto` no Root conflita com o mecanismo do Radix, impedindo a scrollbar de aparecer.
 
-### Implementação
-
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
-
-### Webhook URL (configurar no Stripe Dashboard)
+## Correção
+Na linha 99 de `NotificationBell.tsx`, trocar:
 ```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+<ScrollArea className="max-h-[420px] overflow-y-auto">
+```
+por:
+```
+<ScrollArea className="h-[420px]">
 ```
 
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+Usar `h-[420px]` (altura fixa) em vez de `max-h` permite que o Radix ScrollArea calcule corretamente o overflow e exiba a scrollbar personalizada. O conteúdo que exceder 420px será rolável com a barra visível.
+
+| Arquivo | Mudança |
+|:--|:--|
+| `src/components/layout/NotificationBell.tsx` | Trocar `max-h-[420px] overflow-y-auto` por `h-[420px]` no ScrollArea |
