@@ -244,7 +244,7 @@ Deno.serve(async (req) => {
           ...(lead.telefone ? { telefone: lead.telefone } : {}),
           ...(lead.campos_extras || {}),
         };
-        await supabase.from("deal_activities").insert({
+        const { error: activityErr } = await supabase.from("deal_activities").insert({
           deal_id: newDeal.id,
           tipo: "CRIACAO",
           descricao: `Lead via ${lead.canal_origem || "formulário"}`,
@@ -258,6 +258,9 @@ Deno.serve(async (req) => {
             utm_campaign: lead.utm_campaign || null,
           },
         });
+        if (activityErr) {
+          console.error(`[lp-lead-ingest] Failed to create CRIACAO activity for deal ${newDeal.id}:`, activityErr.message);
+        }
 
         // --- If duplicate detected, create pendency ---
         let isDuplicate = false;

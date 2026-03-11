@@ -61,7 +61,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page
       if (tag) query = query.contains('tags', [tag]);
       if (etiqueta) query = query.eq('etiqueta', etiqueta);
 
-      query = query.order('posicao_kanban', { ascending: true });
+      query = query.order('posicao_kanban', { ascending: true }).order('created_at', { ascending: false });
 
       if (page === -1) {
         query = query.limit(500);

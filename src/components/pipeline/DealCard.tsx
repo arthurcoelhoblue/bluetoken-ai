@@ -95,7 +95,12 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       </div>
 
       {deal.contacts && (
-        <p className="text-[11px] text-muted-foreground truncate">{deal.contacts.nome}</p>
+        <div className="flex items-center justify-between">
+          <p className="text-[11px] text-muted-foreground truncate">{deal.contacts.nome}</p>
+          <span className="text-[9px] text-muted-foreground/70 shrink-0 ml-1">
+            {new Date(deal.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+          </span>
+        </div>
       )}
 
       <div className="flex items-center justify-between text-[11px]">
