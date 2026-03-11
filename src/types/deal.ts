@@ -160,7 +160,7 @@ export interface KanbanColumn {
 export type DealActivityType =
   | 'NOTA' | 'LIGACAO' | 'EMAIL' | 'REUNIAO' | 'TAREFA'
   | 'STAGE_CHANGE' | 'VALOR_CHANGE' | 'GANHO' | 'PERDA' | 'REABERTO'
-  | 'CRIACAO' | 'ARQUIVO' | 'WHATSAPP' | 'CADENCIA' | 'OUTRO';
+  | 'CRIACAO' | 'ARQUIVO' | 'WHATSAPP' | 'CADENCIA' | 'CALL' | 'OUTRO';
 
 export interface DealActivity {
   id: string;
@@ -256,6 +256,7 @@ export const ACTIVITY_LABELS: Record<DealActivityType, string> = {
   ARQUIVO: 'Arquivo',
   WHATSAPP: 'WhatsApp',
   CADENCIA: 'Cadência',
+  CALL: 'Ligação (auto)',
   OUTRO: 'Outro',
 };
 
@@ -274,5 +275,6 @@ export const ACTIVITY_ICONS: Record<DealActivityType, string> = {
   ARQUIVO: '📎',
   WHATSAPP: '💬',
   CADENCIA: '⚡',
+  CALL: '📞',
   OUTRO: '📌',
 };
