@@ -96,7 +96,7 @@ export function NotificationBell() {
             <ToggleGroupItem value="DEALS" className="h-6 px-2 text-[11px] rounded-full data-[state=on]:bg-secondary data-[state=on]:text-secondary-foreground">📊 Deals{groupCounts.DEALS > 0 ? ` (${groupCounts.DEALS})` : ''}</ToggleGroupItem>
           </ToggleGroup>
         </div>
-        <ScrollArea className="max-h-[420px] overflow-y-auto">
+        <ScrollArea className="h-[420px]">
           {filteredNotifications && filteredNotifications.length > 0 ? (
             <div className="divide-y">
               {filteredNotifications.map(n => (
