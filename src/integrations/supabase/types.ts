@@ -3387,6 +3387,122 @@ export type Database = {
           },
         ]
       }
+      duplicate_pendencies: {
+        Row: {
+          created_at: string | null
+          empresa: string
+          existing_contact_id: string | null
+          existing_deal_id: string | null
+          id: string
+          match_details: Json | null
+          match_type: string
+          new_contact_id: string
+          new_deal_id: string
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+        }
+        Insert: {
+          created_at?: string | null
+          empresa: string
+          existing_contact_id?: string | null
+          existing_deal_id?: string | null
+          id?: string
+          match_details?: Json | null
+          match_type: string
+          new_contact_id: string
+          new_deal_id: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Update: {
+          created_at?: string | null
+          empresa?: string
+          existing_contact_id?: string | null
+          existing_deal_id?: string | null
+          id?: string
+          match_details?: Json | null
+          match_type?: string
+          new_contact_id?: string
+          new_deal_id?: string
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "duplicate_pendencies_existing_contact_id_fkey"
+            columns: ["existing_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_existing_contact_id_fkey"
+            columns: ["existing_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_existing_deal_id_fkey"
+            columns: ["existing_deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_existing_deal_id_fkey"
+            columns: ["existing_deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_existing_deal_id_fkey"
+            columns: ["existing_deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_new_contact_id_fkey"
+            columns: ["new_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_new_contact_id_fkey"
+            columns: ["new_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts_with_stats"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_new_deal_id_fkey"
+            columns: ["new_deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_new_deal_id_fkey"
+            columns: ["new_deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "duplicate_pendencies_new_deal_id_fkey"
+            columns: ["new_deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+        ]
+      }
       elementor_form_mappings: {
         Row: {
           created_at: string
