@@ -256,6 +256,7 @@ export const ACTIVITY_LABELS: Record<DealActivityType, string> = {
   ARQUIVO: 'Arquivo',
   WHATSAPP: 'WhatsApp',
   CADENCIA: 'Cadência',
+  CALL: 'Ligação (auto)',
   OUTRO: 'Outro',
 };
 
