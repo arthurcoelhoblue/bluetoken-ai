@@ -16,12 +16,15 @@ import { useLossCategories } from '@/hooks/useDeals';
 import { useFaqPendencies, useResolveFaq } from '@/hooks/useKnowledgeFaq';
 import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/useOrphanDeals';
 import { useCSOfertasSemNome, useUpdateOfertaNome, type CSOfertaSemNome } from '@/hooks/useCSOfertaMapping';
+import { useDuplicatePendencies } from '@/hooks/useDuplicatePendencies';
+import { DuplicatePendencyCard } from '@/components/pendencias/DuplicatePendencyCard';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import type { KnowledgeFaq } from '@/types/knowledge';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
+import { Copy } from 'lucide-react';
 
 // --- Loss Pendency Card (existing) ---
 function PendencyCard({ pendency }: { pendency: LossPendency }) {
