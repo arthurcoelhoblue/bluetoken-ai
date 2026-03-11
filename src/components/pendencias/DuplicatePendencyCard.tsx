@@ -13,7 +13,12 @@ const MATCH_LABELS: Record<string, string> = {
   EMAIL_E_TELEFONE: 'Email e Telefone',
 };
 
-export function DuplicatePendencyCard({ pendency }: { pendency: DuplicatePendency }) {
+interface DuplicatePendencyCardProps {
+  pendency: DuplicatePendency;
+  onDealClick?: (dealId: string) => void;
+}
+
+export function DuplicatePendencyCard({ pendency, onDealClick }: DuplicatePendencyCardProps) {
   const resolve = useResolveDuplicate();
 
   const handleAction = (action: 'MERGED' | 'KEPT_SEPARATE' | 'DISMISSED') => {
