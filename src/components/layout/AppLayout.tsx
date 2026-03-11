@@ -9,6 +9,7 @@ import { ZadarmaPhoneWidget } from '@/components/zadarma/ZadarmaPhoneWidget';
 import { CopilotFab } from '@/components/copilot/CopilotFab';
 import { GlobalCreateDealDialog } from '@/components/pipeline/GlobalCreateDealDialog';
 import { Plus } from 'lucide-react';
+import { useNewDealAlert } from '@/hooks/useNewDealAlert';
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -18,6 +19,7 @@ interface AppLayoutProps {
 export function AppLayout({ children, requireAuth = true }: AppLayoutProps) {
   const { isAuthenticated, isLoading } = useAuth();
   const [showGlobalDeal, setShowGlobalDeal] = useState(false);
+  useNewDealAlert();
 
   if (isLoading) {
     return (
