@@ -24,14 +24,7 @@ const PARTNER_TAGS: Record<string, string> = {
   'AXIA': 'AXIA',
 };
 
-const TEST_EMAILS = [
-  "tleonardo186@gmail.com",
-  "tayara.r.araujo@gmail.com",
-  "halisonhenrique@gmail.com",
-  "halison@hhperformancedigital.com.br",
-  "mychel.souza@gmail.com",
-  "teste@pipedrive.com",
-];
+const TEST_EMAILS: string[] = [];
 
 interface LeadPayload {
   nome: string;
