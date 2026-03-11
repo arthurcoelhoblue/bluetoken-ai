@@ -1,6 +1,7 @@
 // ========================================
 // lp-lead-ingest — Ingestão de leads do LP com IA
 // Endpoint permanente para webhook + importação em lote
+// SEMPRE cria novo contato + deal. Se detectar duplicata, registra pendência.
 // ========================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -17,7 +18,6 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 const DEFAULT_PIPELINE_ID = "5bbac98b-5ae9-4b31-9b7f-896d7b732a2c"; // Ofertas Públicas
 const DEFAULT_STAGE_ID = "da80e912-b462-401d-b367-1b6a9b2ec4da"; // Lead
 
-// Emails de teste a filtrar
 // Partner tags extracted from utm_campaign
 const PARTNER_TAGS: Record<string, string> = {
   'MPUPPE': 'MPUPPE',
@@ -78,7 +78,7 @@ Deno.serve(async (req) => {
     // Get round-robin owner: seller with fewest open deals in this pipeline
     const ownerId = await getRoundRobinOwner(supabase, empresa, pipelineId);
 
-    const results: Array<{ email: string; status: string; contact_id?: string; deal_id?: string; reason?: string }> = [];
+    const results: Array<{ email: string; status: string; contact_id?: string; deal_id?: string; duplicate?: boolean; reason?: string }> = [];
 
     for (const lead of leadsInput) {
       try {
@@ -94,147 +94,98 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        // Dedup: check if contact exists by email
-        const { data: existingContactByEmail } = await supabase
+        // --- Check for existing contacts (for pendency only, NOT to block creation) ---
+        let matchType: string | null = null;
+        let existingContactId: string | null = null;
+        let existingDealId: string | null = null;
+        const matchDetails: Record<string, unknown> = {};
+
+        // Check by email
+        const { data: existingByEmail } = await supabase
           .from("contacts")
-          .select("id")
+          .select("id, nome, email, telefone")
           .eq("empresa", empresa)
           .eq("email", email)
+          .eq("is_active", true)
           .limit(1)
           .maybeSingle();
 
-        // Dedup by phone if email not found
+        // Check by phone
         const phoneNorm = normalizePhoneE164(lead.telefone || null);
-        let existingContact = existingContactByEmail;
-        if (!existingContact && phoneNorm?.e164) {
-          const { data: existingContactByPhone } = await supabase
+        let existingByPhone: typeof existingByEmail = null;
+        if (phoneNorm?.e164) {
+          const { data } = await supabase
             .from("contacts")
-            .select("id")
+            .select("id, nome, email, telefone")
             .eq("empresa", empresa)
             .eq("telefone_e164", phoneNorm.e164)
             .eq("is_active", true)
             .limit(1)
             .maybeSingle();
-          existingContact = existingContactByPhone;
+          existingByPhone = data;
         }
 
-        let contactId: string;
+        // Determine match type
+        if (existingByEmail && existingByPhone && existingByEmail.id === existingByPhone.id) {
+          matchType = "EMAIL_E_TELEFONE";
+          existingContactId = existingByEmail.id;
+          matchDetails.existing_email = existingByEmail.email;
+          matchDetails.existing_telefone = existingByEmail.telefone;
+        } else if (existingByEmail) {
+          matchType = "EMAIL";
+          existingContactId = existingByEmail.id;
+          matchDetails.existing_email = existingByEmail.email;
+          matchDetails.existing_nome = existingByEmail.nome;
+        } else if (existingByPhone) {
+          matchType = "TELEFONE";
+          existingContactId = existingByPhone.id;
+          matchDetails.existing_email = existingByPhone.email;
+          matchDetails.existing_nome = existingByPhone.nome;
+          matchDetails.existing_telefone = existingByPhone.telefone;
+        }
 
-        if (existingContact) {
-          contactId = existingContact.id;
-
-          // Check if already has open deal in this pipeline
+        // If there's an existing contact, check for open deal
+        if (existingContactId) {
           const { data: existingDeal } = await supabase
             .from("deals")
             .select("id")
-            .eq("contact_id", contactId)
+            .eq("contact_id", existingContactId)
             .eq("pipeline_id", pipelineId)
             .eq("status", "ABERTO")
             .limit(1)
             .maybeSingle();
+          if (existingDeal) {
+            existingDealId = existingDeal.id;
+          }
+        }
 
-        if (existingDeal) {
-          // 1. Registrar atividade de re-conversão
-          const reconversaoMeta: Record<string, unknown> = {
-            reconversao_em: new Date().toISOString(),
+        // --- ALWAYS create new contact ---
+        const { data: newContact, error: contactErr } = await supabase
+          .from("contacts")
+          .insert({
+            nome: lead.nome || email.split("@")[0],
+            primeiro_nome: lead.nome?.split(" ")[0] || null,
+            email,
+            telefone: lead.telefone || null,
+            telefone_e164: phoneNorm?.e164 || null,
+            ddi: phoneNorm?.ddi || null,
+            numero_nacional: phoneNorm?.nacional || null,
+            telefone_valido: phoneNorm !== null,
+            empresa,
             canal_origem: lead.canal_origem || "LP_COM_IA",
-          };
-          if (lead.utm_source) reconversaoMeta.utm_source = lead.utm_source;
-          if (lead.utm_medium) reconversaoMeta.utm_medium = lead.utm_medium;
-          if (lead.utm_campaign) reconversaoMeta.utm_campaign = lead.utm_campaign;
-          if (lead.utm_content) reconversaoMeta.utm_content = lead.utm_content;
-          if (lead.utm_term) reconversaoMeta.utm_term = lead.utm_term;
+            tags: lead.tags || [],
+          })
+          .select("id")
+          .single();
 
-          await supabase.from("deal_activities").insert({
-            deal_id: existingDeal.id,
-            tipo: "NOTA",
-            descricao: `🔄 Lead reconverteu via ${lead.canal_origem || "LP_COM_IA"}`,
-            metadata: reconversaoMeta,
-          });
-
-          // 2. Atualizar tags do deal (merge partner tags)
-          const newPartnerTags: string[] = [];
-          const campaignUpperReconv = (lead.utm_campaign || "").toUpperCase();
-          for (const [key, tag] of Object.entries(PARTNER_TAGS)) {
-            if (campaignUpperReconv.includes(key)) {
-              newPartnerTags.push(tag);
-            }
-          }
-          if (newPartnerTags.length > 0) {
-            const { data: dealData } = await supabase
-              .from("deals")
-              .select("tags, owner_id, titulo")
-              .eq("id", existingDeal.id)
-              .single();
-            const currentTags: string[] = dealData?.tags || [];
-            const mergedTags = [...new Set([...currentTags, ...newPartnerTags])];
-            if (mergedTags.length > currentTags.length) {
-              await supabase
-                .from("deals")
-                .update({ tags: mergedTags })
-                .eq("id", existingDeal.id);
-            }
-          }
-
-          // 3. Notificar owner do deal
-          const { data: dealInfo } = await supabase
-            .from("deals")
-            .select("owner_id, titulo, pipeline_id")
-            .eq("id", existingDeal.id)
-            .single();
-
-          if (dealInfo?.owner_id) {
-            const { data: pipelineInfo } = await supabase
-              .from("pipelines")
-              .select("empresa")
-              .eq("id", dealInfo.pipeline_id)
-              .single();
-
-            await supabase.from("notifications").insert({
-              user_id: dealInfo.owner_id,
-              empresa: pipelineInfo?.empresa || empresa,
-              titulo: `🔄 Lead reconverteu: ${lead.nome || email}`,
-              mensagem: `O lead "${lead.nome || email}" converteu novamente via ${lead.canal_origem || "LP_COM_IA"}. Deal: ${dealInfo.titulo}`,
-              tipo: "INFO",
-              referencia_tipo: "DEAL",
-              referencia_id: existingDeal.id,
-              link: "/pipeline",
-            });
-          }
-
-          // 4. Retornar status reconverted
-          results.push({ email, status: "reconverted", deal_id: existingDeal.id, contact_id: contactId });
+        if (contactErr || !newContact) {
+          results.push({ email, status: "error", reason: contactErr?.message || "contact_insert_failed" });
           continue;
         }
-        } else {
-          // Create contact (phoneNorm already computed above)
 
-          const { data: newContact, error: contactErr } = await supabase
-            .from("contacts")
-            .insert({
-              nome: lead.nome || email.split("@")[0],
-              primeiro_nome: lead.nome?.split(" ")[0] || null,
-              email,
-              telefone: lead.telefone || null,
-              telefone_e164: phoneNorm?.e164 || null,
-              ddi: phoneNorm?.ddi || null,
-              numero_nacional: phoneNorm?.nacional || null,
-              telefone_valido: phoneNorm !== null,
-              empresa,
-              canal_origem: lead.canal_origem || "LP_COM_IA",
-              tags: lead.tags || [],
-            })
-            .select("id")
-            .single();
+        const contactId = newContact.id;
 
-          if (contactErr || !newContact) {
-            results.push({ email, status: "error", reason: contactErr?.message || "contact_insert_failed" });
-            continue;
-          }
-          contactId = newContact.id;
-        }
-
-        // Build deal title: prioridade canal_origem > utm_campaign > sem tag
+        // Build deal title
         const origemTag = lead.canal_origem && lead.canal_origem !== "LP_COM_IA"
           ? lead.canal_origem.substring(0, 60)
           : lead.utm_campaign
@@ -262,6 +213,7 @@ Deno.serve(async (req) => {
           }
         }
 
+        // --- ALWAYS create new deal ---
         const { data: newDeal, error: dealErr } = await supabase
           .from("deals")
           .insert({
@@ -285,7 +237,44 @@ Deno.serve(async (req) => {
           continue;
         }
 
-        results.push({ email, status: "created", contact_id: contactId, deal_id: newDeal.id });
+        // --- If duplicate detected, create pendency ---
+        let isDuplicate = false;
+        if (matchType && existingContactId) {
+          isDuplicate = true;
+          matchDetails.new_email = email;
+          matchDetails.new_nome = lead.nome;
+          matchDetails.new_telefone = lead.telefone;
+
+          await supabase.from("duplicate_pendencies").insert({
+            empresa,
+            new_contact_id: contactId,
+            new_deal_id: newDeal.id,
+            existing_contact_id: existingContactId,
+            existing_deal_id: existingDealId,
+            match_type: matchType,
+            match_details: matchDetails,
+          });
+
+          // Notify owner of existing deal (or round-robin owner)
+          const notifyUserId = existingDealId
+            ? (await supabase.from("deals").select("owner_id").eq("id", existingDealId).single()).data?.owner_id
+            : ownerId;
+
+          if (notifyUserId) {
+            await supabase.from("notifications").insert({
+              user_id: notifyUserId,
+              empresa,
+              titulo: `⚠️ Possível duplicação: ${lead.nome || email}`,
+              mensagem: `Lead "${lead.nome || email}" pode ser duplicado (match por ${matchType.toLowerCase().replace(/_/g, ' ')}). Verifique em Pendências.`,
+              tipo: "WARNING",
+              referencia_tipo: "DEAL",
+              referencia_id: newDeal.id,
+              link: "/admin/pendencias",
+            });
+          }
+        }
+
+        results.push({ email, status: "created", contact_id: contactId, deal_id: newDeal.id, duplicate: isDuplicate });
       } catch (err) {
         results.push({ email: lead.email || "", status: "error", reason: String(err) });
       }
@@ -294,7 +283,7 @@ Deno.serve(async (req) => {
     const summary = {
       total: leadsInput.length,
       created: results.filter((r) => r.status === "created").length,
-      reconverted: results.filter((r) => r.status === "reconverted").length,
+      duplicates: results.filter((r) => r.duplicate).length,
       skipped: results.filter((r) => r.status === "skipped").length,
       errors: results.filter((r) => r.status === "error").length,
       results,

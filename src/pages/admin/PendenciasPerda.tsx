@@ -16,12 +16,15 @@ import { useLossCategories } from '@/hooks/useDeals';
 import { useFaqPendencies, useResolveFaq } from '@/hooks/useKnowledgeFaq';
 import { useOrphanDeals, useAssignDealOwner, type OrphanDeal } from '@/hooks/useOrphanDeals';
 import { useCSOfertasSemNome, useUpdateOfertaNome, type CSOfertaSemNome } from '@/hooks/useCSOfertaMapping';
+import { useDuplicatePendencies } from '@/hooks/useDuplicatePendencies';
+import { DuplicatePendencyCard } from '@/components/pendencias/DuplicatePendencyCard';
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import type { KnowledgeFaq } from '@/types/knowledge';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
+import { Copy } from 'lucide-react';
 
 // --- Loss Pendency Card (existing) ---
 function PendencyCard({ pendency }: { pendency: LossPendency }) {
@@ -305,21 +308,23 @@ export default function PendenciasPerda() {
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
   const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
   const { data: ofertasSemNome = [], isLoading: loadingOfertas } = useCSOfertasSemNome();
+  const { data: duplicatePendencies = [], isLoading: loadingDuplicates } = useDuplicatePendencies();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   // CSM puro: is_csm=true e não é ADMIN — vê apenas pendências de CS
   const isAdmin = useIsAdmin();
   const isCsmPuro = !!(profile as any)?.is_csm && !isAdmin;
 
-  const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas;
+  const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas || loadingDuplicates;
 
   // Pendências visíveis conforme perfil
   const visibleLoss = isCsmPuro ? [] : lossPendencies;
   const visibleFaq = isCsmPuro ? [] : faqPendencies;
   const visibleOrphan = isCsmPuro ? [] : orphanDeals;
   const visibleOfertas = ofertasSemNome; // sempre visível para quem acessa a tela
+  const visibleDuplicates = isCsmPuro ? [] : duplicatePendencies;
 
-  const totalPendencies = visibleLoss.length + visibleFaq.length + visibleOrphan.length + visibleOfertas.length;
+  const totalPendencies = visibleLoss.length + visibleFaq.length + visibleOrphan.length + visibleOfertas.length + visibleDuplicates.length;
 
   return (
     <AppLayout>
@@ -373,6 +378,15 @@ export default function PendenciasPerda() {
                   </p>
                 )}
                 {visibleOfertas.map(o => <OfertaSemNomeCard key={o.oferta_id} oferta={o} />)}
+              </div>
+            )}
+            {visibleDuplicates.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Copy className="h-5 w-5 text-orange-500" />
+                  Possíveis Duplicações ({visibleDuplicates.length})
+                </h2>
+                {visibleDuplicates.map(d => <DuplicatePendencyCard key={d.id} pendency={d} />)}
               </div>
             )}
           </>

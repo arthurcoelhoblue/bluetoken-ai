@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToggleTaskActivity } from '@/hooks/useDealDetail';
 import { useLossPendencyCount } from '@/hooks/useLossPendencies';
 import { useCSOfertasSemNome } from '@/hooks/useCSOfertaMapping';
+import { useDuplicatePendencyCount } from '@/hooks/useDuplicatePendencies';
 import { useCanView } from '@/hooks/useScreenPermissions';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -70,7 +71,8 @@ function WorkbenchContent() {
   const toggleTask = useToggleTaskActivity();
   const lossPendencyCount = useLossPendencyCount();
   const { data: ofertasSemNome = [] } = useCSOfertasSemNome();
-  const pendencyCount = lossPendencyCount + ofertasSemNome.length;
+  const duplicateCount = useDuplicatePendencyCount();
+  const pendencyCount = lossPendencyCount + ofertasSemNome.length + duplicateCount;
   const canViewPendencias = useCanView('pendencias_gestor');
 
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
