@@ -26,3 +26,26 @@ Eventos necessários:
 - `customer.subscription.deleted`
 - `invoice.payment_failed`
 - `invoice.paid`
+
+---
+
+## Plano: Sempre criar deal + pendência de duplicação
+
+### Status: ✅ Implementado
+
+### Mudança
+- `lp-lead-ingest` agora SEMPRE cria novo contato + deal, mesmo se detectar duplicata
+- Quando detecta match (email/telefone), insere registro em `duplicate_pendencies`
+- Notifica owner via sistema de notificações
+- Seção "Possíveis Duplicações" adicionada em `/admin/pendencias`
+- Contagem integrada no Workbench
+
+### Tabela: `duplicate_pendencies`
+- `new_contact_id`, `new_deal_id` — contato/deal recém-criados
+- `existing_contact_id`, `existing_deal_id` — contato/deal existentes
+- `match_type` — EMAIL, TELEFONE, EMAIL_E_TELEFONE
+- `status` — PENDENTE, MERGED, KEPT_SEPARATE, DISMISSED
+
+### Ações do gestor
+- **Manter Separados**: confirma que são pessoas diferentes
+- **Dispensar**: ignora a pendência
