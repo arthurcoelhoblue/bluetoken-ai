@@ -16,6 +16,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { useToggleTaskActivity } from '@/hooks/useDealDetail';
 import { useLossPendencyCount } from '@/hooks/useLossPendencies';
 import { useCSOfertasSemNome } from '@/hooks/useCSOfertaMapping';
+import { useDuplicatePendencyCount } from '@/hooks/useDuplicatePendencies';
 import { useCanView } from '@/hooks/useScreenPermissions';
 import { useNavigate } from 'react-router-dom';
 import {
