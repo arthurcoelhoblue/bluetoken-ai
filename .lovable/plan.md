@@ -1,51 +1,25 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-### Status: ✅ Implementado
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+## Plano: Garantir visualização dos dados do formulário na timeline
 
-### Implementação
+### Diagnóstico
+- **Dados no banco**: Confirmados. 4 atividades `CRIACAO` com `origem: FORMULARIO` existem, incluindo mychel@blueconsult.com.br.
+- **Código de renderização**: Correto em `DealTimelineTab.tsx` (linhas 138-164).
+- **Causa provável**: O `DuplicatePendencyCard` em `/pendencias` não permite abrir o deal para ver a timeline. Além disso, o tipo de atividade `CALL` (inserido por trigger de telefonia) não existe nos mapas `ACTIVITY_ICONS` e `ACTIVITY_LABELS`, o que pode causar renders em branco.
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+### Mudanças
 
-### Webhook URL (configurar no Stripe Dashboard)
-```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
-```
+#### 1. `DuplicatePendencyCard` — Adicionar botão "Ver Deal"
+Adicionar um botão que permite abrir o DealDetailSheet diretamente da pendência de duplicação. Aceitar uma prop `onDealClick` e chamar ao clicar no título ou num botão "Ver".
 
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+#### 2. `PendenciasPerda.tsx` — Passar callback para DuplicatePendencyCard
+Conectar o `setSelectedDealId` ao novo `onDealClick` do card de duplicação.
 
----
+#### 3. `src/types/deal.ts` — Adicionar tipo `CALL`
+Incluir `'CALL'` no union type `DealActivityType` e nos mapas `ACTIVITY_LABELS` e `ACTIVITY_ICONS` para evitar renders vazios quando atividades de chamada existem na timeline.
 
-## Plano: Sempre criar deal + pendência de duplicação
+### Arquivos impactados
+- `src/components/pendencias/DuplicatePendencyCard.tsx`
+- `src/pages/admin/PendenciasPerda.tsx`
+- `src/types/deal.ts`
 
-### Status: ✅ Implementado
-
-### Mudança
-- `lp-lead-ingest` agora SEMPRE cria novo contato + deal, mesmo se detectar duplicata
-- Quando detecta match (email/telefone), insere registro em `duplicate_pendencies`
-- Notifica owner via sistema de notificações
-- Seção "Possíveis Duplicações" adicionada em `/admin/pendencias`
-- Contagem integrada no Workbench
-
-### Tabela: `duplicate_pendencies`
-- `new_contact_id`, `new_deal_id` — contato/deal recém-criados
-- `existing_contact_id`, `existing_deal_id` — contato/deal existentes
-- `match_type` — EMAIL, TELEFONE, EMAIL_E_TELEFONE
-- `status` — PENDENTE, MERGED, KEPT_SEPARATE, DISMISSED
-
-### Ações do gestor
-- **Manter Separados**: confirma que são pessoas diferentes
-- **Dispensar**: ignora a pendência
