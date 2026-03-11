@@ -23,9 +23,10 @@ interface DealLossDialogProps {
   stageId: string;
   lossCategories: LossCategory[];
   closeDeal: UseMutationResult<unknown, Error, CloseDealData>;
+  onConfirmed?: () => void;
 }
 
-export function DealLossDialog({ open, onOpenChange, dealId, stageId, lossCategories, closeDeal }: DealLossDialogProps) {
+export function DealLossDialog({ open, onOpenChange, dealId, stageId, lossCategories, closeDeal, onConfirmed }: DealLossDialogProps) {
   const [lossMotivo, setLossMotivo] = useState('');
   const [lossCategoria, setLossCategoria] = useState('');
 
@@ -46,6 +47,7 @@ export function DealLossDialog({ open, onOpenChange, dealId, stageId, lossCatego
         setLossMotivo('');
         setLossCategoria('');
         toast.info('Deal marcado como perdido');
+        onConfirmed?.();
       },
     });
   };
