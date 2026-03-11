@@ -23,6 +23,7 @@ interface DealLossDialogProps {
   stageId: string;
   lossCategories: LossCategory[];
   closeDeal: UseMutationResult<unknown, Error, CloseDealData>;
+  onConfirmed?: () => void;
 }
 
 export function DealLossDialog({ open, onOpenChange, dealId, stageId, lossCategories, closeDeal }: DealLossDialogProps) {
