@@ -77,6 +77,11 @@ export function DuplicatePendencyCard({ pendency, onDealClick }: DuplicatePenden
           <Button size="sm" variant="outline" onClick={() => handleAction('DISMISSED')} disabled={resolve.isPending}>
             <X className="h-3.5 w-3.5 mr-1" />Dispensar
           </Button>
+          {onDealClick && pendency.new_deal && (
+            <Button size="sm" variant="default" onClick={() => onDealClick(pendency.new_deal!.id)}>
+              <ArrowRight className="h-3.5 w-3.5 mr-1" />Ver Deal
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

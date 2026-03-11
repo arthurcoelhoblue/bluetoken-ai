@@ -275,5 +275,6 @@ export const ACTIVITY_ICONS: Record<DealActivityType, string> = {
   ARQUIVO: '📎',
   WHATSAPP: '💬',
   CADENCIA: '⚡',
+  CALL: '📞',
   OUTRO: '📌',
 };
