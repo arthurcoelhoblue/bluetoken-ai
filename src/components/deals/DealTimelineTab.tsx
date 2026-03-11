@@ -108,27 +108,62 @@ export function DealTimelineTab({ deal, dealId, activities, addActivity, toggleT
                   {a.descricao && <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p>}
                   {a.tipo === 'CRIACAO' && (() => {
                     const meta = a.metadata as unknown as DealActivityMetadata | null;
-                    if (!meta?.origem || meta.origem !== 'SDR_IA' || !meta.dados_extraidos) return null;
-                    return (
-                      <div className="flex flex-wrap gap-1.5 mt-1.5">
-                        {meta.dados_extraidos.necessidade_principal && (
-                          <Badge variant="secondary" className="text-[10px]">📋 {meta.dados_extraidos.necessidade_principal}</Badge>
-                        )}
-                        {meta.dados_extraidos.valor_mencionado && (
-                          <Badge variant="secondary" className="text-[10px]">💰 R$ {Number(meta.dados_extraidos.valor_mencionado).toLocaleString('pt-BR')}</Badge>
-                        )}
-                        {meta.dados_extraidos.urgencia && (
-                          <Badge variant="outline" className="text-[10px]">⚡ {meta.dados_extraidos.urgencia}</Badge>
-                        )}
-                        {meta.dados_extraidos.decisor_identificado && (
-                          <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
-                        )}
-                        {meta.dados_extraidos.prazo_mencionado && (
-                          <Badge variant="outline" className="text-[10px]">📅 {meta.dados_extraidos.prazo_mencionado}</Badge>
-                        )}
-                        <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
-                      </div>
-                    );
+                    if (!meta?.origem) return null;
+
+                    // SDR IA origin
+                    if (meta.origem === 'SDR_IA' && meta.dados_extraidos) {
+                      return (
+                        <div className="flex flex-wrap gap-1.5 mt-1.5">
+                          {meta.dados_extraidos.necessidade_principal && (
+                            <Badge variant="secondary" className="text-[10px]">📋 {meta.dados_extraidos.necessidade_principal}</Badge>
+                          )}
+                          {meta.dados_extraidos.valor_mencionado && (
+                            <Badge variant="secondary" className="text-[10px]">💰 R$ {Number(meta.dados_extraidos.valor_mencionado).toLocaleString('pt-BR')}</Badge>
+                          )}
+                          {meta.dados_extraidos.urgencia && (
+                            <Badge variant="outline" className="text-[10px]">⚡ {meta.dados_extraidos.urgencia}</Badge>
+                          )}
+                          {meta.dados_extraidos.decisor_identificado && (
+                            <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
+                          )}
+                          {meta.dados_extraidos.prazo_mencionado && (
+                            <Badge variant="outline" className="text-[10px]">📅 {meta.dados_extraidos.prazo_mencionado}</Badge>
+                          )}
+                          <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+                        </div>
+                      );
+                    }
+
+                    // Form origin
+                    if (meta.origem === 'FORMULARIO') {
+                      const campos = meta.campos_preenchidos || {};
+                      const utmParts = [meta.utm_source, meta.utm_medium, meta.utm_campaign].filter(Boolean);
+                      const HIDDEN_KEYS = ['form_id', 'source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+                      const visibleEntries = Object.entries(campos).filter(([k]) => !HIDDEN_KEYS.includes(k));
+
+                      return (
+                        <div className="mt-1.5 space-y-1">
+                          {meta.canal_origem && (
+                            <Badge variant="secondary" className="text-[10px]">📎 {meta.canal_origem}</Badge>
+                          )}
+                          {visibleEntries.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5">
+                              {visibleEntries.map(([key, val]) => (
+                                <Badge key={key} variant="outline" className="text-[10px]">
+                                  {key}: {String(val)}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {utmParts.length > 0 && (
+                            <p className="text-[10px] text-muted-foreground">📎 UTM: {utmParts.join(' / ')}</p>
+                          )}
+                          <Badge variant="default" className="text-[10px]">📝 Formulário</Badge>
+                        </div>
+                      );
+                    }
+
+                    return null;
                   })()}
                 </>
               )}

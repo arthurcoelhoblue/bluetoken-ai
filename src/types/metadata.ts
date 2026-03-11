@@ -2,7 +2,10 @@ import { Json } from '@/integrations/supabase/types';
 
 /** Typed metadata for deal activities created by SDR IA */
 export interface DealActivityMetadata {
-  origem?: 'SDR_IA' | 'MANUAL';
+  origem?: 'SDR_IA' | 'MANUAL' | 'FORMULARIO';
+  canal_origem?: string;
+  form_id?: string;
+  campos_preenchidos?: Record<string, unknown>;
   dados_extraidos?: {
     valor_mencionado?: number;
     necessidade_principal?: string;
