@@ -74,6 +74,43 @@ export function DealTimelineTab({ deal, dealId, activities, addActivity, toggleT
         </CardContent>
       </Card>
 
+      {/* Fallback: show form data from deal.metadata.campos_extras if no CRIACAO/FORMULARIO activity exists */}
+      {(() => {
+        const hasCriacaoActivity = activities?.some(a => a.tipo === 'CRIACAO' && (a.metadata as Record<string, unknown>)?.origem === 'FORMULARIO');
+        const dealMeta = (deal as DealFullDetail & { metadata?: Record<string, unknown> }).metadata;
+        const camposExtras = dealMeta?.campos_extras as Record<string, unknown> | undefined;
+        if (!hasCriacaoActivity && camposExtras && Object.keys(camposExtras).length > 0) {
+          const HIDDEN = ['form_id', 'source'];
+          const entries = Object.entries(camposExtras).filter(([k]) => !HIDDEN.includes(k));
+          return (
+            <Card>
+              <CardContent className="p-3 space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="text-base">✨</span>
+                  <span className="text-xs font-medium">Dados do formulário</span>
+                  <Badge variant="secondary" className="text-[9px] px-1 py-0">Legado</Badge>
+                </div>
+                {entries.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {entries.map(([key, val]) => (
+                      <Badge key={key} variant="outline" className="text-[10px]">
+                        {key}: {String(val)}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+                {dealMeta?.utm_source && (
+                  <p className="text-[10px] text-muted-foreground">
+                    📎 UTM: {[dealMeta.utm_source, dealMeta.utm_medium, dealMeta.utm_campaign].filter(Boolean).join(' / ')}
+                  </p>
+                )}
+              </CardContent>
+            </Card>
+          );
+        }
+        return null;
+      })()}
+
       {/* Activity feed */}
       <div className="space-y-2 pb-4">
         {activities?.map(a => (
