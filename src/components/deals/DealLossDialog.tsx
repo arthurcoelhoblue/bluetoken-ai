@@ -47,6 +47,7 @@ export function DealLossDialog({ open, onOpenChange, dealId, stageId, lossCatego
         setLossMotivo('');
         setLossCategoria('');
         toast.info('Deal marcado como perdido');
+        onConfirmed?.();
       },
     });
   };

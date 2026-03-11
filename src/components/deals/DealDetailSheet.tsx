@@ -274,6 +274,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
           stageId={deal.stage_id}
           lossCategories={lossCategories}
           closeDeal={closeDeal}
+          onConfirmed={() => onOpenChange(false)}
         />
       )}
 
