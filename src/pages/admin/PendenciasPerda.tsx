@@ -308,21 +308,23 @@ export default function PendenciasPerda() {
   const { data: faqPendencies = [], isLoading: loadingFaq } = useFaqPendencies();
   const { data: orphanDeals = [], isLoading: loadingOrphan } = useOrphanDeals();
   const { data: ofertasSemNome = [], isLoading: loadingOfertas } = useCSOfertasSemNome();
+  const { data: duplicatePendencies = [], isLoading: loadingDuplicates } = useDuplicatePendencies();
   const [selectedDealId, setSelectedDealId] = useState<string | null>(null);
 
   // CSM puro: is_csm=true e não é ADMIN — vê apenas pendências de CS
   const isAdmin = useIsAdmin();
   const isCsmPuro = !!(profile as any)?.is_csm && !isAdmin;
 
-  const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas;
+  const isLoading = loadingLoss || loadingFaq || loadingOrphan || loadingOfertas || loadingDuplicates;
 
   // Pendências visíveis conforme perfil
   const visibleLoss = isCsmPuro ? [] : lossPendencies;
   const visibleFaq = isCsmPuro ? [] : faqPendencies;
   const visibleOrphan = isCsmPuro ? [] : orphanDeals;
   const visibleOfertas = ofertasSemNome; // sempre visível para quem acessa a tela
+  const visibleDuplicates = isCsmPuro ? [] : duplicatePendencies;
 
-  const totalPendencies = visibleLoss.length + visibleFaq.length + visibleOrphan.length + visibleOfertas.length;
+  const totalPendencies = visibleLoss.length + visibleFaq.length + visibleOrphan.length + visibleOfertas.length + visibleDuplicates.length;
 
   return (
     <AppLayout>
