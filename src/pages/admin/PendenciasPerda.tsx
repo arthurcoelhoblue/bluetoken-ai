@@ -380,6 +380,15 @@ export default function PendenciasPerda() {
                 {visibleOfertas.map(o => <OfertaSemNomeCard key={o.oferta_id} oferta={o} />)}
               </div>
             )}
+            {visibleDuplicates.length > 0 && (
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold flex items-center gap-2">
+                  <Copy className="h-5 w-5 text-orange-500" />
+                  Possíveis Duplicações ({visibleDuplicates.length})
+                </h2>
+                {visibleDuplicates.map(d => <DuplicatePendencyCard key={d.id} pendency={d} />)}
+              </div>
+            )}
           </>
         )}
       </div>
