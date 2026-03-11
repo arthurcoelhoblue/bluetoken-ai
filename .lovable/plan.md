@@ -45,3 +45,25 @@ Eventos necessários:
 - `src/components/deals/DealTimelineTab.tsx`
 - `src/hooks/deals/useDealQueries.ts`
 - `src/components/pipeline/DealCard.tsx`
+
+---
+
+## Plano: Push de leads para Mautic e SGT em tempo real
+
+### Status: ✅ Implementado
+
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
