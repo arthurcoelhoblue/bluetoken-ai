@@ -237,6 +237,28 @@ Deno.serve(async (req) => {
           continue;
         }
 
+        // --- Register CRIACAO activity with form data in timeline ---
+        const camposPreenchidos: Record<string, unknown> = {
+          nome: lead.nome,
+          email,
+          ...(lead.telefone ? { telefone: lead.telefone } : {}),
+          ...(lead.campos_extras || {}),
+        };
+        await supabase.from("deal_activities").insert({
+          deal_id: newDeal.id,
+          tipo: "CRIACAO",
+          descricao: `Lead via ${lead.canal_origem || "formulário"}`,
+          metadata: {
+            origem: "FORMULARIO",
+            canal_origem: lead.canal_origem || null,
+            form_id: lead.campos_extras?.form_id || null,
+            campos_preenchidos: camposPreenchidos,
+            utm_source: lead.utm_source || null,
+            utm_medium: lead.utm_medium || null,
+            utm_campaign: lead.utm_campaign || null,
+          },
+        });
+
         // --- If duplicate detected, create pendency ---
         let isDuplicate = false;
         if (matchType && existingContactId) {

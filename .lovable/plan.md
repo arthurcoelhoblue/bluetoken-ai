@@ -1,61 +1,51 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Plano: Registrar dados do formulário na Timeline do deal
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-### Objetivo
-Quando um lead chega via webhook, registrar uma atividade `CRIACAO` na timeline do deal contendo: qual formulário foi preenchido, canal de origem e todos os campos preenchidos (incluindo extras). Assim o vendedor vê na timeline exatamente o que o lead respondeu.
+### Implementação
 
-### Mudanças
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-#### 1. Edge Function `lp-lead-ingest/index.ts`
-Após criar o deal (linha ~237), inserir uma atividade `CRIACAO` em `deal_activities`:
-
-```typescript
-await supabase.from("deal_activities").insert({
-  deal_id: newDeal.id,
-  tipo: "CRIACAO",
-  descricao: `Lead via ${lead.canal_origem || "formulário"}`,
-  metadata: {
-    origem: "FORMULARIO",
-    canal_origem: lead.canal_origem,
-    form_id: lead.campos_extras?.form_id,
-    campos_preenchidos: lead.campos_extras, // todos os campos do form
-    utm_source: lead.utm_source,
-    utm_campaign: lead.utm_campaign,
-  },
-});
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
 ```
 
-#### 2. Frontend `DealTimelineTab.tsx` — Renderizar dados do formulário
-No bloco que já trata atividades `CRIACAO` (linhas ~91-107), adicionar tratamento para `origem === 'FORMULARIO'`:
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-- Mostrar badge com o nome do formulário/canal de origem
-- Listar cada campo preenchido como badges ou lista compacta
-- Excluir campos técnicos (utm_*, source, form_id internos) da listagem visível, ou agrupá-los separadamente
+---
 
-Exemplo visual na timeline:
-```text
-✨ Criação · 11/03/26 14:30
-   Lead via criptomoedas-tokens
-   📋 nome: João Silva
-   📧 email: joao@email.com
-   📞 telefone: 11999998888
-   💰 investimento_desejado: 100000
-   🏷️ tipo_ativo: token
-   📎 UTM: google / cpc / campanha-cripto
-```
+## Plano: Sempre criar deal + pendência de duplicação
 
-#### 3. Tipo `DealActivityMetadata` — Estender
-Adicionar campos ao tipo em `src/types/metadata.ts`:
-```typescript
-origem?: 'SDR_IA' | 'MANUAL' | 'FORMULARIO';
-canal_origem?: string;
-form_id?: string;
-campos_preenchidos?: Record<string, unknown>;
-```
+### Status: ✅ Implementado
 
-### Arquivos impactados
-- `supabase/functions/lp-lead-ingest/index.ts` — inserir activity CRIACAO após criar deal
-- `src/components/deals/DealTimelineTab.tsx` — renderizar dados do formulário
-- `src/types/metadata.ts` — estender tipagem
+### Mudança
+- `lp-lead-ingest` agora SEMPRE cria novo contato + deal, mesmo se detectar duplicata
+- Quando detecta match (email/telefone), insere registro em `duplicate_pendencies`
+- Notifica owner via sistema de notificações
+- Seção "Possíveis Duplicações" adicionada em `/admin/pendencias`
+- Contagem integrada no Workbench
 
+### Tabela: `duplicate_pendencies`
+- `new_contact_id`, `new_deal_id` — contato/deal recém-criados
+- `existing_contact_id`, `existing_deal_id` — contato/deal existentes
+- `match_type` — EMAIL, TELEFONE, EMAIL_E_TELEFONE
+- `status` — PENDENTE, MERGED, KEPT_SEPARATE, DISMISSED
+
+### Ações do gestor
+- **Manter Separados**: confirma que são pessoas diferentes
+- **Dispensar**: ignora a pendência
