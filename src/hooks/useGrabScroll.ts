@@ -82,6 +82,7 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, op
 
   // --- Touch fallback ---
   const onTouchStart = useCallback((e: TouchEvent) => {
+    if (options.disabled) return;
     const el = scrollRef.current;
     if (!el) return;
     const target = e.target as HTMLElement;

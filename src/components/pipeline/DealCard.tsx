@@ -76,7 +76,13 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       {...(overlay ? {} : { ...attributes, ...listeners })}
       data-deal-card
       className={`p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow duration-100 border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
-      onClick={() => onDealClick?.(deal.id)}
+      onClick={() => {
+        if (wasDragged.current) {
+          wasDragged.current = false;
+          return;
+        }
+        onDealClick?.(deal.id);
+      }}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium text-xs leading-tight line-clamp-1">{deal.titulo}</span>
