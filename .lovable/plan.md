@@ -67,3 +67,32 @@ Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (A
 
 ### Arquivos impactados
 - `supabase/functions/lp-lead-ingest/index.ts`
+
+---
+
+## Plano: Módulo Playbook de Vendas
+
+### Status: 🔧 Em implementação — Fase 1 concluída
+
+### Fase 1 — Fundação ✅
+- 4 enums: `playbook_step_tipo`, `playbook_executor`, `playbook_run_status`, `playbook_evento_tipo`
+- 4 tabelas: `playbooks`, `playbook_steps`, `deal_playbook_runs`, `deal_playbook_events`
+- RLS com `has_role()` e `get_user_empresas()`
+- Trigger: `deal_playbook_events → deal_activities` (timeline automática)
+- Trigger: playbook ATIVA → pausa cadências do deal automaticamente
+- 3 views de performance: `v_playbook_stats`, `v_playbook_step_performance`, `v_playbook_vendedor_aderencia`
+- Tipos TypeScript: `src/types/playbook.ts`
+
+### Fase 2 — Motor de Execução (próximo)
+- Edge Function `playbook-runner` (CRON 5min)
+- Hooks: `usePlaybookRuns`, `usePlaybookEvents`
+- Interop cadência × playbook no `cadence-runner`
+
+### Fase 3 — UI (futuro)
+- Página `/playbooks`, Editor drag-and-drop, Timeline no Deal, Badge no Kanban
+
+### Fase 4 — Meu Dia + Notificações + Gamificação (futuro)
+
+### Fase 5 — IA Avançada (futuro)
+- 5.1: Sugestão + Scripts dinâmicos
+- 5.2: Adaptação + Análise
