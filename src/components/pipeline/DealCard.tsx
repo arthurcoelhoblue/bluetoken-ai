@@ -40,6 +40,14 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
     data: { type: 'deal', deal },
   });
 
+  const wasDragged = useRef(false);
+
+  useEffect(() => {
+    if (isDragging) {
+      wasDragged.current = true;
+    }
+  }, [isDragging]);
+
   const isClosed = deal.status === 'GANHO' || deal.status === 'PERDIDO';
 
   const style = {
