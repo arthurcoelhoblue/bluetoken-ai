@@ -202,6 +202,3 @@ export function AdvancedFilters({ pipelineId, stages, owners, filterState, onApp
     </div>
   );
 }
-
-// Need to import X for the cancel button in save
-import { X } from 'lucide-react';

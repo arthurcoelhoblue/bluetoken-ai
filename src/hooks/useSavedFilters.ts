@@ -39,7 +39,7 @@ export function useSaveFilter() {
         pipeline_id: params.pipelineId,
         nome: params.nome,
         match_mode: params.matchMode,
-        conditions: params.conditions as unknown as Record<string, unknown>[],
+        conditions: JSON.parse(JSON.stringify(params.conditions)),
       }]);
       if (error) throw error;
     },
