@@ -25,6 +25,8 @@ interface PipelineFiltersProps {
   ownerDisabled?: boolean;
   etiquetaIA: boolean;
   onEtiquetaIAChange: (v: boolean) => void;
+  viewMode: 'kanban' | 'list';
+  onViewModeChange: (m: 'kanban' | 'list') => void;
 }
 
 export function PipelineFilters({
