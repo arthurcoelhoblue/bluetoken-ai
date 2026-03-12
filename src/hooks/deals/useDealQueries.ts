@@ -85,23 +85,22 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page
         const conditions = advancedFilters!.conditions;
 
         if (advancedFilters!.matchMode === 'all') {
-          // AND: chain each condition
+          // AND: chain each condition - cast to any to avoid TS deep instantiation
           for (const c of conditions) {
             const { field, operator, value } = c;
             const v = String(value);
 
-            // Handle joined fields differently
             if (field === 'contact_nome') {
-              query = query.ilike('contacts.nome' as any, `%${v}%`);
+              query = (query as any).ilike('contacts.nome', `%${v}%`);
               continue;
             }
 
             switch (operator) {
-              case 'eq': query = query.eq(field as any, v); break;
-              case 'neq': query = query.neq(field as any, v); break;
-              case 'gt': query = query.gt(field as any, v); break;
-              case 'lt': query = query.lt(field as any, v); break;
-              case 'ilike': query = query.ilike(field as any, `%${v}%`); break;
+              case 'eq': query = (query as any).eq(field, v); break;
+              case 'neq': query = (query as any).neq(field, v); break;
+              case 'gt': query = (query as any).gt(field, v); break;
+              case 'lt': query = (query as any).lt(field, v); break;
+              case 'ilike': query = (query as any).ilike(field, `%${v}%`); break;
             }
           }
         } else {
