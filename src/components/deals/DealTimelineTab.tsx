@@ -167,10 +167,10 @@ export function DealTimelineTab({ deal, dealId, activities, stages, stageHistory
               <Mail className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <Textarea
+          <MentionTextarea
             value={activityText}
-            onChange={e => setActivityText(e.target.value)}
-            placeholder="Descreva a atividade..."
+            onChange={setActivityText}
+            placeholder="Descreva a atividade... Use @ para mencionar alguém"
             className="min-h-[60px] text-sm"
             rows={2}
           />
