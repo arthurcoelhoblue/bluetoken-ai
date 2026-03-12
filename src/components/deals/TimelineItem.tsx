@@ -116,9 +116,13 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       case 'GANHO':
         return (
-          <div className="flex items-center gap-2 mt-0.5">
-            <Badge className="bg-primary text-primary-foreground text-[10px]">🏆 Ganho</Badge>
-            {a.descricao && <span className="text-sm text-muted-foreground">{a.descricao}</span>}
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">🏆 Deal ganho</p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+            </p>
+            {a.descricao && <p className="text-xs text-muted-foreground">{a.descricao}</p>}
           </div>
         );
 
@@ -126,8 +130,12 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
         const motivo = meta?.motivo as string | undefined;
         const categoria = meta?.categoria as string | undefined;
         return (
-          <div className="space-y-1 mt-0.5">
-            <Badge variant="destructive" className="text-[10px]">❌ Perdido</Badge>
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">❌ Deal perdido</p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+            </p>
             {motivo && <p className="text-xs text-muted-foreground">Motivo: {motivo}</p>}
             {categoria && <Badge variant="outline" className="text-[10px]">{categoria}</Badge>}
           </div>
