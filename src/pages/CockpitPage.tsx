@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { BarChart3, TrendingUp, DollarSign, Target, Clock, Ticket, AlertTriangle, Trophy, XCircle, Radio } from 'lucide-react';
+import { BarChart3, TrendingUp, DollarSign, Target, Clock, Ticket, AlertTriangle, Trophy, XCircle, Radio, Monitor } from 'lucide-react';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   useAnalyticsConversion,
