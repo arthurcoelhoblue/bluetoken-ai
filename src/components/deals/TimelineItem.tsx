@@ -242,10 +242,8 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
           const HIDDEN_KEYS = ['form_id', 'source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
           const visibleEntries = Object.entries(campos).filter(([k]) => !HIDDEN_KEYS.includes(k));
           return (
-            <div className="mt-1.5 space-y-1">
-              {criacaoMeta.canal_origem && (
-                <Badge variant="secondary" className="text-[10px]">📎 {criacaoMeta.canal_origem}</Badge>
-              )}
+            <div className="space-y-1.5">
+              {criacaoHeader}
               {visibleEntries.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {visibleEntries.map(([key, val]) => (
@@ -261,7 +259,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
           );
         }
 
-        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+        return criacaoHeader;
       }
 
       default:
