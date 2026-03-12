@@ -13,6 +13,7 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, op
   const origPointerId = useRef<number | null>(null);
 
   const onPointerDown = useCallback((e: PointerEvent) => {
+    if (options.disabled) return;
     const el = scrollRef.current;
     if (!el) return;
 
