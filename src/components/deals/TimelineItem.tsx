@@ -192,8 +192,22 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       case 'CRIACAO': {
         const criacaoMeta = meta as DealActivityMetadata | null;
+
+        // Pipedrive-style: "Negócio criado: [date]"
+        const criacaoHeader = (
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">
+              Negócio criado: {formatDate(a.created_at)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {a.user_nome ?? 'Sistema'}
+              {criacaoMeta?.canal_origem && <> ({criacaoMeta.canal_origem})</>}
+            </p>
+          </div>
+        );
+
         if (!criacaoMeta?.origem) {
-          return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+          return criacaoHeader;
         }
 
         if (criacaoMeta.origem === 'SDR_IA' && criacaoMeta.dados_extraidos) {
