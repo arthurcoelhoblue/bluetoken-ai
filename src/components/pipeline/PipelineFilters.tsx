@@ -36,6 +36,10 @@ interface PipelineFiltersProps {
   advancedFilters: AdvancedFilterState;
   onAdvancedFiltersApply: (state: AdvancedFilterState) => void;
   onAdvancedFiltersClear: () => void;
+  // Kanban actions
+  iaSort: boolean;
+  onIaSortToggle: () => void;
+  onTransferClick?: () => void;
 }
 
 export function PipelineFilters({
