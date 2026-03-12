@@ -34,7 +34,7 @@ function useVendedores() {
   });
 }
 
-export function DealDadosTab({ deal, updateField }: DealDadosTabProps) {
+export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: DealDadosTabProps) {
   const [editField, setEditField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const { data: vendedores = [] } = useVendedores();
