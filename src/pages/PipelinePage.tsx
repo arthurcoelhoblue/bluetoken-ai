@@ -85,7 +85,17 @@ function PipelineContent() {
     return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
   });
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(EMPTY_ADVANCED);
+  const [iaSort, setIaSort] = useState(() => {
+    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
+  });
 
+  const toggleIaSort = useCallback(() => {
+    setIaSort(prev => {
+      const next = !prev;
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const handleViewModeChange = (m: 'kanban' | 'list') => {
     setViewMode(m);
     localStorage.setItem('bluecrm-pipeline-view', m);
