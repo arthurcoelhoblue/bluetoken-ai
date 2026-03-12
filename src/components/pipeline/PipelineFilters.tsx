@@ -45,6 +45,8 @@ export function PipelineFilters({
   ownerDisabled,
   etiquetaIA,
   onEtiquetaIAChange,
+  viewMode,
+  onViewModeChange,
 }: PipelineFiltersProps) {
   return (
     <div className="flex items-center justify-center gap-2 flex-wrap">
