@@ -26,7 +26,7 @@ function useWebhookTagConfigs(webhookId: string) {
         .select('*')
         .eq('webhook_id', webhookId);
       if (error) throw error;
-      return (data ?? []) as { id: string; webhook_id: string; empresa: string; tag: string }[];
+      return (data ?? []) as unknown as { id: string; webhook_id: string; empresa: string; tag: string }[];
     },
   });
 }
