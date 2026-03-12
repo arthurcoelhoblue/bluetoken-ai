@@ -226,42 +226,44 @@ export default function AdminEmpresas() {
               <DialogTitle>Editar {editingEmpresa?.label}</DialogTitle>
             </DialogHeader>
             {editingEmpresa && (
-              <div className="space-y-4 py-4">
-                <div className="space-y-2">
-                  <Label>ID</Label>
-                  <Input value={editingEmpresa.id} disabled className="font-mono" />
-                </div>
-                <div className="space-y-2">
-                  <Label>Nome de exibição</Label>
-                  <Input
-                    value={editingEmpresa.label}
-                    onChange={(e) => setEditingEmpresa(prev => prev ? { ...prev, label: e.target.value } : null)}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Cor</Label>
-                  <div className="flex flex-wrap gap-2">
-                    {COLOR_OPTIONS.map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => setEditingEmpresa(prev => prev ? { ...prev, color: opt.value } : null)}
-                        className={`h-8 w-8 rounded-full ${opt.value} ring-2 ring-offset-2 ring-offset-background ${editingEmpresa.color === opt.value ? 'ring-primary' : 'ring-transparent'} transition-all`}
-                        title={opt.label}
-                      />
-                    ))}
+              <>
+                <div className="space-y-4 py-4">
+                  <div className="space-y-2">
+                    <Label>ID</Label>
+                    <Input value={editingEmpresa.id} disabled className="font-mono" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Nome de exibição</Label>
+                    <Input
+                      value={editingEmpresa.label}
+                      onChange={(e) => setEditingEmpresa(prev => prev ? { ...prev, label: e.target.value } : null)}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Cor</Label>
+                    <div className="flex flex-wrap gap-2">
+                      {COLOR_OPTIONS.map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setEditingEmpresa(prev => prev ? { ...prev, color: opt.value } : null)}
+                          className={`h-8 w-8 rounded-full ${opt.value} ring-2 ring-offset-2 ring-offset-background ${editingEmpresa.color === opt.value ? 'ring-primary' : 'ring-transparent'} transition-all`}
+                          title={opt.label}
+                        />
+                      ))}
+                    </div>
                   </div>
                 </div>
-              </div>
-              <DialogFooter>
-                <Button
-                  onClick={() => editingEmpresa && updateMutation.mutate(editingEmpresa)}
-                  disabled={updateMutation.isPending}
-                >
-                  {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Salvar
-                </Button>
-              </DialogFooter>
+                <DialogFooter>
+                  <Button
+                    onClick={() => editingEmpresa && updateMutation.mutate(editingEmpresa)}
+                    disabled={updateMutation.isPending}
+                  >
+                    {updateMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    Salvar
+                  </Button>
+                </DialogFooter>
+              </>
             )}
           </DialogContent>
         </Dialog>
