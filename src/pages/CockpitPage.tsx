@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { BarChart3, TrendingUp, DollarSign, Target, Clock, Ticket, AlertTriangle, Trophy, XCircle, Radio } from 'lucide-react';
+import { BarChart3, TrendingUp, DollarSign, Target, Clock, Ticket, AlertTriangle, Trophy, XCircle, Radio, Monitor } from 'lucide-react';
 import { usePipelines } from '@/hooks/usePipelines';
 import {
   useAnalyticsConversion,
@@ -17,6 +17,8 @@ import {
 import { useWorkbenchSLAAlerts } from '@/hooks/useWorkbench';
 import { EvolutionChart } from '@/components/analytics/EvolutionChart';
 import { CriticalAlerts } from '@/components/cockpit/CriticalAlerts';
+import { TVDashboard } from '@/components/cockpit/TVDashboard';
+import { Button } from '@/components/ui/button';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
@@ -28,6 +30,7 @@ function formatPercent(value: number) {
 
 function CockpitContent() {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
+  const [tvMode, setTvMode] = useState(false);
   const { data: pipelines } = usePipelines();
 
   const { data: conversion, isLoading: loadingConversion } = useAnalyticsConversion(pipelineId);
@@ -66,11 +69,20 @@ function CockpitContent() {
   const topCanais = canais?.slice(0, 5) ?? [];
   const slaCount = slaAlerts?.length ?? 0;
 
+  if (tvMode) {
+    return <TVDashboard onClose={() => setTvMode(false)} />;
+  }
+
   return (
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Cockpit Executivo</h1>
-          <Select value={pipelineId ?? 'all'} onValueChange={(v) => setPipelineId(v === 'all' ? null : v)}>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTvMode(true)} className="gap-2">
+              <Monitor className="h-4 w-4" />
+              Modo TV
+            </Button>
+            <Select value={pipelineId ?? 'all'} onValueChange={(v) => setPipelineId(v === 'all' ? null : v)}>
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Todos os funis" />
             </SelectTrigger>
@@ -81,6 +93,7 @@ function CockpitContent() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {/* KPIs */}
