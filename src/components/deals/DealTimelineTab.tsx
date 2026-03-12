@@ -3,13 +3,13 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Textarea } from '@/components/ui/textarea';
 import { Plus, Mail } from 'lucide-react';
 import { toast } from 'sonner';
 import { DealCadenceCard } from '@/components/cadencias/DealCadenceCard';
 import { DealCallsPanel } from '@/components/zadarma/DealCallsPanel';
 import { FollowUpHintCard } from '@/components/deals/FollowUpHintCard';
 import { TimelineItem } from '@/components/deals/TimelineItem';
+import { MentionTextarea, extractMentionIds } from '@/components/deals/MentionTextarea';
 import { ACTIVITY_LABELS } from '@/types/dealDetail';
 import type { DealActivityType, DealActivity, DealFullDetail } from '@/types/dealDetail';
 import type { PipelineStage } from '@/types/deal';
@@ -53,7 +53,7 @@ interface DealTimelineTabProps {
   activities: DealActivity[] | undefined;
   stages?: PipelineStage[];
   stageHistory?: DealStageHistoryEntry[];
-  addActivity: UseMutationResult<unknown, Error, { deal_id: string; tipo: DealActivityType; descricao: string }>;
+  addActivity: UseMutationResult<unknown, Error, { deal_id: string; tipo: DealActivityType; descricao: string; mentioned_user_ids?: string[]; deal_titulo?: string; empresa?: string }>;
   toggleTask: UseMutationResult<unknown, Error, { id: string; concluida: boolean; dealId: string }>;
   onOpenEmail: () => void;
 }
@@ -94,7 +94,15 @@ export function DealTimelineTab({ deal, dealId, activities, stages, stageHistory
 
   const handleAddActivity = () => {
     if (!dealId || !activityText.trim()) return;
-    addActivity.mutate({ deal_id: dealId, tipo: activityType, descricao: activityText.trim() }, {
+    const mentionedIds = extractMentionIds(activityText);
+    addActivity.mutate({
+      deal_id: dealId,
+      tipo: activityType,
+      descricao: activityText.trim(),
+      mentioned_user_ids: mentionedIds.length > 0 ? mentionedIds : undefined,
+      deal_titulo: deal.titulo,
+      empresa: deal.pipeline_empresa ?? undefined,
+    }, {
       onSuccess: () => { setActivityText(''); toast.success('Atividade adicionada'); },
     });
   };
@@ -159,10 +167,10 @@ export function DealTimelineTab({ deal, dealId, activities, stages, stageHistory
               <Mail className="h-3.5 w-3.5" />
             </Button>
           </div>
-          <Textarea
+          <MentionTextarea
             value={activityText}
-            onChange={e => setActivityText(e.target.value)}
-            placeholder="Descreva a atividade..."
+            onChange={setActivityText}
+            placeholder="Descreva a atividade... Use @ para mencionar alguém"
             className="min-h-[60px] text-sm"
             rows={2}
           />

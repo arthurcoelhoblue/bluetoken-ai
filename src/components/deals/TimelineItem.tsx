@@ -8,6 +8,28 @@ import type { DealActivityMetadata } from '@/types/metadata';
 import type { PipelineStage } from '@/types/deal';
 import type { DealStageHistoryEntry } from '@/hooks/useDealDetail';
 
+/** Render text with @mentions highlighted */
+function RichText({ text }: { text: string }) {
+  const parts = text.split(/(@\[([^\]]+)\]\([^)]+\))/g);
+  if (parts.length === 1) return <>{text}</>;
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    if (part && part.startsWith('@[')) {
+      const name = parts[i + 1]; // captured group
+      elements.push(
+        <span key={i} className="font-semibold text-primary">@{name}</span>
+      );
+      i += 3; // skip full match + 2 capture groups
+    } else {
+      if (part) elements.push(<span key={i}>{part}</span>);
+      i++;
+    }
+  }
+  return <>{elements}</>;
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('pt-BR', {
     day: '2-digit', month: '2-digit', year: '2-digit',
@@ -103,7 +125,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
       case 'GANHO':
         return (
           <div className="flex items-center gap-2 mt-0.5">
-            <Badge className="bg-green-600 text-white text-[10px]">🏆 Ganho</Badge>
+            <Badge className="bg-primary text-primary-foreground text-[10px]">🏆 Ganho</Badge>
             {a.descricao && <span className="text-sm text-muted-foreground">{a.descricao}</span>}
           </div>
         );
@@ -171,7 +193,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
               onCheckedChange={checked => onToggleTask(a.id, !!checked, dealId)}
             />
             <span className={`text-sm ${a.tarefa_concluida ? 'line-through text-muted-foreground' : ''}`}>
-              {a.descricao}
+              <RichText text={a.descricao ?? ''} />
             </span>
           </div>
         );
@@ -234,7 +256,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
       }
 
       default:
-        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5"><RichText text={a.descricao} /></p> : null;
     }
   };
 
