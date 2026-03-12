@@ -94,7 +94,15 @@ export function DealTimelineTab({ deal, dealId, activities, stages, stageHistory
 
   const handleAddActivity = () => {
     if (!dealId || !activityText.trim()) return;
-    addActivity.mutate({ deal_id: dealId, tipo: activityType, descricao: activityText.trim() }, {
+    const mentionedIds = extractMentionIds(activityText);
+    addActivity.mutate({
+      deal_id: dealId,
+      tipo: activityType,
+      descricao: activityText.trim(),
+      mentioned_user_ids: mentionedIds.length > 0 ? mentionedIds : undefined,
+      deal_titulo: deal.titulo,
+      empresa: deal.pipeline_empresa ?? undefined,
+    }, {
       onSuccess: () => { setActivityText(''); toast.success('Atividade adicionada'); },
     });
   };
