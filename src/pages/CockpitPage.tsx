@@ -30,6 +30,7 @@ function formatPercent(value: number) {
 
 function CockpitContent() {
   const [pipelineId, setPipelineId] = useState<string | null>(null);
+  const [tvMode, setTvMode] = useState(false);
   const { data: pipelines } = usePipelines();
 
   const { data: conversion, isLoading: loadingConversion } = useAnalyticsConversion(pipelineId);
