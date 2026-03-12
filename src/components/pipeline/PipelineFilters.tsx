@@ -64,6 +64,9 @@ export function PipelineFilters({
   advancedFilters,
   onAdvancedFiltersApply,
   onAdvancedFiltersClear,
+  iaSort,
+  onIaSortToggle,
+  onTransferClick,
 }: PipelineFiltersProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const activeConditionsCount = advancedFilters.conditions.length;
