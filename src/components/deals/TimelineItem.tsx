@@ -71,34 +71,24 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
         const toId = meta?.to_stage_id as string | undefined;
         const fromStage = fromId ? stagesMap[fromId] : null;
         const toStage = toId ? stagesMap[toId] : null;
+        const fromName = fromStage?.nome ?? (fromId ? '...' : 'Início');
+        const toName = toStage?.nome ?? (toId ?? '?');
 
-        // Find matching stage history for time info
         const historyMatch = stageHistory.find(
           h => h.to_stage_id === toId && h.from_stage_id === fromId
         );
 
         return (
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {fromStage ? (
-                <Badge variant="outline" className="text-[10px]" style={{ borderColor: fromStage.cor, color: fromStage.cor }}>
-                  {fromStage.nome}
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">{fromId ? '...' : 'Início'}</span>
-              )}
-              <ArrowRight className="h-3 w-3 text-muted-foreground" />
-              {toStage ? (
-                <Badge className="text-[10px]" style={{ backgroundColor: toStage.cor, color: '#fff' }}>
-                  {toStage.nome}
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">{toId ?? '?'}</span>
-              )}
-              {historyMatch?.auto_advanced && (
-                <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5">⚡ Auto</Badge>
-              )}
-            </div>
+            <p className="text-sm font-semibold text-foreground">
+              Etapa: {fromName} → {toName}
+              {historyMatch?.auto_advanced && <span className="text-xs font-normal text-muted-foreground ml-1">(Automação)</span>}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+              {historyMatch?.auto_advanced && <> (Automação)</>}
+            </p>
             {historyMatch?.tempo_no_stage_anterior_ms && historyMatch.tempo_no_stage_anterior_ms > 0 && (
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Clock className="h-2.5 w-2.5" />
