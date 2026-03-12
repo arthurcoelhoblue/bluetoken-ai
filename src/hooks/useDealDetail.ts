@@ -204,3 +204,4 @@ export function useDealPipelineStages(pipelineId: string | null) {
       return data as PipelineStage[];
     },
   });
+}

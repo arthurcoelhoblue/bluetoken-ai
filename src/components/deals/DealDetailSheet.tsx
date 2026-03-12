@@ -198,6 +198,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                     deal={deal}
                     dealId={dealId!}
                     activities={activities}
+                    stages={stages}
+                    stageHistory={stageHistory}
                     addActivity={addActivity}
                     toggleTask={toggleTask}
                     onOpenEmail={() => setEmailOpen(true)}
