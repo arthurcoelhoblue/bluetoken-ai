@@ -256,7 +256,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
       }
 
       default:
-        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5"><RichText text={a.descricao} /></p> : null;
     }
   };
 
