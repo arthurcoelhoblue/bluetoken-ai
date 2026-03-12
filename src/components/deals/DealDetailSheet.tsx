@@ -292,6 +292,18 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
         onSchedule={handleScheduleActivity}
         onSkip={() => onOpenChange(false)}
       />
+
+      <ContactDetailSheet
+        contactId={contactSheetId}
+        open={!!contactSheetId}
+        onOpenChange={(open) => !open && setContactSheetId(null)}
+      />
+
+      <OrgDetailSheet
+        orgId={orgSheetId}
+        open={!!orgSheetId}
+        onOpenChange={(open) => !open && setOrgSheetId(null)}
+      />
     </>
   );
 }
