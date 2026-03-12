@@ -128,6 +128,7 @@ export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: 
           <p className="text-sm">{new Date(deal.data_previsao_fechamento).toLocaleDateString('pt-BR')}</p>
         </div>
       )}
+      </div>
     </div>
   );
 }
