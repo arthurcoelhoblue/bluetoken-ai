@@ -17,6 +17,8 @@ import {
 import { useWorkbenchSLAAlerts } from '@/hooks/useWorkbench';
 import { EvolutionChart } from '@/components/analytics/EvolutionChart';
 import { CriticalAlerts } from '@/components/cockpit/CriticalAlerts';
+import { TVDashboard } from '@/components/cockpit/TVDashboard';
+import { Button } from '@/components/ui/button';
 
 function formatCurrency(value: number) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: 0 }).format(value);
