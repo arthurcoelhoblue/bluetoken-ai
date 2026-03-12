@@ -4,8 +4,9 @@ import { WebhooksTab } from "@/components/settings/WebhooksTab";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { AISettingsTab } from "@/components/settings/AISettingsTab";
 import { ComercialTab } from "@/components/settings/ComercialTab";
+import { ProductsCatalogTab } from "@/components/settings/ProductsCatalogTab";
 import { AppLayout } from "@/components/layout/AppLayout";
-import { Plug, Webhook, Brain, Bot, BarChart3 } from "lucide-react";
+import { Plug, Webhook, Brain, Bot, BarChart3, Package } from "lucide-react";
 
 export default function Settings() {
   return (
