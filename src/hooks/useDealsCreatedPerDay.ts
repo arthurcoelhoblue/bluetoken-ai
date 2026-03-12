@@ -18,7 +18,7 @@ export function useDealsCreatedPerDay(empresa?: string | null) {
         .gte('created_at', since);
 
       if (empresa) {
-        q = q.eq('pipelines.empresa', empresa);
+        q = q.eq('pipelines.empresa', empresa as any);
       }
 
       const { data, error } = await q;
