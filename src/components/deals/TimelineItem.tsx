@@ -125,7 +125,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
       case 'GANHO':
         return (
           <div className="flex items-center gap-2 mt-0.5">
-            <Badge className="bg-green-600 text-white text-[10px]">🏆 Ganho</Badge>
+            <Badge className="bg-primary text-primary-foreground text-[10px]">🏆 Ganho</Badge>
             {a.descricao && <span className="text-sm text-muted-foreground">{a.descricao}</span>}
           </div>
         );
