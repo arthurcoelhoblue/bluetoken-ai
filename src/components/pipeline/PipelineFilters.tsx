@@ -3,7 +3,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { Plus, Bot, Kanban, List, SlidersHorizontal, ChevronDown } from 'lucide-react';
+import { Plus, Bot, Kanban, List, SlidersHorizontal, ChevronDown, ArrowRightLeft, Sparkles, GripVertical } from 'lucide-react';
 import { AdvancedFilters } from './AdvancedFilters';
 import type { PipelineWithStages, PipelineStage } from '@/types/deal';
 import type { AdvancedFilterState } from '@/types/filterCondition';
@@ -36,6 +36,10 @@ interface PipelineFiltersProps {
   advancedFilters: AdvancedFilterState;
   onAdvancedFiltersApply: (state: AdvancedFilterState) => void;
   onAdvancedFiltersClear: () => void;
+  // Kanban actions
+  iaSort: boolean;
+  onIaSortToggle: () => void;
+  onTransferClick?: () => void;
 }
 
 export function PipelineFilters({
@@ -60,6 +64,9 @@ export function PipelineFilters({
   advancedFilters,
   onAdvancedFiltersApply,
   onAdvancedFiltersClear,
+  iaSort,
+  onIaSortToggle,
+  onTransferClick,
 }: PipelineFiltersProps) {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const activeConditionsCount = advancedFilters.conditions.length;
@@ -120,6 +127,25 @@ export function PipelineFilters({
               <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">on</Badge>
             )}
           </Button>
+
+          {viewMode === 'kanban' && onTransferClick && (
+            <Button variant="outline" size="sm" className="gap-1.5 h-9 text-xs" onClick={onTransferClick}>
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Transferir
+            </Button>
+          )}
+
+          {viewMode === 'kanban' && (
+            <Button
+              variant={iaSort ? 'default' : 'outline'}
+              size="sm"
+              className="gap-1.5 h-9 text-xs"
+              onClick={onIaSortToggle}
+            >
+              {iaSort ? <Sparkles className="h-3.5 w-3.5" /> : <GripVertical className="h-3.5 w-3.5" />}
+              {iaSort ? 'Ordenação IA' : 'Ordenação Manual'}
+            </Button>
+          )}
         </div>
 
         {/* Right: Filters */}

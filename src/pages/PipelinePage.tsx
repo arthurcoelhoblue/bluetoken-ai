@@ -14,6 +14,7 @@ import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
+import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
@@ -84,7 +85,17 @@ function PipelineContent() {
     return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
   });
   const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(EMPTY_ADVANCED);
+  const [iaSort, setIaSort] = useState(() => {
+    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
+  });
 
+  const toggleIaSort = useCallback(() => {
+    setIaSort(prev => {
+      const next = !prev;
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
   const handleViewModeChange = (m: 'kanban' | 'list') => {
     setViewMode(m);
     localStorage.setItem('bluecrm-pipeline-view', m);
@@ -200,11 +211,12 @@ function PipelineContent() {
             advancedFilters={advancedFilters}
             onAdvancedFiltersApply={setAdvancedFilters}
             onAdvancedFiltersClear={() => setAdvancedFilters(EMPTY_ADVANCED)}
+            iaSort={iaSort}
+            onIaSortToggle={toggleIaSort}
+            onTransferClick={() => setShowTransfer(true)}
           />
 
-          <div className="border-b border-border/50 mt-2" />
-
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-4">
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
             {viewMode === 'kanban' ? (
               <KanbanBoard
                 columns={columns}
@@ -212,6 +224,8 @@ function PipelineContent() {
                 isLoading={dealsLoading}
                 onDealClick={handleDealClick}
                 onTransferClick={() => setShowTransfer(true)}
+                iaSort={iaSort}
+                onIaSortToggle={toggleIaSort}
               />
             ) : (
               <PipelineListView
