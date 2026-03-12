@@ -8,6 +8,7 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
+import { PipelineListView } from '@/components/pipeline/PipelineListView';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
