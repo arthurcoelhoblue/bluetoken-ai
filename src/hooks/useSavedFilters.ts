@@ -34,13 +34,13 @@ export function useSaveFilter() {
       matchMode: MatchMode;
       conditions: FilterCondition[];
     }) => {
-      const { error } = await supabase.from('pipeline_saved_filters').insert({
+      const { error } = await supabase.from('pipeline_saved_filters').insert([{
         user_id: user!.id,
         pipeline_id: params.pipelineId,
         nome: params.nome,
         match_mode: params.matchMode,
         conditions: params.conditions as unknown as Record<string, unknown>[],
-      });
+      }]);
       if (error) throw error;
     },
     onSuccess: () => {

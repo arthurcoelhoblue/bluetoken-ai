@@ -6,7 +6,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Label } from '@/components/ui/label';
 import { FilterConditionRow } from './FilterConditionRow';
 import { useSavedFilters, useSaveFilter, useDeleteSavedFilter } from '@/hooks/useSavedFilters';
-import { Plus, Save, Trash2, RotateCcw, Check } from 'lucide-react';
+import { Plus, Save, Trash2, RotateCcw, Check, X } from 'lucide-react';
 import type { FilterCondition, AdvancedFilterState, MatchMode } from '@/types/filterCondition';
 import type { PipelineStage } from '@/types/deal';
 

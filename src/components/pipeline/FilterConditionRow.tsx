@@ -2,7 +2,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
-import type { FilterCondition, PipelineStage } from '@/types/deal';
+import type { FilterCondition } from '@/types/filterCondition';
+import type { PipelineStage } from '@/types/deal';
 import { FILTER_FIELDS, OPERATORS_BY_FIELD } from '@/types/filterCondition';
 
 interface OwnerOption { id: string; nome: string }
