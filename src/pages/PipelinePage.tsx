@@ -174,6 +174,8 @@ function PipelineContent() {
             ownerDisabled={ownerFilterDisabled}
             etiquetaIA={etiquetaIA}
             onEtiquetaIAChange={setEtiquetaIA}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
           />
 
           <div className="border-b border-border/50 mt-2" />
