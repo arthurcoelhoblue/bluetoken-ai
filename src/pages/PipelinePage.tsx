@@ -14,6 +14,7 @@ import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
+import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
