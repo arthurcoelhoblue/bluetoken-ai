@@ -87,11 +87,18 @@ export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: 
   };
 
   return (
-    <div className="px-6 mt-3 space-y-1">
+    <div className="px-6 mt-3 space-y-4">
+      {/* Associações de Contato e Organização */}
+      <DealAssociations
+        deal={deal}
+        updateField={updateField}
+        onContactClick={onContactClick}
+        onOrgClick={onOrgClick}
+      />
+
+      <div className="space-y-1">
       {renderInlineField('Título', 'titulo', deal.titulo)}
       {renderInlineField('Valor', 'valor', String(deal.valor ?? 0))}
-      {renderInlineField('Contato', 'contact_nome', deal.contact_nome)}
-      {renderInlineField('Organização', 'org_nome', deal.org_nome)}
 
       {/* Responsável — Select de vendedores */}
       <div className="group flex items-center justify-between py-2 px-2 rounded-md hover:bg-muted/50">
