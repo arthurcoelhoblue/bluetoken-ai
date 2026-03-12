@@ -53,7 +53,7 @@ interface DealTimelineTabProps {
   activities: DealActivity[] | undefined;
   stages?: PipelineStage[];
   stageHistory?: DealStageHistoryEntry[];
-  addActivity: UseMutationResult<unknown, Error, { deal_id: string; tipo: DealActivityType; descricao: string }>;
+  addActivity: UseMutationResult<unknown, Error, { deal_id: string; tipo: DealActivityType; descricao: string; mentioned_user_ids?: string[]; deal_titulo?: string; empresa?: string }>;
   toggleTask: UseMutationResult<unknown, Error, { id: string; concluida: boolean; dealId: string }>;
   onOpenEmail: () => void;
 }

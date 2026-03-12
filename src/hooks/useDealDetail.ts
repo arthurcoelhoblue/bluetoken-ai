@@ -47,6 +47,9 @@ export function useAddDealActivity() {
       tipo: DealActivityType;
       descricao: string;
       tarefa_prazo?: string;
+      mentioned_user_ids?: string[];
+      deal_titulo?: string;
+      empresa?: string;
     }) => {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('deal_activities').insert({
@@ -57,6 +60,34 @@ export function useAddDealActivity() {
         user_id: user?.id ?? null,
       });
       if (error) throw error;
+
+      // Send notifications to mentioned users
+      if (params.mentioned_user_ids?.length && user?.id) {
+        // Get author name
+        const { data: authorProfile } = await supabase
+          .from('profiles')
+          .select('nome')
+          .eq('id', user.id)
+          .single();
+        const authorName = authorProfile?.nome ?? 'Alguém';
+
+        const notifications = params.mentioned_user_ids
+          .filter(uid => uid !== user.id) // Don't notify yourself
+          .map(uid => ({
+            user_id: uid,
+            empresa: params.empresa ?? 'BLUE',
+            tipo: 'MENCAO',
+            titulo: `${authorName} mencionou você`,
+            mensagem: `Em "${params.deal_titulo ?? 'um deal'}": ${params.descricao.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').slice(0, 120)}`,
+            link: `/pipeline?deal=${params.deal_id}`,
+            entity_id: params.deal_id,
+            entity_type: 'DEAL',
+          }));
+
+        if (notifications.length > 0) {
+          await supabase.from('notifications').insert(notifications);
+        }
+      }
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-activities', vars.deal_id] });
