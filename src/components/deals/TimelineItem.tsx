@@ -295,18 +295,21 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       {/* Content */}
       <div className="flex-1 min-w-0 pb-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-medium">{ACTIVITY_LABELS[a.tipo]}</span>
-          <span className="text-[10px] text-muted-foreground">{formatDate(a.created_at)}</span>
-          {a.user_nome && <span className="text-[10px] text-muted-foreground">· {a.user_nome}</span>}
-          {(() => {
-            const m = a.metadata as Record<string, unknown>;
-            if (m?.source === 'call-transcribe-auto') {
-              return <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5"><Sparkles className="h-2.5 w-2.5" />Auto IA</Badge>;
-            }
-            return null;
-          })()}
-        </div>
+        {/* For types that render their own date/user, skip the generic header */}
+        {!(['STAGE_CHANGE', 'CRIACAO', 'GANHO', 'PERDA'] as DealActivityType[]).includes(a.tipo) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium">{ACTIVITY_LABELS[a.tipo]}</span>
+            <span className="text-[11px] text-muted-foreground">{formatDate(a.created_at)}</span>
+            {a.user_nome && <span className="text-[11px] text-muted-foreground">· {a.user_nome}</span>}
+            {(() => {
+              const m = a.metadata as Record<string, unknown>;
+              if (m?.source === 'call-transcribe-auto') {
+                return <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5"><Sparkles className="h-2.5 w-2.5" />Auto IA</Badge>;
+              }
+              return null;
+            })()}
+          </div>
+        )}
         {renderRichContent()}
       </div>
     </div>
