@@ -7403,6 +7403,33 @@ export type Database = {
         }
         Relationships: []
       }
+      webhook_tag_configs: {
+        Row: {
+          created_at: string
+          empresa: string
+          id: string
+          tag: string
+          updated_at: string
+          webhook_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          id?: string
+          tag?: string
+          updated_at?: string
+          webhook_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          id?: string
+          tag?: string
+          updated_at?: string
+          webhook_id?: string
+        }
+        Relationships: []
+      }
       whatsapp_connections: {
         Row: {
           access_token: string | null
