@@ -90,6 +90,22 @@ function PipelineContent() {
 
   const handleDealClick = (dealId: string) => {
     setSelectedDealId(dealId);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('deal', dealId);
+      return next;
+    }, { replace: true });
+  };
+
+  const handleDealClose = (open: boolean) => {
+    if (!open) {
+      setSelectedDealId(null);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('deal');
+        return next;
+      }, { replace: true });
+    }
   };
 
   // Auto-open deal from query param when navigating from insights
