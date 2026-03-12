@@ -6081,6 +6081,61 @@ export type Database = {
           },
         ]
       }
+      pipeline_saved_filters: {
+        Row: {
+          conditions: Json
+          created_at: string
+          id: string
+          is_default: boolean
+          match_mode: string
+          nome: string
+          pipeline_id: string
+          user_id: string
+        }
+        Insert: {
+          conditions?: Json
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          match_mode?: string
+          nome: string
+          pipeline_id: string
+          user_id: string
+        }
+        Update: {
+          conditions?: Json
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          match_mode?: string
+          nome?: string
+          pipeline_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           cor: string

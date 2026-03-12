@@ -1,98 +1,69 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Plano: Filtros Personalizados Condicionais (estilo Pipedrive)
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-### Conceito
+### Implementação
 
-Adicionar um sistema de filtros avançados com condições encadeáveis (AND/OR), permitindo ao usuário construir queries complexas como "Valor > 10.000 **E** Temperatura = Quente **E** Vendedor = João" ou "Valor > 50.000 **OU** Temperatura = Quente". Os filtros poderão ser salvos com nome para reutilização.
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ [⚙ Filtros avançados ▾]                                     │
-├─────────────────────────────────────────────────────────────┤
-│ Corresponder: (•) Todas as condições  ( ) Qualquer condição│
-│                                                             │
-│  [Valor      ▾] [maior que  ▾] [10000        ] [✕]        │
-│  [Temperatura▾] [é igual a  ▾] [Quente       ] [✕]        │
-│  [Vendedor   ▾] [é igual a  ▾] [João Silva   ] [✕]        │
-│                                                             │
-│  [+ Adicionar condição]                                     │
-│                                                             │
-│  Filtros salvos: [Meus quentes ▾] [💾 Salvar] [🗑 Excluir] │
-│                                                             │
-│              [Limpar]                    [Aplicar filtro]   │
-└─────────────────────────────────────────────────────────────┘
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
 ```
 
-### Campos filtráveis
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-| Campo | Operadores |
-|---|---|
-| Valor | é igual, maior que, menor que, entre |
-| Temperatura | é igual a (FRIO/MORNO/QUENTE) |
-| Vendedor | é igual a (lista de owners) |
-| Etapa | é igual a (stages do pipeline) |
-| Etiqueta | é igual a, contém |
-| Data criação | antes de, depois de, entre |
-| Data atualização | antes de, depois de, entre |
-| Score probabilidade | maior que, menor que |
-| Contato (nome) | contém |
-| Origem | é igual a |
+---
 
-### Persistência dos filtros salvos
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-Criar tabela `pipeline_saved_filters` no banco:
-- `id`, `user_id`, `pipeline_id`, `nome`, `match_mode` (all/any), `conditions` (JSONB array), `is_default`, `created_at`
+### Status: ✅ Implementado
 
-Com RLS para que cada usuário veja apenas seus próprios filtros.
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-### Arquivos a criar/editar
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-**`src/components/pipeline/AdvancedFilters.tsx`** (novo) — componente principal com:
-- Toggle "Todas as condições" / "Qualquer condição" (AND vs OR)
-- Lista dinâmica de linhas de condição (campo + operador + valor)
-- Botão adicionar/remover condição
-- Select de filtros salvos + botões salvar/excluir
-- Botões Limpar e Aplicar
+---
 
-**`src/components/pipeline/FilterConditionRow.tsx`** (novo) — uma linha individual de condição com 3 selects (campo, operador, valor) e botão remover.
+## Plano: Push de leads para Mautic e SGT em tempo real
 
-**`src/components/pipeline/PipelineFilters.tsx`** — adicionar botão "Filtros avançados" que abre um Popover/Collapsible com o `AdvancedFilters`. Exibir badge com contagem de condições ativas.
+### Status: ✅ Implementado
 
-**`src/hooks/deals/useDealQueries.ts`** — aceitar `advancedFilters` como parâmetro opcional. Quando presente, construir a query Supabase dinamicamente com `.or()` ou múltiplos `.eq/.gt/.lt/.contains` conforme o `match_mode`.
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
 
-**`src/hooks/useSavedFilters.ts`** (novo) — CRUD de filtros salvos na tabela `pipeline_saved_filters`.
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
 
-**`src/pages/PipelinePage.tsx`** — gerenciar estado dos filtros avançados e passar para `useDeals` e `PipelineFilters`.
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
 
-### Detalhes técnicos
-
-- Condições são representadas como `{ field: string; operator: string; value: string | number | string[] }[]`
-- No modo AND: cada condição vira um `.eq()/.gt()/.lt()` encadeado
-- No modo OR: condições agrupadas com `.or('valor.gt.10000,temperatura.eq.QUENTE')`
-- Filtros simples existentes (temperatura, vendedor, tag) continuam funcionando — os avançados são complementares
-- Quando filtro avançado está ativo, os selects simples ficam desabilitados para evitar conflito
-- Badge no botão mostra quantas condições estão ativas
-
-### Migração SQL
-
-```sql
-CREATE TABLE public.pipeline_saved_filters (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE NOT NULL,
-  pipeline_id UUID REFERENCES public.pipelines(id) ON DELETE CASCADE NOT NULL,
-  nome TEXT NOT NULL,
-  match_mode TEXT NOT NULL DEFAULT 'all' CHECK (match_mode IN ('all', 'any')),
-  conditions JSONB NOT NULL DEFAULT '[]',
-  is_default BOOLEAN NOT NULL DEFAULT false,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.pipeline_saved_filters ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Users manage own filters"
-  ON public.pipeline_saved_filters FOR ALL TO authenticated
-  USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
-```
-
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
