@@ -2793,6 +2793,196 @@ export type Database = {
           },
         ]
       }
+      deal_playbook_events: {
+        Row: {
+          ai_response: string | null
+          created_at: string
+          descricao: string | null
+          id: string
+          metadata: Json | null
+          notas_vendedor: string | null
+          resultado: string | null
+          run_id: string
+          step_ordem: number
+          tipo_evento: Database["public"]["Enums"]["playbook_evento_tipo"]
+          user_id: string | null
+        }
+        Insert: {
+          ai_response?: string | null
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          metadata?: Json | null
+          notas_vendedor?: string | null
+          resultado?: string | null
+          run_id: string
+          step_ordem: number
+          tipo_evento: Database["public"]["Enums"]["playbook_evento_tipo"]
+          user_id?: string | null
+        }
+        Update: {
+          ai_response?: string | null
+          created_at?: string
+          descricao?: string | null
+          id?: string
+          metadata?: Json | null
+          notas_vendedor?: string | null
+          resultado?: string | null
+          run_id?: string
+          step_ordem?: number
+          tipo_evento?: Database["public"]["Enums"]["playbook_evento_tipo"]
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_playbook_events_run_id_fkey"
+            columns: ["run_id"]
+            isOneToOne: false
+            referencedRelation: "deal_playbook_runs"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
+      deal_playbook_runs: {
+        Row: {
+          completed_at: string | null
+          created_at: string
+          current_step_ordem: number
+          deal_id: string
+          id: string
+          locked_until: string | null
+          metadata: Json | null
+          next_step_at: string | null
+          owner_id: string | null
+          playbook_id: string
+          started_at: string
+          status: Database["public"]["Enums"]["playbook_run_status"]
+          updated_at: string
+        }
+        Insert: {
+          completed_at?: string | null
+          created_at?: string
+          current_step_ordem?: number
+          deal_id: string
+          id?: string
+          locked_until?: string | null
+          metadata?: Json | null
+          next_step_at?: string | null
+          owner_id?: string | null
+          playbook_id: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["playbook_run_status"]
+          updated_at?: string
+        }
+        Update: {
+          completed_at?: string | null
+          created_at?: string
+          current_step_ordem?: number
+          deal_id?: string
+          id?: string
+          locked_until?: string | null
+          metadata?: Json | null
+          next_step_at?: string | null
+          owner_id?: string | null
+          playbook_id?: string
+          started_at?: string
+          status?: Database["public"]["Enums"]["playbook_run_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_playbook_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "deals_full_detail"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_deal_id_fkey"
+            columns: ["deal_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_sla_alerts"
+            referencedColumns: ["deal_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["owner_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "v_playbook_stats"
+            referencedColumns: ["playbook_id"]
+          },
+        ]
+      }
       deal_products: {
         Row: {
           created_at: string
@@ -6242,6 +6432,184 @@ export type Database = {
         }
         Relationships: []
       }
+      playbook_steps: {
+        Row: {
+          canal: Database["public"]["Enums"]["canal_tipo"] | null
+          created_at: string
+          descricao: string | null
+          duracao_estimada_min: number | null
+          executor: Database["public"]["Enums"]["playbook_executor"]
+          fallback_habilitado: boolean
+          fallback_offset_horas: number | null
+          id: string
+          metadata: Json | null
+          offset_dias: number
+          offset_horas: number
+          ordem: number
+          playbook_id: string
+          tipo: Database["public"]["Enums"]["playbook_step_tipo"]
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          canal?: Database["public"]["Enums"]["canal_tipo"] | null
+          created_at?: string
+          descricao?: string | null
+          duracao_estimada_min?: number | null
+          executor: Database["public"]["Enums"]["playbook_executor"]
+          fallback_habilitado?: boolean
+          fallback_offset_horas?: number | null
+          id?: string
+          metadata?: Json | null
+          offset_dias?: number
+          offset_horas?: number
+          ordem: number
+          playbook_id: string
+          tipo: Database["public"]["Enums"]["playbook_step_tipo"]
+          titulo: string
+          updated_at?: string
+        }
+        Update: {
+          canal?: Database["public"]["Enums"]["canal_tipo"] | null
+          created_at?: string
+          descricao?: string | null
+          duracao_estimada_min?: number | null
+          executor?: Database["public"]["Enums"]["playbook_executor"]
+          fallback_habilitado?: boolean
+          fallback_offset_horas?: number | null
+          id?: string
+          metadata?: Json | null
+          offset_dias?: number
+          offset_horas?: number
+          ordem?: number
+          playbook_id?: string
+          tipo?: Database["public"]["Enums"]["playbook_step_tipo"]
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_steps_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbook_steps_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "v_playbook_stats"
+            referencedColumns: ["playbook_id"]
+          },
+        ]
+      }
+      playbooks: {
+        Row: {
+          ativo: boolean
+          created_at: string
+          created_by: string | null
+          descricao: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id: string
+          nome: string
+          parent_id: string | null
+          pipeline_id: string | null
+          updated_at: string
+          versao: number
+        }
+        Insert: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome: string
+          parent_id?: string | null
+          pipeline_id?: string | null
+          updated_at?: string
+          versao?: number
+        }
+        Update: {
+          ativo?: boolean
+          created_at?: string
+          created_by?: string | null
+          descricao?: string | null
+          empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          id?: string
+          nome?: string
+          parent_id?: string | null
+          pipeline_id?: string | null
+          updated_at?: string
+          versao?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbooks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "playbooks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "playbooks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbooks_created_by_fkey"
+            columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "playbooks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbooks_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "v_playbook_stats"
+            referencedColumns: ["playbook_id"]
+          },
+          {
+            foreignKeyName: "playbooks_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "playbooks_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbooks_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       product_knowledge: {
         Row: {
           ativo: boolean
@@ -8777,6 +9145,94 @@ export type Database = {
           },
         ]
       }
+      v_playbook_stats: {
+        Row: {
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          nome: string | null
+          playbook_id: string | null
+          runs_aguardando: number | null
+          runs_ativas: number | null
+          runs_canceladas: number | null
+          runs_concluidas: number | null
+          tempo_medio_ciclo_dias: number | null
+          total_runs: number | null
+          versao: number | null
+        }
+        Relationships: []
+      }
+      v_playbook_step_performance: {
+        Row: {
+          executor: Database["public"]["Enums"]["playbook_executor"] | null
+          ordem: number | null
+          playbook_id: string | null
+          tipo: Database["public"]["Enums"]["playbook_step_tipo"] | null
+          titulo: string | null
+          total_atrasados: number | null
+          total_escalados: number | null
+          total_executados: number | null
+          total_fallbacks: number | null
+          total_pulados: number | null
+          total_resolvidos: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "playbook_steps_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "playbooks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "playbook_steps_playbook_id_fkey"
+            columns: ["playbook_id"]
+            isOneToOne: false
+            referencedRelation: "v_playbook_stats"
+            referencedColumns: ["playbook_id"]
+          },
+        ]
+      }
+      v_playbook_vendedor_aderencia: {
+        Row: {
+          empresa: Database["public"]["Enums"]["empresa_tipo"] | null
+          steps_atrasados: number | null
+          steps_executados: number | null
+          steps_fallback: number | null
+          steps_pulados: number | null
+          taxa_aderencia_pct: number | null
+          total_runs: number | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_esforco_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_vendedor"
+            referencedColumns: ["user_id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "deal_playbook_runs_owner_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "seller_leaderboard"
+            referencedColumns: ["user_id"]
+          },
+        ]
+      }
       workbench_pipeline_summary: {
         Row: {
           deals_abertos: number | null
@@ -9212,6 +9668,29 @@ export type Database = {
         | "INVESTIDOR"
         | "LEAD_INVESTIDOR"
         | "DESCONHECIDO"
+      playbook_evento_tipo:
+        | "AGENDADO"
+        | "EXECUTADO"
+        | "PULADO"
+        | "ATRASADO"
+        | "FALLBACK_IA"
+        | "PAUSADO"
+        | "RETOMADO"
+        | "CANCELADO"
+        | "ESCALADO"
+      playbook_executor: "IA" | "HUMANO"
+      playbook_run_status:
+        | "ATIVA"
+        | "CONCLUIDA"
+        | "PAUSADA"
+        | "CANCELADA"
+        | "AGUARDANDO_HUMANO"
+      playbook_step_tipo:
+        | "MENSAGEM_AUTO"
+        | "MENSAGEM_MANUAL"
+        | "LIGACAO"
+        | "REUNIAO"
+        | "TAREFA"
       sdr_acao_tipo:
         | "PAUSAR_CADENCIA"
         | "CANCELAR_CADENCIA"
@@ -9508,6 +9987,32 @@ export const Constants = {
         "INVESTIDOR",
         "LEAD_INVESTIDOR",
         "DESCONHECIDO",
+      ],
+      playbook_evento_tipo: [
+        "AGENDADO",
+        "EXECUTADO",
+        "PULADO",
+        "ATRASADO",
+        "FALLBACK_IA",
+        "PAUSADO",
+        "RETOMADO",
+        "CANCELADO",
+        "ESCALADO",
+      ],
+      playbook_executor: ["IA", "HUMANO"],
+      playbook_run_status: [
+        "ATIVA",
+        "CONCLUIDA",
+        "PAUSADA",
+        "CANCELADA",
+        "AGUARDANDO_HUMANO",
+      ],
+      playbook_step_tipo: [
+        "MENSAGEM_AUTO",
+        "MENSAGEM_MANUAL",
+        "LIGACAO",
+        "REUNIAO",
+        "TAREFA",
       ],
       sdr_acao_tipo: [
         "PAUSAR_CADENCIA",
