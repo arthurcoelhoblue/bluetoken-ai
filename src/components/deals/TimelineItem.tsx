@@ -212,23 +212,26 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
         if (criacaoMeta.origem === 'SDR_IA' && criacaoMeta.dados_extraidos) {
           return (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {criacaoMeta.dados_extraidos.necessidade_principal && (
-                <Badge variant="secondary" className="text-[10px]">📋 {criacaoMeta.dados_extraidos.necessidade_principal}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.valor_mencionado && (
-                <Badge variant="secondary" className="text-[10px]">💰 {formatCurrency(Number(criacaoMeta.dados_extraidos.valor_mencionado))}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.urgencia && (
-                <Badge variant="outline" className="text-[10px]">⚡ {criacaoMeta.dados_extraidos.urgencia}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.decisor_identificado && (
-                <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.prazo_mencionado && (
-                <Badge variant="outline" className="text-[10px]">📅 {criacaoMeta.dados_extraidos.prazo_mencionado}</Badge>
-              )}
-              <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+            <div className="space-y-1.5">
+              {criacaoHeader}
+              <div className="flex flex-wrap gap-1.5">
+                {criacaoMeta.dados_extraidos.necessidade_principal && (
+                  <Badge variant="secondary" className="text-[10px]">📋 {criacaoMeta.dados_extraidos.necessidade_principal}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.valor_mencionado && (
+                  <Badge variant="secondary" className="text-[10px]">💰 {formatCurrency(Number(criacaoMeta.dados_extraidos.valor_mencionado))}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.urgencia && (
+                  <Badge variant="outline" className="text-[10px]">⚡ {criacaoMeta.dados_extraidos.urgencia}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.decisor_identificado && (
+                  <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.prazo_mencionado && (
+                  <Badge variant="outline" className="text-[10px]">📅 {criacaoMeta.dados_extraidos.prazo_mencionado}</Badge>
+                )}
+                <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+              </div>
             </div>
           );
         }
