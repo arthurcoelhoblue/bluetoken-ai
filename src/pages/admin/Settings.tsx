@@ -20,7 +20,7 @@ export default function Settings() {
       </div>
 
       <Tabs defaultValue="channels" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:grid-cols-none lg:inline-flex">
+        <TabsList className="grid w-full grid-cols-6 lg:w-auto lg:grid-cols-none lg:inline-flex">
           <TabsTrigger value="channels" className="gap-2">
             <Plug className="h-4 w-4" />
             <span className="hidden sm:inline">Canais</span>
@@ -28,6 +28,10 @@ export default function Settings() {
           <TabsTrigger value="comercial" className="gap-2">
             <BarChart3 className="h-4 w-4" />
             <span className="hidden sm:inline">Comercial</span>
+          </TabsTrigger>
+          <TabsTrigger value="produtos" className="gap-2">
+            <Package className="h-4 w-4" />
+            <span className="hidden sm:inline">Produtos</span>
           </TabsTrigger>
           <TabsTrigger value="ai" className="gap-2">
             <Brain className="h-4 w-4" />
