@@ -211,7 +211,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 </TabsContent>
 
                 <TabsContent value="dados">
-                  <DealDadosTab deal={deal} updateField={updateField} />
+                  <DealDadosTab deal={deal} updateField={updateField} onContactClick={setContactSheetId} onOrgClick={setOrgSheetId} />
                 </TabsContent>
 
                 {hasChat && (
