@@ -25,6 +25,8 @@ interface KanbanBoardProps {
   isLoading: boolean;
   onDealClick?: (dealId: string) => void;
   onTransferClick?: () => void;
+  iaSort: boolean;
+  onIaSortToggle: () => void;
 }
 
 function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): number {
