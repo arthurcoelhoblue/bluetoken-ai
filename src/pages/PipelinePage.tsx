@@ -79,6 +79,14 @@ function PipelineContent() {
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>(() => {
+    return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
+  });
+
+  const handleViewModeChange = (m: 'kanban' | 'list') => {
+    setViewMode(m);
+    localStorage.setItem('bluecrm-pipeline-view', m);
+  };
 
   const handleDealClick = (dealId: string) => {
     setSelectedDealId(dealId);
