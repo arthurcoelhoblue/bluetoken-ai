@@ -85,17 +85,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
     scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
   }, []);
 
-  const [iaSort, setIaSort] = useState(() => {
-    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
-  });
-
-  const toggleIaSort = useCallback(() => {
-    setIaSort(prev => {
-      const next = !prev;
-      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
-      return next;
-    });
-  }, []);
+  // iaSort is now controlled externally via props
 
   const sortedColumns = useMemo(() => {
     if (!iaSort) return columns;
