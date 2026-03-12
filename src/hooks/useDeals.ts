@@ -11,5 +11,6 @@ export {
   useUpdateLossCategory,
   useDeleteLossCategory,
   useReorderLossCategories,
+  useBulkUpdateDeals,
 } from './deals/useDealMutations';
 export type { CloseDealData } from './deals/useDealMutations';
