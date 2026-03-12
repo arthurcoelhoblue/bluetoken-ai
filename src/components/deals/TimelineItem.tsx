@@ -31,10 +31,12 @@ function RichText({ text }: { text: string }) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const date = new Date(d);
+  const day = date.getDate();
+  const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const month = months[date.getMonth()];
+  const hours = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${day} de ${month} às ${hours}`;
 }
 
 function formatCurrency(v: number) {
@@ -69,34 +71,24 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
         const toId = meta?.to_stage_id as string | undefined;
         const fromStage = fromId ? stagesMap[fromId] : null;
         const toStage = toId ? stagesMap[toId] : null;
+        const fromName = fromStage?.nome ?? (fromId ? '...' : 'Início');
+        const toName = toStage?.nome ?? (toId ?? '?');
 
-        // Find matching stage history for time info
         const historyMatch = stageHistory.find(
           h => h.to_stage_id === toId && h.from_stage_id === fromId
         );
 
         return (
           <div className="space-y-1">
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {fromStage ? (
-                <Badge variant="outline" className="text-[10px]" style={{ borderColor: fromStage.cor, color: fromStage.cor }}>
-                  {fromStage.nome}
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">{fromId ? '...' : 'Início'}</span>
-              )}
-              <ArrowRight className="h-3 w-3 text-muted-foreground" />
-              {toStage ? (
-                <Badge className="text-[10px]" style={{ backgroundColor: toStage.cor, color: '#fff' }}>
-                  {toStage.nome}
-                </Badge>
-              ) : (
-                <span className="text-xs text-muted-foreground">{toId ?? '?'}</span>
-              )}
-              {historyMatch?.auto_advanced && (
-                <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5">⚡ Auto</Badge>
-              )}
-            </div>
+            <p className="text-sm font-semibold text-foreground">
+              Etapa: {fromName} → {toName}
+              {historyMatch?.auto_advanced && <span className="text-xs font-normal text-muted-foreground ml-1">(Automação)</span>}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+              {historyMatch?.auto_advanced && <> (Automação)</>}
+            </p>
             {historyMatch?.tempo_no_stage_anterior_ms && historyMatch.tempo_no_stage_anterior_ms > 0 && (
               <div className="flex items-center gap-1 text-[10px] text-muted-foreground">
                 <Clock className="h-2.5 w-2.5" />
@@ -124,9 +116,13 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       case 'GANHO':
         return (
-          <div className="flex items-center gap-2 mt-0.5">
-            <Badge className="bg-primary text-primary-foreground text-[10px]">🏆 Ganho</Badge>
-            {a.descricao && <span className="text-sm text-muted-foreground">{a.descricao}</span>}
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">🏆 Deal ganho</p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+            </p>
+            {a.descricao && <p className="text-xs text-muted-foreground">{a.descricao}</p>}
           </div>
         );
 
@@ -134,8 +130,12 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
         const motivo = meta?.motivo as string | undefined;
         const categoria = meta?.categoria as string | undefined;
         return (
-          <div className="space-y-1 mt-0.5">
-            <Badge variant="destructive" className="text-[10px]">❌ Perdido</Badge>
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">❌ Deal perdido</p>
+            <p className="text-[11px] text-muted-foreground">
+              {formatDate(a.created_at)}
+              {a.user_nome && <> · {a.user_nome}</>}
+            </p>
             {motivo && <p className="text-xs text-muted-foreground">Motivo: {motivo}</p>}
             {categoria && <Badge variant="outline" className="text-[10px]">{categoria}</Badge>}
           </div>
@@ -200,29 +200,46 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       case 'CRIACAO': {
         const criacaoMeta = meta as DealActivityMetadata | null;
+
+        // Pipedrive-style: "Negócio criado: [date]"
+        const criacaoHeader = (
+          <div className="space-y-0.5">
+            <p className="text-sm font-semibold text-foreground">
+              Negócio criado: {formatDate(a.created_at)}
+            </p>
+            <p className="text-[11px] text-muted-foreground">
+              {a.user_nome ?? 'Sistema'}
+              {criacaoMeta?.canal_origem && <> ({criacaoMeta.canal_origem})</>}
+            </p>
+          </div>
+        );
+
         if (!criacaoMeta?.origem) {
-          return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+          return criacaoHeader;
         }
 
         if (criacaoMeta.origem === 'SDR_IA' && criacaoMeta.dados_extraidos) {
           return (
-            <div className="flex flex-wrap gap-1.5 mt-1.5">
-              {criacaoMeta.dados_extraidos.necessidade_principal && (
-                <Badge variant="secondary" className="text-[10px]">📋 {criacaoMeta.dados_extraidos.necessidade_principal}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.valor_mencionado && (
-                <Badge variant="secondary" className="text-[10px]">💰 {formatCurrency(Number(criacaoMeta.dados_extraidos.valor_mencionado))}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.urgencia && (
-                <Badge variant="outline" className="text-[10px]">⚡ {criacaoMeta.dados_extraidos.urgencia}</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.decisor_identificado && (
-                <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
-              )}
-              {criacaoMeta.dados_extraidos.prazo_mencionado && (
-                <Badge variant="outline" className="text-[10px]">📅 {criacaoMeta.dados_extraidos.prazo_mencionado}</Badge>
-              )}
-              <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+            <div className="space-y-1.5">
+              {criacaoHeader}
+              <div className="flex flex-wrap gap-1.5">
+                {criacaoMeta.dados_extraidos.necessidade_principal && (
+                  <Badge variant="secondary" className="text-[10px]">📋 {criacaoMeta.dados_extraidos.necessidade_principal}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.valor_mencionado && (
+                  <Badge variant="secondary" className="text-[10px]">💰 {formatCurrency(Number(criacaoMeta.dados_extraidos.valor_mencionado))}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.urgencia && (
+                  <Badge variant="outline" className="text-[10px]">⚡ {criacaoMeta.dados_extraidos.urgencia}</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.decisor_identificado && (
+                  <Badge variant="outline" className="text-[10px]">✅ Decisor</Badge>
+                )}
+                {criacaoMeta.dados_extraidos.prazo_mencionado && (
+                  <Badge variant="outline" className="text-[10px]">📅 {criacaoMeta.dados_extraidos.prazo_mencionado}</Badge>
+                )}
+                <Badge variant="default" className="text-[10px]">🤖 SDR IA</Badge>
+              </div>
             </div>
           );
         }
@@ -233,10 +250,8 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
           const HIDDEN_KEYS = ['form_id', 'source', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
           const visibleEntries = Object.entries(campos).filter(([k]) => !HIDDEN_KEYS.includes(k));
           return (
-            <div className="mt-1.5 space-y-1">
-              {criacaoMeta.canal_origem && (
-                <Badge variant="secondary" className="text-[10px]">📎 {criacaoMeta.canal_origem}</Badge>
-              )}
+            <div className="space-y-1.5">
+              {criacaoHeader}
               {visibleEntries.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {visibleEntries.map(([key, val]) => (
@@ -252,7 +267,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
           );
         }
 
-        return a.descricao ? <p className="text-sm text-muted-foreground mt-0.5">{a.descricao}</p> : null;
+        return criacaoHeader;
       }
 
       default:
@@ -280,18 +295,21 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
 
       {/* Content */}
       <div className="flex-1 min-w-0 pb-4">
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs font-medium">{ACTIVITY_LABELS[a.tipo]}</span>
-          <span className="text-[10px] text-muted-foreground">{formatDate(a.created_at)}</span>
-          {a.user_nome && <span className="text-[10px] text-muted-foreground">· {a.user_nome}</span>}
-          {(() => {
-            const m = a.metadata as Record<string, unknown>;
-            if (m?.source === 'call-transcribe-auto') {
-              return <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5"><Sparkles className="h-2.5 w-2.5" />Auto IA</Badge>;
-            }
-            return null;
-          })()}
-        </div>
+        {/* For types that render their own date/user, skip the generic header */}
+        {!(['STAGE_CHANGE', 'CRIACAO', 'GANHO', 'PERDA'] as DealActivityType[]).includes(a.tipo) && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs font-medium">{ACTIVITY_LABELS[a.tipo]}</span>
+            <span className="text-[11px] text-muted-foreground">{formatDate(a.created_at)}</span>
+            {a.user_nome && <span className="text-[11px] text-muted-foreground">· {a.user_nome}</span>}
+            {(() => {
+              const m = a.metadata as Record<string, unknown>;
+              if (m?.source === 'call-transcribe-auto') {
+                return <Badge variant="secondary" className="text-[9px] px-1 py-0 gap-0.5"><Sparkles className="h-2.5 w-2.5" />Auto IA</Badge>;
+              }
+              return null;
+            })()}
+          </div>
+        )}
         {renderRichContent()}
       </div>
     </div>
