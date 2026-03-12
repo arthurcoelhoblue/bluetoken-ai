@@ -45,6 +45,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const { data: deal, isLoading } = useDealDetail(dealId);
   const { data: activities } = useDealActivities(dealId);
   const { data: stages } = useDealPipelineStages(deal?.pipeline_id ?? null);
+  const { data: stageHistory } = useDealStageHistory(dealId);
   const { data: lossCategories = [] } = useLossCategories();
   const resolvedFields = useResolvedFields('DEAL', dealId);
 
