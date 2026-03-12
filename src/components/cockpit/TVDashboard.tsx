@@ -118,7 +118,7 @@ export function TVDashboard({ onClose }: TVDashboardProps) {
         {/* Header */}
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
-            <span className="text-2xl">📺</span>
+            <img src="/images/brand/amelia-logo.png" alt="Amélia" className="h-8 w-8 object-contain" />
             <h1 className="text-xl md:text-2xl lg:text-3xl font-bold tracking-tight">
               PAINEL DE VENDAS
             </h1>
