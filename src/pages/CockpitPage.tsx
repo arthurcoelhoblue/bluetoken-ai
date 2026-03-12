@@ -69,11 +69,20 @@ function CockpitContent() {
   const topCanais = canais?.slice(0, 5) ?? [];
   const slaCount = slaAlerts?.length ?? 0;
 
+  if (tvMode) {
+    return <TVDashboard onClose={() => setTvMode(false)} />;
+  }
+
   return (
       <div className="p-6 space-y-6">
         <div className="flex items-center justify-between">
           <h1 className="text-2xl font-bold">Cockpit Executivo</h1>
-          <Select value={pipelineId ?? 'all'} onValueChange={(v) => setPipelineId(v === 'all' ? null : v)}>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setTvMode(true)} className="gap-2">
+              <Monitor className="h-4 w-4" />
+              Modo TV
+            </Button>
+            <Select value={pipelineId ?? 'all'} onValueChange={(v) => setPipelineId(v === 'all' ? null : v)}>
             <SelectTrigger className="w-[220px]">
               <SelectValue placeholder="Todos os funis" />
             </SelectTrigger>
