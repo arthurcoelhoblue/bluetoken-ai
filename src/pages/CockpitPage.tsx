@@ -93,6 +93,7 @@ function CockpitContent() {
               ))}
             </SelectContent>
           </Select>
+          </div>
         </div>
 
         {/* KPIs */}
