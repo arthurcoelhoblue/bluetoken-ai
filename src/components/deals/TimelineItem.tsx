@@ -193,7 +193,7 @@ export function TimelineItem({ activity: a, stagesMap, stageHistory, onToggleTas
               onCheckedChange={checked => onToggleTask(a.id, !!checked, dealId)}
             />
             <span className={`text-sm ${a.tarefa_concluida ? 'line-through text-muted-foreground' : ''}`}>
-              {a.descricao}
+              <RichText text={a.descricao ?? ''} />
             </span>
           </div>
         );
