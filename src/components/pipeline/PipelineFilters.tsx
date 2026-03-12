@@ -127,6 +127,25 @@ export function PipelineFilters({
               <Badge variant="secondary" className="ml-1 h-4 px-1 text-[10px]">on</Badge>
             )}
           </Button>
+
+          {viewMode === 'kanban' && onTransferClick && (
+            <Button variant="outline" size="sm" className="gap-1.5 h-9 text-xs" onClick={onTransferClick}>
+              <ArrowRightLeft className="h-3.5 w-3.5" />
+              Transferir
+            </Button>
+          )}
+
+          {viewMode === 'kanban' && (
+            <Button
+              variant={iaSort ? 'default' : 'outline'}
+              size="sm"
+              className="gap-1.5 h-9 text-xs"
+              onClick={onIaSortToggle}
+            >
+              {iaSort ? <Sparkles className="h-3.5 w-3.5" /> : <GripVertical className="h-3.5 w-3.5" />}
+              {iaSort ? 'Ordenação IA' : 'Ordenação Manual'}
+            </Button>
+          )}
         </div>
 
         {/* Right: Filters */}
