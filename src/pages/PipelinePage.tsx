@@ -226,7 +226,7 @@ function PipelineContent() {
           <DealDetailSheet
             dealId={selectedDealId}
             open={!!selectedDealId}
-            onOpenChange={open => !open && setSelectedDealId(null)}
+            onOpenChange={handleDealClose}
           />
 
           {selectedPipeline && (
