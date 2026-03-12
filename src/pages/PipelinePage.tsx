@@ -12,12 +12,12 @@ import { PipelineListView } from '@/components/pipeline/PipelineListView';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
-
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
+import type { AdvancedFilterState } from '@/types/filterCondition';
 
 function useOwnerOptions() {
   return useQuery({
@@ -53,6 +53,8 @@ function useCurrentUserIsVendedor() {
 
 const PIPELINE_STORAGE_PREFIX = 'bluecrm-last-pipeline-';
 
+const EMPTY_ADVANCED: AdvancedFilterState = { matchMode: 'all', conditions: [] };
+
 function PipelineContent() {
   const { trackPageView } = useAnalyticsEvents();
   
@@ -71,7 +73,6 @@ function PipelineContent() {
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
-  // For vendedores, force owner filter to themselves
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
   const [etiquetaIA, setEtiquetaIA] = useState(false);
@@ -82,6 +83,7 @@ function PipelineContent() {
   const [viewMode, setViewMode] = useState<'kanban' | 'list'>(() => {
     return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
   });
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(EMPTY_ADVANCED);
 
   const handleViewModeChange = (m: 'kanban' | 'list') => {
     setViewMode(m);
@@ -108,7 +110,6 @@ function PipelineContent() {
     }
   };
 
-  // Auto-open deal from query param when navigating from insights
   useEffect(() => {
     const dealParam = searchParams.get('deal');
     if (dealParam && dealParam !== selectedDealId) {
@@ -118,7 +119,6 @@ function PipelineContent() {
 
   const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
 
-  // Vendedores: force filter to self
   const effectiveOwnerId = (isVendedor && !isAdmin && user?.id) ? user.id : ownerId;
   const ownerFilterDisabled = isVendedor && !isAdmin;
 
@@ -141,17 +141,21 @@ function PipelineContent() {
   useEffect(() => {
     setTemperatura('all');
     setTag('all');
+    setAdvancedFilters(EMPTY_ADVANCED);
   }, [activeCompany]);
 
   const selectedPipeline = pipelines?.find(p => p.id === selectedPipelineId);
 
+  const hasAdvanced = advancedFilters.conditions.length > 0;
+
   const { data: dealsData, isLoading: dealsLoading } = useDeals({
     pipelineId: selectedPipelineId,
-    ownerId: effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
-    temperatura: temperatura !== 'all' ? temperatura : undefined,
-    tag: tag !== 'all' ? tag : undefined,
-    etiqueta: etiquetaIA ? 'Atendimento IA' : undefined,
-    page: -1, // Fetch all (up to 500) for Kanban
+    ownerId: !hasAdvanced && effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
+    temperatura: !hasAdvanced && temperatura !== 'all' ? temperatura : undefined,
+    tag: !hasAdvanced && tag !== 'all' ? tag : undefined,
+    etiqueta: !hasAdvanced && etiquetaIA ? 'Atendimento IA' : undefined,
+    page: -1,
+    advancedFilters: hasAdvanced ? advancedFilters : null,
   });
   
   const deals = dealsData?.data;
@@ -192,6 +196,10 @@ function PipelineContent() {
             onEtiquetaIAChange={setEtiquetaIA}
             viewMode={viewMode}
             onViewModeChange={handleViewModeChange}
+            stages={selectedPipeline?.pipeline_stages ?? []}
+            advancedFilters={advancedFilters}
+            onAdvancedFiltersApply={setAdvancedFilters}
+            onAdvancedFiltersClear={() => setAdvancedFilters(EMPTY_ADVANCED)}
           />
 
           <div className="border-b border-border/50 mt-2" />
