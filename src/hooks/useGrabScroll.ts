@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 
 const AXIS_THRESHOLD = 8;
 
-export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
+export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, options: { disabled?: boolean } = {}) {
   const isDown = useRef(false);
   const startX = useRef(0);
   const startY = useRef(0);
