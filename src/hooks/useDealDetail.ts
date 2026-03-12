@@ -153,6 +153,43 @@ export function useReopenDeal() {
   });
 }
 
+export interface DealStageHistoryEntry {
+  id: string;
+  deal_id: string;
+  from_stage_id: string | null;
+  to_stage_id: string;
+  moved_by: string | null;
+  tempo_no_stage_anterior_ms: number | null;
+  auto_advanced: boolean;
+  created_at: string;
+  from_stage_nome: string | null;
+  from_stage_cor: string | null;
+  to_stage_nome: string | null;
+  to_stage_cor: string | null;
+}
+
+export function useDealStageHistory(dealId: string | null) {
+  return useQuery({
+    queryKey: ['deal-stage-history', dealId],
+    enabled: !!dealId,
+    queryFn: async (): Promise<DealStageHistoryEntry[]> => {
+      const { data, error } = await supabase
+        .from('deal_stage_history')
+        .select('*, from_stage:pipeline_stages!deal_stage_history_from_stage_id_fkey(nome, cor), to_stage:pipeline_stages!deal_stage_history_to_stage_id_fkey(nome, cor)')
+        .eq('deal_id', dealId!)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((h: Record<string, unknown>) => ({
+        ...h,
+        from_stage_nome: (h.from_stage as { nome?: string } | null)?.nome ?? null,
+        from_stage_cor: (h.from_stage as { cor?: string } | null)?.cor ?? null,
+        to_stage_nome: (h.to_stage as { nome?: string } | null)?.nome ?? null,
+        to_stage_cor: (h.to_stage as { cor?: string } | null)?.cor ?? null,
+      })) as DealStageHistoryEntry[];
+    },
+  });
+}
+
 export function useDealPipelineStages(pipelineId: string | null) {
   return useQuery({
     queryKey: ['pipeline-stages', pipelineId],

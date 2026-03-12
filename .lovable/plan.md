@@ -1,45 +1,69 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Plano: Enriquecer a Timeline do Deal
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-### Diagnóstico atual
-A timeline renderiza todas as atividades de forma genérica — mesma apresentação para STAGE_CHANGE, VALOR_CHANGE, GANHO, PERDA, etc. Os dados ricos já existem no `metadata` (stage IDs, valores antigos/novos, motivo de perda) mas não são exibidos. A tabela `deal_stage_history` (tempo no estágio, auto_advanced) também não é consultada.
+### Implementação
 
-### O que será implementado
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-**1. Renderização rica por tipo de atividade**
-- **STAGE_CHANGE**: Buscar nomes dos estágios (from/to) via stages do pipeline e exibir como `"Qualificação" → "Proposta"` com cores dos estágios. Se `auto_advanced`, badge "⚡ Auto".
-- **VALOR_CHANGE**: Exibir `R$ 5.000 → R$ 12.000` com seta e formatação monetária.
-- **GANHO**: Badge verde com valor total do deal.
-- **PERDA**: Badge vermelha com motivo e categoria de perda.
-- **CADENCIA**: Nome da cadência e step, se disponível no metadata.
-- **CALL**: Direção (entrada/saída), duração formatada, link para gravação.
-- **WHATSAPP**: Renderizar preview da mensagem se disponível.
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+```
 
-**2. Tempo no estágio na timeline**
-- Consultar `deal_stage_history` para o deal e mesclar com as atividades existentes de STAGE_CHANGE.
-- Exibir badge `"⏱ 3d 5h no estágio anterior"` nas movimentações.
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-**3. Filtro de atividades**
-- Chips no topo da timeline para filtrar por categoria: Todos, Notas, Comunicação (LIGACAO+EMAIL+WHATSAPP+CALL), Movimentação (STAGE_CHANGE+GANHO+PERDA+REABERTO), Sistema (CADENCIA+CRIACAO+VALOR_CHANGE).
+---
 
-**4. Visual aprimorado**
-- Linha vertical conectora entre eventos (timeline visual).
-- Avatares dos usuários quando disponíveis.
-- Agrupamento visual por data (separadores "Hoje", "Ontem", "15/03/2026").
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-### Arquivos a criar/editar
+### Status: ✅ Implementado
 
-**`src/components/deals/DealTimelineTab.tsx`** — refatorar a renderização para usar um componente `TimelineItem` com renderização condicional por tipo. Adicionar filtros e visual de linha conectora.
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-**`src/components/deals/TimelineItem.tsx`** (novo) — componente que recebe uma `DealActivity` + mapa de stages e renderiza a versão rica conforme o tipo.
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-**`src/hooks/useDealDetail.ts`** — adicionar `useDealStageHistory(dealId)` para buscar dados de `deal_stage_history` com nomes dos estágios.
+---
 
-### Detalhes técnicos
+## Plano: Push de leads para Mautic e SGT em tempo real
 
-- Stages já estão disponíveis via `useDealPipelineStages` no `DealDetailSheet`, basta passar como prop.
-- `deal_stage_history` será consultada com join nas `pipeline_stages` para trazer nomes: `from_stage:pipeline_stages!deal_stage_history_from_stage_id_fkey(nome, cor)` e `to_stage:pipeline_stages!deal_stage_history_to_stage_id_fkey(nome, cor)`.
-- O `tempo_no_stage_anterior_ms` será formatado em dias/horas.
-- Filtros são client-side sobre o array de activities já carregado.
+### Status: ✅ Implementado
 
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`

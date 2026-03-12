@@ -14,6 +14,7 @@ import {
   useMoveDealStage,
   useReopenDeal,
   useDealPipelineStages,
+  useDealStageHistory,
 } from '@/hooks/useDealDetail';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { useResolvedFields } from '@/hooks/useCustomFields';
@@ -44,6 +45,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const { data: deal, isLoading } = useDealDetail(dealId);
   const { data: activities } = useDealActivities(dealId);
   const { data: stages } = useDealPipelineStages(deal?.pipeline_id ?? null);
+  const { data: stageHistory } = useDealStageHistory(dealId);
   const { data: lossCategories = [] } = useLossCategories();
   const resolvedFields = useResolvedFields('DEAL', dealId);
 
@@ -196,6 +198,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                     deal={deal}
                     dealId={dealId!}
                     activities={activities}
+                    stages={stages}
+                    stageHistory={stageHistory}
                     addActivity={addActivity}
                     toggleTask={toggleTask}
                     onOpenEmail={() => setEmailOpen(true)}
