@@ -154,24 +154,6 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      {/* IA Sort toggle */}
-      <div className="flex items-center justify-center mb-3 gap-2">
-        {onTransferClick && (
-          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={onTransferClick}>
-            <ArrowRightLeft className="h-3.5 w-3.5" />
-            Transferir em massa
-          </Button>
-        )}
-        <Button
-          variant={iaSort ? 'default' : 'outline'}
-          size="sm"
-          className="gap-1.5 text-xs"
-          onClick={toggleIaSort}
-        >
-          {iaSort ? <Sparkles className="h-3.5 w-3.5" /> : <GripVertical className="h-3.5 w-3.5" />}
-          {iaSort ? 'Ordenação IA' : 'Ordenação Manual'}
-        </Button>
-      </div>
 
       {/* Carousel wrapper */}
       <div className="relative flex-1 min-h-0 overflow-hidden">
