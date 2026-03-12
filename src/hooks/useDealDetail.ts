@@ -204,18 +204,3 @@ export function useDealPipelineStages(pipelineId: string | null) {
       return data as PipelineStage[];
     },
   });
-}
-  return useQuery({
-    queryKey: ['pipeline-stages', pipelineId],
-    enabled: !!pipelineId,
-    queryFn: async (): Promise<PipelineStage[]> => {
-      const { data, error } = await supabase
-        .from('pipeline_stages')
-        .select('*')
-        .eq('pipeline_id', pipelineId!)
-        .order('posicao');
-      if (error) throw error;
-      return data as PipelineStage[];
-    },
-  });
-}
