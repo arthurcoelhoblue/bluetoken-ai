@@ -8,6 +8,28 @@ import type { DealActivityMetadata } from '@/types/metadata';
 import type { PipelineStage } from '@/types/deal';
 import type { DealStageHistoryEntry } from '@/hooks/useDealDetail';
 
+/** Render text with @mentions highlighted */
+function RichText({ text }: { text: string }) {
+  const parts = text.split(/(@\[([^\]]+)\]\([^)]+\))/g);
+  if (parts.length === 1) return <>{text}</>;
+  const elements: React.ReactNode[] = [];
+  let i = 0;
+  while (i < parts.length) {
+    const part = parts[i];
+    if (part && part.startsWith('@[')) {
+      const name = parts[i + 1]; // captured group
+      elements.push(
+        <span key={i} className="font-semibold text-primary">@{name}</span>
+      );
+      i += 3; // skip full match + 2 capture groups
+    } else {
+      if (part) elements.push(<span key={i}>{part}</span>);
+      i++;
+    }
+  }
+  return <>{elements}</>;
+}
+
 function formatDate(d: string) {
   return new Date(d).toLocaleDateString('pt-BR', {
     day: '2-digit', month: '2-digit', year: '2-digit',
