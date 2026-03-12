@@ -7,12 +7,15 @@ import { Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
+import { DealAssociations } from '@/components/deals/DealAssociations';
 import type { DealFullDetail } from '@/types/deal';
 import type { UseMutationResult } from '@tanstack/react-query';
 
 interface DealDadosTabProps {
   deal: DealFullDetail;
   updateField: UseMutationResult<unknown, Error, { dealId: string; field: string; value: unknown }>;
+  onContactClick?: (contactId: string) => void;
+  onOrgClick?: (orgId: string) => void;
 }
 
 function useVendedores() {
