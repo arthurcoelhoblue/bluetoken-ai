@@ -1,7 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Bot } from 'lucide-react';
+import { Plus, Bot, Kanban, List } from 'lucide-react';
 import type { PipelineWithStages } from '@/types/deal';
 
 interface OwnerOption {
