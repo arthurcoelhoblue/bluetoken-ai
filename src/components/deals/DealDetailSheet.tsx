@@ -14,6 +14,7 @@ import {
   useMoveDealStage,
   useReopenDeal,
   useDealPipelineStages,
+  useDealStageHistory,
 } from '@/hooks/useDealDetail';
 import { useCloseDeal, useLossCategories } from '@/hooks/useDeals';
 import { useResolvedFields } from '@/hooks/useCustomFields';
