@@ -8,6 +8,7 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
+import { PipelineListView } from '@/components/pipeline/PipelineListView';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
@@ -78,6 +79,14 @@ function PipelineContent() {
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>(() => {
+    return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
+  });
+
+  const handleViewModeChange = (m: 'kanban' | 'list') => {
+    setViewMode(m);
+    localStorage.setItem('bluecrm-pipeline-view', m);
+  };
 
   const handleDealClick = (dealId: string) => {
     setSelectedDealId(dealId);
@@ -165,18 +174,30 @@ function PipelineContent() {
             ownerDisabled={ownerFilterDisabled}
             etiquetaIA={etiquetaIA}
             onEtiquetaIAChange={setEtiquetaIA}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
           />
 
           <div className="border-b border-border/50 mt-2" />
 
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-4">
-            <KanbanBoard
-              columns={columns}
-              wonLost={wonLost}
-              isLoading={dealsLoading}
-              onDealClick={handleDealClick}
-              onTransferClick={() => setShowTransfer(true)}
-            />
+            {viewMode === 'kanban' ? (
+              <KanbanBoard
+                columns={columns}
+                wonLost={wonLost}
+                isLoading={dealsLoading}
+                onDealClick={handleDealClick}
+                onTransferClick={() => setShowTransfer(true)}
+              />
+            ) : (
+              <PipelineListView
+                deals={deals ?? []}
+                stages={selectedPipeline?.pipeline_stages ?? []}
+                owners={owners}
+                isLoading={dealsLoading}
+                onDealClick={handleDealClick}
+              />
+            )}
           </div>
 
           <TransferDealsDialog

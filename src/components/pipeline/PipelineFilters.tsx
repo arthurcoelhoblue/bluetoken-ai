@@ -1,7 +1,7 @@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Bot } from 'lucide-react';
+import { Plus, Bot, Kanban, List } from 'lucide-react';
 import type { PipelineWithStages } from '@/types/deal';
 
 interface OwnerOption {
@@ -25,6 +25,8 @@ interface PipelineFiltersProps {
   ownerDisabled?: boolean;
   etiquetaIA: boolean;
   onEtiquetaIAChange: (v: boolean) => void;
+  viewMode: 'kanban' | 'list';
+  onViewModeChange: (m: 'kanban' | 'list') => void;
 }
 
 export function PipelineFilters({
@@ -43,9 +45,28 @@ export function PipelineFilters({
   ownerDisabled,
   etiquetaIA,
   onEtiquetaIAChange,
+  viewMode,
+  onViewModeChange,
 }: PipelineFiltersProps) {
   return (
     <div className="flex items-center justify-center gap-2 flex-wrap">
+      <div className="flex items-center border rounded-md overflow-hidden">
+        <button
+          className={`p-2 transition-colors ${viewMode === 'kanban' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
+          onClick={() => onViewModeChange('kanban')}
+          title="Kanban"
+        >
+          <Kanban className="h-4 w-4" />
+        </button>
+        <button
+          className={`p-2 transition-colors ${viewMode === 'list' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}
+          onClick={() => onViewModeChange('list')}
+          title="Lista"
+        >
+          <List className="h-4 w-4" />
+        </button>
+      </div>
+
       <Select value={selectedPipelineId ?? ''} onValueChange={onPipelineChange}>
         <SelectTrigger className="w-52 h-9">
           <SelectValue placeholder="Pipeline" />
