@@ -31,10 +31,12 @@ function RichText({ text }: { text: string }) {
 }
 
 function formatDate(d: string) {
-  return new Date(d).toLocaleDateString('pt-BR', {
-    day: '2-digit', month: '2-digit', year: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
+  const date = new Date(d);
+  const day = date.getDate();
+  const months = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
+  const month = months[date.getMonth()];
+  const hours = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+  return `${day} de ${month} às ${hours}`;
 }
 
 function formatCurrency(v: number) {
