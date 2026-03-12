@@ -84,6 +84,8 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const [lossOpen, setLossOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [contactSheetId, setContactSheetId] = useState<string | null>(null);
+  const [orgSheetId, setOrgSheetId] = useState<string | null>(null);
 
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
   const orderedStages = (stages ?? []).filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
