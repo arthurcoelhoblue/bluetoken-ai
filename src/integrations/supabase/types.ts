@@ -1218,6 +1218,7 @@ export type Database = {
           created_at: string
           descricao: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca: string
           id: string
           nome: string
           preco_unitario: number
@@ -1229,6 +1230,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca?: string
           id?: string
           nome: string
           preco_unitario?: number
@@ -1240,6 +1242,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca?: string
           id?: string
           nome?: string
           preco_unitario?: number
