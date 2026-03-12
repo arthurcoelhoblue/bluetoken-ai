@@ -1,69 +1,72 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
+## Plano: Centralizar Cadastro de Produtos nas Configurações
 
-### Status: ✅ Implementado
+### Situação atual
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+- Produtos são cadastrados dentro da gestão de empresas (`AdminEmpresas` → aba "Produtos")
+- Tabela `catalog_products` tem: nome, descricao, preco_unitario, unidade, empresa, ativo
+- No Deal, o vendedor pode digitar produto manualmente OU selecionar do catálogo
 
-### Implementação
+### O que muda
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+**1. Banco de dados** — Adicionar coluna `frequencia_cobranca` na `catalog_products`
 
-### Webhook URL (configurar no Stripe Dashboard)
+Valores: `uma_vez`, `mensal`, `trimestral`, `semestral`, `anual` (default: `uma_vez`)
+
+**2. Nova aba "Produtos" nas Configurações** (`Settings.tsx`)
+
+- Nova aba com ícone `Package` entre "Comercial" e "IA"
+- Componente `ProductsCatalogTab` com CRUD completo:
+  - Lista todos os produtos (filtráveis por empresa)
+  - Formulário: Nome, Descrição, Preço unitário, Frequência de cobrança, Visibilidade por empresa
+  - Toggle ativo/inativo, editar, excluir
+- Grid de cols ajustado de 5 para 6 abas
+
+**3. Simplificar aba Produtos no Deal** (`DealProductsTab`)
+
+- Remover campos manuais de nome/preço — o vendedor seleciona obrigatoriamente do catálogo
+- Após selecionar, exibe o produto com preço/frequência pré-preenchidos
+- Campos editáveis apenas: preço unitário (ajuste manual), quantidade e desconto (pode ser em % ou valor)
+- Mostrar a frequência de cobrança ao lado do preço na lista de produtos do deal
+
+**4. Remover catálogo da página de Empresas**
+
+- Remover a aba "Produtos" de `AdminEmpresas.tsx` e a importação do `EmpresaProductsCatalog`
+
+### Arquivos
+
+
+| Arquivo                                          | Ação                                                                                |
+| ------------------------------------------------ | ----------------------------------------------------------------------------------- |
+| Migration SQL                                    | Adicionar coluna `frequencia_cobranca TEXT DEFAULT 'uma_vez'` em `catalog_products` |
+| `src/components/settings/ProductsCatalogTab.tsx` | **Novo** — CRUD centralizado de produtos                                            |
+| `src/pages/admin/Settings.tsx`                   | Adicionar aba "Produtos"                                                            |
+| `src/components/deals/DealProductsTab.tsx`       | Simplificar — seleção obrigatória do catálogo, apenas ajustes manuais               |
+| `src/hooks/useDealProducts.ts`                   | Atualizar interface `CatalogProduct` com `frequencia_cobranca`                      |
+| `src/pages/AdminEmpresas.tsx`                    | Remover aba Produtos e import do `EmpresaProductsCatalog`                           |
+
+
+### Estrutura visual — Settings → Produtos
+
+```text
+┌─────────────────────────────────────────────┐
+│ [+ Novo Produto]              Filtro: Todos │
+├─────────────────────────────────────────────┤
+│ 📦 Plano Premium                           │
+│    R$ 999,00 / mensal  •  BLUE, AMELIA      │
+│                        [✏️] [🗑️] [toggle]   │
+├─────────────────────────────────────────────┤
+│ 📦 Setup Inicial                            │
+│    R$ 2.500,00 / uma vez  •  BLUE           │
+│                        [✏️] [🗑️] [toggle]   │
+└─────────────────────────────────────────────┘
 ```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+
+### Estrutura visual — Deal → Aba Produtos (simplificada)
+
+```text
+┌─ Selecionar produto ──────────────────────┐
+│ [Select: Plano Premium — R$ 999/mensal ▼] │
+│ Preço: [999,00]  Qtd: [1]  Desc%: [0]     │
+│                           [Adicionar]      │
+└───────────────────────────────────────────┘
 ```
-
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
-
----
-
-## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
-
-### Status: ✅ Implementado
-
-### Mudanças
-1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
-2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
-3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
-4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
-
-### Arquivos impactados
-- Migração SQL (backfill `deal_activities`)
-- `supabase/functions/lp-lead-ingest/index.ts`
-- `src/components/deals/DealTimelineTab.tsx`
-- `src/hooks/deals/useDealQueries.ts`
-- `src/components/pipeline/DealCard.tsx`
-
----
-
-## Plano: Push de leads para Mautic e SGT em tempo real
-
-### Status: ✅ Implementado
-
-### Resumo
-Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
-
-### Secrets configurados
-- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
-- `SGT_WEBHOOK_SECRET` (já existia)
-
-### Implementação
-- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
-- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
-- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
-- Resultado inclui `mautic_status` e `sgt_status` por lead
-
-### Arquivos impactados
-- `supabase/functions/lp-lead-ingest/index.ts`
