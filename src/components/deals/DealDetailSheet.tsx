@@ -4,6 +4,8 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MessageSquare, Sparkles, Package, Video } from 'lucide-react';
+import { ContactDetailSheet } from '@/components/contacts/ContactDetailSheet';
+import { OrgDetailSheet } from '@/components/organizations/OrgDetailSheet';
 import { toast } from 'sonner';
 import {
   useDealDetail,
