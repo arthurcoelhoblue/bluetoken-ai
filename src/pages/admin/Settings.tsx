@@ -55,6 +55,10 @@ export default function Settings() {
           <ComercialTab />
         </TabsContent>
 
+        <TabsContent value="produtos">
+          <ProductsCatalogTab />
+        </TabsContent>
+
         <TabsContent value="ai">
           <AISettingsTab />
         </TabsContent>
