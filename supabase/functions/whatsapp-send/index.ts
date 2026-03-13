@@ -344,7 +344,7 @@ serve(async (req) => {
 
     if (activeChannel === 'meta_cloud') {
       log.info('Roteando via META CLOUD', { empresa, isTemplateSend, isMediaSend });
-      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud, uploadMediaToMeta, sendAudioByIdViaMetaCloud } = await import('../_shared/channel-resolver.ts');
+      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud } = await import('../_shared/channel-resolver.ts');
       const metaConfig = await resolveMetaCloudConfig(supabase, empresa, connectionId);
 
       // Save from_phone_number_id for audit
@@ -523,39 +523,37 @@ serve(async (req) => {
               break;
             case 'audio': {
               const audioUrl = mediaUrl!;
-              const lowerUrl = audioUrl.toLowerCase();
-              const isWebm = lowerUrl.includes('.webm') || lowerUrl.includes('audio_webm');
-              log.info('Audio send', { isWebm, url: audioUrl.slice(-50) });
+              const lowerUrl = audioUrl.toLowerCase().split('?')[0];
+              const safeFilename = mediaFilename || `audio_${Date.now()}`;
 
-              if (isWebm) {
-                // WebM not supported by Meta — try upload as audio/ogg, fallback to document
-                log.info('WebM detected, attempting Media API upload as audio/ogg');
-                const uploadResult = await uploadMediaToMeta(metaConfig, audioUrl, 'audio/ogg', 'audio.ogg');
-                if (uploadResult.success && uploadResult.mediaId) {
-                  log.info('Media upload succeeded, sending audio by ID', { mediaId: uploadResult.mediaId });
-                  metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
-                } else {
-                  log.warn('Media upload failed, falling back to document', { error: uploadResult.error });
-                  metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, audioUrl, mediaFilename || 'audio.webm', mediaCaption);
-                }
+              const isOggOrOpus = lowerUrl.endsWith('.ogg') || lowerUrl.endsWith('.opus');
+              const isMp3 = lowerUrl.endsWith('.mp3');
+              const isAac = lowerUrl.endsWith('.aac');
+              const isAmr = lowerUrl.endsWith('.amr');
+              const isNativeWhatsAppAudio = isOggOrOpus || isMp3 || isAac || isAmr;
+
+              log.info('Audio send', {
+                isNativeWhatsAppAudio,
+                extension: lowerUrl.split('.').pop(),
+                url: audioUrl.slice(-60),
+              });
+
+              if (isNativeWhatsAppAudio) {
+                // Formatos estáveis no WhatsApp (inline)
+                metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
               } else {
-                // OGG or M4A — try direct send first, if scrutiny fails try Media API upload
-                const isM4a = lowerUrl.includes('.m4a') || lowerUrl.includes('.mp4') || lowerUrl.includes('audio_mp4');
-                if (isM4a) {
-                  // M4A from Chrome MediaRecorder may fail direct URL scrutiny — upload via Media API
-                  log.info('M4A detected, attempting Media API upload', { url: audioUrl.slice(-50) });
-                  const uploadResult = await uploadMediaToMeta(metaConfig, audioUrl, 'audio/mp4', 'audio.m4a');
-                  if (uploadResult.success && uploadResult.mediaId) {
-                    log.info('M4A Media upload succeeded', { mediaId: uploadResult.mediaId });
-                    metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
-                  } else {
-                    log.warn('M4A Media upload failed, trying direct send', { error: uploadResult.error });
-                    metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
-                  }
-                } else {
-                  // OGG (Firefox) — send directly
-                  metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
-                }
+                // WebM/WAV/M4A/MP4 podem passar no upload e falhar em scrutiny assíncrono (131053)
+                // Até termos transcodificação server-side, enviar como documento garante entrega.
+                log.warn('Audio format not safely supported for inline playback; sending as document', {
+                  extension: lowerUrl.split('.').pop(),
+                });
+                metaMediaResult = await sendDocumentViaMetaCloud(
+                  metaConfig,
+                  phoneToSend,
+                  audioUrl,
+                  safeFilename,
+                  mediaCaption,
+                );
               }
               break;
             }
