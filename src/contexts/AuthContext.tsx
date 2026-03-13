@@ -294,6 +294,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     roles,
     isLoading,
     isSessionVerified,
+    profileLoaded,
     isAuthenticated: !!session && !!user,
     signInWithEmail,
     signUpWithEmail,
