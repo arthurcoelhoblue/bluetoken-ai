@@ -522,16 +522,29 @@ serve(async (req) => {
               metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaFilename, mediaCaption);
               break;
             case 'audio': {
-              // Upload audio to Meta Media API first, then send by media_id
-              // This ensures WhatsApp processes the format correctly
-              const uploadResult = await uploadMediaToMeta(metaConfig, mediaUrl!, 'audio/ogg');
+              // Detect actual MIME from URL extension (Chrome records webm, not ogg)
+              const audioUrl = mediaUrl!;
+              const isWebm = audioUrl.toLowerCase().includes('.webm');
+              const audioMime = isWebm ? 'audio/webm' : 'audio/ogg';
+              log.info('Audio upload attempt', { audioMime, isWebm, url: audioUrl.slice(-40) });
+
+              // Try uploading with real MIME type first
+              const uploadResult = await uploadMediaToMeta(metaConfig, audioUrl, audioMime);
               if (uploadResult.success && uploadResult.mediaId) {
-                log.info('Audio uploaded to Meta', { mediaId: uploadResult.mediaId });
+                log.info('Audio uploaded to Meta', { mediaId: uploadResult.mediaId, mime: audioMime });
                 metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
               } else {
-                // Fallback to direct link if upload fails
-                log.warn('Meta media upload failed, falling back to direct link', { error: uploadResult.error });
-                metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, mediaUrl!);
+                log.warn('Meta audio upload failed, trying as ogg fallback', { error: uploadResult.error });
+                // Fallback: re-label as ogg (opus codec is the same)
+                const uploadOgg = await uploadMediaToMeta(metaConfig, audioUrl, 'audio/ogg; codecs=opus');
+                if (uploadOgg.success && uploadOgg.mediaId) {
+                  log.info('Audio uploaded as ogg fallback', { mediaId: uploadOgg.mediaId });
+                  metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadOgg.mediaId);
+                } else {
+                  // Final fallback: send as document so the user at least receives the file
+                  log.warn('Audio upload failed entirely, sending as document', { error: uploadOgg.error });
+                  metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, audioUrl, 'audio.webm', mediaCaption);
+                }
               }
               break;
             }
