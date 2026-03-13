@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createServiceClient } from "../_shared/config.ts";
 import { createLogger } from "../_shared/logger.ts";
 import { getWebhookCorsHeaders } from "../_shared/cors.ts";
+import { resolveMetaCloudConfig } from "../_shared/channel-resolver.ts";
 
 // ========================================
 // Meta Cloud API — Webhook Handler
