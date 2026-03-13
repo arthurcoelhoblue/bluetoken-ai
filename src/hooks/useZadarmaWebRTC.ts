@@ -763,7 +763,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       else if (
         (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted')) &&
-        canTransitionToActive(statusRef.current)
+        canTransitionToActive(statusRef.current, pendingOutboundRef.current)
       ) {
         callStartedAtRef.current = Date.now();
         pendingOutboundRef.current = false;
