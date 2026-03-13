@@ -454,14 +454,104 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   // NEW: pendingOutbound flag — set when click_to_call is initiated
   // Allows auto-answer even if status isn't 'ready' yet (PBX callback ring)
   const pendingOutboundRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Stop the proactive watchdog
+  const stopWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
+  }, []);
 
   const setPendingOutbound = useCallback((pending: boolean) => {
     pendingOutboundRef.current = pending;
     console.log('[WebRTC] 📌 pendingOutbound set to:', pending);
-  }, []);
+
+    if (pending) {
+      // Start PROACTIVE watchdog — poll every 500ms for SIP sessions + DOM buttons
+      stopWatchdog();
+      let attempts = 0;
+      const MAX_ATTEMPTS = 40; // 40 × 500ms = 20s
+
+      console.log('[WebRTC] 🔍 Starting proactive auto-answer watchdog (20s window)...');
+
+      watchdogRef.current = setInterval(() => {
+        attempts++;
+
+        // Already answered or no longer pending
+        if (!pendingOutboundRef.current || autoAnswerDoneRef.current) {
+          console.log('[WebRTC] ✅ Watchdog: auto-answer completed or cancelled, stopping');
+          stopWatchdog();
+          return;
+        }
+
+        // Already active
+        if (statusRef.current === 'active') {
+          console.log('[WebRTC] ✅ Watchdog: call already active, stopping');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+          return;
+        }
+
+        console.log(`[WebRTC] 🔍 Watchdog poll #${attempts}/${MAX_ATTEMPTS}...`);
+
+        // Layer 1: Try SIP.js session
+        if (tryAnswerViaSipSession()) {
+          console.log(`[WebRTC] ✅ Watchdog: Layer 1 SIP answer succeeded on poll #${attempts}`);
+          autoAnswerDoneRef.current = true;
+          pendingOutboundRef.current = false;
+          callStartedAtRef.current = Date.now();
+          safeSetStatus('active');
+          stopWatchdog();
+          return;
+        }
+
+        // Layer 3: DOM click (every 2nd attempt to avoid hammering)
+        if (attempts % 2 === 0) {
+          const clicked = clickAnswerButton();
+          if (clicked) {
+            console.log(`[WebRTC] ✅ Watchdog: Layer 3 DOM click succeeded on poll #${attempts}`);
+            autoAnswerDoneRef.current = true;
+            // Don't clear pendingOutbound yet — wait for confirmed event to set active
+            // But set ringing so the UI shows correctly
+            if (statusRef.current !== 'ringing' && statusRef.current !== 'active') {
+              safeSetStatus('ringing');
+            }
+          }
+        }
+
+        // Timeout
+        if (attempts >= MAX_ATTEMPTS) {
+          console.warn('[WebRTC] ⏰ Watchdog: auto-answer timeout after 20s');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+          // Dispatch event so widget can show feedback
+          window.dispatchEvent(new CustomEvent('bluecrm:autoAnswerTimeout'));
+        }
+      }, 500);
+
+      // Safety timeout to ensure cleanup
+      watchdogTimeoutRef.current = setTimeout(() => {
+        if (pendingOutboundRef.current) {
+          console.warn('[WebRTC] ⏰ Watchdog safety timeout (25s)');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+        }
+      }, 25000);
+
+    } else {
+      stopWatchdog();
+    }
+  }, [stopWatchdog, safeSetStatus]);
 
   // Guarded status setter — respects hangup cooldown
-  const safeSetStatus = useCallback((newStatus: WebRTCStatus) => {
+  const safeSetStatusFn = useCallback((newStatus: WebRTCStatus) => {
     if (Date.now() - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
       if (newStatus === 'ready') {
         console.log('[WebRTC] ⏳ Cooldown: allowing transition to ready');
@@ -473,6 +563,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
     setStatus(newStatus);
   }, []);
+
+  // Use safeSetStatusFn as safeSetStatus (redefine after the one used by setPendingOutbound)
+  // Note: safeSetStatus was used by setPendingOutbound above, let's reconcile
+  const safeSetStatus = safeSetStatusFn;
 
   // Fetch WebRTC key
   const fetchKey = useCallback(async (): Promise<string | null> => {
@@ -497,10 +591,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, [empresa, sipLogin]);
 
-  // 3-layer auto-answer strategy
+  // 3-layer auto-answer strategy (also triggered by event/log detection)
   const triggerAutoAnswer = useCallback(() => {
     const now = Date.now();
-    if (now - lastAutoAnswerTriggerRef.current < 2000) return;
+    if (now - lastAutoAnswerTriggerRef.current < 1000) return;
     if (now - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
       console.log('[WebRTC] 🛑 triggerAutoAnswer blocked by hangup cooldown');
       return;
@@ -514,21 +608,23 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
 
     lastAutoAnswerTriggerRef.current = now;
-    autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
     incomingDetectedRef.current = true;
-    console.log('[WebRTC] 🟢 Triggering 3-layer auto-answer sequence...');
+    console.log('[WebRTC] 🟢 Triggering auto-answer (event-triggered)...');
     safeSetStatus('ringing');
 
     // Layer 1: Try SIP.js session answer immediately
     if (tryAnswerViaSipSession()) {
       autoAnswerDoneRef.current = true;
       pendingOutboundRef.current = false;
+      callStartedAtRef.current = Date.now();
+      safeSetStatus('active');
+      stopWatchdog();
       console.log('[WebRTC] ✅ Layer 1 succeeded (SIP session)');
       return;
     }
 
-    // Layer 2: Dispatch zadarmaWidgetEvent to trigger answer
+    // Layer 2: Dispatch events
     window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'answer' } }));
     document.querySelectorAll('iframe').forEach((iframe) => {
       try {
@@ -537,41 +633,18 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } catch { /* ignore */ }
     });
 
-    // Layer 3: Staggered DOM click attempts
-    const attempt = () => {
-      if (autoAnswerDoneRef.current) return;
-      if (autoAnswerAttemptsRef.current >= 20) {
-        console.warn('[WebRTC] ⚠️ Auto-answer: gave up after 20 attempts');
-        pendingOutboundRef.current = false;
-        return;
-      }
-      if (statusRef.current === 'active' || statusRef.current === 'ready') {
-        pendingOutboundRef.current = false;
-        return;
-      }
+    // Layer 3: DOM click
+    const clicked = clickAnswerButton();
+    if (clicked) {
+      autoAnswerDoneRef.current = true;
+      console.log('[WebRTC] ✅ Layer 3 click succeeded');
+    }
 
-      autoAnswerAttemptsRef.current++;
-
-      // Re-try Layer 1 on each attempt
-      if (tryAnswerViaSipSession()) {
-        autoAnswerDoneRef.current = true;
-        pendingOutboundRef.current = false;
-        console.log('[WebRTC] ✅ Layer 1 succeeded on attempt', autoAnswerAttemptsRef.current);
-        return;
-      }
-
-      // Layer 3: DOM click
-      const clicked = clickAnswerButton();
-      if (clicked) {
-        autoAnswerDoneRef.current = true;
-        pendingOutboundRef.current = false;
-      } else {
-        setTimeout(attempt, 500);
-      }
-    };
-
-    setTimeout(attempt, 300);
-  }, [safeSetStatus]);
+    // If watchdog isn't already running, start it as backup
+    if (!watchdogRef.current && pendingOutboundRef.current) {
+      setPendingOutbound(true); // Re-starts watchdog
+    }
+  }, [safeSetStatus, stopWatchdog, setPendingOutbound]);
 
   // Close active call record in DB when call ends locally (fallback for missing webhook)
   const closeActiveCallRecord = useCallback(async (explicitCallId?: string) => {
