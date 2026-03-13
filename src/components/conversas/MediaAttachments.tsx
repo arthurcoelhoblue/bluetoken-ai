@@ -124,14 +124,12 @@ export function MediaAttachments({ onMediaReady, disabled }: MediaAttachmentsPro
           return;
         }
 
-        // Re-package webm+opus as ogg for WhatsApp compatibility
-        // The underlying codec is already opus — only the container changes
-        const isWebmOpus = mediaRecorder.mimeType.includes('webm') && mediaRecorder.mimeType.includes('opus');
-        const finalMime = isWebmOpus ? 'audio/ogg; codecs=opus' : mediaRecorder.mimeType;
-        const finalExt = isWebmOpus ? 'ogg' : (mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'webm');
-        const finalBlob = isWebmOpus ? new Blob(chunksRef.current, { type: 'audio/ogg; codecs=opus' }) : rawBlob;
+        // Keep the real container format — do NOT re-label WebM as OGG
+        const isOgg = mediaRecorder.mimeType.includes('ogg');
+        const ext = isOgg ? 'ogg' : 'webm';
+        const mime = isOgg ? 'audio/ogg; codecs=opus' : 'audio/webm';
 
-        await uploadFile(finalBlob, `audio_${Date.now()}.${finalExt}`, finalMime, 'audio');
+        await uploadFile(rawBlob, `audio_${Date.now()}.${ext}`, mime, 'audio');
       };
 
       mediaRecorder.start(250);
