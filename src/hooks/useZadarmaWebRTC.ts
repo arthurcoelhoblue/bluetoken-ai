@@ -102,35 +102,37 @@ async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
   }
 }
 
+// Temporarily disable the #zadarma-hide stylesheet so !important rules don't block clicks
+function disableHideStylesheet() {
+  const style = document.getElementById('zadarma-hide') as HTMLStyleElement | null;
+  if (style) style.disabled = true;
+}
+
+function enableHideStylesheet() {
+  const style = document.getElementById('zadarma-hide') as HTMLStyleElement | null;
+  if (style) style.disabled = false;
+}
+
 // Temporarily make all widget elements interactive (remove inert + unhide + move visible)
 function enableWidgetInteraction() {
+  disableHideStylesheet();
   const all = document.querySelectorAll(WIDGET_SELECTORS.join(','));
   all.forEach((el) => {
     if (el instanceof HTMLElement) {
       el.removeAttribute('inert');
-      el.style.pointerEvents = 'auto';
-      // Temporarily move to visible position so buttons render
-      el.style.left = '0px';
-      el.style.top = '0px';
-      el.style.opacity = '0.01';
-      el.style.width = 'auto';
-      el.style.height = 'auto';
+      el.style.cssText = 'position:fixed!important;left:10px!important;top:10px!important;width:auto!important;height:auto!important;opacity:0.01!important;overflow:visible!important;z-index:999999!important;pointer-events:auto!important;';
     }
   });
 }
 
 // Re-disable widget interaction
 function disableWidgetInteraction() {
+  enableHideStylesheet();
   const all = document.querySelectorAll(WIDGET_SELECTORS.join(','));
   all.forEach((el) => {
     if (el instanceof HTMLElement) {
       el.setAttribute('inert', '');
-      el.style.pointerEvents = 'none';
-      el.style.left = '-9999px';
-      el.style.top = '-9999px';
-      el.style.opacity = '0';
-      el.style.width = '1px';
-      el.style.height = '1px';
+      el.style.cssText = 'position:fixed!important;left:-9999px!important;top:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:-1!important;pointer-events:none!important;';
     }
   });
 }
