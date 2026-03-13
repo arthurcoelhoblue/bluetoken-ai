@@ -152,19 +152,22 @@ async function pushToMautic(
       contactId = data?.contact?.id;
     } catch { /* ignore */ }
 
-    // Add to segment if configured
-    if (contactId && mauticCfg.segmentId) {
-      try {
-        await fetch(
-          `${mauticCfg.url.replace(/\/$/, "")}/api/segments/${mauticCfg.segmentId}/contact/${contactId}/add`,
-          {
-            method: "POST",
-            headers: { Authorization: `Basic ${basicAuth}` },
-          }
-        );
-        log.info("Mautic segment add ok", { contactId, segmentId: mauticCfg.segmentId });
-      } catch (segErr) {
-        log.warn("Mautic segment add failed", { error: String(segErr) });
+    // Add to segment if configured (resolve by pipeline_id, fallback to 'default')
+    if (contactId && mauticCfg.segmentIds) {
+      const segmentId = (pipelineId && mauticCfg.segmentIds[pipelineId]) || mauticCfg.segmentIds['default'];
+      if (segmentId) {
+        try {
+          await fetch(
+            `${mauticCfg.url.replace(/\/$/, "")}/api/segments/${segmentId}/contact/${contactId}/add`,
+            {
+              method: "POST",
+              headers: { Authorization: `Basic ${basicAuth}` },
+            }
+          );
+          log.info("Mautic segment add ok", { contactId, segmentId, pipelineId });
+        } catch (segErr) {
+          log.warn("Mautic segment add failed", { error: String(segErr) });
+        }
       }
     }
 
