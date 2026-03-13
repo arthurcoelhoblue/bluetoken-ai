@@ -1,28 +1,69 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Problema
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-Meta rejeita o áudio porque os **bytes são WebM** mas o MIME diz `audio/ogg`. Apenas mudar o label não funciona — Meta valida o conteúdo real do arquivo. Não é possível fazer remuxagem WebM→OGG em pure JS de forma confiável sem FFmpeg.
+### Implementação
 
-## Solução: Conversão server-side via FFmpeg
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-A única solução confiável é converter o container WebM→OGG no servidor. Deno edge functions não têm FFmpeg nativo, mas podemos usar uma abordagem alternativa:
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+```
 
-**Opção escolhida: Usar a API da Meta com `audio/webm` sem fallback para OGG, e se falhar, enviar como documento.**
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-Espera — os logs mostram que `audio/webm` é rejeitado pela Meta (erro 100: tipo não suportado). E `audio/ogg` com bytes WebM também falha.
+---
 
-**Solução real: Converter via FFmpeg em um edge function dedicado.**
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-### Plano
+### Status: ✅ Implementado
 
-1. **Criar edge function `audio-convert`** que:
-   - Recebe a URL do arquivo no storage
-   - Baixa o arquivo WebM
-   - Usa FFmpeg via WASM (`ffmpeg.wasm` para Deno) para converter WebM→OGG (Opus)
-   - Faz upload do arquivo convertido de volta ao storage
-   - Retorna a nova URL
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-   **Problema**: FFmpeg WASM é ~30MB, pesado demais para edge function com limite de memória/tempo.
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-**Alternativa pragmática**: Converter no **cliente** usando a Web API `AudioEncoder`/`AudioDecoder` (disponível no Chrome) para produzir um OGG real, OU usar uma lib JS leve como `opus-media
+---
+
+## Plano: Push de leads para Mautic e SGT em tempo real
+
+### Status: ✅ Implementado
+
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
