@@ -118,6 +118,8 @@ export function IntegrationsTab() {
 
       <ApiKeysManager />
 
+      <MauticConfigManager />
+
       {perCompanyIntegrations.length > 0 && (
         <div className="space-y-4">
           <h3 className="text-lg font-semibold">Canais por Empresa</h3>
