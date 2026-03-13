@@ -241,8 +241,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile, clearState]);
 
   const signInWithEmail = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) setIsSessionVerified(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error && data.user) {
+      setIsSessionVerified(true);
+      // Eagerly fetch profile so roles are available before ProtectedRoute renders
+      await fetchProfile(data.user.id);
+    }
     return { error: error as Error | null };
   };
 
