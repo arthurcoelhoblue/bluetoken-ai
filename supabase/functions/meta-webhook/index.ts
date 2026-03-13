@@ -349,29 +349,14 @@ async function downloadMetaMedia(
   supabase: ReturnType<typeof createServiceClient>,
   mediaId: string,
   mimeType: string,
+  empresa: string,
+  _phoneNumberId?: string,
 ): Promise<string | null> {
-  const accessToken = Deno.env.get("META_ACCESS_TOKEN_TOKENIZA") || Deno.env.get("META_ACCESS_TOKEN_BLUE");
+  // Resolve token via channel-resolver (same logic used by whatsapp-send)
+  const config = await resolveMetaCloudConfig(supabase, empresa);
+  const accessToken = config.metaAccessToken;
   if (!accessToken) {
-    // Try to get from whatsapp_connections
-    const { data: conn } = await supabase
-      .from("whatsapp_connections")
-      .select("empresa")
-      .eq("is_active", true)
-      .limit(1)
-      .maybeSingle();
-
-    if (conn) {
-      const settingsKey = `meta_cloud_${(conn.empresa as string).toLowerCase()}`;
-      const { data: setting } = await supabase
-        .from("system_settings")
-        .select("value")
-        .eq("category", "integrations")
-        .eq("key", settingsKey)
-        .maybeSingle();
-      const token = (setting?.value as Record<string, unknown>)?.access_token as string | undefined;
-      if (token) return await doDownload(supabase, mediaId, mimeType, token);
-    }
-    log.error("No Meta access token available for media download");
+    log.error("No Meta access token for empresa", { empresa });
     return null;
   }
   return await doDownload(supabase, mediaId, mimeType, accessToken);
