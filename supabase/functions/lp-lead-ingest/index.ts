@@ -94,7 +94,8 @@ async function getMauticConfig(
 
 async function pushToMautic(
   lead: LeadPayload,
-  mauticCfg: { url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> }
+  mauticCfg: { url: string; user: string; pass: string; segmentIds?: Record<string, string>; customFields?: Record<string, string> },
+  pipelineId?: string
 ): Promise<{ status: string; mautic_contact_id?: number }> {
   try {
     const nameParts = (lead.nome || "").split(" ");
