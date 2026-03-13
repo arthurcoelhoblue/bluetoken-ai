@@ -63,11 +63,11 @@ export function MauticConfigManager() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("empresas" as any)
-        .select("slug, nome")
-        .eq("ativa", true)
-        .order("nome");
+        .select("id, label, is_active")
+        .eq("is_active", true)
+        .order("label");
       if (error) throw error;
-      return data as unknown as Array<{ slug: string; nome: string }>;
+      return data as unknown as Array<{ id: string; label: string }>;
     },
   });
 
