@@ -1,98 +1,38 @@
-## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-### Status: ✅ Implementado
 
-### Stripe Products
-- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
-- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
+## Plano de Execução — 6 Ações na Ordem Exata
 
-### Implementação
+Diagnóstico confirmado nos arquivos atuais. Os 3 bugs estão presentes:
 
-1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
-2. ✅ Tabela `subscriptions` criada com RLS
-3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
-4. ✅ Hook `useSubscriptionLimits` para verificar limites
-5. ✅ Página `/assinatura` para gerenciamento
-6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+1. **`ChunkErrorBoundary.tsx` linha 19**: `throw error` em `getDerivedStateFromError` — mata o React
+2. **`ErrorBoundary.tsx` linhas 32-38**: `isContextMismatchError` tratado como recuperável → auto-reload → loop infinito
+3. **Três contadores independentes**: `eb-recoverable-reload`, `chunk-error-reload`, `global-chunk-reload` → até 6 reloads
 
-### Webhook URL (configurar no Stripe Dashboard)
-```
-https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
-```
-
-Eventos necessários:
-- `checkout.session.completed`
-- `customer.subscription.updated`
-- `customer.subscription.deleted`
-- `invoice.payment_failed`
-- `invoice.paid`
+Nenhum import direto de `@sentry/react` foi encontrado fora de `sentry.ts` (já resolvido anteriormente).
 
 ---
 
-## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
+### AÇÃO 1: Substituir `src/components/ChunkErrorBoundary.tsx` inteiro
+Conteúdo exato fornecido pelo usuário. Remove o `throw error`, adiciona fallback genérico para erros não-chunk, zero auto-reload.
 
-### Status: ✅ Implementado
+### AÇÃO 2: Substituir `src/components/ErrorBoundary.tsx` inteiro
+Conteúdo exato fornecido pelo usuário. Remove toda lógica de auto-reload, remove `isRecoverableError`, remove contadores `sessionStorage`. Apenas UI com botões manuais.
 
-### Mudanças
-1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
-2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
-3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
-4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
+### AÇÃO 3: Substituir `src/lib/sentry.ts` inteiro
+Stubs vazios. `initSentry()`, `captureException()`, `captureMessage()`, `setUser()`, `withScope()` — todos no-op com console log.
 
-### Arquivos impactados
-- Migração SQL (backfill `deal_activities`)
-- `supabase/functions/lp-lead-ingest/index.ts`
-- `src/components/deals/DealTimelineTab.tsx`
-- `src/hooks/deals/useDealQueries.ts`
-- `src/components/pipeline/DealCard.tsx`
+### AÇÃO 4: Limpar `src/main.tsx`
+Remover todo o bloco de auto-reload (linhas 10-71): contadores, `doControlledReload`, `isChunkLikeError`, handlers de `vite:preloadError`, `unhandledrejection`, `error`. Substituir por handlers que apenas logam no console (zero `window.location.reload()`).
 
----
+### AÇÃO 5: Proteger `src/contexts/AuthContext.tsx`
+O bootstrap já tem try/catch adequado. A única mudança: envolver o callback de `onAuthStateChange` em try/catch para que erros no listener não crashem o app. O `handleClearSession` (linha 144) mantém `window.location.reload()` pois é ação manual do usuário (botão).
 
-## Plano: Push de leads para Mautic e SGT em tempo real
+### AÇÃO 6: Validação (grep)
+Confirmar que após as mudanças:
+- Zero `window.location.reload()` automático (apenas em onClick de botões)
+- Zero `throw error` em `getDerivedStateFromError`
+- Zero import de `@sentry/react` fora de `sentry.ts`
+- Zero `sessionStorage` de contadores de reload
 
-### Status: ✅ Implementado
+**Arquivos alterados**: 4 (`ChunkErrorBoundary.tsx`, `ErrorBoundary.tsx`, `sentry.ts`, `main.tsx`) + ajuste mínimo no `AuthContext.tsx`.
 
-### Resumo
-Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
-
-### Secrets configurados
-- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
-- `SGT_WEBHOOK_SECRET` (já existia)
-
-### Implementação
-- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
-- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
-- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
-- Resultado inclui `mautic_status` e `sgt_status` por lead
-
-### Arquivos impactados
-- `supabase/functions/lp-lead-ingest/index.ts`
-
----
-
-## Plano: Módulo Playbook de Vendas
-
-### Status: 🔧 Em implementação — Fase 1 concluída
-
-### Fase 1 — Fundação ✅
-- 4 enums: `playbook_step_tipo`, `playbook_executor`, `playbook_run_status`, `playbook_evento_tipo`
-- 4 tabelas: `playbooks`, `playbook_steps`, `deal_playbook_runs`, `deal_playbook_events`
-- RLS com `has_role()` e `get_user_empresas()`
-- Trigger: `deal_playbook_events → deal_activities` (timeline automática)
-- Trigger: playbook ATIVA → pausa cadências do deal automaticamente
-- 3 views de performance: `v_playbook_stats`, `v_playbook_step_performance`, `v_playbook_vendedor_aderencia`
-- Tipos TypeScript: `src/types/playbook.ts`
-
-### Fase 2 — Motor de Execução (próximo)
-- Edge Function `playbook-runner` (CRON 5min)
-- Hooks: `usePlaybookRuns`, `usePlaybookEvents`
-- Interop cadência × playbook no `cadence-runner`
-
-### Fase 3 — UI (futuro)
-- Página `/playbooks`, Editor drag-and-drop, Timeline no Deal, Badge no Kanban
-
-### Fase 4 — Meu Dia + Notificações + Gamificação (futuro)
-
-### Fase 5 — IA Avançada (futuro)
-- 5.1: Sugestão + Scripts dinâmicos
-- 5.2: Adaptação + Análise
