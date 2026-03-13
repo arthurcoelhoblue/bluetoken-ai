@@ -21,7 +21,7 @@ const META_STATUS_MAP: Record<string, string> = {
   sent: "ENVIADO",
   delivered: "ENTREGUE",
   read: "LIDO",
-  failed: "FALHA",
+  failed: "ERRO",
 };
 
 // ---- Media type mapping ----
