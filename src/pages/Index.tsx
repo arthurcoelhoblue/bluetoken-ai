@@ -5,7 +5,7 @@ import { lazy } from 'react';
 const LandingPage = lazy(() => import('@/pages/LandingPage'));
 
 export default function Index() {
-  const { isAuthenticated, isLoading, isSessionVerified } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {
     return (
@@ -15,8 +15,7 @@ export default function Index() {
     );
   }
 
-  // Only redirect after session has been verified against backend
-  if (isAuthenticated && isSessionVerified) {
+  if (isAuthenticated) {
     return <Navigate to="/meu-dia" replace />;
   }
 

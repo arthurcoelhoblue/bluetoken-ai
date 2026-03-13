@@ -1,4 +1,3 @@
-import { useRef, useEffect } from 'react';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import { Card } from '@/components/ui/card';
@@ -40,14 +39,6 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
     data: { type: 'deal', deal },
   });
 
-  const wasDragged = useRef(false);
-
-  useEffect(() => {
-    if (isDragging) {
-      wasDragged.current = true;
-    }
-  }, [isDragging]);
-
   const isClosed = deal.status === 'GANHO' || deal.status === 'PERDIDO';
 
   const style = {
@@ -76,13 +67,7 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       {...(overlay ? {} : { ...attributes, ...listeners })}
       data-deal-card
       className={`p-2 cursor-grab active:cursor-grabbing space-y-1 hover:shadow-md transition-shadow duration-100 border-border/60 border-l-[3px] ${slaBorderColor} ${isClosed ? 'ring-1 ring-muted' : ''}`}
-      onClick={() => {
-        if (wasDragged.current) {
-          wasDragged.current = false;
-          return;
-        }
-        onDealClick?.(deal.id);
-      }}
+      onClick={() => onDealClick?.(deal.id)}
     >
       <div className="flex items-start justify-between gap-2">
         <span className="font-medium text-xs leading-tight line-clamp-1">{deal.titulo}</span>
@@ -110,12 +95,7 @@ export function DealCard({ deal, overlay, currentStage, onDealClick }: DealCardP
       </div>
 
       {deal.contacts && (
-        <div className="flex items-center justify-between">
-          <p className="text-[11px] text-muted-foreground truncate">{deal.contacts.nome}</p>
-          <span className="text-[9px] text-muted-foreground/70 shrink-0 ml-1">
-            {new Date(deal.created_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
+        <p className="text-[11px] text-muted-foreground truncate">{deal.contacts.nome}</p>
       )}
 
       <div className="flex items-center justify-between text-[11px]">

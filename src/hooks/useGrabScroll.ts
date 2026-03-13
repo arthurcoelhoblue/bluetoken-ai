@@ -2,7 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 
 const AXIS_THRESHOLD = 8;
 
-export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, options: { disabled?: boolean } = {}) {
+export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>) {
   const isDown = useRef(false);
   const startX = useRef(0);
   const startY = useRef(0);
@@ -13,7 +13,6 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, op
   const origPointerId = useRef<number | null>(null);
 
   const onPointerDown = useCallback((e: PointerEvent) => {
-    if (options.disabled) return;
     const el = scrollRef.current;
     if (!el) return;
 
@@ -82,7 +81,6 @@ export function useGrabScroll(scrollRef: React.RefObject<HTMLElement | null>, op
 
   // --- Touch fallback ---
   const onTouchStart = useCallback((e: TouchEvent) => {
-    if (options.disabled) return;
     const el = scrollRef.current;
     if (!el) return;
     const target = e.target as HTMLElement;

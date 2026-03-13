@@ -116,7 +116,7 @@ export function useContactDeals(contactId: string | null) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from('deals')
-        .select('*, pipeline_stages!deals_stage_id_fkey(id, nome, cor, is_won, is_lost)')
+        .select('*, pipeline_stages(id, nome, cor, is_won, is_lost)')
         .eq('contact_id', contactId!)
         .order('created_at', { ascending: false });
       if (error) throw error;

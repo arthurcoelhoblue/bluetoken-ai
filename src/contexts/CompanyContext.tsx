@@ -13,15 +13,21 @@ export interface EmpresaRecord {
 }
 
 interface CompanyContextType {
+  /** All currently selected companies */
   activeCompanies: ActiveCompany[];
+  /** First selected company — backward compat for mutations */
   activeCompany: ActiveCompany;
+  /** All companies available to the logged-in user */
   userCompanies: ActiveCompany[];
+  /** Full empresa records from DB */
   empresaRecords: EmpresaRecord[];
   setActiveCompanies: (companies: ActiveCompany[]) => void;
   toggleCompany: (company: ActiveCompany) => void;
   companyLabel: string;
   isMultiCompany: boolean;
+  /** Get label for a company ID */
   getCompanyLabel: (id: string) => string;
+  /** Get color for a company ID */
   getCompanyColor: (id: string) => string;
 }
 
@@ -51,6 +57,7 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   const [userCompanies, setUserCompanies] = useState<ActiveCompany[]>([]);
   const [activeCompanies, setActiveCompaniesState] = useState<ActiveCompany[]>(loadInitialCompanies);
 
+  // Load empresa records from DB
   const { data: empresaRecords = [] } = useQuery({
     queryKey: ['empresas'],
     queryFn: async () => {
@@ -73,15 +80,12 @@ export function CompanyProvider({ children }: { children: React.ReactNode }) {
   }, [empresaRecords]);
 
   const loadUserCompanies = useCallback(async () => {
-    // Use getSession (local, no backend round-trip) instead of getUser
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session?.user) return;
-    const userId = session.user.id;
-
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) return;
     const { data } = await supabase
       .from('user_access_assignments')
       .select('empresa')
-      .eq('user_id', userId);
+      .eq('user_id', user.id);
     if (data && data.length > 0) {
       const companies = data.map(d => String(d.empresa)).filter(Boolean) as ActiveCompany[];
       setUserCompanies(companies);

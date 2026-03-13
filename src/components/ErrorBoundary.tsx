@@ -1,63 +1,70 @@
-import { Component, ErrorInfo, ReactNode } from 'react';
-import { captureException } from '@/lib/sentry';
+import React from 'react';
+import { AlertTriangle, RefreshCw } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Sentry } from '@/lib/sentry';
 
-interface Props {
-  children: ReactNode;
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+  fallbackTitle?: string;
 }
 
-interface State {
+interface ErrorBoundaryState {
   hasError: boolean;
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  constructor(props: Props) {
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
     return { hasError: true, error };
   }
 
-  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('[ErrorBoundary]', error.message, errorInfo.componentStack);
-    try {
-      captureException(error, { componentStack: errorInfo.componentStack });
-    } catch {
-      // Sentry falhou — não importa, segue em frente
-    }
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('[ErrorBoundary]', error, errorInfo);
+    Sentry?.captureException(error, { extra: { componentStack: errorInfo.componentStack } });
   }
+
+  handleReset = () => {
+    this.setState({ hasError: false, error: null });
+  };
 
   handleReload = () => {
     window.location.reload();
   };
 
-  handleBackToLogin = () => {
-    sessionStorage.clear();
-    window.location.href = '/auth';
-  };
-
   render() {
-    if (!this.state.hasError) {
-      return this.props.children;
+    if (this.state.hasError) {
+      return (
+        <div className="flex flex-col items-center justify-center min-h-[300px] gap-4 p-8 text-center">
+          <AlertTriangle className="h-12 w-12 text-destructive" />
+          <h2 className="text-lg font-semibold text-foreground">
+            {this.props.fallbackTitle || 'Algo deu errado'}
+          </h2>
+          <p className="text-sm text-muted-foreground max-w-md">
+            Ocorreu um erro inesperado. Tente recarregar a página ou voltar à tela anterior.
+          </p>
+          {this.state.error && (
+            <pre className="text-xs text-muted-foreground bg-muted rounded p-2 max-w-lg overflow-auto">
+              {this.state.error.message}
+            </pre>
+          )}
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={this.handleReset}>
+              Tentar novamente
+            </Button>
+            <Button size="sm" onClick={this.handleReload}>
+              <RefreshCw className="h-4 w-4 mr-1" />
+              Recarregar página
+            </Button>
+          </div>
+        </div>
+      );
     }
 
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', padding: '20px', textAlign: 'center' }}>
-        <h2 style={{ marginBottom: '12px', color: '#1E293B' }}>Algo deu errado</h2>
-        <p style={{ color: '#64748B', marginBottom: '24px', maxWidth: '400px' }}>
-          {this.state.error?.message || 'Erro inesperado'}
-        </p>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button onClick={this.handleBackToLogin} style={{ padding: '12px 24px', backgroundColor: '#1A73E8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>
-            Voltar ao login
-          </button>
-          <button onClick={this.handleReload} style={{ padding: '12px 24px', backgroundColor: '#f3f4f6', color: '#333', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>
-            Recarregar
-          </button>
-        </div>
-      </div>
-    );
+    return this.props.children;
   }
 }

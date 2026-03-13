@@ -25,8 +25,6 @@ interface KanbanBoardProps {
   isLoading: boolean;
   onDealClick?: (dealId: string) => void;
   onTransferClick?: () => void;
-  iaSort: boolean;
-  onIaSortToggle: () => void;
 }
 
 function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): number {
@@ -39,11 +37,11 @@ function calcUrgencyScore(deal: DealWithRelations, slaMinutos: number | null): n
   return (100 - prob) * 0.4 + daysNorm * 0.3 + slaPct * 0.2 + valorNorm * 0.1;
 }
 
-export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransferClick, iaSort, onIaSortToggle }: KanbanBoardProps) {
+export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransferClick }: KanbanBoardProps) {
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
-  useGrabScroll(scrollRef, { disabled: !!activeDeal });
+  useGrabScroll(scrollRef);
 
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -85,7 +83,17 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
     scrollRef.current?.scrollBy({ left: dir * 300, behavior: 'smooth' });
   }, []);
 
-  // iaSort is now controlled externally via props
+  const [iaSort, setIaSort] = useState(() => {
+    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
+  });
+
+  const toggleIaSort = useCallback(() => {
+    setIaSort(prev => {
+      const next = !prev;
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
 
   const sortedColumns = useMemo(() => {
     if (!iaSort) return columns;
@@ -154,6 +162,24 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
+      {/* IA Sort toggle */}
+      <div className="flex items-center justify-center mb-3 gap-2">
+        {onTransferClick && (
+          <Button variant="outline" size="sm" className="gap-1.5 text-xs" onClick={onTransferClick}>
+            <ArrowRightLeft className="h-3.5 w-3.5" />
+            Transferir em massa
+          </Button>
+        )}
+        <Button
+          variant={iaSort ? 'default' : 'outline'}
+          size="sm"
+          className="gap-1.5 text-xs"
+          onClick={toggleIaSort}
+        >
+          {iaSort ? <Sparkles className="h-3.5 w-3.5" /> : <GripVertical className="h-3.5 w-3.5" />}
+          {iaSort ? 'Ordenação IA' : 'Ordenação Manual'}
+        </Button>
+      </div>
 
       {/* Carousel wrapper */}
       <div className="relative flex-1 min-h-0 overflow-hidden">

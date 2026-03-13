@@ -1,8 +1,7 @@
-import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { UserProfile, UserRole, ROLE_PERMISSIONS } from '@/types/auth';
-import { AuthLoadingFallback } from '@/components/auth/AuthLoadingFallback';
 
 interface AuthContextType {
   user: User | null;
@@ -10,8 +9,6 @@ interface AuthContextType {
   profile: UserProfile | null;
   roles: UserRole[];
   isLoading: boolean;
-  isSessionVerified: boolean;
-  profileLoaded: boolean;
   isAuthenticated: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password: string, nome: string) => Promise<{ error: Error | null }>;
@@ -24,291 +21,146 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
-const SESSION_VERIFY_TIMEOUT_MS = 5000;
-const FETCH_PROFILE_TIMEOUT_MS = 6000;
-
-const t0 = Date.now();
-function trace(code: string, extra?: Record<string, unknown>) {
-  const elapsed = Date.now() - t0;
-  const route = typeof window !== 'undefined' ? window.location.pathname : '?';
-  console.info(`[Auth:TRACE] +${elapsed}ms ${code}`, { route, ...extra });
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
-    promise.then(
-      (v) => { clearTimeout(timer); resolve(v); },
-      (e) => { clearTimeout(timer); reject(e); },
-    );
-  });
-}
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSessionVerified, setIsSessionVerified] = useState(false);
-  const [profileLoaded, setProfileLoaded] = useState(false);
-
-  const profileFetchInProgress = useRef(false);
-  const bootstrapHandledProfile = useRef(false);
-
-  const clearState = useCallback(() => {
-    setUser(null);
-    setSession(null);
-    setProfile(null);
-    setRoles([]);
-    setIsSessionVerified(false);
-    setProfileLoaded(false);
-    profileFetchInProgress.current = false;
-    bootstrapHandledProfile.current = false;
-  }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    if (profileFetchInProgress.current) {
-      trace('PROFILE_SKIP_DEDUP');
-      return;
-    }
-    profileFetchInProgress.current = true;
-    trace('PROFILE_START', { userId });
-
     try {
-      const profilePromise = (async () => {
-        const { data: profileData, error: profileError } = await supabase
+      // Fetch profile
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profileError) {
+        console.error('Error fetching profile:', profileError);
+        return;
+      }
+
+      if (profileData) {
+        setProfile(profileData as UserProfile);
+
+        // Update last_login_at
+        await supabase
           .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .maybeSingle();
+          .update({ last_login_at: new Date().toISOString() })
+          .eq('id', userId);
+      }
 
-        if (profileError) {
-          console.error('[Auth] Error fetching profile:', profileError);
-          return;
-        }
+      // Fetch roles
+      const { data: rolesData, error: rolesError } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
 
-        if (profileData) {
-          setProfile(profileData as UserProfile);
-          supabase
-            .from('profiles')
-            .update({ last_login_at: new Date().toISOString() })
-            .eq('id', userId)
-            .then(() => {});
-        }
+      if (rolesError) {
+        console.error('Error fetching roles:', rolesError);
+        return;
+      }
 
-        trace('PROFILE_DATA_OK');
-
-        const { data: rolesData, error: rolesError } = await supabase
-          .from('user_roles')
-          .select('role')
-          .eq('user_id', userId);
-
-        if (rolesError) {
-          console.error('[Auth] Error fetching roles:', rolesError);
-          return;
-        }
-
-        if (rolesData) {
-          setRoles(rolesData.map(r => r.role as UserRole));
-        }
-        trace('ROLES_OK');
-      })();
-
-      await withTimeout(profilePromise, FETCH_PROFILE_TIMEOUT_MS, 'fetchProfile');
+      if (rolesData) {
+        setRoles(rolesData.map(r => r.role as UserRole));
+      }
     } catch (error) {
-      console.error('[Auth] fetchProfile error/timeout:', error);
-      trace('PROFILE_ERROR', { error: String(error) });
-    } finally {
-      setProfileLoaded(true);
-      profileFetchInProgress.current = false;
-      trace('PROFILE_LOADED_SET');
+      console.error('Error in fetchProfile:', error);
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {
-      profileFetchInProgress.current = false;
       await fetchProfile(user.id);
     }
   }, [user?.id, fetchProfile]);
 
-  const handleClearSession = useCallback(async () => {
-    console.log('[Auth] Clearing session manually');
-    try {
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch { /* ignore */ }
-    clearState();
-    setIsLoading(false);
-    window.location.reload();
-  }, [clearState]);
-
-  const handleReload = useCallback(() => {
-    window.location.reload();
-  }, []);
-
   useEffect(() => {
-    trace('BOOTSTRAP_START');
-    let bootstrapDone = false;
-
-    const finishBootstrap = (reason: string) => {
-      if (!bootstrapDone) {
-        bootstrapDone = true;
-        setIsLoading(false);
-        trace('BOOTSTRAP_FINISH', { reason });
-      }
-    };
-
-    const timeoutId = setTimeout(() => {
-      if (!bootstrapDone) {
-        // Force profileLoaded so ProtectedRoute doesn't hang
-        setProfileLoaded(true);
-        finishBootstrap('timeout');
-      }
-    }, AUTH_BOOTSTRAP_TIMEOUT_MS);
-
+    // Set up auth state listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
-        trace('AUTH_STATE_CHANGE', { event, hasSession: !!currentSession });
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
+        // Defer profile fetch to avoid deadlock
         if (currentSession?.user) {
-          if (bootstrapDone && !bootstrapHandledProfile.current) {
-            setTimeout(() => fetchProfile(currentSession.user.id), 0);
-          }
+          setTimeout(() => {
+            fetchProfile(currentSession.user.id);
+          }, 0);
         } else {
           setProfile(null);
           setRoles([]);
         }
 
         if (event === 'SIGNED_OUT') {
-          clearState();
+          setProfile(null);
+          setRoles([]);
         }
       }
     );
 
-    const initSession = async () => {
-      try {
-        trace('GET_SESSION_START');
-        const { data: { session: existingSession }, error } = await supabase.auth.getSession();
-
-        if (error) {
-          trace('GET_SESSION_ERROR', { error: error.message });
-          try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
-          clearState();
-          setProfileLoaded(true);
-          finishBootstrap('getSession_error');
-          return;
-        }
-
-        if (!existingSession) {
-          trace('NO_SESSION');
-          clearState();
-          setProfileLoaded(true);
-          finishBootstrap('no_session');
-          return;
-        }
-
-        // Validate session against backend
-        try {
-          trace('GET_USER_START');
-          const { data: { user: verifiedUser }, error: userError } = await withTimeout(
-            supabase.auth.getUser(),
-            SESSION_VERIFY_TIMEOUT_MS,
-            'getUser'
-          );
-
-          if (userError || !verifiedUser) {
-            trace('SESSION_INVALID', { error: userError?.message });
-            try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
-            clearState();
-            setProfileLoaded(true);
-            finishBootstrap('stale_session_cleared');
-            return;
-          }
-
-          setSession(existingSession);
-          setUser(verifiedUser);
-          setIsSessionVerified(true);
-          trace('SESSION_VERIFIED', { userId: verifiedUser.id });
-
-          bootstrapHandledProfile.current = true;
-          try {
-            await fetchProfile(verifiedUser.id);
-          } catch (profileErr) {
-            trace('PROFILE_FETCH_FAILED', { error: String(profileErr) });
-            // profileLoaded is set in fetchProfile's finally block
-          }
-
-          finishBootstrap('success');
-        } catch (verifyErr) {
-          trace('GET_USER_TIMEOUT', { error: String(verifyErr) });
-          // Fallback: use local session but still try to fetch profile
-          setSession(existingSession);
-          setUser(existingSession.user);
-          setIsSessionVerified(true);
-          bootstrapHandledProfile.current = true;
-
-          // CRITICAL FIX: fetch profile even on timeout fallback
-          try {
-            await fetchProfile(existingSession.user.id);
-          } catch {
-            // profileLoaded set in finally
-          }
-
-          finishBootstrap('verify_timeout_fallback');
-        }
-      } catch (err) {
-        trace('BOOTSTRAP_CRITICAL_ERROR', { error: String(err) });
-        clearState();
-        setProfileLoaded(true);
-        finishBootstrap('critical_error');
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session: existingSession } }) => {
+      setSession(existingSession);
+      setUser(existingSession?.user ?? null);
+      
+      if (existingSession?.user) {
+        fetchProfile(existingSession.user.id).finally(() => {
+          setIsLoading(false);
+        });
+      } else {
+        setIsLoading(false);
       }
-    };
+    });
 
-    initSession();
-
-    return () => {
-      clearTimeout(timeoutId);
-      subscription.unsubscribe();
-    };
-  }, [fetchProfile, clearState]);
+    return () => subscription.unsubscribe();
+  }, [fetchProfile]);
 
   const signInWithEmail = async (email: string, password: string) => {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error && data.user) {
-      setIsSessionVerified(true);
-      bootstrapHandledProfile.current = true;
-      profileFetchInProgress.current = false;
-      await fetchProfile(data.user.id);
-    }
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     return { error: error as Error | null };
   };
 
   const signUpWithEmail = async (email: string, password: string, nome: string) => {
     const redirectUrl = `${window.location.origin}/`;
+    
     const { error } = await supabase.auth.signUp({
       email,
       password,
       options: {
         emailRedirectTo: redirectUrl,
-        data: { nome, full_name: nome },
+        data: {
+          nome,
+          full_name: nome,
+        },
       },
     });
+
     return { error: error as Error | null };
   };
 
   const resetPassword = async (email: string) => {
     const redirectUrl = `${window.location.origin}/reset-password`;
-    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: redirectUrl });
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: redirectUrl,
+    });
+
     return { error: error as Error | null };
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
-    clearState();
+    setUser(null);
+    setSession(null);
+    setProfile(null);
+    setRoles([]);
   };
 
   const hasRole = useCallback((role: UserRole) => {
@@ -316,33 +168,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [roles]);
 
   const hasPermission = useCallback((permission: string) => {
+    // Admin tem todas as permissões
     if (roles.includes('ADMIN')) return true;
+
     for (const role of roles) {
       const permissions = ROLE_PERMISSIONS[role];
+      
+      // Verifica permissões exatas
       if (permissions.includes(permission)) return true;
+      
+      // Verifica wildcard total
       if (permissions.includes('*')) return true;
+      
+      // Verifica wildcard de leitura
       if (permission.endsWith(':read') && permissions.includes('*:read')) return true;
+      
+      // Verifica wildcard de recurso (ex: leads:*)
       const [resource] = permission.split(':');
       if (permissions.includes(`${resource}:*`)) return true;
     }
+
     return false;
   }, [roles]);
 
   const value: AuthContextType = {
-    user, session, profile, roles,
-    isLoading, isSessionVerified, profileLoaded,
+    user,
+    session,
+    profile,
+    roles,
+    isLoading,
     isAuthenticated: !!session && !!user,
-    signInWithEmail, signUpWithEmail, resetPassword, signOut,
-    hasRole, hasPermission, refreshProfile,
+    signInWithEmail,
+    signUpWithEmail,
+    resetPassword,
+    signOut,
+    hasRole,
+    hasPermission,
+    refreshProfile,
   };
-
-  if (isLoading) {
-    return (
-      <AuthContext.Provider value={value}>
-        <AuthLoadingFallback onReload={handleReload} onClearSession={handleClearSession} />
-      </AuthContext.Provider>
-    );
-  }
 
   return (
     <AuthContext.Provider value={value}>

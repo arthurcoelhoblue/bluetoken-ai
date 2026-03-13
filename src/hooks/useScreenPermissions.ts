@@ -1,30 +1,26 @@
 import { useQuery } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/contexts/AuthContext';
+import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { SCREEN_REGISTRY } from '@/config/screenRegistry';
 import { ROLE_PERMISSIONS } from '@/types/auth';
-import type { PermissionsMap } from '@/types/accessControl';
-
-const SUPER_ADMIN_PROFILE_ID = 'd82ee44c-2c33-4a05-99be-2cf5451018d4';
+import type { PermissionsMap, ScreenPermission } from '@/types/accessControl';
 
 /**
  * Loads the current user's screen permissions.
  * Priority: access_profiles assignment > legacy role fallback > deny all.
- * ADMIN role always gets full access (short-circuited here, no extra query).
+ * ADMIN role always gets full access (hardcoded).
  */
+const SUPER_ADMIN_PROFILE_ID = 'd82ee44c-2c33-4a05-99be-2cf5451018d4';
+
 export function useScreenPermissions() {
   const { user, roles } = useAuth();
   const isAdmin = roles.includes('ADMIN');
 
   return useQuery({
-    queryKey: ['screen-permissions', user?.id, roles.join(',')],
-    enabled: !!user && roles.length > 0,
+    queryKey: ['screen-permissions', user?.id, isAdmin],
+    enabled: !!user,
     queryFn: async (): Promise<PermissionsMap> => {
-      // ADMIN role → full access immediately, no DB call needed
-      if (isAdmin) {
-        return buildFullAccess();
-      }
-
       // Try access_profiles assignment (with override)
       const { data: assignment } = await supabase
         .from('user_access_assignments')
@@ -33,9 +29,13 @@ export function useScreenPermissions() {
         .limit(1)
         .maybeSingle();
 
-      // Super Admin profile → full access
-      if (assignment?.access_profile_id === SUPER_ADMIN_PROFILE_ID) {
-        return buildFullAccess();
+      // ADMIN role or Super Admin profile → full access
+      const isSuperAdmin = assignment?.access_profile_id === SUPER_ADMIN_PROFILE_ID;
+      if (isAdmin || isSuperAdmin) {
+        return SCREEN_REGISTRY.reduce((acc, s) => {
+          acc[s.key] = { view: true, edit: true };
+          return acc;
+        }, {} as PermissionsMap);
       }
 
       const overrideMap = (assignment?.permissions_override as unknown as PermissionsMap) ?? null;
@@ -49,6 +49,7 @@ export function useScreenPermissions() {
 
         if (profile?.permissions) {
           const perms = profile.permissions as unknown as PermissionsMap;
+          // Merge: override > profile > deny
           return SCREEN_REGISTRY.reduce((acc, s) => {
             const profilePerm = perms[s.key] ?? { view: false, edit: false };
             const overridePerm = overrideMap?.[s.key];
@@ -76,15 +77,7 @@ export function useScreenPermissions() {
       return buildPermissionsFromRoles(roles);
     },
     staleTime: 5 * 60 * 1000,
-    retry: 1,
   });
-}
-
-function buildFullAccess(): PermissionsMap {
-  return SCREEN_REGISTRY.reduce((acc, s) => {
-    acc[s.key] = { view: true, edit: true };
-    return acc;
-  }, {} as PermissionsMap);
 }
 
 function buildPermissionsFromRoles(userRoles: string[]): PermissionsMap {
@@ -101,21 +94,22 @@ function buildPermissionsFromRoles(userRoles: string[]): PermissionsMap {
       const [resource, action] = p.split(':');
       return (resource === s.key && (action === '*' || action === 'write' || action === 'update'));
     });
+    // Fallback: if role system doesn't map cleanly, give view access to all for non-restrictive roles
     acc[s.key] = { view: canView || hasReadAll, edit: canEdit };
     return acc;
   }, {} as PermissionsMap);
 }
 
 export function useCanView(screenKey: string): boolean {
-  const { roles } = useAuth();
   const { data: permissions } = useScreenPermissions();
-  if (roles.includes('ADMIN')) return true;
+  const isAdmin = useIsAdmin();
+  if (isAdmin) return true;
   return permissions?.[screenKey]?.view ?? false;
 }
 
 export function useCanEdit(screenKey: string): boolean {
-  const { roles } = useAuth();
   const { data: permissions } = useScreenPermissions();
-  if (roles.includes('ADMIN')) return true;
+  const isAdmin = useIsAdmin();
+  if (isAdmin) return true;
   return permissions?.[screenKey]?.edit ?? false;
 }

@@ -1,16 +1,37 @@
-// Sentry desabilitado temporariamente para estabilizar o app.
-// Será reativado após o login estar 100% estável.
+/**
+ * Sentry initialization — error tracking, breadcrumbs, performance.
+ * DSN is a publishable key (safe in frontend code).
+ */
+import * as Sentry from '@sentry/react';
 
-export function initSentry(): void {}
+const SENTRY_DSN = import.meta.env.VITE_SENTRY_DSN;
 
-export function captureException(error: unknown, context?: Record<string, unknown>): void {
-  console.error('[Sentry:stub]', error, context);
+export function initSentry() {
+  if (!SENTRY_DSN) return;
+
+  Sentry.init({
+    dsn: SENTRY_DSN,
+    environment: import.meta.env.MODE,
+    integrations: [
+      Sentry.browserTracingIntegration(),
+      Sentry.replayIntegration({ maskAllText: true, blockAllMedia: true }),
+    ],
+    tracesSampleRate: 0.1, // 10% of transactions
+    replaysSessionSampleRate: 0,
+    replaysOnErrorSampleRate: 0.5, // 50% of error sessions
+    beforeSend(event) {
+      // Strip PII from breadcrumbs
+      if (event.breadcrumbs) {
+        event.breadcrumbs = event.breadcrumbs.map(bc => {
+          if (bc.category === 'ui.input') {
+            return { ...bc, message: '[redacted]' };
+          }
+          return bc;
+        });
+      }
+      return event;
+    },
+  });
 }
 
-export function captureMessage(message: string): void {
-  console.warn('[Sentry:stub]', message);
-}
-
-export function setUser(_user: { id: string; email?: string } | null): void {}
-
-export function withScope(_callback: (scope: unknown) => void): void {}
+export { Sentry };

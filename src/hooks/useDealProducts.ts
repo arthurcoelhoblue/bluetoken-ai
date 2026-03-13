@@ -21,7 +21,6 @@ export interface CatalogProduct {
   descricao: string | null;
   preco_unitario: number;
   unidade: string;
-  frequencia_cobranca: string;
   ativo: boolean;
 }
 

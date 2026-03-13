@@ -60,7 +60,7 @@ export function DealDetailHeader({ deal, stages, isClosed, onWin, onLose, onReop
               )}
             </div>
           </div>
-          <div className="flex items-center gap-1 mr-8">
+          <div className="flex items-center gap-1">
             {legacyLeadId && leadEmpresa ? (
               <Button
                 variant="ghost"

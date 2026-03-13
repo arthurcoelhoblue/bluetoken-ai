@@ -386,7 +386,7 @@ export default function PendenciasPerda() {
                   <Copy className="h-5 w-5 text-orange-500" />
                   Possíveis Duplicações ({visibleDuplicates.length})
                 </h2>
-                {visibleDuplicates.map(d => <DuplicatePendencyCard key={d.id} pendency={d} onDealClick={setSelectedDealId} />)}
+                {visibleDuplicates.map(d => <DuplicatePendencyCard key={d.id} pendency={d} />)}
               </div>
             )}
           </>
