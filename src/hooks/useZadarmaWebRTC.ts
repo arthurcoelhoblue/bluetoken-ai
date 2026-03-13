@@ -452,7 +452,6 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   statusRef.current = status;
 
   // NEW: pendingOutbound flag — set when click_to_call is initiated
-  // Allows auto-answer even if status isn't 'ready' yet (PBX callback ring)
   const pendingOutboundRef = useRef(false);
   const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -469,12 +468,25 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, []);
 
+  // Guarded status setter — respects hangup cooldown
+  const safeSetStatus = useCallback((newStatus: WebRTCStatus) => {
+    if (Date.now() - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
+      if (newStatus === 'ready') {
+        console.log('[WebRTC] ⏳ Cooldown: allowing transition to ready');
+        setStatus('ready');
+      } else {
+        console.log('[WebRTC] 🛑 Cooldown active, blocking transition to:', newStatus);
+      }
+      return;
+    }
+    setStatus(newStatus);
+  }, []);
+
   const setPendingOutbound = useCallback((pending: boolean) => {
     pendingOutboundRef.current = pending;
     console.log('[WebRTC] 📌 pendingOutbound set to:', pending);
 
     if (pending) {
-      // Start PROACTIVE watchdog — poll every 500ms for SIP sessions + DOM buttons
       stopWatchdog();
       let attempts = 0;
       const MAX_ATTEMPTS = 40; // 40 × 500ms = 20s
@@ -491,8 +503,8 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           return;
         }
 
-        // Already active
-        if (statusRef.current === 'active') {
+        // Already active — check via statusRef
+        if (statusRef.current === 'active' as WebRTCStatus) {
           console.log('[WebRTC] ✅ Watchdog: call already active, stopping');
           pendingOutboundRef.current = false;
           stopWatchdog();
@@ -512,15 +524,13 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           return;
         }
 
-        // Layer 3: DOM click (every 2nd attempt to avoid hammering)
+        // Layer 3: DOM click (every 2nd attempt)
         if (attempts % 2 === 0) {
           const clicked = clickAnswerButton();
           if (clicked) {
             console.log(`[WebRTC] ✅ Watchdog: Layer 3 DOM click succeeded on poll #${attempts}`);
             autoAnswerDoneRef.current = true;
-            // Don't clear pendingOutbound yet — wait for confirmed event to set active
-            // But set ringing so the UI shows correctly
-            if (statusRef.current !== 'ringing' && statusRef.current !== 'active') {
+            if (statusRef.current !== 'ringing') {
               safeSetStatus('ringing');
             }
           }
@@ -531,12 +541,11 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           console.warn('[WebRTC] ⏰ Watchdog: auto-answer timeout after 20s');
           pendingOutboundRef.current = false;
           stopWatchdog();
-          // Dispatch event so widget can show feedback
           window.dispatchEvent(new CustomEvent('bluecrm:autoAnswerTimeout'));
         }
       }, 500);
 
-      // Safety timeout to ensure cleanup
+      // Safety timeout
       watchdogTimeoutRef.current = setTimeout(() => {
         if (pendingOutboundRef.current) {
           console.warn('[WebRTC] ⏰ Watchdog safety timeout (25s)');
@@ -549,24 +558,6 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       stopWatchdog();
     }
   }, [stopWatchdog, safeSetStatus]);
-
-  // Guarded status setter — respects hangup cooldown
-  const safeSetStatusFn = useCallback((newStatus: WebRTCStatus) => {
-    if (Date.now() - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
-      if (newStatus === 'ready') {
-        console.log('[WebRTC] ⏳ Cooldown: allowing transition to ready');
-        setStatus('ready');
-      } else {
-        console.log('[WebRTC] 🛑 Cooldown active, blocking transition to:', newStatus);
-      }
-      return;
-    }
-    setStatus(newStatus);
-  }, []);
-
-  // Use safeSetStatusFn as safeSetStatus (redefine after the one used by setPendingOutbound)
-  // Note: safeSetStatus was used by setPendingOutbound above, let's reconcile
-  const safeSetStatus = safeSetStatusFn;
 
   // Fetch WebRTC key
   const fetchKey = useCallback(async (): Promise<string | null> => {
