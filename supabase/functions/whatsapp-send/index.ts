@@ -534,6 +534,7 @@ serve(async (req) => {
                 metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, mediaUrl!);
               }
               break;
+            }
             case 'video':
               metaMediaResult = await sendVideoViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaCaption);
               break;
