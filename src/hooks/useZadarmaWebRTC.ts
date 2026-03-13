@@ -148,35 +148,57 @@ function tryAnswerViaSipSession(): boolean {
       (window as any).ua,
       (window as any).sipUA,
       (window as any).phone,
+      (window as any).oSipSessionIncoming,
+      (window as any).oSipSessionCall,
     ];
 
+    // Helper: try to answer a session
+    const trySession = (session: any, label: string): boolean => {
+      if (!session || typeof session.answer !== 'function') return false;
+      // Accept if direction is incoming OR status is in a ringing-like state
+      const dir = session.direction || session._direction || '';
+      const state = session.status || session._status || session.state || '';
+      const isIncoming = dir === 'incoming' || dir === 'in';
+      const isRinging = typeof state === 'number' ? (state >= 3 && state <= 5) : /ring|progress|waiting|incoming/i.test(String(state));
+      if (isIncoming || isRinging) {
+        console.log(`[WebRTC] 🎯 Layer 1 (${label}): Answering SIP session (dir=${dir}, state=${state})`);
+        try {
+          session.answer({ mediaConstraints: { audio: true, video: false } });
+          return true;
+        } catch (e) {
+          // Some versions use accept() instead
+          if (typeof session.accept === 'function') {
+            session.accept({ mediaConstraints: { audio: true, video: false } });
+            return true;
+          }
+          console.warn(`[WebRTC] Layer 1 answer() threw:`, e);
+        }
+      }
+      return false;
+    };
+
+    // Scan UAs on main window
     for (const ua of candidates) {
       if (!ua) continue;
-      // JsSIP / SIP.js style UA
+      // Direct session objects (some widgets expose the session directly)
+      if (trySession(ua, 'direct')) return true;
+      // JsSIP / SIP.js style UA with _sessions map
       const sessions = ua._sessions || ua.sessions;
       if (sessions && typeof sessions === 'object') {
         for (const key of Object.keys(sessions)) {
-          const session = sessions[key];
-          if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
-            console.log('[WebRTC] 🎯 Layer 1: Answering via SIP session.answer()');
-            session.answer({ mediaConstraints: { audio: true, video: false } });
-            return true;
-          }
+          if (trySession(sessions[key], `UA._sessions[${key}]`)) return true;
         }
       }
       // Alternative: rtcSession
-      if (ua._rtcSession && typeof ua._rtcSession.answer === 'function') {
-        console.log('[WebRTC] 🎯 Layer 1: Answering via UA._rtcSession.answer()');
-        ua._rtcSession.answer({ mediaConstraints: { audio: true, video: false } });
-        return true;
-      }
+      if (trySession(ua._rtcSession, 'UA._rtcSession')) return true;
     }
 
     // Also scan iframes for SIP sessions
-    document.querySelectorAll('iframe').forEach((iframe) => {
+    const iframes = document.querySelectorAll('iframe');
+    for (const iframe of iframes) {
       try {
         const iframeWindow = iframe.contentWindow as any;
-        if (!iframeWindow) return;
+        if (!iframeWindow) continue;
         const iframeCandidates = [
           iframeWindow.__location_ua,
           iframeWindow.location_ua,
@@ -184,25 +206,24 @@ function tryAnswerViaSipSession(): boolean {
           iframeWindow.ua,
           iframeWindow.sipUA,
           iframeWindow.phone,
+          iframeWindow.oSipSessionIncoming,
+          iframeWindow.oSipSessionCall,
         ];
         for (const ua of iframeCandidates) {
           if (!ua) continue;
+          if (trySession(ua, 'iframe-direct')) return true;
           const sessions = ua._sessions || ua.sessions;
           if (sessions && typeof sessions === 'object') {
             for (const key of Object.keys(sessions)) {
-              const session = sessions[key];
-              if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
-                console.log('[WebRTC] 🎯 Layer 1 (iframe): Answering via SIP session.answer()');
-                session.answer({ mediaConstraints: { audio: true, video: false } });
-                return;
-              }
+              if (trySession(sessions[key], `iframe._sessions[${key}]`)) return true;
             }
           }
+          if (trySession(ua._rtcSession, 'iframe._rtcSession')) return true;
         }
       } catch { /* cross-origin */ }
-    });
+    }
   } catch (err) {
-    console.warn('[WebRTC] Layer 1 SIP session answer failed:', err);
+    console.warn('[WebRTC] Layer 1 SIP session scan failed:', err);
   }
   return false;
 }
