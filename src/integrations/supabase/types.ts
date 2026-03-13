@@ -5554,7 +5554,7 @@ export type Database = {
           mautic_password: string | null
           mautic_url: string
           mautic_username: string | null
-          segment_id: string | null
+          segment_ids: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -5566,7 +5566,7 @@ export type Database = {
           mautic_password?: string | null
           mautic_url?: string
           mautic_username?: string | null
-          segment_id?: string | null
+          segment_ids?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -5578,7 +5578,7 @@ export type Database = {
           mautic_password?: string | null
           mautic_url?: string
           mautic_username?: string | null
-          segment_id?: string | null
+          segment_ids?: Json | null
           updated_at?: string | null
         }
         Relationships: []

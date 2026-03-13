@@ -1,51 +1,69 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Segmento Mautic por Funil
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-### Problema
-Atualmente o `segment_id` é único por empresa. Leads da mesma empresa podem entrar por pipelines diferentes e precisam ir para segmentos Mautic distintos.
+### Implementação
 
-### Solução
-Trocar a coluna `segment_id` (TEXT) por `segment_ids` (JSONB) que mapeia `pipeline_id → segment_id`.
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-Exemplo: `{"5bbac98b-...": "3", "26de333a-...": "7"}`
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+```
+
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
+
+---
+
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
+
+### Status: ✅ Implementado
 
 ### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-| Arquivo | Ação |
-|---|---|
-| Migration SQL | Renomear `segment_id` → `segment_ids` (JSONB), migrar dados existentes |
-| `MauticConfigManager.tsx` | Substituir campo único por lista editável de pares `Funil → Segment ID`, com dropdown dos pipelines da empresa |
-| `lp-lead-ingest/index.ts` | `getMauticConfig` retorna `segmentIds` (mapa). Na hora do push, resolver segment pelo `pipeline_id` do deal |
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-### Database Migration
-```sql
-ALTER TABLE mautic_company_config 
-  ADD COLUMN segment_ids JSONB DEFAULT '{}';
+---
 
-UPDATE mautic_company_config 
-  SET segment_ids = jsonb_build_object('default', segment_id)
-  WHERE segment_id IS NOT NULL;
+## Plano: Push de leads para Mautic e SGT em tempo real
 
-ALTER TABLE mautic_company_config 
-  DROP COLUMN segment_id;
-```
+### Status: ✅ Implementado
 
-### UI — MauticConfigManager
-- Carregar pipelines da empresa via query `pipelines` filtrado por `empresa = emp.id`
-- Renderizar lista de pares: Select de pipeline + Input de segment ID + botão remover
-- Botão "Adicionar segmento"
-- Form state: `segment_ids: Array<{ pipeline_id: string; segment_id: string }>`
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
 
-### Edge function — lp-lead-ingest
-```typescript
-// getMauticConfig retorna segmentIds: Record<string, string>
-segmentIds: data.segment_ids || {}
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
 
-// pushToMautic recebe pipelineId extra
-const segmentId = mauticCfg.segmentIds[pipelineId] || mauticCfg.segmentIds['default'];
-if (contactId && segmentId) {
-  // add to segment
-}
-```
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
 
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`

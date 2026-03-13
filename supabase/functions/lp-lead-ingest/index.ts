@@ -61,7 +61,7 @@ interface IngestRequest {
 async function getMauticConfig(
   supabase: ReturnType<typeof createClient>,
   empresa: string
-): Promise<{ url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> } | null> {
+): Promise<{ url: string; user: string; pass: string; segmentIds?: Record<string, string>; customFields?: Record<string, string> } | null> {
   // Try per-company config from DB first
   const { data } = await supabase
     .from("mautic_company_config")
@@ -75,7 +75,7 @@ async function getMauticConfig(
       url: data.mautic_url,
       user: data.mautic_username,
       pass: data.mautic_password,
-      segmentId: data.segment_id || undefined,
+      segmentIds: (data.segment_ids as Record<string, string>) || undefined,
       customFields: (data.custom_fields as Record<string, string>) || undefined,
     };
   }
@@ -94,7 +94,8 @@ async function getMauticConfig(
 
 async function pushToMautic(
   lead: LeadPayload,
-  mauticCfg: { url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> }
+  mauticCfg: { url: string; user: string; pass: string; segmentIds?: Record<string, string>; customFields?: Record<string, string> },
+  pipelineId?: string
 ): Promise<{ status: string; mautic_contact_id?: number }> {
   try {
     const nameParts = (lead.nome || "").split(" ");
@@ -151,19 +152,22 @@ async function pushToMautic(
       contactId = data?.contact?.id;
     } catch { /* ignore */ }
 
-    // Add to segment if configured
-    if (contactId && mauticCfg.segmentId) {
-      try {
-        await fetch(
-          `${mauticCfg.url.replace(/\/$/, "")}/api/segments/${mauticCfg.segmentId}/contact/${contactId}/add`,
-          {
-            method: "POST",
-            headers: { Authorization: `Basic ${basicAuth}` },
-          }
-        );
-        log.info("Mautic segment add ok", { contactId, segmentId: mauticCfg.segmentId });
-      } catch (segErr) {
-        log.warn("Mautic segment add failed", { error: String(segErr) });
+    // Add to segment if configured (resolve by pipeline_id, fallback to 'default')
+    if (contactId && mauticCfg.segmentIds) {
+      const segmentId = (pipelineId && mauticCfg.segmentIds[pipelineId]) || mauticCfg.segmentIds['default'];
+      if (segmentId) {
+        try {
+          await fetch(
+            `${mauticCfg.url.replace(/\/$/, "")}/api/segments/${segmentId}/contact/${contactId}/add`,
+            {
+              method: "POST",
+              headers: { Authorization: `Basic ${basicAuth}` },
+            }
+          );
+          log.info("Mautic segment add ok", { contactId, segmentId, pipelineId });
+        } catch (segErr) {
+          log.warn("Mautic segment add failed", { error: String(segErr) });
+        }
       }
     }
 
@@ -491,7 +495,7 @@ Deno.serve(async (req) => {
         const mauticCfg = await getMauticConfig(supabase, empresa);
         const [mauticResult, sgtResult] = await Promise.allSettled(
           mauticCfg
-            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg), pushToSGT(leadWithNormalizedEmail, empresa)]
+            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg, pipelineId), pushToSGT(leadWithNormalizedEmail, empresa)]
             : [Promise.resolve({ status: "skipped" }), pushToSGT(leadWithNormalizedEmail, empresa)]
         );
 
