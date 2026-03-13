@@ -1,62 +1,98 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
-Problema real (reformulado):
-- Em produção e no preview, você reporta loop de carregamento (“rodando”) e redirecionamento automático para `/meu-dia`.
-- O redirecionamento para `/meu-dia` hoje é intencional no código (`src/pages/Index.tsx`) quando a app considera a sessão autenticada.
+### Status: ✅ Implementado
 
-O que eu confirmei na investigação:
-- Em sessão limpa, `/` e `/auth` carregam normalmente.
-- No preview limpo, o bootstrap de auth chega em “success” (sem travar).
-- Não consegui reproduzir o loop infinito fora do seu contexto de sessão.
-- Há um ponto crítico: o app pode tratar sessão local como válida cedo demais e te jogar para rota protegida antes de validar a sessão no backend.
-- Há outro ponto frágil: rotas protegidas dependem de permissões sem timeout explícito, então qualquer requisição pendente pode manter spinner.
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-Do I know what the issue is?
-- Parcialmente: sei exatamente os pontos de travamento prováveis (bootstrap de sessão e gate de permissões), mas ainda sem prova única do seu fluxo específico. Então a correção precisa ser “defensiva + observável” nesses dois pontos.
+### Implementação
 
-Plano de implementação (cirúrgico):
-1) Blindar validação de sessão no bootstrap
-- Arquivo: `src/contexts/AuthContext.tsx`
-- Após `getSession()`, validar sessão com `getUser()` (timeout curto).
-- Se validação falhar/expirar, limpar sessão local automaticamente e seguir como deslogado.
-- Manter `isLoading` sempre finalizado (sem possibilidade de spinner eterno).
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-2) Tornar rotas protegidas fail-safe
-- Arquivos: `src/components/auth/ProtectedRoute.tsx`, `src/hooks/useScreenPermissions.ts`
-- Adicionar timeout/fallback de permissões (ex.: se consulta não concluir em Xs, tratar como erro controlado e mostrar ação de recuperação, não spinner infinito).
-- Tratar estado `error` explicitamente (hoje só `isLoading`).
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+```
 
-3) Eliminar fragilidade de dependência circular de permissão/admin
-- Arquivo: `src/hooks/useIsAdmin.ts` + ajustes no `useScreenPermissions`
-- Remover acoplamento que pode gerar comportamento imprevisível em runtime e duplicar query watchers desnecessariamente.
-- Centralizar cálculo de admin/permissão em fluxo único por tela protegida.
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-4) Ajustar UX do redirecionamento em `/`
-- Arquivo: `src/pages/Index.tsx`
-- Manter regra de redirecionar autenticado, mas somente após sessão validada de fato (não apenas “sessão local existe”).
-- Isso evita “pulo para `/meu-dia` + spinner” quando token estiver quebrado.
+---
 
-5) Telemetria mínima para fechar diagnóstico
-- `console.info/warn` estruturado em:
-  - bootstrap start/success/fail/timeout
-  - session validated vs stale session cleared
-  - protected route permission timeout/error
-- Assim, na próxima execução, o erro fica inequívoco.
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-Validação após implementar:
-- Cenário A: sessão limpa (anônimo) → `/` abre landing, `/auth` abre login.
-- Cenário B: sessão inválida/corrompida → não entra em loop; cai em login ou recovery.
-- Cenário C: autenticado válido → `/` redireciona para `/meu-dia` e carrega sem spinner infinito.
-- Revalidar em: preview + domínio publicado.
+### Status: ✅ Implementado
 
-Arquivos alvo:
-- `src/contexts/AuthContext.tsx`
-- `src/components/auth/ProtectedRoute.tsx`
-- `src/hooks/useScreenPermissions.ts`
-- `src/hooks/useIsAdmin.ts`
-- `src/pages/Index.tsx`
-- (opcional) `src/components/auth/AuthLoadingFallback.tsx`
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-Resultado esperado:
-- Sem carregamento infinito.
-- Redirecionamento para `/meu-dia` só quando a sessão estiver realmente válida.
-- Em falha de sessão/permissão, usuário sempre cai em estado recuperável (login/recovery), nunca em spinner eterno.
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
+
+---
+
+## Plano: Push de leads para Mautic e SGT em tempo real
+
+### Status: ✅ Implementado
+
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
+
+---
+
+## Plano: Módulo Playbook de Vendas
+
+### Status: 🔧 Em implementação — Fase 1 concluída
+
+### Fase 1 — Fundação ✅
+- 4 enums: `playbook_step_tipo`, `playbook_executor`, `playbook_run_status`, `playbook_evento_tipo`
+- 4 tabelas: `playbooks`, `playbook_steps`, `deal_playbook_runs`, `deal_playbook_events`
+- RLS com `has_role()` e `get_user_empresas()`
+- Trigger: `deal_playbook_events → deal_activities` (timeline automática)
+- Trigger: playbook ATIVA → pausa cadências do deal automaticamente
+- 3 views de performance: `v_playbook_stats`, `v_playbook_step_performance`, `v_playbook_vendedor_aderencia`
+- Tipos TypeScript: `src/types/playbook.ts`
+
+### Fase 2 — Motor de Execução (próximo)
+- Edge Function `playbook-runner` (CRON 5min)
+- Hooks: `usePlaybookRuns`, `usePlaybookEvents`
+- Interop cadência × playbook no `cadence-runner`
+
+### Fase 3 — UI (futuro)
+- Página `/playbooks`, Editor drag-and-drop, Timeline no Deal, Badge no Kanban
+
+### Fase 4 — Meu Dia + Notificações + Gamificação (futuro)
+
+### Fase 5 — IA Avançada (futuro)
+- 5.1: Sugestão + Scripts dinâmicos
+- 5.2: Adaptação + Análise
