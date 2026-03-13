@@ -727,7 +727,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           triggerAutoAnswer();
         }
       } else if (eventName === 'confirmed' || eventName === 'accepted' || eventName === 'in_call') {
-        if (canTransitionToActive(statusRef.current)) {
+        if (canTransitionToActive(statusRef.current, pendingOutboundRef.current)) {
           callStartedAtRef.current = Date.now();
           pendingOutboundRef.current = false;
           safeSetStatus('active');
