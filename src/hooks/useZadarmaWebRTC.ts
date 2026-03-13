@@ -30,6 +30,7 @@ interface UseZadarmaWebRTCReturn {
   dial: (number: string) => void;
   hangup: (callId?: string) => void;
   answer: () => void;
+  setPendingOutbound: (pending: boolean) => void;
 }
 
 const SCRIPT_LIB = 'https://my.zadarma.com/webphoneWebRTCWidget/v9/js/loader-phone-lib.js?sub_v=1';
@@ -91,7 +92,6 @@ async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
     } catch (err) {
       if (attempt < retries) {
         console.warn(`[WebRTC] 🔄 Retrying script load (attempt ${attempt + 2}):`, src);
-        // Remove failed script tag so retry can re-add
         const existing = document.querySelector(`script[src="${src}"]`);
         existing?.remove();
         await new Promise(r => setTimeout(r, 2000));
@@ -102,13 +102,19 @@ async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
   }
 }
 
-// Temporarily make all widget elements interactive (remove inert + unhide)
+// Temporarily make all widget elements interactive (remove inert + unhide + move visible)
 function enableWidgetInteraction() {
   const all = document.querySelectorAll(WIDGET_SELECTORS.join(','));
   all.forEach((el) => {
     if (el instanceof HTMLElement) {
       el.removeAttribute('inert');
       el.style.pointerEvents = 'auto';
+      // Temporarily move to visible position so buttons render
+      el.style.left = '0px';
+      el.style.top = '0px';
+      el.style.opacity = '0.01';
+      el.style.width = 'auto';
+      el.style.height = 'auto';
     }
   });
 }
@@ -120,20 +126,105 @@ function disableWidgetInteraction() {
     if (el instanceof HTMLElement) {
       el.setAttribute('inert', '');
       el.style.pointerEvents = 'none';
+      el.style.left = '-9999px';
+      el.style.top = '-9999px';
+      el.style.opacity = '0';
+      el.style.width = '1px';
+      el.style.height = '1px';
     }
   });
 }
 
-// Click the answer/accept button inside the widget DOM
+// Try to answer via SIP.js session interception (Layer 1 — most reliable)
+function tryAnswerViaSipSession(): boolean {
+  try {
+    // Zadarma v9 widget stores SIP UA on various global paths
+    const candidates = [
+      (window as any).__location_ua,
+      (window as any).location_ua,
+      (window as any).zadarmaUA,
+      (window as any).ua,
+      (window as any).sipUA,
+      (window as any).phone,
+    ];
+
+    for (const ua of candidates) {
+      if (!ua) continue;
+      // JsSIP / SIP.js style UA
+      const sessions = ua._sessions || ua.sessions;
+      if (sessions && typeof sessions === 'object') {
+        for (const key of Object.keys(sessions)) {
+          const session = sessions[key];
+          if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
+            console.log('[WebRTC] 🎯 Layer 1: Answering via SIP session.answer()');
+            session.answer({ mediaConstraints: { audio: true, video: false } });
+            return true;
+          }
+        }
+      }
+      // Alternative: rtcSession
+      if (ua._rtcSession && typeof ua._rtcSession.answer === 'function') {
+        console.log('[WebRTC] 🎯 Layer 1: Answering via UA._rtcSession.answer()');
+        ua._rtcSession.answer({ mediaConstraints: { audio: true, video: false } });
+        return true;
+      }
+    }
+
+    // Also scan iframes for SIP sessions
+    document.querySelectorAll('iframe').forEach((iframe) => {
+      try {
+        const iframeWindow = iframe.contentWindow as any;
+        if (!iframeWindow) return;
+        const iframeCandidates = [
+          iframeWindow.__location_ua,
+          iframeWindow.location_ua,
+          iframeWindow.zadarmaUA,
+          iframeWindow.ua,
+          iframeWindow.sipUA,
+          iframeWindow.phone,
+        ];
+        for (const ua of iframeCandidates) {
+          if (!ua) continue;
+          const sessions = ua._sessions || ua.sessions;
+          if (sessions && typeof sessions === 'object') {
+            for (const key of Object.keys(sessions)) {
+              const session = sessions[key];
+              if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
+                console.log('[WebRTC] 🎯 Layer 1 (iframe): Answering via SIP session.answer()');
+                session.answer({ mediaConstraints: { audio: true, video: false } });
+                return;
+              }
+            }
+          }
+        }
+      } catch { /* cross-origin */ }
+    });
+  } catch (err) {
+    console.warn('[WebRTC] Layer 1 SIP session answer failed:', err);
+  }
+  return false;
+}
+
+// Click the answer/accept button inside the widget DOM (Layer 3)
 function clickAnswerButton(): boolean {
   const selectors = [
+    // Zadarma v9 specific
     '[class*="zdrm-webphone-accept"]',
     '[class*="zdrm-webphone-answer"]',
     '[class*="zdrm"][class*="accept-ico"]',
     '[class*="zdrm"][class*="answer-ico"]',
     '[class*="zdrm-ringing"] [class*="accept"]',
     '[class*="zdrm-ringing"] [class*="answer"]',
-    
+    '[class*="zdrm"] [class*="accept"]',
+    '[class*="zdrm"] [class*="answer"]',
+    '[class*="zdrm-webphone-call-accept"]',
+    '[class*="zdrm-webphone-btn-accept"]',
+    // v9 button patterns
+    '.zdrm-webphone-in-call-accept',
+    '.zdrm-webphone-ringing-accept',
+    'button[class*="zdrm"][class*="green"]',
+    'div[class*="zdrm"][class*="green"]',
+    // Generic
     '.answer-btn',
     '.call-accept',
     '.btn-answer',
@@ -141,23 +232,27 @@ function clickAnswerButton(): boolean {
     '[data-action="accept"]',
     'button[title*="answer" i]',
     'button[title*="accept" i]',
+    'button[title*="ответить" i]',
+    'button[title*="atender" i]',
   ];
 
-  // Temporarily enable interaction
+  // Temporarily enable interaction and make visible
   enableWidgetInteraction();
 
+  // Give browser a frame to render
   let clicked = false;
 
   for (const sel of selectors) {
     const els = document.querySelectorAll(sel);
     for (const el of els) {
       if (el instanceof HTMLElement) {
-        // Temporarily remove hide class if present
         const hadHide = el.classList.contains('zdrm-webphone-hide');
         if (hadHide) el.classList.remove('zdrm-webphone-hide');
+        el.style.display = '';
+        el.style.visibility = 'visible';
 
         el.click();
-        console.log('[WebRTC] ✅ Auto-clicked answer button:', sel, el.className);
+        console.log('[WebRTC] ✅ Layer 3: Auto-clicked answer button:', sel, el.className);
 
         if (hadHide) el.classList.add('zdrm-webphone-hide');
         clicked = true;
@@ -179,9 +274,11 @@ function clickAnswerButton(): boolean {
           if (btn instanceof HTMLElement) {
             const hadHide = btn.classList.contains('zdrm-webphone-hide');
             if (hadHide) btn.classList.remove('zdrm-webphone-hide');
+            btn.style.display = '';
+            btn.style.visibility = 'visible';
             btn.click();
             if (hadHide) btn.classList.add('zdrm-webphone-hide');
-            console.log('[WebRTC] ✅ Auto-clicked answer button inside iframe:', sel);
+            console.log('[WebRTC] ✅ Layer 3 (iframe): Auto-clicked answer button:', sel);
             clicked = true;
             return;
           }
@@ -331,6 +428,15 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   const statusRef = useRef(status);
   statusRef.current = status;
 
+  // NEW: pendingOutbound flag — set when click_to_call is initiated
+  // Allows auto-answer even if status isn't 'ready' yet (PBX callback ring)
+  const pendingOutboundRef = useRef(false);
+
+  const setPendingOutbound = useCallback((pending: boolean) => {
+    pendingOutboundRef.current = pending;
+    console.log('[WebRTC] 📌 pendingOutbound set to:', pending);
+  }, []);
+
   // Guarded status setter — respects hangup cooldown
   const safeSetStatus = useCallback((newStatus: WebRTCStatus) => {
     if (Date.now() - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
@@ -368,7 +474,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, [empresa, sipLogin]);
 
-  // Auto-answer: staggered click attempts (debounced)
+  // 3-layer auto-answer strategy
   const triggerAutoAnswer = useCallback(() => {
     const now = Date.now();
     if (now - lastAutoAnswerTriggerRef.current < 2000) return;
@@ -376,31 +482,68 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       console.log('[WebRTC] 🛑 triggerAutoAnswer blocked by hangup cooldown');
       return;
     }
-    if (statusRef.current !== 'ready') {
-      console.log('[WebRTC] 🛑 triggerAutoAnswer blocked — status is:', statusRef.current);
+
+    // Allow auto-answer if status is ready OR if pendingOutbound is set
+    const canAutoAnswer = statusRef.current === 'ready' || pendingOutboundRef.current;
+    if (!canAutoAnswer) {
+      console.log('[WebRTC] 🛑 triggerAutoAnswer blocked — status:', statusRef.current, 'pendingOutbound:', pendingOutboundRef.current);
       return;
     }
+
     lastAutoAnswerTriggerRef.current = now;
     autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
     incomingDetectedRef.current = true;
-    console.log('[WebRTC] 🟢 Triggering auto-answer sequence...');
+    console.log('[WebRTC] 🟢 Triggering 3-layer auto-answer sequence...');
     safeSetStatus('ringing');
 
+    // Layer 1: Try SIP.js session answer immediately
+    if (tryAnswerViaSipSession()) {
+      autoAnswerDoneRef.current = true;
+      pendingOutboundRef.current = false;
+      console.log('[WebRTC] ✅ Layer 1 succeeded (SIP session)');
+      return;
+    }
+
+    // Layer 2: Dispatch zadarmaWidgetEvent to trigger answer
+    window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'answer' } }));
+    document.querySelectorAll('iframe').forEach((iframe) => {
+      try {
+        iframe.contentWindow?.postMessage(JSON.stringify({ action: 'answer' }), '*');
+        iframe.contentWindow?.postMessage({ action: 'answer' }, '*');
+      } catch { /* ignore */ }
+    });
+
+    // Layer 3: Staggered DOM click attempts
     const attempt = () => {
       if (autoAnswerDoneRef.current) return;
-      if (autoAnswerAttemptsRef.current >= 15) {
-        console.warn('[WebRTC] ⚠️ Auto-answer: gave up after 15 attempts');
+      if (autoAnswerAttemptsRef.current >= 20) {
+        console.warn('[WebRTC] ⚠️ Auto-answer: gave up after 20 attempts');
+        pendingOutboundRef.current = false;
         return;
       }
-      if (statusRef.current === 'active' || statusRef.current === 'ready') return;
+      if (statusRef.current === 'active' || statusRef.current === 'ready') {
+        pendingOutboundRef.current = false;
+        return;
+      }
 
       autoAnswerAttemptsRef.current++;
+
+      // Re-try Layer 1 on each attempt
+      if (tryAnswerViaSipSession()) {
+        autoAnswerDoneRef.current = true;
+        pendingOutboundRef.current = false;
+        console.log('[WebRTC] ✅ Layer 1 succeeded on attempt', autoAnswerAttemptsRef.current);
+        return;
+      }
+
+      // Layer 3: DOM click
       const clicked = clickAnswerButton();
       if (clicked) {
         autoAnswerDoneRef.current = true;
+        pendingOutboundRef.current = false;
       } else {
-        setTimeout(attempt, 600);
+        setTimeout(attempt, 500);
       }
     };
 
@@ -420,7 +563,6 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     try {
       let callId = targetId;
 
-      // If no explicit ID, fall back to finding open call
       if (!callId) {
         const { data: openCall, error: selectError } = await supabase
           .from('calls')
@@ -454,7 +596,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, [empresa]);
 
-  // console.log interceptor — STRICT keyword matching
+  // console.log interceptor — EXPANDED keyword matching for v9
   useEffect(() => {
     if (!enabled) return;
 
@@ -465,23 +607,36 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       const combined = args.map(a => typeof a === 'string' ? a : JSON.stringify(a)).join(' ').toLowerCase();
 
-      // INCOMING: match specific Zadarma incoming-call patterns
-      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received') || (combined.includes('incoming') && combined.includes('caller'))) {
-        if (statusRef.current === 'ready') {
+      // INCOMING: match Zadarma incoming-call patterns (expanded for v9)
+      if (
+        combined.includes('incomingcall') ||
+        combined.includes('incoming call') ||
+        combined.includes('invite received') ||
+        combined.includes('newrtcsession') ||
+        combined.includes('new rtcsession') ||
+        combined.includes('peerconnection:recv') ||
+        (combined.includes('incoming') && combined.includes('caller')) ||
+        (combined.includes('incoming') && combined.includes('ringing')) ||
+        (combined.includes('direction') && combined.includes('incoming'))
+      ) {
+        const canAutoAnswer = statusRef.current === 'ready' || pendingOutboundRef.current;
+        if (canAutoAnswer) {
           origLog('[WebRTC] 📞 INCOMING detected via console.log intercept!');
           triggerAutoAnswer();
         }
       }
-      // ACTIVE: match specific call-confirmed patterns AND bare words from Zadarma v9, WITH state guard
+      // ACTIVE: match specific call-confirmed patterns WITH state guard
       else if (
         (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted') ||
-         combined.includes('in_call') || combined.includes('session confirmed')) &&
+         combined.includes('in_call') || combined.includes('session confirmed') ||
+         combined.includes('peerconnection:ready')) &&
         canTransitionToActive(statusRef.current)
       ) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
         autoAnswerDoneRef.current = true;
         incomingDetectedRef.current = false;
+        pendingOutboundRef.current = false;
         callStartedAtRef.current = Date.now();
         safeSetStatus('active');
       }
@@ -491,6 +646,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         closeActiveCallRecord();
         incomingDetectedRef.current = false;
         autoAnswerDoneRef.current = false;
+        pendingOutboundRef.current = false;
         safeSetStatus('ready');
       }
       // SIP REGISTERED: only set ready if still loading (initial registration)
@@ -531,6 +687,39 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     return () => observer.disconnect();
   }, [enabled]);
 
+  // zadarmaWidgetEvent listener (Layer 2 — event-based detection)
+  useEffect(() => {
+    if (!enabled) return;
+
+    const handleWidgetEvent = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (!detail) return;
+      const eventName = (detail.event || detail.type || '').toLowerCase();
+
+      console.log('[WebRTC] 📡 zadarmaWidgetEvent received:', eventName, detail);
+
+      if (eventName === 'incoming' || eventName === 'incomingcall' || eventName === 'ringing') {
+        const canAutoAnswer = statusRef.current === 'ready' || pendingOutboundRef.current;
+        if (canAutoAnswer) {
+          triggerAutoAnswer();
+        }
+      } else if (eventName === 'confirmed' || eventName === 'accepted' || eventName === 'in_call') {
+        if (canTransitionToActive(statusRef.current)) {
+          callStartedAtRef.current = Date.now();
+          pendingOutboundRef.current = false;
+          safeSetStatus('active');
+        }
+      } else if (eventName === 'terminated' || eventName === 'ended' || eventName === 'hangup') {
+        closeActiveCallRecord();
+        pendingOutboundRef.current = false;
+        safeSetStatus('ready');
+      }
+    };
+
+    window.addEventListener('zadarmaWidgetEvent', handleWidgetEvent);
+    return () => window.removeEventListener('zadarmaWidgetEvent', handleWidgetEvent);
+  }, [enabled, triggerAutoAnswer, safeSetStatus, closeActiveCallRecord]);
+
   // postMessage listener — STRICT matching with state guards
   useEffect(() => {
     const handlePostMessage = (e: MessageEvent) => {
@@ -544,7 +733,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
 
       const combined = JSON.stringify(data).toLowerCase();
 
-      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received')) {
+      if (combined.includes('incomingcall') || combined.includes('incoming call') || combined.includes('invite received') || combined.includes('newrtcsession')) {
         console.log('[WebRTC] 📞 INCOMING via postMessage!', data);
         triggerAutoAnswer();
       }
@@ -554,10 +743,12 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
         canTransitionToActive(statusRef.current)
       ) {
         callStartedAtRef.current = Date.now();
+        pendingOutboundRef.current = false;
         safeSetStatus('active');
       }
       else if (combined.includes('terminated') || combined.includes('call ended') || combined.includes('session ended')) {
         closeActiveCallRecord();
+        pendingOutboundRef.current = false;
         safeSetStatus('ready');
       }
     };
@@ -663,6 +854,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     hangupCooldownRef.current = Date.now();
     incomingDetectedRef.current = false;
     autoAnswerDoneRef.current = false;
+    pendingOutboundRef.current = false;
 
     closeActiveCallRecord(callId);
     clickHangupButton();
@@ -680,5 +872,5 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     triggerAutoAnswer();
   }, [triggerAutoAnswer]);
 
-  return { status, error, isReady: status === 'ready', dial, hangup, answer };
+  return { status, error, isReady: status === 'ready', dial, hangup, answer, setPendingOutbound };
 }
