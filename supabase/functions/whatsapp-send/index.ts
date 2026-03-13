@@ -521,8 +521,18 @@ serve(async (req) => {
             case 'document':
               metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaFilename, mediaCaption);
               break;
-            case 'audio':
-              metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, mediaUrl!);
+            case 'audio': {
+              // Upload audio to Meta Media API first, then send by media_id
+              // This ensures WhatsApp processes the format correctly
+              const uploadResult = await uploadMediaToMeta(metaConfig, mediaUrl!, 'audio/ogg');
+              if (uploadResult.success && uploadResult.mediaId) {
+                log.info('Audio uploaded to Meta', { mediaId: uploadResult.mediaId });
+                metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
+              } else {
+                // Fallback to direct link if upload fails
+                log.warn('Meta media upload failed, falling back to direct link', { error: uploadResult.error });
+                metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, mediaUrl!);
+              }
               break;
             case 'video':
               metaMediaResult = await sendVideoViaMetaCloud(metaConfig, phoneToSend, mediaUrl!, mediaCaption);

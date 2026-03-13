@@ -285,3 +285,93 @@ async function sendMediaViaMetaCloud(
     return { success: false, error: `Meta Cloud ${mediaType} send failed: ${err}` };
   }
 }
+
+// ========================================
+// Media Upload API — upload file to Meta and get media_id
+// ========================================
+
+/**
+ * Upload a media file to Meta's Media API, returning a reusable media_id.
+ * This is more reliable for audio because Meta handles format validation internally.
+ */
+export async function uploadMediaToMeta(
+  config: ChannelConfig,
+  fileUrl: string,
+  mimeType: string,
+): Promise<{ success: boolean; mediaId?: string; error?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  try {
+    // 1. Download the file from storage
+    const fileRes = await fetch(fileUrl);
+    if (!fileRes.ok) {
+      return { success: false, error: `Failed to download file: ${fileRes.status}` };
+    }
+    const fileBlob = await fileRes.blob();
+
+    // 2. Upload to Meta Media API using multipart/form-data
+    const formData = new FormData();
+    formData.append('messaging_product', 'whatsapp');
+    formData.append('type', mimeType);
+    formData.append('file', new Blob([await fileBlob.arrayBuffer()], { type: mimeType }), 'audio.ogg');
+
+    const uploadRes = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/media`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: formData,
+    });
+
+    if (!uploadRes.ok) {
+      const text = await uploadRes.text();
+      return { success: false, error: `Meta Media Upload error ${uploadRes.status}: ${text}` };
+    }
+
+    const data = await uploadRes.json();
+    return { success: true, mediaId: data?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Media Upload failed: ${err}` };
+  }
+}
+
+/**
+ * Send an audio message using a pre-uploaded media_id instead of a direct link.
+ */
+export async function sendAudioByIdViaMetaCloud(
+  config: ChannelConfig,
+  to: string,
+  mediaId: string,
+): Promise<{ success: boolean; error?: string; messageId?: string }> {
+  if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
+    return { success: false, error: 'Meta Cloud not configured' };
+  }
+
+  try {
+    const res = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${config.metaAccessToken}`,
+      },
+      body: JSON.stringify({
+        messaging_product: 'whatsapp',
+        to,
+        type: 'audio',
+        audio: { id: mediaId },
+      }),
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      return { success: false, error: `Meta API audio-by-id error ${res.status}: ${text}` };
+    }
+
+    const data = await res.json();
+    return { success: true, messageId: data?.messages?.[0]?.id };
+  } catch (err) {
+    return { success: false, error: `Meta Cloud audio-by-id send failed: ${err}` };
+  }
+}
