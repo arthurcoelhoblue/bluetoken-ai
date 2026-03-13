@@ -10,6 +10,8 @@ interface AuthContextType {
   profile: UserProfile | null;
   roles: UserRole[];
   isLoading: boolean;
+  /** True only after session has been validated against the backend */
+  isSessionVerified: boolean;
   isAuthenticated: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password: string, nome: string) => Promise<{ error: Error | null }>;
@@ -23,6 +25,18 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
+const SESSION_VERIFY_TIMEOUT_MS = 5000;
+
+/** Race a promise against a timeout. Resolves with the result or rejects on timeout. */
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
+    promise.then(
+      (v) => { clearTimeout(timer); resolve(v); },
+      (e) => { clearTimeout(timer); reject(e); },
+    );
+  });
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
@@ -30,12 +44,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSessionVerified, setIsSessionVerified] = useState(false);
 
   const clearState = useCallback(() => {
     setUser(null);
     setSession(null);
     setProfile(null);
     setRoles([]);
+    setIsSessionVerified(false);
   }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
@@ -103,13 +119,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    console.log('[Auth] Bootstrap start');
+    console.info('[Auth] Bootstrap start');
     let bootstrapDone = false;
 
-    const finishBootstrap = () => {
+    const finishBootstrap = (label: string) => {
       if (!bootstrapDone) {
         bootstrapDone = true;
         setIsLoading(false);
+        console.info(`[Auth] Bootstrap finished: ${label}`);
       }
     };
 
@@ -117,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const timeoutId = setTimeout(() => {
       if (!bootstrapDone) {
         console.warn('[Auth] Bootstrap timeout reached, forcing isLoading=false');
-        finishBootstrap();
+        finishBootstrap('timeout');
       }
     }, AUTH_BOOTSTRAP_TIMEOUT_MS);
 
@@ -143,42 +160,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // 2. Check for existing session with error handling
+    // 2. Check for existing session with BACKEND VALIDATION
     const initSession = async () => {
       try {
         const { data: { session: existingSession }, error } = await supabase.auth.getSession();
 
         if (error) {
           console.error('[Auth] getSession error:', error.message);
-          // Try local sign-out to clear corrupted tokens
-          try {
-            await supabase.auth.signOut({ scope: 'local' });
-          } catch {
-            // Ignore
-          }
+          try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
           clearState();
-          finishBootstrap();
+          finishBootstrap('getSession_error');
           return;
         }
 
-        setSession(existingSession);
-        setUser(existingSession?.user ?? null);
+        if (!existingSession) {
+          // No session — user is not logged in
+          clearState();
+          finishBootstrap('no_session');
+          return;
+        }
 
-        if (existingSession?.user) {
+        // CRITICAL: Validate session against backend with timeout
+        try {
+          const { data: { user: verifiedUser }, error: userError } = await withTimeout(
+            supabase.auth.getUser(),
+            SESSION_VERIFY_TIMEOUT_MS,
+            'getUser'
+          );
+
+          if (userError || !verifiedUser) {
+            console.warn('[Auth] Session invalid/expired, clearing. Error:', userError?.message);
+            try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
+            clearState();
+            finishBootstrap('stale_session_cleared');
+            return;
+          }
+
+          // Session is verified
+          setSession(existingSession);
+          setUser(verifiedUser);
+          setIsSessionVerified(true);
+          console.info('[Auth] Session verified for user:', verifiedUser.id);
+
           // Fetch profile but don't block bootstrap on it
           try {
-            await fetchProfile(existingSession.user.id);
+            await fetchProfile(verifiedUser.id);
           } catch (profileErr) {
             console.error('[Auth] Profile fetch failed during bootstrap:', profileErr);
           }
-        }
 
-        finishBootstrap();
-        console.log('[Auth] Bootstrap success');
+          finishBootstrap('success');
+        } catch (verifyErr) {
+          console.warn('[Auth] Session verification failed/timed out:', verifyErr);
+          // Don't clear session on timeout — user might just have slow network
+          // But still unblock the UI
+          setSession(existingSession);
+          setUser(existingSession.user);
+          setIsSessionVerified(true); // Trust local session on timeout
+          finishBootstrap('verify_timeout_fallback');
+        }
       } catch (err) {
         console.error('[Auth] Bootstrap critical error:', err);
         clearState();
-        finishBootstrap();
+        finishBootstrap('critical_error');
       }
     };
 
@@ -192,6 +236,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInWithEmail = async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error) setIsSessionVerified(true);
     return { error: error as Error | null };
   };
 
@@ -242,6 +287,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     roles,
     isLoading,
+    isSessionVerified,
     isAuthenticated: !!session && !!user,
     signInWithEmail,
     signUpWithEmail,
