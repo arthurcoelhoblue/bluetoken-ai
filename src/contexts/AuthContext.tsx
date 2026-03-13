@@ -96,6 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('[Auth] Error in fetchProfile:', error);
+    } finally {
+      setProfileLoaded(true);
     }
   }, []);
 
