@@ -13,13 +13,28 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+function isChunkError(error: Error): boolean {
+  const msg = error.message || '';
+  return (
+    msg.includes('Failed to fetch dynamically imported module') ||
+    msg.includes('Loading chunk') ||
+    msg.includes('Loading CSS chunk') ||
+    msg.includes('Importing a module script failed')
+  );
+}
+
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
     this.state = { hasError: false, error: null };
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): ErrorBoundaryState | null {
+    // Let chunk errors bubble up to ChunkErrorBoundary for auto-reload
+    if (isChunkError(error)) {
+      console.info('[ErrorBoundary] Chunk error detected, re-throwing to ChunkErrorBoundary');
+      throw error;
+    }
     return { hasError: true, error };
   }
 
