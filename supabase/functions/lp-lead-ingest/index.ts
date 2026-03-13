@@ -488,10 +488,20 @@ Deno.serve(async (req) => {
 
         // --- Fire-and-forget: push to Mautic + SGT in parallel ---
         const leadWithNormalizedEmail = { ...lead, email };
-        const [mauticResult, sgtResult] = await Promise.allSettled([
-          pushToMautic(leadWithNormalizedEmail),
+        const mauticCfg = await getMauticConfig(supabase, empresa);
+        const pushPromises: Promise<any>[] = [
           pushToSGT(leadWithNormalizedEmail, empresa),
-        ]);
+        ];
+        if (mauticCfg) {
+          pushPromises.unshift(pushToMautic(leadWithNormalizedEmail, mauticCfg));
+        } else {
+          log.warn("Mautic not configured for empresa, skipping push", { empresa });
+        }
+        const [mauticResult, sgtResult] = await Promise.allSettled(
+          mauticCfg
+            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg), pushToSGT(leadWithNormalizedEmail, empresa)]
+            : [Promise.resolve({ status: "skipped" }), pushToSGT(leadWithNormalizedEmail, empresa)]
+        );
 
         const mauticStatus = mauticResult.status === "fulfilled" ? mauticResult.value.status : "error";
         const sgtStatus = sgtResult.status === "fulfilled" ? sgtResult.value.status : "error";
