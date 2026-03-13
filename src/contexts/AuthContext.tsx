@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
     setRoles([]);
     setIsSessionVerified(false);
+    setProfileLoaded(false);
   }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
