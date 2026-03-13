@@ -539,8 +539,23 @@ serve(async (req) => {
                   metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, audioUrl, mediaFilename || 'audio.webm', mediaCaption);
                 }
               } else {
-                // OGG (Firefox) or M4A (Chrome 124+) — send as native audio
-                metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
+                // OGG or M4A — try direct send first, if scrutiny fails try Media API upload
+                const isM4a = lowerUrl.includes('.m4a') || lowerUrl.includes('.mp4') || lowerUrl.includes('audio_mp4');
+                if (isM4a) {
+                  // M4A from Chrome MediaRecorder may fail direct URL scrutiny — upload via Media API
+                  log.info('M4A detected, attempting Media API upload', { url: audioUrl.slice(-50) });
+                  const uploadResult = await uploadMediaToMeta(metaConfig, audioUrl, 'audio/mp4', 'audio.m4a');
+                  if (uploadResult.success && uploadResult.mediaId) {
+                    log.info('M4A Media upload succeeded', { mediaId: uploadResult.mediaId });
+                    metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
+                  } else {
+                    log.warn('M4A Media upload failed, trying direct send', { error: uploadResult.error });
+                    metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
+                  }
+                } else {
+                  // OGG (Firefox) — send directly
+                  metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
+                }
               }
               break;
             }
