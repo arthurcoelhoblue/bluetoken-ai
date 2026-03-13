@@ -921,8 +921,9 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       observerRef.current?.disconnect();
+      stopWatchdog();
     };
-  }, []);
+  }, [stopWatchdog]);
 
   const dial = useCallback((number: string) => {
     if (status !== 'ready') { console.warn('[WebRTC] Cannot dial, status:', status); return; }
