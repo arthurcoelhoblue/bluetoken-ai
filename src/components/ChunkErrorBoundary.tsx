@@ -1,118 +1,88 @@
-import React from 'react';
+import { Component, ErrorInfo, ReactNode } from 'react';
+
+interface Props {
+  children: ReactNode;
+}
 
 interface State {
   hasError: boolean;
-  retryCount: number;
+  isChunkError: boolean;
+  error: Error | null;
 }
 
-const STORAGE_KEY = 'chunk-error-reload';
-const MAX_AUTO_RELOADS = 2;
-const WINDOW_MS = 60_000;
-
-export class ChunkErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
-  state: State = { hasError: false, retryCount: 0 };
-
-  static getDerivedStateFromError(error: Error): State | null {
-    if (isRecoverableError(error)) {
-      return { hasError: true, retryCount: getReloadCount() };
-    }
-    throw error; // re-throw non-recoverable errors to outer boundaries
-  }
-
-  componentDidCatch(error: Error) {
-    if (!isRecoverableError(error)) return;
-
-    const count = getReloadCount();
-    console.warn(`[ChunkError] Recoverable error (attempt ${count + 1}/${MAX_AUTO_RELOADS}):`, error.message);
-
-    if (count < MAX_AUTO_RELOADS) {
-      console.info('[ChunkError] Auto-reloading...');
-      incrementReloadCount();
-      window.location.reload();
-    } else {
-      console.warn('[ChunkError] Max auto-reloads reached, showing manual recovery UI');
-    }
-  }
-
-  handleHardReload = () => {
-    console.info('[ChunkError] Hard reload with cache clear');
-    clearReloadCount();
-    if ('caches' in window) {
-      caches.keys().then(names => {
-        names.forEach(name => caches.delete(name));
-      });
-    }
-    window.location.reload();
-  };
-
-  render() {
-    if (this.state.hasError && this.state.retryCount >= MAX_AUTO_RELOADS) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
-          <p className="text-muted-foreground">
-            Houve um erro ao carregar a página. Uma nova versão pode estar disponível.
-          </p>
-          <div className="flex flex-col gap-2">
-            <button
-              className="px-4 py-2 rounded bg-primary text-primary-foreground"
-              onClick={this.handleHardReload}
-            >
-              Limpar cache e recarregar
-            </button>
-          </div>
-        </div>
-      );
-    }
-
-    if (this.state.hasError) {
-      return (
-        <div className="flex flex-col items-center justify-center min-h-screen gap-4 p-8 text-center">
-          <p className="text-muted-foreground">Recarregando...</p>
-        </div>
-      );
-    }
-
-    return this.props.children;
-  }
-}
-
-function isChunkError(error: Error): boolean {
-  const msg = error.message || '';
+function isChunkLoadError(error: Error): boolean {
+  const msg = error.message?.toLowerCase() || '';
   return (
-    msg.includes('Failed to fetch dynamically imported module') ||
-    msg.includes('Loading chunk') ||
-    msg.includes('Loading CSS chunk') ||
-    msg.includes('Importing a module script failed')
+    msg.includes('failed to fetch dynamically imported module') ||
+    msg.includes('loading chunk') ||
+    msg.includes('loading css chunk') ||
+    msg.includes('dynamically imported module')
   );
 }
 
-function isContextMismatchError(error: Error): boolean {
-  const msg = error.message || '';
-  return msg.includes('must be used within');
-}
-
-/** Chunk errors + context mismatches are both recoverable via reload */
-function isRecoverableError(error: Error): boolean {
-  return isChunkError(error) || isContextMismatchError(error);
-}
-
-function getReloadCount(): number {
-  try {
-    const data = sessionStorage.getItem(STORAGE_KEY);
-    if (!data) return 0;
-    const { count, timestamp } = JSON.parse(data);
-    if (Date.now() - timestamp > WINDOW_MS) return 0;
-    return count || 0;
-  } catch {
-    return 0;
+export class ChunkErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = { hasError: false, isChunkError: false, error: null };
   }
-}
 
-function incrementReloadCount(): void {
-  const current = getReloadCount();
-  sessionStorage.setItem(STORAGE_KEY, JSON.stringify({ count: current + 1, timestamp: Date.now() }));
-}
+  static getDerivedStateFromError(error: Error): State {
+    // NUNCA fazer throw aqui — isso mata o React inteiro
+    return {
+      hasError: true,
+      isChunkError: isChunkLoadError(error),
+      error,
+    };
+  }
 
-function clearReloadCount(): void {
-  sessionStorage.removeItem(STORAGE_KEY);
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('[ChunkErrorBoundary]', error.message, errorInfo.componentStack);
+  }
+
+  handleReload = () => {
+    window.location.reload();
+  };
+
+  handleClearAndReload = () => {
+    sessionStorage.clear();
+    window.location.href = '/auth';
+  };
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+
+    if (this.state.isChunkError) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', padding: '20px', textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '12px', color: '#1E293B' }}>Nova versão disponível</h2>
+          <p style={{ color: '#64748B', marginBottom: '24px', maxWidth: '400px' }}>
+            Uma atualização foi publicada. Clique abaixo para carregar a versão mais recente.
+          </p>
+          <button onClick={this.handleReload} style={{ padding: '12px 24px', backgroundColor: '#1A73E8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>
+            Atualizar agora
+          </button>
+        </div>
+      );
+    }
+
+    // Erro não-chunk: mostrar fallback genérico, NUNCA auto-reload
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', fontFamily: 'Arial, sans-serif', padding: '20px', textAlign: 'center' }}>
+        <h2 style={{ marginBottom: '12px', color: '#1E293B' }}>Algo deu errado</h2>
+        <p style={{ color: '#64748B', marginBottom: '24px', maxWidth: '400px' }}>
+          {this.state.error?.message || 'Erro inesperado na aplicação'}
+        </p>
+        <div style={{ display: 'flex', gap: '12px' }}>
+          <button onClick={this.handleClearAndReload} style={{ padding: '12px 24px', backgroundColor: '#1A73E8', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>
+            Voltar ao login
+          </button>
+          <button onClick={this.handleReload} style={{ padding: '12px 24px', backgroundColor: '#f3f4f6', color: '#333', border: '1px solid #ddd', borderRadius: '8px', cursor: 'pointer', fontSize: '16px' }}>
+            Recarregar
+          </button>
+        </div>
+      </div>
+    );
+  }
 }
