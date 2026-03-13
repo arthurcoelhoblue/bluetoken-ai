@@ -1,40 +1,98 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Diagnostico: Causa Raiz Identificada
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-O problema esta no `ErrorBoundary.tsx`, linhas 39-47. O padrao de **re-throw dentro de `getDerivedStateFromError`** esta quebrando o app inteiro.
+### Implementação
 
-```text
-ErrorBoundary.getDerivedStateFromError(error)
-  → detecta chunk error
-  → throw error   ← PROBLEMA: React NAO garante propagacao correta
-  → app crasha completamente
-  → browser mostra "erro inesperado" (pagina em branco)
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
+
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
 ```
 
-React espera que `getDerivedStateFromError` **retorne um objeto de estado**, nao lance excecoes. Quando lanca, o comportamento e indefinido: em vez de propagar para o `ChunkErrorBoundary` pai, o React crasha o app inteiro. Isso explica a mensagem "erro ocorreu inesperadamente" que o browser mostra — nao e o ErrorBoundary UI, e o proprio browser dizendo que o JavaScript crashou.
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-Confirmo que os logs trace **estao no codigo** (linhas 31-36 do AuthContext.tsx, usando `console.info`), mas como o app crasha antes de renderizar, eles podem nao aparecer no console do usuario.
+---
 
-## Correcao (1 arquivo principal + 1 ajuste menor)
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-### 1. `src/components/ErrorBoundary.tsx` — Correcao critica
+### Status: ✅ Implementado
 
-**Remover os `throw error`** de `getDerivedStateFromError`. Em vez de re-throw, tratar chunk errors e context mismatches **diretamente** dentro do ErrorBoundary:
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-- Adicionar estado `isRecoverable: boolean` ao state
-- Se chunk error ou context mismatch: setar `isRecoverable = true` e disparar auto-reload no `componentDidCatch` (mesma logica do ChunkErrorBoundary: max 2 reloads via sessionStorage, depois UI de recuperacao manual)
-- Se erro normal: manter comportamento atual (mostrar "Algo deu errado")
-- Resultado: zero throws em getDerivedStateFromError, zero crashes do React
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-### 2. `src/components/ChunkErrorBoundary.tsx` — Manter como safety net
+---
 
-Sem mudancas. Continua como camada externa de seguranca para qualquer erro que escape o ErrorBoundary (cenario improvavel apos a correcao, mas defesa em profundidade).
+## Plano: Push de leads para Mautic e SGT em tempo real
 
-### Resultado esperado
-- Chunk errors → auto-reload automatico direto no ErrorBoundary (sem re-throw)
-- Context mismatches → auto-reload automatico (mesmo tratamento)
-- Erros normais → UI "Algo deu errado" com opcao de recarregar
-- **Zero cenarios de crash total do app**
-- Traces de auth continuam funcionando normalmente
+### Status: ✅ Implementado
 
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
+
+---
+
+## Plano: Módulo Playbook de Vendas
+
+### Status: 🔧 Em implementação — Fase 1 concluída
+
+### Fase 1 — Fundação ✅
+- 4 enums: `playbook_step_tipo`, `playbook_executor`, `playbook_run_status`, `playbook_evento_tipo`
+- 4 tabelas: `playbooks`, `playbook_steps`, `deal_playbook_runs`, `deal_playbook_events`
+- RLS com `has_role()` e `get_user_empresas()`
+- Trigger: `deal_playbook_events → deal_activities` (timeline automática)
+- Trigger: playbook ATIVA → pausa cadências do deal automaticamente
+- 3 views de performance: `v_playbook_stats`, `v_playbook_step_performance`, `v_playbook_vendedor_aderencia`
+- Tipos TypeScript: `src/types/playbook.ts`
+
+### Fase 2 — Motor de Execução (próximo)
+- Edge Function `playbook-runner` (CRON 5min)
+- Hooks: `usePlaybookRuns`, `usePlaybookEvents`
+- Interop cadência × playbook no `cadence-runner`
+
+### Fase 3 — UI (futuro)
+- Página `/playbooks`, Editor drag-and-drop, Timeline no Deal, Badge no Kanban
+
+### Fase 4 — Meu Dia + Notificações + Gamificação (futuro)
+
+### Fase 5 — IA Avançada (futuro)
+- 5.1: Sugestão + Scripts dinâmicos
+- 5.2: Adaptação + Análise
