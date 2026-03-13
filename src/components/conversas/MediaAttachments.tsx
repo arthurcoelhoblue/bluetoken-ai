@@ -118,13 +118,20 @@ export function MediaAttachments({ onMediaReady, disabled }: MediaAttachmentsPro
         if (timerRef.current) clearInterval(timerRef.current);
         setRecordingTime(0);
 
-        const blob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
-        if (blob.size < 500) {
+        const rawBlob = new Blob(chunksRef.current, { type: mediaRecorder.mimeType });
+        if (rawBlob.size < 500) {
           toast({ title: 'Áudio muito curto', variant: 'destructive' });
           return;
         }
-        const ext = mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'webm';
-        await uploadFile(blob, `audio_${Date.now()}.${ext}`, mediaRecorder.mimeType, 'audio');
+
+        // Re-package webm+opus as ogg for WhatsApp compatibility
+        // The underlying codec is already opus — only the container changes
+        const isWebmOpus = mediaRecorder.mimeType.includes('webm') && mediaRecorder.mimeType.includes('opus');
+        const finalMime = isWebmOpus ? 'audio/ogg; codecs=opus' : mediaRecorder.mimeType;
+        const finalExt = isWebmOpus ? 'ogg' : (mediaRecorder.mimeType.includes('ogg') ? 'ogg' : 'webm');
+        const finalBlob = isWebmOpus ? new Blob(chunksRef.current, { type: 'audio/ogg; codecs=opus' }) : rawBlob;
+
+        await uploadFile(finalBlob, `audio_${Date.now()}.${finalExt}`, finalMime, 'audio');
       };
 
       mediaRecorder.start(250);

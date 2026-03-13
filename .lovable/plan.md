@@ -1,41 +1,69 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Problema: Áudio outbound não chega no destinatário
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-### Diagnóstico
+### Implementação
 
-Os áudios gravados no navegador (Chrome) são salvos como `audio/webm` porque Chrome **não suporta** gravação em `audio/ogg; codecs=opus`. O MediaAttachments tenta `ogg` primeiro, mas cai no fallback `webm`.
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-O Meta Cloud API **aceita** o request (retorna `wamid`) mas o WhatsApp **não entrega** arquivos `audio/webm` ao destinatário. Formatos suportados pelo WhatsApp: `audio/ogg` (opus), `audio/aac`, `audio/mp4`, `audio/mpeg`, `audio/amr`.
+### Webhook URL (configurar no Stripe Dashboard)
+```
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
+```
 
-Confirmação nos dados:
-- Mensagem `9728f7c9` → `estado: ENVIADO`, `whatsapp_message_id` presente, mas `media_url` termina em `.webm`
-- Mensagens de texto para o mesmo número chegam com `estado: LIDO`
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
-### Correção
+---
 
-Converter o áudio `webm` para `ogg` (opus) **no edge function `whatsapp-send`** antes de enviar para a Meta API, usando FFmpeg via Deno. Alternativa mais simples: usar a própria Meta Media Upload API que aceita o blob e faz conversão interna.
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-**Abordagem escolhida**: Converter no lado do cliente antes do upload. O `MediaRecorder` do Chrome grava `webm` com codec opus — o container é webm mas o codec já é opus. Basta re-empacotar como `.ogg` usando a lib `muxer` ou, mais simples, renomear o MIME type para `audio/ogg` no upload ao Supabase Storage (o codec interno já é opus, e o WhatsApp aceita).
+### Status: ✅ Implementado
 
-Na prática, a forma mais confiável é:
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-**Arquivo: `src/components/conversas/MediaAttachments.tsx`**
-- Na função `onstop` do MediaRecorder, quando o mimeType é `audio/webm; codecs=opus`, re-criar o Blob com type `audio/ogg; codecs=opus` e salvar com extensão `.ogg`
-- Isso funciona porque o codec interno (opus) é o mesmo — o WhatsApp decodifica pelo codec, não pelo container
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-**Arquivo: `supabase/functions/whatsapp-send/index.ts`**
-- Adicionar fallback: se `media_url` termina em `.webm`, fazer upload via Meta Media API com MIME type `audio/ogg` antes de enviar
-- Alternativamente, usar o endpoint de upload de mídia da Meta (`/{phone_number_id}/media`) que aceita o arquivo e retorna um `media_id`, depois enviar a mensagem referenciando o `media_id` em vez de link direto
+---
 
-### Solução recomendada (mais robusta)
+## Plano: Push de leads para Mautic e SGT em tempo real
 
-1. **`MediaAttachments.tsx`**: Quando gravação é `webm+opus`, salvar como `.ogg` com contentType `audio/ogg; codecs=opus`
-2. **`whatsapp-send/index.ts`**: Para áudios, usar Meta Media Upload API (upload o arquivo → receber `media_id` → enviar mensagem com `media_id`) em vez de link direto, garantindo que a Meta processe o formato corretamente
+### Status: ✅ Implementado
 
-| Arquivo | Ação |
-|---|---|
-| `src/components/conversas/MediaAttachments.tsx` | Re-empacotar webm+opus como ogg no upload |
-| `supabase/functions/whatsapp-send/index.ts` | Usar Media Upload API da Meta para áudios |
-| `supabase/functions/_shared/channel-resolver.ts` | Adicionar helper `uploadMediaToMeta` + `sendAudioByIdViaMetaCloud` |
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
 
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
