@@ -60,6 +60,16 @@ window.addEventListener('unhandledrejection', (e) => {
   }
 });
 
+// Catch script/module load failures that surface as window error
+window.addEventListener('error', (e) => {
+  const msg = e.message || e.error?.message || '';
+  if (isChunkLikeError(msg)) {
+    console.warn('[GlobalReload] Chunk-like error in window.error', msg);
+    e.preventDefault();
+    doControlledReload();
+  }
+});
+
 createRoot(document.getElementById("root")!).render(<App />);
 
 // Start Web Vitals monitoring after render
