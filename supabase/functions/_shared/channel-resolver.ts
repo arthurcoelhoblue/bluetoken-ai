@@ -298,6 +298,7 @@ export async function uploadMediaToMeta(
   config: ChannelConfig,
   fileUrl: string,
   mimeType: string,
+  filename: string = 'media',
 ): Promise<{ success: boolean; mediaId?: string; error?: string }> {
   if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
     return { success: false, error: 'Meta Cloud not configured' };
