@@ -654,7 +654,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
          combined.includes('call confirmed') || combined.includes('call accepted') ||
          combined.includes('in_call') || combined.includes('session confirmed') ||
          combined.includes('peerconnection:ready')) &&
-        canTransitionToActive(statusRef.current)
+        canTransitionToActive(statusRef.current, pendingOutboundRef.current)
       ) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
         autoAnswerDoneRef.current = true;
