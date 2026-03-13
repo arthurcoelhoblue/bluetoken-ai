@@ -344,7 +344,7 @@ serve(async (req) => {
 
     if (activeChannel === 'meta_cloud') {
       log.info('Roteando via META CLOUD', { empresa, isTemplateSend, isMediaSend });
-      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud, uploadMediaToMeta, sendAudioByIdViaMetaCloud } = await import('../_shared/channel-resolver.ts');
+      const { resolveMetaCloudConfig, sendTextViaMetaCloud, sendTemplateViaMetaCloud, sendImageViaMetaCloud, sendDocumentViaMetaCloud, sendAudioViaMetaCloud, sendVideoViaMetaCloud } = await import('../_shared/channel-resolver.ts');
       const metaConfig = await resolveMetaCloudConfig(supabase, empresa, connectionId);
 
       // Save from_phone_number_id for audit
