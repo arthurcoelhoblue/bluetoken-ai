@@ -943,6 +943,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     incomingDetectedRef.current = false;
     autoAnswerDoneRef.current = false;
     pendingOutboundRef.current = false;
+    stopWatchdog();
 
     closeActiveCallRecord(callId);
     clickHangupButton();
@@ -954,7 +955,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } catch { /* ignore */ }
     });
     setStatus('ready');
-  }, [closeActiveCallRecord]);
+  }, [closeActiveCallRecord, stopWatchdog]);
 
   const answer = useCallback(() => {
     triggerAutoAnswer();
