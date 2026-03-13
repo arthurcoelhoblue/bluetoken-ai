@@ -22,7 +22,7 @@ export function ProtectedRoute({
   requiredRoles,
   requiredPermission 
 }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, hasPermission, profile } = useAuth();
+  const { isAuthenticated, isLoading, hasPermission, profile, profileLoaded, roles } = useAuth();
   const location = useLocation();
   const isAdmin = useIsAdmin();
   const { data: permissions, isLoading: permissionsLoading, isError: permissionsError } = useScreenPermissions();

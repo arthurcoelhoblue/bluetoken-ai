@@ -17,8 +17,8 @@ export function useScreenPermissions() {
   const isAdmin = roles.includes('ADMIN');
 
   return useQuery({
-    queryKey: ['screen-permissions', user?.id, isAdmin],
-    enabled: !!user,
+    queryKey: ['screen-permissions', user?.id, roles.join(',')],
+    enabled: !!user && roles.length > 0,
     queryFn: async (): Promise<PermissionsMap> => {
       // ADMIN role → full access immediately, no DB call needed
       if (isAdmin) {

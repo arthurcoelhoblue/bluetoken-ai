@@ -12,6 +12,8 @@ interface AuthContextType {
   isLoading: boolean;
   /** True only after session has been validated against the backend */
   isSessionVerified: boolean;
+  /** True after fetchProfile has completed (even if profile is null) */
+  profileLoaded: boolean;
   isAuthenticated: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password: string, nome: string) => Promise<{ error: Error | null }>;
