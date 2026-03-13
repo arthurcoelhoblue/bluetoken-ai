@@ -268,6 +268,10 @@ export function ZadarmaPhoneWidget() {
         console.log('[ZadarmaWidget] click_to_call success:', data);
         const pbxId = `frontend_${data?.time || Date.now()}`;
         createCallRecord(dialNumber, pbxId, dialDealId);
+        // Signal WebRTC hook to auto-answer the incoming PBX callback
+        if (isWebRTCMode) {
+          webrtc.setPendingOutbound(true);
+        }
         toast.success(isWebRTCMode
           ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
           : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
@@ -348,6 +352,10 @@ export function ZadarmaPhoneWidget() {
           console.log('[ZadarmaWidget] click_to_call success:', data);
           const pbxId = `frontend_${data?.time || Date.now()}`;
           createCallRecord(number, pbxId, dealId);
+          // Signal WebRTC hook to auto-answer the incoming PBX callback
+          if (isWebRTCMode) {
+            webrtc.setPendingOutbound(true);
+          }
           toast.success(isWebRTCMode
             ? 'Chamada iniciada. O softphone WebRTC vai tocar em instantes.'
             : 'Callback solicitado. Atenda seu ramal para conectar a chamada.');
