@@ -7,23 +7,23 @@ interface State {
 
 const STORAGE_KEY = 'chunk-error-reload';
 const MAX_AUTO_RELOADS = 2;
-const WINDOW_MS = 60_000; // 1 minute window
+const WINDOW_MS = 60_000;
 
 export class ChunkErrorBoundary extends React.Component<{ children: React.ReactNode }, State> {
   state: State = { hasError: false, retryCount: 0 };
 
   static getDerivedStateFromError(error: Error): State | null {
-    if (isChunkError(error)) {
+    if (isRecoverableError(error)) {
       return { hasError: true, retryCount: getReloadCount() };
     }
-    throw error; // re-throw non-chunk errors to outer boundaries
+    throw error; // re-throw non-recoverable errors to outer boundaries
   }
 
   componentDidCatch(error: Error) {
-    if (!isChunkError(error)) return;
+    if (!isRecoverableError(error)) return;
 
     const count = getReloadCount();
-    console.warn(`[ChunkError] Chunk load failed (attempt ${count + 1}/${MAX_AUTO_RELOADS}):`, error.message);
+    console.warn(`[ChunkError] Recoverable error (attempt ${count + 1}/${MAX_AUTO_RELOADS}):`, error.message);
 
     if (count < MAX_AUTO_RELOADS) {
       console.info('[ChunkError] Auto-reloading...');
@@ -37,7 +37,6 @@ export class ChunkErrorBoundary extends React.Component<{ children: React.ReactN
   handleHardReload = () => {
     console.info('[ChunkError] Hard reload with cache clear');
     clearReloadCount();
-    // Clear caches if available
     if ('caches' in window) {
       caches.keys().then(names => {
         names.forEach(name => caches.delete(name));
@@ -85,6 +84,16 @@ function isChunkError(error: Error): boolean {
     msg.includes('Loading CSS chunk') ||
     msg.includes('Importing a module script failed')
   );
+}
+
+function isContextMismatchError(error: Error): boolean {
+  const msg = error.message || '';
+  return msg.includes('must be used within');
+}
+
+/** Chunk errors + context mismatches are both recoverable via reload */
+function isRecoverableError(error: Error): boolean {
+  return isChunkError(error) || isContextMismatchError(error);
 }
 
 function getReloadCount(): number {
