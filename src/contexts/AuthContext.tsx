@@ -47,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSessionVerified, setIsSessionVerified] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const clearState = useCallback(() => {
     setUser(null);
