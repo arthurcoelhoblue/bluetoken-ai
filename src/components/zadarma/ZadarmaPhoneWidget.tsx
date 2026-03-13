@@ -308,6 +308,7 @@ export function ZadarmaPhoneWidget() {
     };
     window.addEventListener('bluecrm:autoAnswerTimeout', handler);
     return () => window.removeEventListener('bluecrm:autoAnswerTimeout', handler);
+  }, [phoneState]);
 
   // Call timer + speech recognition lifecycle
   useEffect(() => {
