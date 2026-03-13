@@ -125,10 +125,11 @@ export function MediaAttachments({ onMediaReady, disabled }: MediaAttachmentsPro
           return;
         }
 
-        // Keep the real container format — do NOT re-label WebM as OGG
+        // Keep the real container format
         const isOgg = mediaRecorder.mimeType.includes('ogg');
-        const ext = isOgg ? 'ogg' : 'webm';
-        const mime = isOgg ? 'audio/ogg; codecs=opus' : 'audio/webm';
+        const isMp4 = mediaRecorder.mimeType.includes('mp4');
+        const ext = isOgg ? 'ogg' : isMp4 ? 'm4a' : 'webm';
+        const mime = isOgg ? 'audio/ogg; codecs=opus' : isMp4 ? 'audio/mp4' : 'audio/webm';
 
         await uploadFile(rawBlob, `audio_${Date.now()}.${ext}`, mime, 'audio');
       };
