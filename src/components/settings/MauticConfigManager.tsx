@@ -171,27 +171,27 @@ export function MauticConfigManager() {
       </div>
 
       {empresas?.map((emp) => {
-        const form = getForm(emp.slug);
-        const existingConfig = configs?.find((c) => c.empresa === emp.slug);
-        const isDirty = dirty[emp.slug];
+        const form = getForm(emp.id);
+        const existingConfig = configs?.find((c) => c.empresa === emp.id);
+        const isDirty = dirty[emp.id];
 
         return (
-          <Card key={emp.slug}>
+          <Card key={emp.id}>
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <CardTitle className="text-base">{emp.nome}</CardTitle>
+                  <CardTitle className="text-base">{emp.label}</CardTitle>
                   {existingConfig?.enabled && (
                     <Badge variant="default" className="text-xs">Ativo</Badge>
                   )}
                 </div>
                 <Switch
                   checked={form.enabled}
-                  onCheckedChange={(enabled) => updateForm(emp.slug, { enabled })}
+                  onCheckedChange={(enabled) => updateForm(emp.id, { enabled })}
                 />
               </div>
               <CardDescription>
-                {emp.slug}
+                {emp.id}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -201,7 +201,7 @@ export function MauticConfigManager() {
                   <Input
                     placeholder="https://mautic.exemplo.com"
                     value={form.mautic_url}
-                    onChange={(e) => updateForm(emp.slug, { mautic_url: e.target.value })}
+                    onChange={(e) => updateForm(emp.id, { mautic_url: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
@@ -209,7 +209,7 @@ export function MauticConfigManager() {
                   <Input
                     placeholder="Ex: 5"
                     value={form.segment_id}
-                    onChange={(e) => updateForm(emp.slug, { segment_id: e.target.value })}
+                    onChange={(e) => updateForm(emp.id, { segment_id: e.target.value })}
                   />
                 </div>
               </div>
@@ -220,26 +220,26 @@ export function MauticConfigManager() {
                   <Input
                     placeholder="Usuário do Mautic"
                     value={form.mautic_username}
-                    onChange={(e) => updateForm(emp.slug, { mautic_username: e.target.value })}
+                    onChange={(e) => updateForm(emp.id, { mautic_username: e.target.value })}
                   />
                 </div>
                 <div className="space-y-2">
                   <Label>Password</Label>
                   <div className="relative">
                     <Input
-                      type={showPassword[emp.slug] ? "text" : "password"}
+                      type={showPassword[emp.id] ? "text" : "password"}
                       placeholder="Senha do Mautic"
                       value={form.mautic_password}
-                      onChange={(e) => updateForm(emp.slug, { mautic_password: e.target.value })}
+                      onChange={(e) => updateForm(emp.id, { mautic_password: e.target.value })}
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
                       className="absolute right-0 top-0 h-full"
-                      onClick={() => setShowPassword((s) => ({ ...s, [emp.slug]: !s[emp.slug] }))}
+                      onClick={() => setShowPassword((s) => ({ ...s, [emp.id]: !s[emp.id] }))}
                     >
-                      {showPassword[emp.slug] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword[emp.id] ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </Button>
                   </div>
                 </div>
@@ -253,21 +253,21 @@ export function MauticConfigManager() {
                     <Input
                       placeholder="Campo local (ex: cpf)"
                       value={field.local}
-                      onChange={(e) => updateCustomField(emp.slug, idx, "local", e.target.value)}
+                      onChange={(e) => updateCustomField(emp.id, idx, "local", e.target.value)}
                       className="flex-1"
                     />
                     <span className="text-muted-foreground">→</span>
                     <Input
                       placeholder="Campo Mautic (ex: custom_cpf)"
                       value={field.mautic}
-                      onChange={(e) => updateCustomField(emp.slug, idx, "mautic", e.target.value)}
+                      onChange={(e) => updateCustomField(emp.id, idx, "mautic", e.target.value)}
                       className="flex-1"
                     />
                     <Button
                       type="button"
                       variant="ghost"
                       size="icon"
-                      onClick={() => removeCustomField(emp.slug, idx)}
+                      onClick={() => removeCustomField(emp.id, idx)}
                     >
                       <Trash2 className="h-4 w-4 text-destructive" />
                     </Button>
@@ -277,7 +277,7 @@ export function MauticConfigManager() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => addCustomField(emp.slug)}
+                  onClick={() => addCustomField(emp.id)}
                   className="gap-1"
                 >
                   <Plus className="h-3 w-3" />
@@ -287,7 +287,7 @@ export function MauticConfigManager() {
 
               <div className="flex justify-end">
                 <Button
-                  onClick={() => upsertMutation.mutate({ empresa: emp.slug, form })}
+                  onClick={() => upsertMutation.mutate({ empresa: emp.id, form })}
                   disabled={upsertMutation.isPending || !isDirty}
                   className="gap-2"
                 >
