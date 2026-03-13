@@ -5,6 +5,7 @@ import { WhatsAppInlineDetails } from "./WhatsAppInlineDetails";
 import { EmailInlineDetails } from "./EmailInlineDetails";
 import { WhatsAppConnectionsManager } from "./WhatsAppConnectionsManager";
 import { ApiKeysManager } from "./ApiKeysManager";
+import { MauticConfigManager } from "./MauticConfigManager";
 import { INTEGRATIONS, IntegrationConfig } from "@/types/settings";
 import { useSystemSettings } from "@/hooks/useSystemSettings";
 import { useIntegrationHealth } from "@/hooks/useIntegrationHealth";
@@ -116,6 +117,8 @@ export function IntegrationsTab() {
       <WhatsAppConnectionsManager />
 
       <ApiKeysManager />
+
+      <MauticConfigManager />
 
       {perCompanyIntegrations.length > 0 && (
         <div className="space-y-4">

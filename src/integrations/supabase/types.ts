@@ -5544,6 +5544,45 @@ export type Database = {
           },
         ]
       }
+      mautic_company_config: {
+        Row: {
+          created_at: string | null
+          custom_fields: Json | null
+          empresa: string
+          enabled: boolean | null
+          id: string
+          mautic_password: string | null
+          mautic_url: string
+          mautic_username: string | null
+          segment_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          custom_fields?: Json | null
+          empresa: string
+          enabled?: boolean | null
+          id?: string
+          mautic_password?: string | null
+          mautic_url?: string
+          mautic_username?: string | null
+          segment_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          custom_fields?: Json | null
+          empresa?: string
+          enabled?: boolean | null
+          id?: string
+          mautic_password?: string | null
+          mautic_url?: string
+          mautic_username?: string | null
+          segment_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       meeting_scheduling_state: {
         Row: {
           contact_id: string | null

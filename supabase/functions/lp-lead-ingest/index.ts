@@ -58,16 +58,44 @@ interface IngestRequest {
 // Push helpers (fire-and-forget)
 // ========================================
 
-async function pushToMautic(lead: LeadPayload): Promise<{ status: string; mautic_contact_id?: number }> {
+async function getMauticConfig(
+  supabase: ReturnType<typeof createClient>,
+  empresa: string
+): Promise<{ url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> } | null> {
+  // Try per-company config from DB first
+  const { data } = await supabase
+    .from("mautic_company_config")
+    .select("*")
+    .eq("empresa", empresa)
+    .eq("enabled", true)
+    .maybeSingle();
+
+  if (data?.mautic_url && data?.mautic_username && data?.mautic_password) {
+    return {
+      url: data.mautic_url,
+      user: data.mautic_username,
+      pass: data.mautic_password,
+      segmentId: data.segment_id || undefined,
+      customFields: (data.custom_fields as Record<string, string>) || undefined,
+    };
+  }
+
+  // Fallback to env vars
   const mauticUrl = Deno.env.get("MAUTIC_URL");
   const mauticUser = Deno.env.get("MAUTIC_USERNAME");
   const mauticPass = Deno.env.get("MAUTIC_PASSWORD");
 
-  if (!mauticUrl || !mauticUser || !mauticPass) {
-    log.warn("Mautic credentials not configured, skipping push");
-    return { status: "skipped" };
+  if (mauticUrl && mauticUser && mauticPass) {
+    return { url: mauticUrl, user: mauticUser, pass: mauticPass };
   }
 
+  return null;
+}
+
+async function pushToMautic(
+  lead: LeadPayload,
+  mauticCfg: { url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> }
+): Promise<{ status: string; mautic_contact_id?: number }> {
   try {
     const nameParts = (lead.nome || "").split(" ");
     const firstName = nameParts[0] || "";
@@ -88,8 +116,18 @@ async function pushToMautic(lead: LeadPayload): Promise<{ status: string; mautic
     if (lead.utm_content) body.utm_content = lead.utm_content;
     if (lead.utm_term) body.utm_term = lead.utm_term;
 
-    const basicAuth = btoa(`${mauticUser}:${mauticPass}`);
-    const endpoint = `${mauticUrl.replace(/\/$/, "")}/api/contacts/new`;
+    // Custom fields mapping from DB config
+    if (mauticCfg.customFields && lead.campos_extras) {
+      for (const [localField, mauticField] of Object.entries(mauticCfg.customFields)) {
+        const value = lead.campos_extras[localField];
+        if (value !== undefined && value !== null) {
+          body[mauticField] = value;
+        }
+      }
+    }
+
+    const basicAuth = btoa(`${mauticCfg.user}:${mauticCfg.pass}`);
+    const endpoint = `${mauticCfg.url.replace(/\/$/, "")}/api/contacts/new`;
 
     const resp = await fetch(endpoint, {
       method: "POST",
@@ -107,15 +145,30 @@ async function pushToMautic(lead: LeadPayload): Promise<{ status: string; mautic
       return { status: "error" };
     }
 
+    let contactId: number | undefined;
     try {
       const data = JSON.parse(text);
-      const contactId = data?.contact?.id;
-      log.info("Mautic push ok", { email: lead.email, mautic_contact_id: contactId });
-      return { status: "ok", mautic_contact_id: contactId };
-    } catch {
-      log.info("Mautic push ok (no parseable response)", { email: lead.email });
-      return { status: "ok" };
+      contactId = data?.contact?.id;
+    } catch { /* ignore */ }
+
+    // Add to segment if configured
+    if (contactId && mauticCfg.segmentId) {
+      try {
+        await fetch(
+          `${mauticCfg.url.replace(/\/$/, "")}/api/segments/${mauticCfg.segmentId}/contact/${contactId}/add`,
+          {
+            method: "POST",
+            headers: { Authorization: `Basic ${basicAuth}` },
+          }
+        );
+        log.info("Mautic segment add ok", { contactId, segmentId: mauticCfg.segmentId });
+      } catch (segErr) {
+        log.warn("Mautic segment add failed", { error: String(segErr) });
+      }
     }
+
+    log.info("Mautic push ok", { email: lead.email, mautic_contact_id: contactId });
+    return { status: "ok", mautic_contact_id: contactId };
   } catch (err) {
     log.error("Mautic push exception", { error: String(err), email: lead.email });
     return { status: "error" };
@@ -435,10 +488,12 @@ Deno.serve(async (req) => {
 
         // --- Fire-and-forget: push to Mautic + SGT in parallel ---
         const leadWithNormalizedEmail = { ...lead, email };
-        const [mauticResult, sgtResult] = await Promise.allSettled([
-          pushToMautic(leadWithNormalizedEmail),
-          pushToSGT(leadWithNormalizedEmail, empresa),
-        ]);
+        const mauticCfg = await getMauticConfig(supabase, empresa);
+        const [mauticResult, sgtResult] = await Promise.allSettled(
+          mauticCfg
+            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg), pushToSGT(leadWithNormalizedEmail, empresa)]
+            : [Promise.resolve({ status: "skipped" }), pushToSGT(leadWithNormalizedEmail, empresa)]
+        );
 
         const mauticStatus = mauticResult.status === "fulfilled" ? mauticResult.value.status : "error";
         const sgtStatus = sgtResult.status === "fulfilled" ? sgtResult.value.status : "error";
