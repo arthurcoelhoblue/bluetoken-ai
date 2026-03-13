@@ -167,6 +167,35 @@ export function useReorderLossCategories() {
   });
 }
 
+export function useBulkUpdateDeals() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ dealIds, updates }: { dealIds: string[]; updates: Record<string, unknown> }) => {
+      for (const id of dealIds) {
+        const { error } = await supabase.from('deals').update(updates).eq('id', id);
+        if (error) throw error;
+      }
+      // Log activity
+      const parts: string[] = [];
+      if (updates.stage_id) parts.push('estágio');
+      if (updates.owner_id) parts.push('vendedor');
+      if (updates.temperatura) parts.push('temperatura');
+      const desc = `🔄 Alteração em massa: ${parts.join(', ')}`;
+      for (const id of dealIds) {
+        await supabase.from('deal_activities').insert({
+          deal_id: id,
+          tipo: 'NOTA',
+          descricao: desc,
+        });
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['deals'] });
+      qc.invalidateQueries({ queryKey: ['deal-detail'] });
+    },
+  });
+}
+
 export function useTransferDeals() {
   const qc = useQueryClient();
   return useMutation({

@@ -29,23 +29,41 @@ Eventos necessários:
 
 ---
 
-## Plano: Sempre criar deal + pendência de duplicação
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
 ### Status: ✅ Implementado
 
-### Mudança
-- `lp-lead-ingest` agora SEMPRE cria novo contato + deal, mesmo se detectar duplicata
-- Quando detecta match (email/telefone), insere registro em `duplicate_pendencies`
-- Notifica owner via sistema de notificações
-- Seção "Possíveis Duplicações" adicionada em `/admin/pendencias`
-- Contagem integrada no Workbench
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-### Tabela: `duplicate_pendencies`
-- `new_contact_id`, `new_deal_id` — contato/deal recém-criados
-- `existing_contact_id`, `existing_deal_id` — contato/deal existentes
-- `match_type` — EMAIL, TELEFONE, EMAIL_E_TELEFONE
-- `status` — PENDENTE, MERGED, KEPT_SEPARATE, DISMISSED
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-### Ações do gestor
-- **Manter Separados**: confirma que são pessoas diferentes
-- **Dispensar**: ignora a pendência
+---
+
+## Plano: Push de leads para Mautic e SGT em tempo real
+
+### Status: ✅ Implementado
+
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`

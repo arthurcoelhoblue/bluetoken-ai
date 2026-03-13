@@ -1,7 +1,8 @@
 import { useEffect } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { supabase } from '@/integrations/supabase/client';
-import type { DealWithRelations, DealMoveData, KanbanColumn, PipelineStage } from '@/types/deal';
+import type { DealWithRelations, KanbanColumn, PipelineStage } from '@/types/deal';
+import type { AdvancedFilterState } from '@/types/filterCondition';
 
 interface UseDealsOptions {
   pipelineId: string | null;
@@ -10,11 +11,24 @@ interface UseDealsOptions {
   tag?: string;
   etiqueta?: string;
   page?: number;
+  advancedFilters?: AdvancedFilterState | null;
 }
 
 const PAGE_SIZE = 50;
 
-export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page = 0 }: UseDealsOptions) {
+function buildFilterString(field: string, operator: string, value: string | number | string[]): string {
+  const v = String(value);
+  switch (operator) {
+    case 'eq': return `${field}.eq.${v}`;
+    case 'neq': return `${field}.neq.${v}`;
+    case 'gt': return `${field}.gt.${v}`;
+    case 'lt': return `${field}.lt.${v}`;
+    case 'ilike': return `${field}.ilike.%${v}%`;
+    default: return `${field}.eq.${v}`;
+  }
+}
+
+export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page = 0, advancedFilters }: UseDealsOptions) {
   const qc = useQueryClient();
 
   useEffect(() => {
@@ -42,7 +56,7 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page
   }, [pipelineId, qc]);
 
   return useQuery({
-    queryKey: ['deals', pipelineId, ownerId, temperatura, tag, etiqueta, page],
+    queryKey: ['deals', pipelineId, ownerId, temperatura, tag, etiqueta, page, advancedFilters],
     enabled: !!pipelineId,
     queryFn: async (): Promise<{ data: DealWithRelations[]; count: number }> => {
       let query = supabase
@@ -56,12 +70,52 @@ export function useDeals({ pipelineId, ownerId, temperatura, tag, etiqueta, page
         .eq('pipeline_id', pipelineId!)
         .eq('status', 'ABERTO');
 
-      if (ownerId) query = query.eq('owner_id', ownerId);
-      if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
-      if (tag) query = query.contains('tags', [tag]);
-      if (etiqueta) query = query.eq('etiqueta', etiqueta);
+      // Simple filters (only if no advanced filters active)
+      const hasAdvanced = advancedFilters && advancedFilters.conditions.length > 0;
 
-      query = query.order('posicao_kanban', { ascending: true });
+      if (!hasAdvanced) {
+        if (ownerId) query = query.eq('owner_id', ownerId);
+        if (temperatura) query = query.eq('temperatura', temperatura as 'FRIO' | 'MORNO' | 'QUENTE');
+        if (tag) query = query.contains('tags', [tag]);
+        if (etiqueta) query = query.eq('etiqueta', etiqueta);
+      }
+
+      // Advanced filters
+      if (hasAdvanced) {
+        const conditions = advancedFilters!.conditions;
+
+        if (advancedFilters!.matchMode === 'all') {
+          // AND: chain each condition - cast to any to avoid TS deep instantiation
+          for (const c of conditions) {
+            const { field, operator, value } = c;
+            const v = String(value);
+
+            if (field === 'contact_nome') {
+              query = (query as any).ilike('contacts.nome', `%${v}%`);
+              continue;
+            }
+
+            switch (operator) {
+              case 'eq': query = (query as any).eq(field, v); break;
+              case 'neq': query = (query as any).neq(field, v); break;
+              case 'gt': query = (query as any).gt(field, v); break;
+              case 'lt': query = (query as any).lt(field, v); break;
+              case 'ilike': query = (query as any).ilike(field, `%${v}%`); break;
+            }
+          }
+        } else {
+          // OR: build .or() string
+          const parts = conditions
+            .filter(c => c.field !== 'contact_nome') // can't OR on joined fields easily
+            .map(c => buildFilterString(c.field, c.operator, c.value));
+
+          if (parts.length > 0) {
+            query = query.or(parts.join(','));
+          }
+        }
+      }
+
+      query = query.order('posicao_kanban', { ascending: true }).order('created_at', { ascending: false });
 
       if (page === -1) {
         query = query.limit(500);

@@ -47,6 +47,9 @@ export function useAddDealActivity() {
       tipo: DealActivityType;
       descricao: string;
       tarefa_prazo?: string;
+      mentioned_user_ids?: string[];
+      deal_titulo?: string;
+      empresa?: string;
     }) => {
       const { data: { user } } = await supabase.auth.getUser();
       const { error } = await supabase.from('deal_activities').insert({
@@ -57,6 +60,34 @@ export function useAddDealActivity() {
         user_id: user?.id ?? null,
       });
       if (error) throw error;
+
+      // Send notifications to mentioned users
+      if (params.mentioned_user_ids?.length && user?.id) {
+        // Get author name
+        const { data: authorProfile } = await supabase
+          .from('profiles')
+          .select('nome')
+          .eq('id', user.id)
+          .single();
+        const authorName = authorProfile?.nome ?? 'Alguém';
+
+        const notifications = params.mentioned_user_ids
+          .filter(uid => uid !== user.id) // Don't notify yourself
+          .map(uid => ({
+            user_id: uid,
+            empresa: params.empresa ?? 'BLUE',
+            tipo: 'MENCAO',
+            titulo: `${authorName} mencionou você`,
+            mensagem: `Em "${params.deal_titulo ?? 'um deal'}": ${params.descricao.replace(/@\[([^\]]+)\]\([^)]+\)/g, '@$1').slice(0, 120)}`,
+            link: `/pipeline?deal=${params.deal_id}`,
+            entity_id: params.deal_id,
+            entity_type: 'DEAL',
+          }));
+
+        if (notifications.length > 0) {
+          await supabase.from('notifications').insert(notifications);
+        }
+      }
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ['deal-activities', vars.deal_id] });
@@ -149,6 +180,43 @@ export function useReopenDeal() {
       qc.invalidateQueries({ queryKey: ['deal-detail'] });
       qc.invalidateQueries({ queryKey: ['deals'] });
       qc.invalidateQueries({ queryKey: ['deal-activities'] });
+    },
+  });
+}
+
+export interface DealStageHistoryEntry {
+  id: string;
+  deal_id: string;
+  from_stage_id: string | null;
+  to_stage_id: string;
+  moved_by: string | null;
+  tempo_no_stage_anterior_ms: number | null;
+  auto_advanced: boolean;
+  created_at: string;
+  from_stage_nome: string | null;
+  from_stage_cor: string | null;
+  to_stage_nome: string | null;
+  to_stage_cor: string | null;
+}
+
+export function useDealStageHistory(dealId: string | null) {
+  return useQuery({
+    queryKey: ['deal-stage-history', dealId],
+    enabled: !!dealId,
+    queryFn: async (): Promise<DealStageHistoryEntry[]> => {
+      const { data, error } = await supabase
+        .from('deal_stage_history')
+        .select('*, from_stage:pipeline_stages!deal_stage_history_from_stage_id_fkey(nome, cor), to_stage:pipeline_stages!deal_stage_history_to_stage_id_fkey(nome, cor)')
+        .eq('deal_id', dealId!)
+        .order('created_at', { ascending: false });
+      if (error) throw error;
+      return (data ?? []).map((h: Record<string, unknown>) => ({
+        ...h,
+        from_stage_nome: (h.from_stage as { nome?: string } | null)?.nome ?? null,
+        from_stage_cor: (h.from_stage as { cor?: string } | null)?.cor ?? null,
+        to_stage_nome: (h.to_stage as { nome?: string } | null)?.nome ?? null,
+        to_stage_cor: (h.to_stage as { cor?: string } | null)?.cor ?? null,
+      })) as DealStageHistoryEntry[];
     },
   });
 }

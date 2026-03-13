@@ -13,7 +13,12 @@ const MATCH_LABELS: Record<string, string> = {
   EMAIL_E_TELEFONE: 'Email e Telefone',
 };
 
-export function DuplicatePendencyCard({ pendency }: { pendency: DuplicatePendency }) {
+interface DuplicatePendencyCardProps {
+  pendency: DuplicatePendency;
+  onDealClick?: (dealId: string) => void;
+}
+
+export function DuplicatePendencyCard({ pendency, onDealClick }: DuplicatePendencyCardProps) {
   const resolve = useResolveDuplicate();
 
   const handleAction = (action: 'MERGED' | 'KEPT_SEPARATE' | 'DISMISSED') => {
@@ -72,6 +77,11 @@ export function DuplicatePendencyCard({ pendency }: { pendency: DuplicatePendenc
           <Button size="sm" variant="outline" onClick={() => handleAction('DISMISSED')} disabled={resolve.isPending}>
             <X className="h-3.5 w-3.5 mr-1" />Dispensar
           </Button>
+          {onDealClick && pendency.new_deal_id && (
+            <Button size="sm" variant="default" onClick={() => onDealClick(pendency.new_deal_id)}>
+              <ArrowRight className="h-3.5 w-3.5 mr-1" />Ver Deal
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

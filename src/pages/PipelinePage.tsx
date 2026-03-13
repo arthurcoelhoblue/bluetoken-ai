@@ -8,15 +8,17 @@ import { useCompany } from '@/contexts/CompanyContext';
 import { useAuth } from '@/contexts/AuthContext';
 import { useIsAdmin } from '@/hooks/useIsAdmin';
 import { PipelineFilters } from '@/components/pipeline/PipelineFilters';
+import { PipelineListView } from '@/components/pipeline/PipelineListView';
 import { KanbanBoard } from '@/components/pipeline/KanbanBoard';
 import { CreateDealDialog } from '@/components/pipeline/CreateDealDialog';
 import { DealDetailSheet } from '@/components/deals/DealDetailSheet';
-
 import { TransferDealsDialog } from '@/components/pipeline/TransferDealsDialog';
 import { Kanban } from 'lucide-react';
+import { useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useActiveTokenizaOffers } from '@/hooks/useTokenizaOffers';
 import { useAnalyticsEvents } from '@/hooks/useAnalyticsEvents';
+import type { AdvancedFilterState } from '@/types/filterCondition';
 
 function useOwnerOptions() {
   return useQuery({
@@ -52,6 +54,8 @@ function useCurrentUserIsVendedor() {
 
 const PIPELINE_STORAGE_PREFIX = 'bluecrm-last-pipeline-';
 
+const EMPTY_ADVANCED: AdvancedFilterState = { matchMode: 'all', conditions: [] };
+
 function PipelineContent() {
   const { trackPageView } = useAnalyticsEvents();
   
@@ -70,7 +74,6 @@ function PipelineContent() {
 
   const [selectedPipelineId, setSelectedPipelineId] = useState<string | null>(null);
   const [temperatura, setTemperatura] = useState('all');
-  // For vendedores, force owner filter to themselves
   const [ownerId, setOwnerId] = useState('all');
   const [tag, setTag] = useState('all');
   const [etiquetaIA, setEtiquetaIA] = useState(false);
@@ -78,12 +81,46 @@ function PipelineContent() {
   const dealFromUrl = searchParams.get('deal');
   const [selectedDealId, setSelectedDealId] = useState<string | null>(dealFromUrl);
   const [showTransfer, setShowTransfer] = useState(false);
+  const [viewMode, setViewMode] = useState<'kanban' | 'list'>(() => {
+    return (localStorage.getItem('bluecrm-pipeline-view') as 'kanban' | 'list') || 'kanban';
+  });
+  const [advancedFilters, setAdvancedFilters] = useState<AdvancedFilterState>(EMPTY_ADVANCED);
+  const [iaSort, setIaSort] = useState(() => {
+    try { return localStorage.getItem('kanban_ia_sort') === 'true'; } catch { return false; }
+  });
+
+  const toggleIaSort = useCallback(() => {
+    setIaSort(prev => {
+      const next = !prev;
+      try { localStorage.setItem('kanban_ia_sort', String(next)); } catch { /* ignore */ }
+      return next;
+    });
+  }, []);
+  const handleViewModeChange = (m: 'kanban' | 'list') => {
+    setViewMode(m);
+    localStorage.setItem('bluecrm-pipeline-view', m);
+  };
 
   const handleDealClick = (dealId: string) => {
     setSelectedDealId(dealId);
+    setSearchParams(prev => {
+      const next = new URLSearchParams(prev);
+      next.set('deal', dealId);
+      return next;
+    }, { replace: true });
   };
 
-  // Auto-open deal from query param when navigating from insights
+  const handleDealClose = (open: boolean) => {
+    if (!open) {
+      setSelectedDealId(null);
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('deal');
+        return next;
+      }, { replace: true });
+    }
+  };
+
   useEffect(() => {
     const dealParam = searchParams.get('deal');
     if (dealParam && dealParam !== selectedDealId) {
@@ -93,7 +130,6 @@ function PipelineContent() {
 
   const availableTags = useMemo(() => activeOffers.map(o => o.nome), [activeOffers]);
 
-  // Vendedores: force filter to self
   const effectiveOwnerId = (isVendedor && !isAdmin && user?.id) ? user.id : ownerId;
   const ownerFilterDisabled = isVendedor && !isAdmin;
 
@@ -116,17 +152,21 @@ function PipelineContent() {
   useEffect(() => {
     setTemperatura('all');
     setTag('all');
+    setAdvancedFilters(EMPTY_ADVANCED);
   }, [activeCompany]);
 
   const selectedPipeline = pipelines?.find(p => p.id === selectedPipelineId);
 
+  const hasAdvanced = advancedFilters.conditions.length > 0;
+
   const { data: dealsData, isLoading: dealsLoading } = useDeals({
     pipelineId: selectedPipelineId,
-    ownerId: effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
-    temperatura: temperatura !== 'all' ? temperatura : undefined,
-    tag: tag !== 'all' ? tag : undefined,
-    etiqueta: etiquetaIA ? 'Atendimento IA' : undefined,
-    page: -1, // Fetch all (up to 500) for Kanban
+    ownerId: !hasAdvanced && effectiveOwnerId !== 'all' ? effectiveOwnerId : undefined,
+    temperatura: !hasAdvanced && temperatura !== 'all' ? temperatura : undefined,
+    tag: !hasAdvanced && tag !== 'all' ? tag : undefined,
+    etiqueta: !hasAdvanced && etiquetaIA ? 'Atendimento IA' : undefined,
+    page: -1,
+    advancedFilters: hasAdvanced ? advancedFilters : null,
   });
   
   const deals = dealsData?.data;
@@ -165,18 +205,37 @@ function PipelineContent() {
             ownerDisabled={ownerFilterDisabled}
             etiquetaIA={etiquetaIA}
             onEtiquetaIAChange={setEtiquetaIA}
+            viewMode={viewMode}
+            onViewModeChange={handleViewModeChange}
+            stages={selectedPipeline?.pipeline_stages ?? []}
+            advancedFilters={advancedFilters}
+            onAdvancedFiltersApply={setAdvancedFilters}
+            onAdvancedFiltersClear={() => setAdvancedFilters(EMPTY_ADVANCED)}
+            iaSort={iaSort}
+            onIaSortToggle={toggleIaSort}
+            onTransferClick={() => setShowTransfer(true)}
           />
 
-          <div className="border-b border-border/50 mt-2" />
-
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden pt-4">
-            <KanbanBoard
-              columns={columns}
-              wonLost={wonLost}
-              isLoading={dealsLoading}
-              onDealClick={handleDealClick}
-              onTransferClick={() => setShowTransfer(true)}
-            />
+          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+            {viewMode === 'kanban' ? (
+              <KanbanBoard
+                columns={columns}
+                wonLost={wonLost}
+                isLoading={dealsLoading}
+                onDealClick={handleDealClick}
+                onTransferClick={() => setShowTransfer(true)}
+                iaSort={iaSort}
+                onIaSortToggle={toggleIaSort}
+              />
+            ) : (
+              <PipelineListView
+                deals={deals ?? []}
+                stages={selectedPipeline?.pipeline_stages ?? []}
+                owners={owners}
+                isLoading={dealsLoading}
+                onDealClick={handleDealClick}
+              />
+            )}
           </div>
 
           <TransferDealsDialog
@@ -189,7 +248,7 @@ function PipelineContent() {
           <DealDetailSheet
             dealId={selectedDealId}
             open={!!selectedDealId}
-            onOpenChange={open => !open && setSelectedDealId(null)}
+            onOpenChange={handleDealClose}
           />
 
           {selectedPipeline && (

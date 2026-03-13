@@ -1218,6 +1218,7 @@ export type Database = {
           created_at: string
           descricao: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca: string
           id: string
           nome: string
           preco_unitario: number
@@ -1229,6 +1230,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           empresa: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca?: string
           id?: string
           nome: string
           preco_unitario?: number
@@ -1240,6 +1242,7 @@ export type Database = {
           created_at?: string
           descricao?: string | null
           empresa?: Database["public"]["Enums"]["empresa_tipo"]
+          frequencia_cobranca?: string
           id?: string
           nome?: string
           preco_unitario?: number
@@ -6081,6 +6084,61 @@ export type Database = {
           },
         ]
       }
+      pipeline_saved_filters: {
+        Row: {
+          conditions: Json
+          created_at: string
+          id: string
+          is_default: boolean
+          match_mode: string
+          nome: string
+          pipeline_id: string
+          user_id: string
+        }
+        Insert: {
+          conditions?: Json
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          match_mode?: string
+          nome: string
+          pipeline_id: string
+          user_id: string
+        }
+        Update: {
+          conditions?: Json
+          created_at?: string
+          id?: string
+          is_default?: boolean
+          match_mode?: string
+          nome?: string
+          pipeline_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "analytics_conversion"
+            referencedColumns: ["pipeline_id"]
+          },
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "pipelines"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pipeline_saved_filters_pipeline_id_fkey"
+            columns: ["pipeline_id"]
+            isOneToOne: false
+            referencedRelation: "workbench_pipeline_summary"
+            referencedColumns: ["pipeline_id"]
+          },
+        ]
+      }
       pipeline_stages: {
         Row: {
           cor: string
@@ -7345,6 +7403,33 @@ export type Database = {
           id?: string
           identifier?: string
           window_start?: string
+        }
+        Relationships: []
+      }
+      webhook_tag_configs: {
+        Row: {
+          created_at: string
+          empresa: string
+          id: string
+          tag: string
+          updated_at: string
+          webhook_id: string
+        }
+        Insert: {
+          created_at?: string
+          empresa: string
+          id?: string
+          tag?: string
+          updated_at?: string
+          webhook_id: string
+        }
+        Update: {
+          created_at?: string
+          empresa?: string
+          id?: string
+          tag?: string
+          updated_at?: string
+          webhook_id?: string
         }
         Relationships: []
       }

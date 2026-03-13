@@ -2,13 +2,16 @@
 // lp-lead-ingest — Ingestão de leads do LP com IA
 // Endpoint permanente para webhook + importação em lote
 // SEMPRE cria novo contato + deal. Se detectar duplicata, registra pendência.
+// Push fire-and-forget para Mautic e SGT após criação.
 // ========================================
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 import { getWebhookCorsHeaders, handleWebhookCorsOptions } from "../_shared/cors.ts";
 import { normalizePhoneE164 } from "../_shared/phone-utils.ts";
 import { validateApiKey } from "../_shared/api-key-utils.ts";
+import { createLogger } from "../_shared/logger.ts";
 
+const log = createLogger("lp-lead-ingest");
 const corsHeaders = getWebhookCorsHeaders("x-api-key");
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
@@ -25,6 +28,9 @@ const PARTNER_TAGS: Record<string, string> = {
 };
 
 const TEST_EMAILS: string[] = [];
+
+// SGT endpoint
+const SGT_API_URL = "https://unsznbmmqhihwctguvvr.supabase.co/functions/v1/criar-lead-api";
 
 interface LeadPayload {
   nome: string;
@@ -47,6 +53,125 @@ interface IngestRequest {
   lead?: LeadPayload;
   leads?: LeadPayload[];
 }
+
+// ========================================
+// Push helpers (fire-and-forget)
+// ========================================
+
+async function pushToMautic(lead: LeadPayload): Promise<{ status: string; mautic_contact_id?: number }> {
+  const mauticUrl = Deno.env.get("MAUTIC_URL");
+  const mauticUser = Deno.env.get("MAUTIC_USERNAME");
+  const mauticPass = Deno.env.get("MAUTIC_PASSWORD");
+
+  if (!mauticUrl || !mauticUser || !mauticPass) {
+    log.warn("Mautic credentials not configured, skipping push");
+    return { status: "skipped" };
+  }
+
+  try {
+    const nameParts = (lead.nome || "").split(" ");
+    const firstName = nameParts[0] || "";
+    const lastName = nameParts.slice(1).join(" ") || "";
+
+    const body: Record<string, unknown> = {
+      firstname: firstName,
+      lastname: lastName,
+      email: lead.email,
+      phone: lead.telefone || undefined,
+      tags: lead.tags || [],
+    };
+
+    // UTMs as custom fields
+    if (lead.utm_source) body.utm_source = lead.utm_source;
+    if (lead.utm_medium) body.utm_medium = lead.utm_medium;
+    if (lead.utm_campaign) body.utm_campaign = lead.utm_campaign;
+    if (lead.utm_content) body.utm_content = lead.utm_content;
+    if (lead.utm_term) body.utm_term = lead.utm_term;
+
+    const basicAuth = btoa(`${mauticUser}:${mauticPass}`);
+    const endpoint = `${mauticUrl.replace(/\/$/, "")}/api/contacts/new`;
+
+    const resp = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Basic ${basicAuth}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await resp.text();
+
+    if (!resp.ok) {
+      log.error("Mautic push failed", { status: resp.status, response: text.substring(0, 500), email: lead.email });
+      return { status: "error" };
+    }
+
+    try {
+      const data = JSON.parse(text);
+      const contactId = data?.contact?.id;
+      log.info("Mautic push ok", { email: lead.email, mautic_contact_id: contactId });
+      return { status: "ok", mautic_contact_id: contactId };
+    } catch {
+      log.info("Mautic push ok (no parseable response)", { email: lead.email });
+      return { status: "ok" };
+    }
+  } catch (err) {
+    log.error("Mautic push exception", { error: String(err), email: lead.email });
+    return { status: "error" };
+  }
+}
+
+async function pushToSGT(lead: LeadPayload, empresa: string): Promise<{ status: string }> {
+  const sgtSecret = Deno.env.get("SGT_WEBHOOK_SECRET");
+  if (!sgtSecret) {
+    log.warn("SGT_WEBHOOK_SECRET not configured, skipping push");
+    return { status: "skipped" };
+  }
+
+  try {
+    const body = {
+      empresa,
+      lead: {
+        nome_lead: lead.nome || lead.email.split("@")[0],
+        email: lead.email,
+        telefone: lead.telefone || undefined,
+        origem_canal: lead.canal_origem || "AMELIA_CRM",
+        utm_source: lead.utm_source || undefined,
+        utm_medium: lead.utm_medium || undefined,
+        utm_campaign: lead.utm_campaign || undefined,
+        utm_content: lead.utm_content || undefined,
+        utm_term: lead.utm_term || undefined,
+      },
+    };
+
+    const resp = await fetch(SGT_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": sgtSecret,
+      },
+      body: JSON.stringify(body),
+    });
+
+    const text = await resp.text();
+
+    if (!resp.ok) {
+      log.error("SGT push failed", { status: resp.status, response: text.substring(0, 500), email: lead.email });
+      return { status: "error" };
+    }
+
+    log.info("SGT push ok", { email: lead.email });
+    return { status: "ok" };
+  } catch (err) {
+    log.error("SGT push exception", { error: String(err), email: lead.email });
+    return { status: "error" };
+  }
+}
+
+// ========================================
+// Main handler
+// ========================================
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -78,7 +203,16 @@ Deno.serve(async (req) => {
     // Get round-robin owner: seller with fewest open deals in this pipeline
     const ownerId = await getRoundRobinOwner(supabase, empresa, pipelineId);
 
-    const results: Array<{ email: string; status: string; contact_id?: string; deal_id?: string; duplicate?: boolean; reason?: string }> = [];
+    const results: Array<{
+      email: string;
+      status: string;
+      contact_id?: string;
+      deal_id?: string;
+      duplicate?: boolean;
+      reason?: string;
+      mautic_status?: string;
+      sgt_status?: string;
+    }> = [];
 
     for (const lead of leadsInput) {
       try {
@@ -244,7 +378,7 @@ Deno.serve(async (req) => {
           ...(lead.telefone ? { telefone: lead.telefone } : {}),
           ...(lead.campos_extras || {}),
         };
-        await supabase.from("deal_activities").insert({
+        const { error: activityErr } = await supabase.from("deal_activities").insert({
           deal_id: newDeal.id,
           tipo: "CRIACAO",
           descricao: `Lead via ${lead.canal_origem || "formulário"}`,
@@ -258,6 +392,9 @@ Deno.serve(async (req) => {
             utm_campaign: lead.utm_campaign || null,
           },
         });
+        if (activityErr) {
+          log.error(`Failed to create CRIACAO activity for deal ${newDeal.id}`, { error: activityErr.message });
+        }
 
         // --- If duplicate detected, create pendency ---
         let isDuplicate = false;
@@ -296,7 +433,25 @@ Deno.serve(async (req) => {
           }
         }
 
-        results.push({ email, status: "created", contact_id: contactId, deal_id: newDeal.id, duplicate: isDuplicate });
+        // --- Fire-and-forget: push to Mautic + SGT in parallel ---
+        const leadWithNormalizedEmail = { ...lead, email };
+        const [mauticResult, sgtResult] = await Promise.allSettled([
+          pushToMautic(leadWithNormalizedEmail),
+          pushToSGT(leadWithNormalizedEmail, empresa),
+        ]);
+
+        const mauticStatus = mauticResult.status === "fulfilled" ? mauticResult.value.status : "error";
+        const sgtStatus = sgtResult.status === "fulfilled" ? sgtResult.value.status : "error";
+
+        results.push({
+          email,
+          status: "created",
+          contact_id: contactId,
+          deal_id: newDeal.id,
+          duplicate: isDuplicate,
+          mautic_status: mauticStatus,
+          sgt_status: sgtStatus,
+        });
       } catch (err) {
         results.push({ email: lead.email || "", status: "error", reason: String(err) });
       }
