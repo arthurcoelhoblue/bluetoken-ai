@@ -620,7 +620,7 @@ async function handleMessage(
   // Download media if applicable
   let mediaUrl: string | null = null;
   if (mediaInfo.media_meta_id && mediaInfo.media_mime_type) {
-    mediaUrl = await downloadMetaMedia(supabase, mediaInfo.media_meta_id, mediaInfo.media_mime_type);
+    mediaUrl = await downloadMetaMedia(supabase, mediaInfo.media_meta_id, mediaInfo.media_mime_type, resolvedEmpresa, phoneNumberId ?? undefined);
   }
 
   // Lookup contact_id from contacts table (by phone + empresa)
