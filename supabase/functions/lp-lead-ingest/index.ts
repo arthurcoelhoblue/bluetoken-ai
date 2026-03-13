@@ -61,7 +61,7 @@ interface IngestRequest {
 async function getMauticConfig(
   supabase: ReturnType<typeof createClient>,
   empresa: string
-): Promise<{ url: string; user: string; pass: string; segmentId?: string; customFields?: Record<string, string> } | null> {
+): Promise<{ url: string; user: string; pass: string; segmentIds?: Record<string, string>; customFields?: Record<string, string> } | null> {
   // Try per-company config from DB first
   const { data } = await supabase
     .from("mautic_company_config")
@@ -75,7 +75,7 @@ async function getMauticConfig(
       url: data.mautic_url,
       user: data.mautic_username,
       pass: data.mautic_password,
-      segmentId: data.segment_id || undefined,
+      segmentIds: (data.segment_ids as Record<string, string>) || undefined,
       customFields: (data.custom_fields as Record<string, string>) || undefined,
     };
   }
