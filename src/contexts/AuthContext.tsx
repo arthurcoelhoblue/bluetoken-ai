@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '@/integrations/supabase/client';
 import { UserProfile, UserRole, ROLE_PERMISSIONS } from '@/types/auth';
@@ -10,9 +10,7 @@ interface AuthContextType {
   profile: UserProfile | null;
   roles: UserRole[];
   isLoading: boolean;
-  /** True only after session has been validated against the backend */
   isSessionVerified: boolean;
-  /** True after fetchProfile has completed (even if profile is null) */
   profileLoaded: boolean;
   isAuthenticated: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
@@ -29,7 +27,6 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
 const SESSION_VERIFY_TIMEOUT_MS = 5000;
 
-/** Race a promise against a timeout. Resolves with the result or rejects on timeout. */
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error(`${label} timeout after ${ms}ms`)), ms);
@@ -49,6 +46,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSessionVerified, setIsSessionVerified] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
+  // Deduplication: prevent concurrent fetchProfile calls
+  const profileFetchInProgress = useRef(false);
+  // Track if initSession already handled the first profile fetch
+  const bootstrapHandledProfile = useRef(false);
+
   const clearState = useCallback(() => {
     setUser(null);
     setSession(null);
@@ -56,9 +58,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRoles([]);
     setIsSessionVerified(false);
     setProfileLoaded(false);
+    profileFetchInProgress.current = false;
+    bootstrapHandledProfile.current = false;
   }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
+    // Deduplicate: skip if already in progress
+    if (profileFetchInProgress.current) {
+      console.info('[Auth:TRACE] fetchProfile skipped (already in progress)');
+      return;
+    }
+    profileFetchInProgress.current = true;
+    console.info('[Auth:TRACE] fetchProfile start', userId);
+
     try {
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
@@ -94,27 +106,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (rolesData) {
         setRoles(rolesData.map(r => r.role as UserRole));
       }
+      console.info('[Auth:TRACE] fetchProfile complete');
     } catch (error) {
       console.error('[Auth] Error in fetchProfile:', error);
     } finally {
       setProfileLoaded(true);
+      profileFetchInProgress.current = false;
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {
+      profileFetchInProgress.current = false; // Allow refresh to proceed
       await fetchProfile(user.id);
     }
   }, [user?.id, fetchProfile]);
 
-  // Force clear session from local storage and reset
   const handleClearSession = useCallback(async () => {
     console.log('[Auth] Clearing session manually');
     try {
       await supabase.auth.signOut({ scope: 'local' });
-    } catch {
-      // Ignore signOut errors during recovery
-    }
+    } catch { /* ignore */ }
     clearState();
     setIsLoading(false);
     window.location.reload();
@@ -125,36 +137,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    console.info('[Auth] Bootstrap start');
+    console.info('[Auth:TRACE] Bootstrap start');
     let bootstrapDone = false;
 
     const finishBootstrap = (label: string) => {
       if (!bootstrapDone) {
         bootstrapDone = true;
         setIsLoading(false);
-        console.info(`[Auth] Bootstrap finished: ${label}`);
+        console.info(`[Auth:TRACE] Bootstrap finished: ${label}`);
       }
     };
 
-    // Safety timeout — always unblock UI
     const timeoutId = setTimeout(() => {
       if (!bootstrapDone) {
-        console.warn('[Auth] Bootstrap timeout reached, forcing isLoading=false');
+        console.warn('[Auth:TRACE] Bootstrap timeout reached, forcing isLoading=false');
         finishBootstrap('timeout');
       }
     }, AUTH_BOOTSTRAP_TIMEOUT_MS);
 
-    // 1. Set up auth state listener FIRST
+    // 1. Auth state listener — but DON'T fetch profile here if bootstrap will handle it
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
+        console.info('[Auth:TRACE] onAuthStateChange:', event);
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          // Defer profile fetch to avoid deadlock — non-blocking
-          setTimeout(() => {
-            fetchProfile(currentSession.user.id);
-          }, 0);
+          // Only fetch profile from listener if bootstrap already completed
+          // This prevents double-fetching during initial load
+          if (bootstrapDone && !bootstrapHandledProfile.current) {
+            setTimeout(() => fetchProfile(currentSession.user.id), 0);
+          }
         } else {
           setProfile(null);
           setRoles([]);
@@ -166,13 +179,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // 2. Check for existing session with BACKEND VALIDATION
+    // 2. Check existing session with backend validation
     const initSession = async () => {
       try {
+        console.info('[Auth:TRACE] getSession start');
         const { data: { session: existingSession }, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error('[Auth] getSession error:', error.message);
+          console.error('[Auth:TRACE] getSession error:', error.message);
           try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
           clearState();
           finishBootstrap('getSession_error');
@@ -180,14 +194,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         if (!existingSession) {
-          // No session — user is not logged in
+          console.info('[Auth:TRACE] No session found');
           clearState();
           finishBootstrap('no_session');
           return;
         }
 
-        // CRITICAL: Validate session against backend with timeout
+        // Validate session against backend
         try {
+          console.info('[Auth:TRACE] getUser start');
           const { data: { user: verifiedUser }, error: userError } = await withTimeout(
             supabase.auth.getUser(),
             SESSION_VERIFY_TIMEOUT_MS,
@@ -195,38 +210,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
 
           if (userError || !verifiedUser) {
-            console.warn('[Auth] Session invalid/expired, clearing. Error:', userError?.message);
+            console.warn('[Auth:TRACE] Session invalid/expired:', userError?.message);
             try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
             clearState();
             finishBootstrap('stale_session_cleared');
             return;
           }
 
-          // Session is verified
           setSession(existingSession);
           setUser(verifiedUser);
           setIsSessionVerified(true);
-          console.info('[Auth] Session verified for user:', verifiedUser.id);
+          console.info('[Auth:TRACE] Session verified:', verifiedUser.id);
 
-          // Fetch profile but don't block bootstrap on it
+          // Fetch profile — this is the SINGLE authoritative call
+          bootstrapHandledProfile.current = true;
           try {
             await fetchProfile(verifiedUser.id);
           } catch (profileErr) {
-            console.error('[Auth] Profile fetch failed during bootstrap:', profileErr);
+            console.error('[Auth:TRACE] Profile fetch failed:', profileErr);
           }
 
           finishBootstrap('success');
         } catch (verifyErr) {
-          console.warn('[Auth] Session verification failed/timed out:', verifyErr);
-          // Don't clear session on timeout — user might just have slow network
-          // But still unblock the UI
+          console.warn('[Auth:TRACE] Session verification timeout:', verifyErr);
           setSession(existingSession);
           setUser(existingSession.user);
-          setIsSessionVerified(true); // Trust local session on timeout
+          setIsSessionVerified(true);
+          bootstrapHandledProfile.current = true;
           finishBootstrap('verify_timeout_fallback');
         }
       } catch (err) {
-        console.error('[Auth] Bootstrap critical error:', err);
+        console.error('[Auth:TRACE] Bootstrap critical error:', err);
         clearState();
         finishBootstrap('critical_error');
       }
@@ -244,7 +258,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (!error && data.user) {
       setIsSessionVerified(true);
-      // Eagerly fetch profile so roles are available before ProtectedRoute renders
+      bootstrapHandledProfile.current = true;
+      profileFetchInProgress.current = false; // Allow this explicit call
       await fetchProfile(data.user.id);
     }
     return { error: error as Error | null };
@@ -292,21 +307,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [roles]);
 
   const value: AuthContextType = {
-    user,
-    session,
-    profile,
-    roles,
-    isLoading,
-    isSessionVerified,
-    profileLoaded,
+    user, session, profile, roles,
+    isLoading, isSessionVerified, profileLoaded,
     isAuthenticated: !!session && !!user,
-    signInWithEmail,
-    signUpWithEmail,
-    resetPassword,
-    signOut,
-    hasRole,
-    hasPermission,
-    refreshProfile,
+    signInWithEmail, signUpWithEmail, resetPassword, signOut,
+    hasRole, hasPermission, refreshProfile,
   };
 
   if (isLoading) {

@@ -1,68 +1,98 @@
+## Plano: Integração Stripe + Assinaturas + Controle de Usuários no Amélia CRM
 
+### Status: ✅ Implementado
 
-## Diagnostico Definitivo
+### Stripe Products
+- **Amélia Full**: `prod_U6u9Sb7sDJQYlK` / `price_1T8gLHK6xO3NOXxi1JJp4yu6` — R$ 999/mês
+- **Usuário Adicional**: `prod_U6uAtCGLZMClBx` / `price_1T8gMGK6xO3NOXxiVC9p676U` — R$ 180/mês
 
-Identifiquei **dois problemas concretos** que causam o comportamento de "spinner infinito" que voce reporta:
+### Implementação
 
-### Problema 1: ErrorBoundary engolindo erros de chunk
+1. ✅ Secrets configurados (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`)
+2. ✅ Tabela `subscriptions` criada com RLS
+3. ✅ Edge Functions: `stripe-checkout`, `stripe-webhook`, `stripe-portal`, `check-subscription`
+4. ✅ Hook `useSubscriptionLimits` para verificar limites
+5. ✅ Página `/assinatura` para gerenciamento
+6. ✅ Bloqueio de criação de usuário integrado no `CreateUserDialog`
 
-O erro principal visivel nos logs e session replay e:
+### Webhook URL (configurar no Stripe Dashboard)
 ```
-TypeError: Importing a module script failed.
+https://xdjvlcelauvibznnbrzb.supabase.co/functions/v1/stripe-webhook
 ```
 
-A hierarquia de error boundaries no `App.tsx` e:
-```text
-ChunkErrorBoundary          (deveria auto-reload)
-  └── ErrorBoundary          (mostra "Algo deu errado")
-        └── Suspense         (mostra LoadingSpinner)
-              └── Routes
-                    └── ProtectedRoute
-                          └── Lazy(WorkbenchPage)  ← ERRO AQUI
-```
-
-O `ErrorBoundary` esta **mais proximo** do erro e captura TUDO, incluindo erros de chunk. O `ChunkErrorBoundary` (que faria auto-reload) **nunca ve o erro**. Resultado: a tela fica no "Algo deu errado" ou no spinner do Suspense, sem recuperacao automatica.
-
-### Problema 2: fetchProfile chamado 3x simultaneamente
-
-Cada carregamento da pagina dispara `fetchProfile` de 3 fontes diferentes:
-1. `onAuthStateChange` via `setTimeout(0)`
-2. `initSession` apos `getUser()`
-3. `signInWithEmail` apos login
-
-Isso gera 3 PATCHs de `last_login_at` + 3 GETs de `profiles` + 3 GETs de `user_roles` -- tudo visivel nos network requests. Alem disso, `CompanyContext.loadUserCompanies` chama `getUser()` separadamente, adicionando mais uma chamada ao backend.
-
-### Problema 3: CompanyContext duplicando getUser()
-
-`CompanyProvider` chama `supabase.auth.getUser()` independentemente no `loadUserCompanies`, adicionando OUTRA chamada de validacao backend em cada carregamento. Isso compete com o bootstrap do AuthContext.
+Eventos necessários:
+- `checkout.session.completed`
+- `customer.subscription.updated`
+- `customer.subscription.deleted`
+- `invoice.payment_failed`
+- `invoice.paid`
 
 ---
 
-## Plano de Correcao (4 arquivos)
+## Plano: Garantir dados do formulário na Timeline + distinguir duplicados
 
-### 1. `src/components/ErrorBoundary.tsx`
-- Detectar erros de chunk (`isChunkError`) em `getDerivedStateFromError`
-- Se for chunk error, **re-throw** para que o `ChunkErrorBoundary` externo capture e faca auto-reload
-- Isso restaura o mecanismo de self-healing que ja existe mas esta sendo bloqueado
+### Status: ✅ Implementado
 
-### 2. `src/contexts/AuthContext.tsx`
-- **Deduplicar fetchProfile**: usar flag `profileFetchInProgress` para evitar chamadas simultaneas
-- No `onAuthStateChange`: NAO chamar `fetchProfile` se o `initSession` ja vai chamar
-- Adicionar logs de trace em cada etapa: `[Auth:TRACE] getSession start`, `getUser start`, `fetchProfile start/end`, `bootstrap finished: <reason>`
-- Isso garante que na proxima ocorrencia, os logs mostram exatamente onde travou
+### Mudanças
+1. **Backfill SQL** — Migração idempotente criou atividades `CRIACAO` com `origem=FORMULARIO` para 47 deals legados com `metadata.campos_extras`
+2. **lp-lead-ingest hardening** — Captura explícita de erro no insert de `deal_activities`, com log estruturado
+3. **Fallback frontend** — `DealTimelineTab` renderiza dados de `deal.metadata.campos_extras` quando não existe atividade `CRIACAO/FORMULARIO`
+4. **Kanban melhorado** — Desempate por `created_at DESC` + horário de entrada visível no `DealCard`
 
-### 3. `src/contexts/CompanyContext.tsx`
-- Substituir `supabase.auth.getUser()` por usar o `user` do AuthContext (via prop ou importacao)
-- OU usar `supabase.auth.getSession()` (local, sem round-trip ao backend) em vez de `getUser()` (que faz round-trip)
-- Isso elimina uma chamada backend redundante que compete com o bootstrap
+### Arquivos impactados
+- Migração SQL (backfill `deal_activities`)
+- `supabase/functions/lp-lead-ingest/index.ts`
+- `src/components/deals/DealTimelineTab.tsx`
+- `src/hooks/deals/useDealQueries.ts`
+- `src/components/pipeline/DealCard.tsx`
 
-### 4. `src/components/ChunkErrorBoundary.tsx`
-- Melhorar o mecanismo de auto-reload: alem de `sessionStorage`, adicionar log `[ChunkError] Auto-reloading...`
-- Garantir que apos 2 tentativas sem sucesso, mostre botao de "Limpar cache e recarregar" que faz hard reload (`location.reload(true)`) + limpa caches
+---
 
-### Resultado esperado
-- Erros de chunk → auto-reload automatico (self-healing restaurado)
-- Bootstrap sem chamadas duplicadas (6 requests → 2)
-- Logs de trace em todas as etapas para diagnostico inequivoco em caso de recorrencia
-- Nenhum cenario de spinner infinito sem saida
+## Plano: Push de leads para Mautic e SGT em tempo real
 
+### Status: ✅ Implementado
+
+### Resumo
+Após criar contato + deal no `lp-lead-ingest`, o lead é enviado para Mautic (API REST, Basic Auth) e SGT (`criar-lead-api`) em paralelo, fire-and-forget.
+
+### Secrets configurados
+- `MAUTIC_URL`, `MAUTIC_USERNAME`, `MAUTIC_PASSWORD`
+- `SGT_WEBHOOK_SECRET` (já existia)
+
+### Implementação
+- `pushToMautic(lead)` — POST `/api/contacts/new` com Basic Auth, mapeia firstname/lastname/email/phone/tags/UTMs
+- `pushToSGT(lead, empresa)` — POST `criar-lead-api` com x-api-key, mapeia nome_lead/email/telefone/origem_canal/UTMs
+- Ambos executam via `Promise.allSettled()` — não bloqueiam e não falham o fluxo principal
+- Resultado inclui `mautic_status` e `sgt_status` por lead
+
+### Arquivos impactados
+- `supabase/functions/lp-lead-ingest/index.ts`
+
+---
+
+## Plano: Módulo Playbook de Vendas
+
+### Status: 🔧 Em implementação — Fase 1 concluída
+
+### Fase 1 — Fundação ✅
+- 4 enums: `playbook_step_tipo`, `playbook_executor`, `playbook_run_status`, `playbook_evento_tipo`
+- 4 tabelas: `playbooks`, `playbook_steps`, `deal_playbook_runs`, `deal_playbook_events`
+- RLS com `has_role()` e `get_user_empresas()`
+- Trigger: `deal_playbook_events → deal_activities` (timeline automática)
+- Trigger: playbook ATIVA → pausa cadências do deal automaticamente
+- 3 views de performance: `v_playbook_stats`, `v_playbook_step_performance`, `v_playbook_vendedor_aderencia`
+- Tipos TypeScript: `src/types/playbook.ts`
+
+### Fase 2 — Motor de Execução (próximo)
+- Edge Function `playbook-runner` (CRON 5min)
+- Hooks: `usePlaybookRuns`, `usePlaybookEvents`
+- Interop cadência × playbook no `cadence-runner`
+
+### Fase 3 — UI (futuro)
+- Página `/playbooks`, Editor drag-and-drop, Timeline no Deal, Badge no Kanban
+
+### Fase 4 — Meu Dia + Notificações + Gamificação (futuro)
+
+### Fase 5 — IA Avançada (futuro)
+- 5.1: Sugestão + Scripts dinâmicos
+- 5.2: Adaptação + Análise
