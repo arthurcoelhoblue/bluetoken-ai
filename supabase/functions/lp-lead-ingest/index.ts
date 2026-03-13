@@ -492,7 +492,7 @@ Deno.serve(async (req) => {
         const mauticCfg = await getMauticConfig(supabase, empresa);
         const [mauticResult, sgtResult] = await Promise.allSettled(
           mauticCfg
-            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg), pushToSGT(leadWithNormalizedEmail, empresa)]
+            ? [pushToMautic(leadWithNormalizedEmail, mauticCfg, pipelineId), pushToSGT(leadWithNormalizedEmail, empresa)]
             : [Promise.resolve({ status: "skipped" }), pushToSGT(leadWithNormalizedEmail, empresa)]
         );
 

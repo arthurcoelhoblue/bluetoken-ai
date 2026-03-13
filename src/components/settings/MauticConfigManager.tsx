@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Loader2, Plus, Trash2, Save, Eye, EyeOff } from "lucide-react";
 
 interface MauticConfig {
@@ -16,7 +17,7 @@ interface MauticConfig {
   mautic_url: string;
   mautic_username: string | null;
   mautic_password: string | null;
-  segment_id: string | null;
+  segment_ids: Record<string, string>;
   custom_fields: Record<string, string>;
   enabled: boolean;
   updated_at: string;
@@ -26,27 +27,34 @@ interface ConfigForm {
   mautic_url: string;
   mautic_username: string;
   mautic_password: string;
-  segment_id: string;
+  segment_ids: Array<{ pipeline_id: string; segment_id: string }>;
   custom_fields: Array<{ local: string; mautic: string }>;
   enabled: boolean;
+}
+
+interface PipelineOption {
+  id: string;
+  nome: string;
+  empresa: string;
 }
 
 const emptyForm = (): ConfigForm => ({
   mautic_url: "",
   mautic_username: "",
   mautic_password: "",
-  segment_id: "",
+  segment_ids: [],
   custom_fields: [],
   enabled: false,
 });
 
 function configToForm(config: MauticConfig): ConfigForm {
   const fields = config.custom_fields || {};
+  const segments = config.segment_ids || {};
   return {
     mautic_url: config.mautic_url || "",
     mautic_username: config.mautic_username || "",
     mautic_password: config.mautic_password || "",
-    segment_id: config.segment_id || "",
+    segment_ids: Object.entries(segments).map(([pipeline_id, segment_id]) => ({ pipeline_id, segment_id })),
     custom_fields: Object.entries(fields).map(([local, mautic]) => ({ local, mautic })),
     enabled: config.enabled,
   };
@@ -83,12 +91,32 @@ export function MauticConfigManager() {
     },
   });
 
+  const { data: pipelines } = useQuery({
+    queryKey: ["all-pipelines-for-mautic"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("pipelines")
+        .select("id, nome, empresa")
+        .eq("ativo", true)
+        .order("nome");
+      if (error) throw error;
+      return data as PipelineOption[];
+    },
+  });
+
   const upsertMutation = useMutation({
     mutationFn: async ({ empresa, form }: { empresa: string; form: ConfigForm }) => {
       const customFieldsObj: Record<string, string> = {};
       form.custom_fields.forEach((f) => {
         if (f.local.trim() && f.mautic.trim()) {
           customFieldsObj[f.local.trim()] = f.mautic.trim();
+        }
+      });
+
+      const segmentIdsObj: Record<string, string> = {};
+      form.segment_ids.forEach((s) => {
+        if (s.pipeline_id.trim() && s.segment_id.trim()) {
+          segmentIdsObj[s.pipeline_id.trim()] = s.segment_id.trim();
         }
       });
 
@@ -100,7 +128,7 @@ export function MauticConfigManager() {
             mautic_url: form.mautic_url,
             mautic_username: form.mautic_username || null,
             mautic_password: form.mautic_password || null,
-            segment_id: form.segment_id || null,
+            segment_ids: segmentIdsObj,
             custom_fields: customFieldsObj,
             enabled: form.enabled,
             updated_at: new Date().toISOString(),
@@ -148,6 +176,27 @@ export function MauticConfigManager() {
     updateForm(empresa, { custom_fields: form.custom_fields.filter((_, i) => i !== index) });
   };
 
+  const updateSegment = (empresa: string, index: number, key: "pipeline_id" | "segment_id", value: string) => {
+    const form = getForm(empresa);
+    const segs = [...form.segment_ids];
+    segs[index] = { ...segs[index], [key]: value };
+    updateForm(empresa, { segment_ids: segs });
+  };
+
+  const addSegment = (empresa: string) => {
+    const form = getForm(empresa);
+    updateForm(empresa, { segment_ids: [...form.segment_ids, { pipeline_id: "", segment_id: "" }] });
+  };
+
+  const removeSegment = (empresa: string, index: number) => {
+    const form = getForm(empresa);
+    updateForm(empresa, { segment_ids: form.segment_ids.filter((_, i) => i !== index) });
+  };
+
+  const getPipelinesForEmpresa = (empresaId: string) => {
+    return pipelines?.filter((p) => p.empresa === empresaId) || [];
+  };
+
   if (loadingEmpresas || loadingConfigs) {
     return (
       <Card>
@@ -166,7 +215,7 @@ export function MauticConfigManager() {
       <div>
         <h3 className="text-lg font-semibold">Integração Mautic</h3>
         <p className="text-sm text-muted-foreground">
-          Configure conexões Mautic por empresa com URL, credenciais, segmento e campos personalizados.
+          Configure conexões Mautic por empresa com URL, credenciais, segmentos por funil e campos personalizados.
         </p>
       </div>
 
@@ -174,6 +223,7 @@ export function MauticConfigManager() {
         const form = getForm(emp.id);
         const existingConfig = configs?.find((c) => c.empresa === emp.id);
         const isDirty = dirty[emp.id];
+        const empPipelines = getPipelinesForEmpresa(emp.id);
 
         return (
           <Card key={emp.id}>
@@ -190,9 +240,7 @@ export function MauticConfigManager() {
                   onCheckedChange={(enabled) => updateForm(emp.id, { enabled })}
                 />
               </div>
-              <CardDescription>
-                {emp.id}
-              </CardDescription>
+              <CardDescription>{emp.id}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 sm:grid-cols-2">
@@ -202,14 +250,6 @@ export function MauticConfigManager() {
                     placeholder="https://mautic.exemplo.com"
                     value={form.mautic_url}
                     onChange={(e) => updateForm(emp.id, { mautic_url: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>ID do Segmento</Label>
-                  <Input
-                    placeholder="Ex: 5"
-                    value={form.segment_id}
-                    onChange={(e) => updateForm(emp.id, { segment_id: e.target.value })}
                   />
                 </div>
               </div>
@@ -243,6 +283,53 @@ export function MauticConfigManager() {
                     </Button>
                   </div>
                 </div>
+              </div>
+
+              {/* Segment IDs per pipeline */}
+              <div className="space-y-2">
+                <Label>Segmentos por Funil (pipeline → ID do segmento Mautic)</Label>
+                {form.segment_ids.map((seg, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Select
+                      value={seg.pipeline_id}
+                      onValueChange={(val) => updateSegment(emp.id, idx, "pipeline_id", val)}
+                    >
+                      <SelectTrigger className="flex-1">
+                        <SelectValue placeholder="Selecione o funil" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {empPipelines.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <span className="text-muted-foreground">→</span>
+                    <Input
+                      placeholder="ID do segmento (ex: 5)"
+                      value={seg.segment_id}
+                      onChange={(e) => updateSegment(emp.id, idx, "segment_id", e.target.value)}
+                      className="flex-1"
+                    />
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => removeSegment(emp.id, idx)}
+                    >
+                      <Trash2 className="h-4 w-4 text-destructive" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => addSegment(emp.id)}
+                  className="gap-1"
+                >
+                  <Plus className="h-3 w-3" />
+                  Adicionar segmento
+                </Button>
               </div>
 
               {/* Custom fields mapping */}
