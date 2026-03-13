@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { useState, useEffect } from 'react';
 
 const PERMISSIONS_TIMEOUT_MS = 10000;
+const PROFILE_WAIT_TIMEOUT_MS = 12000;
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -27,6 +28,7 @@ export function ProtectedRoute({
   const isAdmin = useIsAdmin();
   const { data: permissions, isLoading: permissionsLoading, isError: permissionsError } = useScreenPermissions();
   const [permissionsTimedOut, setPermissionsTimedOut] = useState(false);
+  const [profileTimedOut, setProfileTimedOut] = useState(false);
 
   // Timeout for permissions loading
   useEffect(() => {
@@ -42,6 +44,21 @@ export function ProtectedRoute({
     }, PERMISSIONS_TIMEOUT_MS);
     return () => clearTimeout(timer);
   }, [permissionsLoading]);
+
+  // Timeout for profile loading - prevents infinite spinner
+  useEffect(() => {
+    if (profileLoaded) {
+      setProfileTimedOut(false);
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (!profileLoaded) {
+        console.warn('[ProtectedRoute] Profile loading timed out');
+        setProfileTimedOut(true);
+      }
+    }, PROFILE_WAIT_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [profileLoaded]);
 
   if (isLoading) {
     return (
@@ -72,13 +89,30 @@ export function ProtectedRoute({
     );
   }
 
-  // Wait for profile/roles to load before making permission decisions
-  if (!profileLoaded) {
+  // Wait for profile/roles to load — but with timeout recovery
+  if (!profileLoaded && !profileTimedOut) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Carregando perfil...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // If profile timed out, show recovery UI
+  if (profileTimedOut && !profileLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4 text-center px-6">
+          <p className="text-sm text-muted-foreground">
+            O carregamento do perfil está demorando mais que o esperado.
+          </p>
+          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+            <RefreshCw className="h-4 w-4 mr-2" />
+            Recarregar
+          </Button>
         </div>
       </div>
     );

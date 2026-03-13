@@ -26,6 +26,14 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 const AUTH_BOOTSTRAP_TIMEOUT_MS = 8000;
 const SESSION_VERIFY_TIMEOUT_MS = 5000;
+const FETCH_PROFILE_TIMEOUT_MS = 6000;
+
+const t0 = Date.now();
+function trace(code: string, extra?: Record<string, unknown>) {
+  const elapsed = Date.now() - t0;
+  const route = typeof window !== 'undefined' ? window.location.pathname : '?';
+  console.info(`[Auth:TRACE] +${elapsed}ms ${code}`, { route, ...extra });
+}
 
 function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -46,9 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isSessionVerified, setIsSessionVerified] = useState(false);
   const [profileLoaded, setProfileLoaded] = useState(false);
 
-  // Deduplication: prevent concurrent fetchProfile calls
   const profileFetchInProgress = useRef(false);
-  // Track if initSession already handled the first profile fetch
   const bootstrapHandledProfile = useRef(false);
 
   const clearState = useCallback(() => {
@@ -63,61 +69,67 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
-    // Deduplicate: skip if already in progress
     if (profileFetchInProgress.current) {
-      console.info('[Auth:TRACE] fetchProfile skipped (already in progress)');
+      trace('PROFILE_SKIP_DEDUP');
       return;
     }
     profileFetchInProgress.current = true;
-    console.info('[Auth:TRACE] fetchProfile start', userId);
+    trace('PROFILE_START', { userId });
 
     try {
-      const { data: profileData, error: profileError } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-
-      if (profileError) {
-        console.error('[Auth] Error fetching profile:', profileError);
-        return;
-      }
-
-      if (profileData) {
-        setProfile(profileData as UserProfile);
-        // Fire-and-forget last_login update
-        supabase
+      const profilePromise = (async () => {
+        const { data: profileData, error: profileError } = await supabase
           .from('profiles')
-          .update({ last_login_at: new Date().toISOString() })
+          .select('*')
           .eq('id', userId)
-          .then(() => {});
-      }
+          .maybeSingle();
 
-      const { data: rolesData, error: rolesError } = await supabase
-        .from('user_roles')
-        .select('role')
-        .eq('user_id', userId);
+        if (profileError) {
+          console.error('[Auth] Error fetching profile:', profileError);
+          return;
+        }
 
-      if (rolesError) {
-        console.error('[Auth] Error fetching roles:', rolesError);
-        return;
-      }
+        if (profileData) {
+          setProfile(profileData as UserProfile);
+          supabase
+            .from('profiles')
+            .update({ last_login_at: new Date().toISOString() })
+            .eq('id', userId)
+            .then(() => {});
+        }
 
-      if (rolesData) {
-        setRoles(rolesData.map(r => r.role as UserRole));
-      }
-      console.info('[Auth:TRACE] fetchProfile complete');
+        trace('PROFILE_DATA_OK');
+
+        const { data: rolesData, error: rolesError } = await supabase
+          .from('user_roles')
+          .select('role')
+          .eq('user_id', userId);
+
+        if (rolesError) {
+          console.error('[Auth] Error fetching roles:', rolesError);
+          return;
+        }
+
+        if (rolesData) {
+          setRoles(rolesData.map(r => r.role as UserRole));
+        }
+        trace('ROLES_OK');
+      })();
+
+      await withTimeout(profilePromise, FETCH_PROFILE_TIMEOUT_MS, 'fetchProfile');
     } catch (error) {
-      console.error('[Auth] Error in fetchProfile:', error);
+      console.error('[Auth] fetchProfile error/timeout:', error);
+      trace('PROFILE_ERROR', { error: String(error) });
     } finally {
       setProfileLoaded(true);
       profileFetchInProgress.current = false;
+      trace('PROFILE_LOADED_SET');
     }
   }, []);
 
   const refreshProfile = useCallback(async () => {
     if (user?.id) {
-      profileFetchInProgress.current = false; // Allow refresh to proceed
+      profileFetchInProgress.current = false;
       await fetchProfile(user.id);
     }
   }, [user?.id, fetchProfile]);
@@ -137,34 +149,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    console.info('[Auth:TRACE] Bootstrap start');
+    trace('BOOTSTRAP_START');
     let bootstrapDone = false;
 
-    const finishBootstrap = (label: string) => {
+    const finishBootstrap = (reason: string) => {
       if (!bootstrapDone) {
         bootstrapDone = true;
         setIsLoading(false);
-        console.info(`[Auth:TRACE] Bootstrap finished: ${label}`);
+        trace('BOOTSTRAP_FINISH', { reason });
       }
     };
 
     const timeoutId = setTimeout(() => {
       if (!bootstrapDone) {
-        console.warn('[Auth:TRACE] Bootstrap timeout reached, forcing isLoading=false');
+        // Force profileLoaded so ProtectedRoute doesn't hang
+        setProfileLoaded(true);
         finishBootstrap('timeout');
       }
     }, AUTH_BOOTSTRAP_TIMEOUT_MS);
 
-    // 1. Auth state listener — but DON'T fetch profile here if bootstrap will handle it
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       (event, currentSession) => {
-        console.info('[Auth:TRACE] onAuthStateChange:', event);
+        trace('AUTH_STATE_CHANGE', { event, hasSession: !!currentSession });
         setSession(currentSession);
         setUser(currentSession?.user ?? null);
 
         if (currentSession?.user) {
-          // Only fetch profile from listener if bootstrap already completed
-          // This prevents double-fetching during initial load
           if (bootstrapDone && !bootstrapHandledProfile.current) {
             setTimeout(() => fetchProfile(currentSession.user.id), 0);
           }
@@ -179,30 +189,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     );
 
-    // 2. Check existing session with backend validation
     const initSession = async () => {
       try {
-        console.info('[Auth:TRACE] getSession start');
+        trace('GET_SESSION_START');
         const { data: { session: existingSession }, error } = await supabase.auth.getSession();
 
         if (error) {
-          console.error('[Auth:TRACE] getSession error:', error.message);
+          trace('GET_SESSION_ERROR', { error: error.message });
           try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
           clearState();
+          setProfileLoaded(true);
           finishBootstrap('getSession_error');
           return;
         }
 
         if (!existingSession) {
-          console.info('[Auth:TRACE] No session found');
+          trace('NO_SESSION');
           clearState();
+          setProfileLoaded(true);
           finishBootstrap('no_session');
           return;
         }
 
         // Validate session against backend
         try {
-          console.info('[Auth:TRACE] getUser start');
+          trace('GET_USER_START');
           const { data: { user: verifiedUser }, error: userError } = await withTimeout(
             supabase.auth.getUser(),
             SESSION_VERIFY_TIMEOUT_MS,
@@ -210,9 +221,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           );
 
           if (userError || !verifiedUser) {
-            console.warn('[Auth:TRACE] Session invalid/expired:', userError?.message);
+            trace('SESSION_INVALID', { error: userError?.message });
             try { await supabase.auth.signOut({ scope: 'local' }); } catch { /* ignore */ }
             clearState();
+            setProfileLoaded(true);
             finishBootstrap('stale_session_cleared');
             return;
           }
@@ -220,28 +232,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setSession(existingSession);
           setUser(verifiedUser);
           setIsSessionVerified(true);
-          console.info('[Auth:TRACE] Session verified:', verifiedUser.id);
+          trace('SESSION_VERIFIED', { userId: verifiedUser.id });
 
-          // Fetch profile — this is the SINGLE authoritative call
           bootstrapHandledProfile.current = true;
           try {
             await fetchProfile(verifiedUser.id);
           } catch (profileErr) {
-            console.error('[Auth:TRACE] Profile fetch failed:', profileErr);
+            trace('PROFILE_FETCH_FAILED', { error: String(profileErr) });
+            // profileLoaded is set in fetchProfile's finally block
           }
 
           finishBootstrap('success');
         } catch (verifyErr) {
-          console.warn('[Auth:TRACE] Session verification timeout:', verifyErr);
+          trace('GET_USER_TIMEOUT', { error: String(verifyErr) });
+          // Fallback: use local session but still try to fetch profile
           setSession(existingSession);
           setUser(existingSession.user);
           setIsSessionVerified(true);
           bootstrapHandledProfile.current = true;
+
+          // CRITICAL FIX: fetch profile even on timeout fallback
+          try {
+            await fetchProfile(existingSession.user.id);
+          } catch {
+            // profileLoaded set in finally
+          }
+
           finishBootstrap('verify_timeout_fallback');
         }
       } catch (err) {
-        console.error('[Auth:TRACE] Bootstrap critical error:', err);
+        trace('BOOTSTRAP_CRITICAL_ERROR', { error: String(err) });
         clearState();
+        setProfileLoaded(true);
         finishBootstrap('critical_error');
       }
     };
@@ -259,7 +281,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!error && data.user) {
       setIsSessionVerified(true);
       bootstrapHandledProfile.current = true;
-      profileFetchInProgress.current = false; // Allow this explicit call
+      profileFetchInProgress.current = false;
       await fetchProfile(data.user.id);
     }
     return { error: error as Error | null };

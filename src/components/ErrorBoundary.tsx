@@ -23,6 +23,11 @@ function isChunkError(error: Error): boolean {
   );
 }
 
+function isContextMismatchError(error: Error): boolean {
+  const msg = error.message || '';
+  return msg.includes('must be used within');
+}
+
 export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
@@ -33,6 +38,11 @@ export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
     // Let chunk errors bubble up to ChunkErrorBoundary for auto-reload
     if (isChunkError(error)) {
       console.info('[ErrorBoundary] Chunk error detected, re-throwing to ChunkErrorBoundary');
+      throw error;
+    }
+    // Treat context mismatch as recoverable (likely bundle/hydration issue)
+    if (isContextMismatchError(error)) {
+      console.warn('[ErrorBoundary] Context mismatch detected, re-throwing for auto-recovery');
       throw error;
     }
     return { hasError: true, error };
