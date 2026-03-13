@@ -22,7 +22,7 @@ export function ProtectedRoute({
   requiredRoles,
   requiredPermission 
 }: ProtectedRouteProps) {
-  const { isAuthenticated, isLoading, hasPermission, profile } = useAuth();
+  const { isAuthenticated, isLoading, hasPermission, profile, profileLoaded, roles } = useAuth();
   const location = useLocation();
   const isAdmin = useIsAdmin();
   const { data: permissions, isLoading: permissionsLoading, isError: permissionsError } = useScreenPermissions();
@@ -67,6 +67,18 @@ export function ProtectedRoute({
           <p className="text-muted-foreground">
             Sua conta foi desativada. Entre em contato com o administrador.
           </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Wait for profile/roles to load before making permission decisions
+  if (!profileLoaded) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <div className="flex flex-col items-center gap-4">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Carregando perfil...</p>
         </div>
       </div>
     );

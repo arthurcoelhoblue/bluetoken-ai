@@ -12,6 +12,8 @@ interface AuthContextType {
   isLoading: boolean;
   /** True only after session has been validated against the backend */
   isSessionVerified: boolean;
+  /** True after fetchProfile has completed (even if profile is null) */
+  profileLoaded: boolean;
   isAuthenticated: boolean;
   signInWithEmail: (email: string, password: string) => Promise<{ error: Error | null }>;
   signUpWithEmail: (email: string, password: string, nome: string) => Promise<{ error: Error | null }>;
@@ -45,6 +47,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [roles, setRoles] = useState<UserRole[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSessionVerified, setIsSessionVerified] = useState(false);
+  const [profileLoaded, setProfileLoaded] = useState(false);
 
   const clearState = useCallback(() => {
     setUser(null);
@@ -52,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setProfile(null);
     setRoles([]);
     setIsSessionVerified(false);
+    setProfileLoaded(false);
   }, []);
 
   const fetchProfile = useCallback(async (userId: string) => {
@@ -92,6 +96,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error) {
       console.error('[Auth] Error in fetchProfile:', error);
+    } finally {
+      setProfileLoaded(true);
     }
   }, []);
 
@@ -235,8 +241,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchProfile, clearState]);
 
   const signInWithEmail = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (!error) setIsSessionVerified(true);
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (!error && data.user) {
+      setIsSessionVerified(true);
+      // Eagerly fetch profile so roles are available before ProtectedRoute renders
+      await fetchProfile(data.user.id);
+    }
     return { error: error as Error | null };
   };
 
@@ -288,6 +298,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     roles,
     isLoading,
     isSessionVerified,
+    profileLoaded,
     isAuthenticated: !!session && !!user,
     signInWithEmail,
     signUpWithEmail,
