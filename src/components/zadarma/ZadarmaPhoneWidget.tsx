@@ -298,6 +298,18 @@ export function ZadarmaPhoneWidget() {
     return () => window.removeEventListener('bluecrm:dial', handler);
   }, []);
 
+  // Listen for auto-answer timeout
+  useEffect(() => {
+    const handler = () => {
+      if (phoneState === 'dialing' || phoneState === 'ringing') {
+        toast.error('Autoatendimento não conseguiu conectar. Tente novamente.');
+        setPhoneState('idle');
+      }
+    };
+    window.addEventListener('bluecrm:autoAnswerTimeout', handler);
+    return () => window.removeEventListener('bluecrm:autoAnswerTimeout', handler);
+  }, [phoneState]);
+
   // Call timer + speech recognition lifecycle
   useEffect(() => {
     if (phoneState === 'active') {

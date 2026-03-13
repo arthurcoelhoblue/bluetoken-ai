@@ -102,35 +102,37 @@ async function loadScriptWithRetry(src: string, retries = 1): Promise<void> {
   }
 }
 
+// Temporarily disable the #zadarma-hide stylesheet so !important rules don't block clicks
+function disableHideStylesheet() {
+  const style = document.getElementById('zadarma-hide') as HTMLStyleElement | null;
+  if (style) style.disabled = true;
+}
+
+function enableHideStylesheet() {
+  const style = document.getElementById('zadarma-hide') as HTMLStyleElement | null;
+  if (style) style.disabled = false;
+}
+
 // Temporarily make all widget elements interactive (remove inert + unhide + move visible)
 function enableWidgetInteraction() {
+  disableHideStylesheet();
   const all = document.querySelectorAll(WIDGET_SELECTORS.join(','));
   all.forEach((el) => {
     if (el instanceof HTMLElement) {
       el.removeAttribute('inert');
-      el.style.pointerEvents = 'auto';
-      // Temporarily move to visible position so buttons render
-      el.style.left = '0px';
-      el.style.top = '0px';
-      el.style.opacity = '0.01';
-      el.style.width = 'auto';
-      el.style.height = 'auto';
+      el.style.cssText = 'position:fixed!important;left:10px!important;top:10px!important;width:auto!important;height:auto!important;opacity:0.01!important;overflow:visible!important;z-index:999999!important;pointer-events:auto!important;';
     }
   });
 }
 
 // Re-disable widget interaction
 function disableWidgetInteraction() {
+  enableHideStylesheet();
   const all = document.querySelectorAll(WIDGET_SELECTORS.join(','));
   all.forEach((el) => {
     if (el instanceof HTMLElement) {
       el.setAttribute('inert', '');
-      el.style.pointerEvents = 'none';
-      el.style.left = '-9999px';
-      el.style.top = '-9999px';
-      el.style.opacity = '0';
-      el.style.width = '1px';
-      el.style.height = '1px';
+      el.style.cssText = 'position:fixed!important;left:-9999px!important;top:-9999px!important;width:1px!important;height:1px!important;opacity:0!important;overflow:hidden!important;z-index:-1!important;pointer-events:none!important;';
     }
   });
 }
@@ -146,35 +148,57 @@ function tryAnswerViaSipSession(): boolean {
       (window as any).ua,
       (window as any).sipUA,
       (window as any).phone,
+      (window as any).oSipSessionIncoming,
+      (window as any).oSipSessionCall,
     ];
 
+    // Helper: try to answer a session
+    const trySession = (session: any, label: string): boolean => {
+      if (!session || typeof session.answer !== 'function') return false;
+      // Accept if direction is incoming OR status is in a ringing-like state
+      const dir = session.direction || session._direction || '';
+      const state = session.status || session._status || session.state || '';
+      const isIncoming = dir === 'incoming' || dir === 'in';
+      const isRinging = typeof state === 'number' ? (state >= 3 && state <= 5) : /ring|progress|waiting|incoming/i.test(String(state));
+      if (isIncoming || isRinging) {
+        console.log(`[WebRTC] 🎯 Layer 1 (${label}): Answering SIP session (dir=${dir}, state=${state})`);
+        try {
+          session.answer({ mediaConstraints: { audio: true, video: false } });
+          return true;
+        } catch (e) {
+          // Some versions use accept() instead
+          if (typeof session.accept === 'function') {
+            session.accept({ mediaConstraints: { audio: true, video: false } });
+            return true;
+          }
+          console.warn(`[WebRTC] Layer 1 answer() threw:`, e);
+        }
+      }
+      return false;
+    };
+
+    // Scan UAs on main window
     for (const ua of candidates) {
       if (!ua) continue;
-      // JsSIP / SIP.js style UA
+      // Direct session objects (some widgets expose the session directly)
+      if (trySession(ua, 'direct')) return true;
+      // JsSIP / SIP.js style UA with _sessions map
       const sessions = ua._sessions || ua.sessions;
       if (sessions && typeof sessions === 'object') {
         for (const key of Object.keys(sessions)) {
-          const session = sessions[key];
-          if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
-            console.log('[WebRTC] 🎯 Layer 1: Answering via SIP session.answer()');
-            session.answer({ mediaConstraints: { audio: true, video: false } });
-            return true;
-          }
+          if (trySession(sessions[key], `UA._sessions[${key}]`)) return true;
         }
       }
       // Alternative: rtcSession
-      if (ua._rtcSession && typeof ua._rtcSession.answer === 'function') {
-        console.log('[WebRTC] 🎯 Layer 1: Answering via UA._rtcSession.answer()');
-        ua._rtcSession.answer({ mediaConstraints: { audio: true, video: false } });
-        return true;
-      }
+      if (trySession(ua._rtcSession, 'UA._rtcSession')) return true;
     }
 
     // Also scan iframes for SIP sessions
-    document.querySelectorAll('iframe').forEach((iframe) => {
+    const iframes = document.querySelectorAll('iframe');
+    for (const iframe of iframes) {
       try {
         const iframeWindow = iframe.contentWindow as any;
-        if (!iframeWindow) return;
+        if (!iframeWindow) continue;
         const iframeCandidates = [
           iframeWindow.__location_ua,
           iframeWindow.location_ua,
@@ -182,25 +206,24 @@ function tryAnswerViaSipSession(): boolean {
           iframeWindow.ua,
           iframeWindow.sipUA,
           iframeWindow.phone,
+          iframeWindow.oSipSessionIncoming,
+          iframeWindow.oSipSessionCall,
         ];
         for (const ua of iframeCandidates) {
           if (!ua) continue;
+          if (trySession(ua, 'iframe-direct')) return true;
           const sessions = ua._sessions || ua.sessions;
           if (sessions && typeof sessions === 'object') {
             for (const key of Object.keys(sessions)) {
-              const session = sessions[key];
-              if (session && typeof session.answer === 'function' && session.direction === 'incoming') {
-                console.log('[WebRTC] 🎯 Layer 1 (iframe): Answering via SIP session.answer()');
-                session.answer({ mediaConstraints: { audio: true, video: false } });
-                return;
-              }
+              if (trySession(sessions[key], `iframe._sessions[${key}]`)) return true;
             }
           }
+          if (trySession(ua._rtcSession, 'iframe._rtcSession')) return true;
         }
       } catch { /* cross-origin */ }
-    });
+    }
   } catch (err) {
-    console.warn('[WebRTC] Layer 1 SIP session answer failed:', err);
+    console.warn('[WebRTC] Layer 1 SIP session scan failed:', err);
   }
   return false;
 }
@@ -407,8 +430,8 @@ function markInert(el: HTMLElement) {
 }
 
 // Helper: check if status transition to 'active' is valid
-function canTransitionToActive(current: WebRTCStatus): boolean {
-  return current === 'calling' || current === 'ringing';
+function canTransitionToActive(current: WebRTCStatus, pendingOutbound: boolean): boolean {
+  return current === 'calling' || current === 'ringing' || pendingOutbound;
 }
 
 export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadarmaWebRTCParams): UseZadarmaWebRTCReturn {
@@ -429,12 +452,20 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
   statusRef.current = status;
 
   // NEW: pendingOutbound flag — set when click_to_call is initiated
-  // Allows auto-answer even if status isn't 'ready' yet (PBX callback ring)
   const pendingOutboundRef = useRef(false);
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const watchdogTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const setPendingOutbound = useCallback((pending: boolean) => {
-    pendingOutboundRef.current = pending;
-    console.log('[WebRTC] 📌 pendingOutbound set to:', pending);
+  // Stop the proactive watchdog
+  const stopWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearInterval(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+    if (watchdogTimeoutRef.current) {
+      clearTimeout(watchdogTimeoutRef.current);
+      watchdogTimeoutRef.current = null;
+    }
   }, []);
 
   // Guarded status setter — respects hangup cooldown
@@ -450,6 +481,83 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
     setStatus(newStatus);
   }, []);
+
+  const setPendingOutbound = useCallback((pending: boolean) => {
+    pendingOutboundRef.current = pending;
+    console.log('[WebRTC] 📌 pendingOutbound set to:', pending);
+
+    if (pending) {
+      stopWatchdog();
+      let attempts = 0;
+      const MAX_ATTEMPTS = 40; // 40 × 500ms = 20s
+
+      console.log('[WebRTC] 🔍 Starting proactive auto-answer watchdog (20s window)...');
+
+      watchdogRef.current = setInterval(() => {
+        attempts++;
+
+        // Already answered or no longer pending
+        if (!pendingOutboundRef.current || autoAnswerDoneRef.current) {
+          console.log('[WebRTC] ✅ Watchdog: auto-answer completed or cancelled, stopping');
+          stopWatchdog();
+          return;
+        }
+
+        // Already active — check via statusRef
+        if (statusRef.current === 'active' as WebRTCStatus) {
+          console.log('[WebRTC] ✅ Watchdog: call already active, stopping');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+          return;
+        }
+
+        console.log(`[WebRTC] 🔍 Watchdog poll #${attempts}/${MAX_ATTEMPTS}...`);
+
+        // Layer 1: Try SIP.js session
+        if (tryAnswerViaSipSession()) {
+          console.log(`[WebRTC] ✅ Watchdog: Layer 1 SIP answer succeeded on poll #${attempts}`);
+          autoAnswerDoneRef.current = true;
+          pendingOutboundRef.current = false;
+          callStartedAtRef.current = Date.now();
+          safeSetStatus('active');
+          stopWatchdog();
+          return;
+        }
+
+        // Layer 3: DOM click (every 2nd attempt)
+        if (attempts % 2 === 0) {
+          const clicked = clickAnswerButton();
+          if (clicked) {
+            console.log(`[WebRTC] ✅ Watchdog: Layer 3 DOM click succeeded on poll #${attempts}`);
+            autoAnswerDoneRef.current = true;
+            if (statusRef.current !== 'ringing') {
+              safeSetStatus('ringing');
+            }
+          }
+        }
+
+        // Timeout
+        if (attempts >= MAX_ATTEMPTS) {
+          console.warn('[WebRTC] ⏰ Watchdog: auto-answer timeout after 20s');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+          window.dispatchEvent(new CustomEvent('bluecrm:autoAnswerTimeout'));
+        }
+      }, 500);
+
+      // Safety timeout
+      watchdogTimeoutRef.current = setTimeout(() => {
+        if (pendingOutboundRef.current) {
+          console.warn('[WebRTC] ⏰ Watchdog safety timeout (25s)');
+          pendingOutboundRef.current = false;
+          stopWatchdog();
+        }
+      }, 25000);
+
+    } else {
+      stopWatchdog();
+    }
+  }, [stopWatchdog, safeSetStatus]);
 
   // Fetch WebRTC key
   const fetchKey = useCallback(async (): Promise<string | null> => {
@@ -474,10 +582,10 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
   }, [empresa, sipLogin]);
 
-  // 3-layer auto-answer strategy
+  // 3-layer auto-answer strategy (also triggered by event/log detection)
   const triggerAutoAnswer = useCallback(() => {
     const now = Date.now();
-    if (now - lastAutoAnswerTriggerRef.current < 2000) return;
+    if (now - lastAutoAnswerTriggerRef.current < 1000) return;
     if (now - hangupCooldownRef.current < HANGUP_COOLDOWN_MS) {
       console.log('[WebRTC] 🛑 triggerAutoAnswer blocked by hangup cooldown');
       return;
@@ -491,21 +599,23 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     }
 
     lastAutoAnswerTriggerRef.current = now;
-    autoAnswerAttemptsRef.current = 0;
     autoAnswerDoneRef.current = false;
     incomingDetectedRef.current = true;
-    console.log('[WebRTC] 🟢 Triggering 3-layer auto-answer sequence...');
+    console.log('[WebRTC] 🟢 Triggering auto-answer (event-triggered)...');
     safeSetStatus('ringing');
 
     // Layer 1: Try SIP.js session answer immediately
     if (tryAnswerViaSipSession()) {
       autoAnswerDoneRef.current = true;
       pendingOutboundRef.current = false;
+      callStartedAtRef.current = Date.now();
+      safeSetStatus('active');
+      stopWatchdog();
       console.log('[WebRTC] ✅ Layer 1 succeeded (SIP session)');
       return;
     }
 
-    // Layer 2: Dispatch zadarmaWidgetEvent to trigger answer
+    // Layer 2: Dispatch events
     window.dispatchEvent(new CustomEvent('zadarmaWidgetEvent', { detail: { event: 'answer' } }));
     document.querySelectorAll('iframe').forEach((iframe) => {
       try {
@@ -514,41 +624,18 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } catch { /* ignore */ }
     });
 
-    // Layer 3: Staggered DOM click attempts
-    const attempt = () => {
-      if (autoAnswerDoneRef.current) return;
-      if (autoAnswerAttemptsRef.current >= 20) {
-        console.warn('[WebRTC] ⚠️ Auto-answer: gave up after 20 attempts');
-        pendingOutboundRef.current = false;
-        return;
-      }
-      if (statusRef.current === 'active' || statusRef.current === 'ready') {
-        pendingOutboundRef.current = false;
-        return;
-      }
+    // Layer 3: DOM click
+    const clicked = clickAnswerButton();
+    if (clicked) {
+      autoAnswerDoneRef.current = true;
+      console.log('[WebRTC] ✅ Layer 3 click succeeded');
+    }
 
-      autoAnswerAttemptsRef.current++;
-
-      // Re-try Layer 1 on each attempt
-      if (tryAnswerViaSipSession()) {
-        autoAnswerDoneRef.current = true;
-        pendingOutboundRef.current = false;
-        console.log('[WebRTC] ✅ Layer 1 succeeded on attempt', autoAnswerAttemptsRef.current);
-        return;
-      }
-
-      // Layer 3: DOM click
-      const clicked = clickAnswerButton();
-      if (clicked) {
-        autoAnswerDoneRef.current = true;
-        pendingOutboundRef.current = false;
-      } else {
-        setTimeout(attempt, 500);
-      }
-    };
-
-    setTimeout(attempt, 300);
-  }, [safeSetStatus]);
+    // If watchdog isn't already running, start it as backup
+    if (!watchdogRef.current && pendingOutboundRef.current) {
+      setPendingOutbound(true); // Re-starts watchdog
+    }
+  }, [safeSetStatus, stopWatchdog, setPendingOutbound]);
 
   // Close active call record in DB when call ends locally (fallback for missing webhook)
   const closeActiveCallRecord = useCallback(async (explicitCallId?: string) => {
@@ -631,7 +718,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
          combined.includes('call confirmed') || combined.includes('call accepted') ||
          combined.includes('in_call') || combined.includes('session confirmed') ||
          combined.includes('peerconnection:ready')) &&
-        canTransitionToActive(statusRef.current)
+        canTransitionToActive(statusRef.current, pendingOutboundRef.current)
       ) {
         origLog('[WebRTC] ✅ CALL ACTIVE detected via console.log');
         autoAnswerDoneRef.current = true;
@@ -704,7 +791,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
           triggerAutoAnswer();
         }
       } else if (eventName === 'confirmed' || eventName === 'accepted' || eventName === 'in_call') {
-        if (canTransitionToActive(statusRef.current)) {
+        if (canTransitionToActive(statusRef.current, pendingOutboundRef.current)) {
           callStartedAtRef.current = Date.now();
           pendingOutboundRef.current = false;
           safeSetStatus('active');
@@ -740,7 +827,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       else if (
         (combined.startsWith('confirmed') || combined.startsWith('accepted') ||
          combined.includes('call confirmed') || combined.includes('call accepted')) &&
-        canTransitionToActive(statusRef.current)
+        canTransitionToActive(statusRef.current, pendingOutboundRef.current)
       ) {
         callStartedAtRef.current = Date.now();
         pendingOutboundRef.current = false;
@@ -834,8 +921,9 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       observerRef.current?.disconnect();
+      stopWatchdog();
     };
-  }, []);
+  }, [stopWatchdog]);
 
   const dial = useCallback((number: string) => {
     if (status !== 'ready') { console.warn('[WebRTC] Cannot dial, status:', status); return; }
@@ -855,6 +943,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
     incomingDetectedRef.current = false;
     autoAnswerDoneRef.current = false;
     pendingOutboundRef.current = false;
+    stopWatchdog();
 
     closeActiveCallRecord(callId);
     clickHangupButton();
@@ -866,7 +955,7 @@ export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadar
       } catch { /* ignore */ }
     });
     setStatus('ready');
-  }, [closeActiveCallRecord]);
+  }, [closeActiveCallRecord, stopWatchdog]);
 
   const answer = useCallback(() => {
     triggerAutoAnswer();
