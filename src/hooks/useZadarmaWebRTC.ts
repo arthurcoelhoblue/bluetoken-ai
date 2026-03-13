@@ -430,8 +430,8 @@ function markInert(el: HTMLElement) {
 }
 
 // Helper: check if status transition to 'active' is valid
-function canTransitionToActive(current: WebRTCStatus): boolean {
-  return current === 'calling' || current === 'ringing';
+function canTransitionToActive(current: WebRTCStatus, pendingOutbound: boolean): boolean {
+  return current === 'calling' || current === 'ringing' || pendingOutbound;
 }
 
 export function useZadarmaWebRTC({ empresa, sipLogin, enabled = true }: UseZadarmaWebRTCParams): UseZadarmaWebRTCReturn {
