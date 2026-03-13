@@ -298,6 +298,7 @@ export async function uploadMediaToMeta(
   config: ChannelConfig,
   fileUrl: string,
   mimeType: string,
+  filename: string = 'media',
 ): Promise<{ success: boolean; mediaId?: string; error?: string }> {
   if (config.mode !== 'META_CLOUD' || !config.metaPhoneNumberId || !config.metaAccessToken) {
     return { success: false, error: 'Meta Cloud not configured' };
@@ -315,7 +316,7 @@ export async function uploadMediaToMeta(
     const formData = new FormData();
     formData.append('messaging_product', 'whatsapp');
     formData.append('type', mimeType);
-    formData.append('file', new Blob([await fileBlob.arrayBuffer()], { type: mimeType }), 'audio.ogg');
+    formData.append('file', new Blob([await fileBlob.arrayBuffer()], { type: mimeType }), filename);
 
     const uploadRes = await fetch(`${META_BASE_URL}/${config.metaPhoneNumberId}/media`, {
       method: 'POST',

@@ -100,13 +100,14 @@ export function MediaAttachments({ onMediaReady, disabled }: MediaAttachmentsPro
   const startRecording = useCallback(async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, {
-        mimeType: MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')
-          ? 'audio/ogg; codecs=opus'
-          : MediaRecorder.isTypeSupported('audio/webm; codecs=opus')
-          ? 'audio/webm; codecs=opus'
-          : 'audio/webm',
-      });
+      const selectedMime = MediaRecorder.isTypeSupported('audio/ogg; codecs=opus')
+        ? 'audio/ogg; codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/mp4')
+        ? 'audio/mp4'
+        : MediaRecorder.isTypeSupported('audio/webm; codecs=opus')
+        ? 'audio/webm; codecs=opus'
+        : 'audio/webm';
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: selectedMime });
 
       chunksRef.current = [];
       mediaRecorder.ondataavailable = (e) => {
@@ -124,10 +125,11 @@ export function MediaAttachments({ onMediaReady, disabled }: MediaAttachmentsPro
           return;
         }
 
-        // Keep the real container format — do NOT re-label WebM as OGG
+        // Keep the real container format
         const isOgg = mediaRecorder.mimeType.includes('ogg');
-        const ext = isOgg ? 'ogg' : 'webm';
-        const mime = isOgg ? 'audio/ogg; codecs=opus' : 'audio/webm';
+        const isMp4 = mediaRecorder.mimeType.includes('mp4');
+        const ext = isOgg ? 'ogg' : isMp4 ? 'm4a' : 'webm';
+        const mime = isOgg ? 'audio/ogg; codecs=opus' : isMp4 ? 'audio/mp4' : 'audio/webm';
 
         await uploadFile(rawBlob, `audio_${Date.now()}.${ext}`, mime, 'audio');
       };

@@ -523,15 +523,23 @@ serve(async (req) => {
               break;
             case 'audio': {
               const audioUrl = mediaUrl!;
-              const isWebm = audioUrl.toLowerCase().includes('.webm') || audioUrl.toLowerCase().includes('audio_webm');
+              const lowerUrl = audioUrl.toLowerCase();
+              const isWebm = lowerUrl.includes('.webm') || lowerUrl.includes('audio_webm');
               log.info('Audio send', { isWebm, url: audioUrl.slice(-50) });
 
               if (isWebm) {
-                // WebM is NOT supported by Meta Cloud API for audio — send as document directly
-                log.info('WebM detected, sending as document for guaranteed delivery');
-                metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, audioUrl, mediaFilename || 'audio.webm', mediaCaption);
+                // WebM not supported by Meta — try upload as audio/ogg, fallback to document
+                log.info('WebM detected, attempting Media API upload as audio/ogg');
+                const uploadResult = await uploadMediaToMeta(metaConfig, audioUrl, 'audio/ogg', 'audio.ogg');
+                if (uploadResult.success && uploadResult.mediaId) {
+                  log.info('Media upload succeeded, sending audio by ID', { mediaId: uploadResult.mediaId });
+                  metaMediaResult = await sendAudioByIdViaMetaCloud(metaConfig, phoneToSend, uploadResult.mediaId);
+                } else {
+                  log.warn('Media upload failed, falling back to document', { error: uploadResult.error });
+                  metaMediaResult = await sendDocumentViaMetaCloud(metaConfig, phoneToSend, audioUrl, mediaFilename || 'audio.webm', mediaCaption);
+                }
               } else {
-                // Native OGG (Firefox) — send as audio via link
+                // OGG (Firefox) or M4A (Chrome 124+) — send as native audio
                 metaMediaResult = await sendAudioViaMetaCloud(metaConfig, phoneToSend, audioUrl);
               }
               break;
