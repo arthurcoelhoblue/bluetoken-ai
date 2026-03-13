@@ -4,8 +4,6 @@ import { Sheet, SheetContent } from '@/components/ui/sheet';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Skeleton } from '@/components/ui/skeleton';
 import { MessageSquare, Sparkles, Package, Video } from 'lucide-react';
-import { ContactDetailSheet } from '@/components/contacts/ContactDetailSheet';
-import { OrgDetailSheet } from '@/components/organizations/OrgDetailSheet';
 import { toast } from 'sonner';
 import {
   useDealDetail,
@@ -84,8 +82,6 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
   const [lossOpen, setLossOpen] = useState(false);
   const [emailOpen, setEmailOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
-  const [contactSheetId, setContactSheetId] = useState<string | null>(null);
-  const [orgSheetId, setOrgSheetId] = useState<string | null>(null);
 
   const isClosed = deal?.status === 'GANHO' || deal?.status === 'PERDIDO';
   const orderedStages = (stages ?? []).filter(s => !s.is_won && !s.is_lost).sort((a, b) => a.posicao - b.posicao);
@@ -211,7 +207,7 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
                 </TabsContent>
 
                 <TabsContent value="dados">
-                  <DealDadosTab deal={deal} updateField={updateField} onContactClick={setContactSheetId} onOrgClick={setOrgSheetId} />
+                  <DealDadosTab deal={deal} updateField={updateField} />
                 </TabsContent>
 
                 {hasChat && (
@@ -291,18 +287,6 @@ export function DealDetailSheet({ dealId, open, onOpenChange }: Props) {
         onOpenChange={setScheduleOpen}
         onSchedule={handleScheduleActivity}
         onSkip={() => onOpenChange(false)}
-      />
-
-      <ContactDetailSheet
-        contactId={contactSheetId}
-        open={!!contactSheetId}
-        onOpenChange={(open) => !open && setContactSheetId(null)}
-      />
-
-      <OrgDetailSheet
-        orgId={orgSheetId}
-        open={!!orgSheetId}
-        onOpenChange={(open) => !open && setOrgSheetId(null)}
       />
     </>
   );

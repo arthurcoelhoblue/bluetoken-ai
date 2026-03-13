@@ -163,7 +163,7 @@ export function CreateDealDialog({ open, onOpenChange, pipelineId, stages }: Cre
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>Novo Deal</DialogTitle>
         </DialogHeader>

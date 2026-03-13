@@ -7,15 +7,12 @@ import { Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { supabase } from '@/integrations/supabase/client';
 import { DealTagsEditor } from '@/components/deals/DealTagsEditor';
-import { DealAssociations } from '@/components/deals/DealAssociations';
 import type { DealFullDetail } from '@/types/deal';
 import type { UseMutationResult } from '@tanstack/react-query';
 
 interface DealDadosTabProps {
   deal: DealFullDetail;
   updateField: UseMutationResult<unknown, Error, { dealId: string; field: string; value: unknown }>;
-  onContactClick?: (contactId: string) => void;
-  onOrgClick?: (orgId: string) => void;
 }
 
 function useVendedores() {
@@ -34,7 +31,7 @@ function useVendedores() {
   });
 }
 
-export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: DealDadosTabProps) {
+export function DealDadosTab({ deal, updateField }: DealDadosTabProps) {
   const [editField, setEditField] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
   const { data: vendedores = [] } = useVendedores();
@@ -87,18 +84,11 @@ export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: 
   };
 
   return (
-    <div className="px-6 mt-3 space-y-4">
-      {/* Associações de Contato e Organização */}
-      <DealAssociations
-        deal={deal}
-        updateField={updateField}
-        onContactClick={onContactClick}
-        onOrgClick={onOrgClick}
-      />
-
-      <div className="space-y-1">
+    <div className="px-6 mt-3 space-y-1">
       {renderInlineField('Título', 'titulo', deal.titulo)}
       {renderInlineField('Valor', 'valor', String(deal.valor ?? 0))}
+      {renderInlineField('Contato', 'contact_nome', deal.contact_nome)}
+      {renderInlineField('Organização', 'org_nome', deal.org_nome)}
 
       {/* Responsável — Select de vendedores */}
       <div className="group flex items-center justify-between py-2 px-2 rounded-md hover:bg-muted/50">
@@ -128,7 +118,6 @@ export function DealDadosTab({ deal, updateField, onContactClick, onOrgClick }: 
           <p className="text-sm">{new Date(deal.data_previsao_fechamento).toLocaleDateString('pt-BR')}</p>
         </div>
       )}
-      </div>
     </div>
   );
 }

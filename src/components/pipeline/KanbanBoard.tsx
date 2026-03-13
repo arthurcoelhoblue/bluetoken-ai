@@ -43,7 +43,7 @@ export function KanbanBoard({ columns, wonLost, isLoading, onDealClick, onTransf
   const [activeDeal, setActiveDeal] = useState<DealWithRelations | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const moveDeal = useMoveDeal();
-  useGrabScroll(scrollRef, { disabled: !!activeDeal });
+  useGrabScroll(scrollRef);
 
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);

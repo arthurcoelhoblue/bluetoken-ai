@@ -1,1 +1,0 @@
-ALTER TABLE public.catalog_products ADD COLUMN IF NOT EXISTS frequencia_cobranca TEXT NOT NULL DEFAULT 'uma_vez';
